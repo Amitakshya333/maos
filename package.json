@@ -9,5 +9,21 @@
     "build": "tsc",
     "dev": "ts-node src/cli/index.ts",
     "start": "node dist/cli/index.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "chokidar": "^5.0.0",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.2",
+    "inquirer": "^8.2.7",
+    "openai": "^6.39.0",
+    "ora": "^5.4.1",
+    "simple-git": "^3.36.0"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.9",
+    "@types/node": "^25.9.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
   }
 }
