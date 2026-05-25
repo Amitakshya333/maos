@@ -19,6 +19,8 @@ import { runAgent, AgentConfig, AgentTask, AgentRunResult } from './agent-runner
 import { ProviderFactory } from '../backends/factory';
 import { IProvider, ProviderConfig } from '../backends/provider';
 import { createLogger, Logger } from '../utils/logger';
+import { createRouter, Router, AgentProfile, TaskRequirements, RoutingDecision } from './router';
+import { prepareAgentBranch, tagAgentWork, getCurrentBranch } from '../integrations/git';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -110,68 +112,39 @@ function loadConfig(cwd?: string): MaosConfig {
   return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 }
 
-// ─── Task Matching ────────────────────────────────────────────
+// ─── Task Matching (via Router) ───────────────────────────────
 
 /**
- * Find the best available agent for a task.
- * Rules:
- *   1. If the task specifies an agent → use that agent (if idle + enabled)
- *   2. If agent is "AUTO" → score all idle+enabled agents and pick the best
- *   3. Scoring: capability overlap × capabilityWeight - costTier × costWeight
+ * Build AgentProfile array from config + runtime state.
  */
-function findBestAgent(
-  task: TaskFile,
+function buildAgentProfiles(
   config: MaosConfig,
   pool: Record<string, boolean>,
   activeAgents: Map<string, any>,
-): typeof config.agents[0] | null {
-  // Filter to idle + enabled agents
-  const available = config.agents.filter(a => {
-    const enabled = pool[a.id] !== false;
-    const idle = !activeAgents.has(a.id);
-    return enabled && idle;
-  });
+): AgentProfile[] {
+  return config.agents.map(a => ({
+    id: a.id,
+    role: a.role,
+    provider: a.provider,
+    model: a.model,
+    capabilities: a.capabilities,
+    costTier: a.costTier,
+    maxIterations: a.maxIterations,
+    idle: !activeAgents.has(a.id),
+    enabled: pool[a.id] !== false,
+  }));
+}
 
-  if (available.length === 0) return null;
-
-  // If task targets a specific agent
-  if (task.agent && task.agent !== 'AUTO') {
-    return available.find(a => a.id === task.agent) || null;
-  }
-
-  // AUTO routing — score each agent
-  const costTierValues: Record<string, number> = {
-    free: 0, low: 2, medium: 5, high: 10, premium: 15,
+/**
+ * Build TaskRequirements from a TaskFile.
+ */
+function buildTaskRequirements(task: TaskFile): TaskRequirements {
+  return {
+    capabilities: task.capabilities,
+    complexity: task.complexity,
+    category: task.category,
+    targetAgent: task.agent,
   };
-
-  const scored = available.map(agent => {
-    // Capability match score
-    const capMatch = task.capabilities.length > 0
-      ? task.capabilities.filter(c => agent.capabilities.includes(c)).length /
-        Math.max(task.capabilities.length, 1)
-      : 0.5; // No required capabilities → neutral score
-
-    // Role bonus (planner for planning tasks, coder for coding, etc.)
-    let roleBonus = 0;
-    if (task.category === 'planning' && agent.role === 'planner') roleBonus = 0.2;
-    if (task.category === 'coding' && agent.role === 'coder') roleBonus = 0.2;
-    if (task.category === 'design' && agent.role === 'designer') roleBonus = 0.2;
-
-    // Cost penalty
-    const costPenalty = (costTierValues[agent.costTier] || 5) / 100;
-
-    const score =
-      capMatch * config.routing.capabilityWeight +
-      roleBonus -
-      costPenalty * config.routing.costWeight;
-
-    return { agent, score };
-  });
-
-  // Sort by score (highest first)
-  scored.sort((a, b) => b.score - a.score);
-
-  return scored[0]?.agent || null;
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────
@@ -224,6 +197,10 @@ export async function startOrchestrator(
     throw new Error('No providers could be initialized. Check your config and API keys.');
   }
 
+  // Create the router
+  const router = createRouter(config.routing);
+  logger.info('ORCHESTRATOR', `Routing strategy: ${config.routing.strategy || 'capability_score'}`);
+
   // State
   const state: OrchestratorState = {
     running: true,
@@ -269,9 +246,12 @@ export async function startOrchestrator(
       startedAt: Date.now(),
     });
 
+    // Prepare git branch for this agent's work
+    const branchName = prepareAgentBranch(agentDef.id, task.id, 'main', cwd);
+
     // Update status
     writeAgentStatus(agentDef.id, 'BUSY', task.id, cwd);
-    logger.info('ORCHESTRATOR', `Dispatched ${task.id} → ${agentDef.id} (${provider.name}/${provider.model})`);
+    logger.info('ORCHESTRATOR', `Dispatched ${task.id} → ${agentDef.id} (${provider.name}/${provider.model}) [branch: ${branchName}]`);
     options.onStatusUpdate?.(state);
 
     // Get cost per million tokens
@@ -301,6 +281,15 @@ export async function startOrchestrator(
       if (result.success) {
         state.completedTasks++;
         writeAgentStatus(agentDef.id, 'DONE', result.summary.substring(0, 80), cwd);
+
+        // Tag the agent's work with a named branch
+        try {
+          tagAgentWork(branchName, cwd);
+          logger.info('ORCHESTRATOR', `Tagged branch: ${branchName}`);
+        } catch (gitErr: any) {
+          logger.warn('ORCHESTRATOR', `Git branch tag failed: ${gitErr.message}`);
+        }
+
         logger.success('ORCHESTRATOR',
           `${agentDef.id} completed ${task.id} — ` +
           `${result.iterations} iters, ${result.totalTokens} tokens, $${result.costUSD.toFixed(4)}, ` +
@@ -355,11 +344,18 @@ export async function startOrchestrator(
           const toDispatch = pending.slice(0, slotsAvailable);
 
           for (const task of toDispatch) {
-            const agentDef = findBestAgent(task, config, pool, state.activeAgents);
-            if (!agentDef) {
-              // No agent available for this task — skip, will retry next poll
+            // Use the Router for intelligent task assignment
+            const profiles = buildAgentProfiles(config, pool, state.activeAgents);
+            const taskReqs = buildTaskRequirements(task);
+            const decision = router.route(taskReqs, profiles);
+
+            if (!decision) {
+              // No agent available — skip, will retry next poll
               continue;
             }
+
+            const agentDef = config.agents.find(a => a.id === decision.agentId);
+            if (!agentDef) continue;
 
             const provider = providerMap.get(agentDef.id);
             if (!provider) {
@@ -367,8 +363,17 @@ export async function startOrchestrator(
               continue;
             }
 
+            // Log routing decision
+            logger.info('ORCHESTRATOR',
+              `Routed ${task.id} → ${decision.agentId} ` +
+              `(score: ${decision.score.toFixed(3)}, ` +
+              `cap: ${decision.breakdown.capabilityScore.toFixed(2)}, ` +
+              `role: +${decision.breakdown.roleBonus.toFixed(2)}, ` +
+              `cost: -${decision.breakdown.costPenalty.toFixed(3)}, ` +
+              `complexity: +${decision.breakdown.complexityBonus.toFixed(2)})`
+            );
+
             // Dispatch in its own async context (fire-and-forget)
-            // This allows multiple agents to work simultaneously
             dispatchTask(task, agentDef, provider).catch(err => {
               logger.error('ORCHESTRATOR', `Unhandled dispatch error: ${err.message}`);
             });

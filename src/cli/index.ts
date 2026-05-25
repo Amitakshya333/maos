@@ -6,6 +6,7 @@ import { runInit } from './init';
 import { runTask, TaskOptions } from './task';
 import { runStatus } from './status';
 import { runStart, StartOptions } from './start';
+import { runPool, PoolOptions } from './pool';
 
 const VERSION = '0.1.0';
 
@@ -82,10 +83,10 @@ program
 program
   .command('pool')
   .description('Manage agent pool (enable/disable agents)')
-  .option('--enable <agent>', 'Enable an agent')
-  .option('--disable <agent>', 'Disable an agent')
-  .action((options) => {
-    console.log(chalk.yellow('⏳ Pool manager not yet implemented — coming Day 3!'));
+  .option('--enable <agent>', 'Enable an agent (or "all")')
+  .option('--disable <agent>', 'Disable an agent (or "all")')
+  .action((options: PoolOptions) => {
+    runPool(options);
   });
 
 // Parse
