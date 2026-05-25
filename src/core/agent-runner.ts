@@ -181,6 +181,22 @@ export async function runAgent(
         }
       }
 
+      // If task_complete was called, we're done (check BEFORE circuit breaker)
+      if (isComplete) {
+        logger.success(agent.id, `Task completed: ${completionSummary}`);
+        return {
+          agentId: agent.id,
+          taskId: task.id,
+          success: true,
+          summary: completionSummary,
+          filesChanged: completionFiles,
+          iterations,
+          totalTokens,
+          costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+
       // Check for stuck detection (circuit breaker)
       const currentFileCount = countFiles(projectRoot);
       if (currentFileCount === lastFileCount) {
@@ -203,22 +219,6 @@ export async function runAgent(
       } else {
         idleIterations = 0;
         lastFileCount = currentFileCount;
-      }
-
-      // If task_complete was called, we're done
-      if (isComplete) {
-        logger.success(agent.id, `Task completed: ${completionSummary}`);
-        return {
-          agentId: agent.id,
-          taskId: task.id,
-          success: true,
-          summary: completionSummary,
-          filesChanged: completionFiles,
-          iterations,
-          totalTokens,
-          costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
-          latencyMs: Date.now() - startTime,
-        };
       }
     }
 
