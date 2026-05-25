@@ -3,14 +3,35 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import chalk from 'chalk';
+import * as fs from 'fs';
+import * as path from 'path';
 import { runInit } from './init';
 import { runTask, TaskOptions } from './task';
 import { runStatus } from './status';
 import { runStart, StartOptions } from './start';
 import { runPool, PoolOptions } from './pool';
 import { runPlan, PlanOptions } from './plan';
+import { runLogs, LogsOptions } from './logs';
 
 const VERSION = '0.1.0';
+
+// ─── Global Error Handlers ───────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error(chalk.red(`\n❌ Unexpected error: ${err.message}`));
+  if (process.env.MAOS_DEBUG) {
+    console.error(chalk.gray(err.stack || ''));
+  }
+  console.error(chalk.gray('Set MAOS_DEBUG=1 for full stack trace'));
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  console.error(chalk.red(`\n❌ Unhandled promise rejection: ${reason?.message || reason}`));
+  if (process.env.MAOS_DEBUG) {
+    console.error(chalk.gray(reason?.stack || ''));
+  }
+  process.exit(1);
+});
 
 const program = new Command();
 
@@ -96,6 +117,60 @@ program
     runPool(options);
   });
 
+// ─── maos logs ────────────────────────────────────────────────
+program
+  .command('logs')
+  .description('View orchestrator logs')
+  .option('-f, --follow', 'Follow log output in real-time')
+  .option('-n, --lines <count>', 'Number of lines to show (default: 50)', '50')
+  .option('-a, --agent <agent>', 'Filter logs by agent ID')
+  .action((options: LogsOptions) => {
+    runLogs(options);
+  });
+
+// ─── maos clean ───────────────────────────────────────────────
+program
+  .command('clean')
+  .description('Clear queue and reset agent statuses')
+  .action(() => {
+    const maosDir = path.join(process.cwd(), '.maos');
+    if (!fs.existsSync(maosDir)) {
+      console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
+      process.exit(1);
+    }
+
+    // Clear queue directories
+    const queueDirs = ['pending', 'active', 'done'];
+    let cleared = 0;
+    for (const dir of queueDirs) {
+      const dirPath = path.join(maosDir, 'queue', dir);
+      if (fs.existsSync(dirPath)) {
+        const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.md'));
+        for (const file of files) {
+          fs.unlinkSync(path.join(dirPath, file));
+          cleared++;
+        }
+      }
+    }
+
+    // Clear status files
+    const statusDir = path.join(maosDir, 'status');
+    if (fs.existsSync(statusDir)) {
+      const files = fs.readdirSync(statusDir).filter(f => f.endsWith('.status'));
+      for (const file of files) {
+        fs.unlinkSync(path.join(statusDir, file));
+      }
+    }
+
+    // Clear logs
+    const logFile = path.join(maosDir, 'logs', 'orchestrator.log');
+    if (fs.existsSync(logFile)) {
+      fs.writeFileSync(logFile, '', 'utf-8');
+    }
+
+    console.log(chalk.green(`✅ Cleaned: ${cleared} tasks removed, statuses reset, logs cleared.`));
+  });
+
 // Parse
 program.parse(process.argv);
 
@@ -103,3 +178,4 @@ program.parse(process.argv);
 if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
+
