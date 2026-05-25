@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { runInit } from './init';
 import { runTask, TaskOptions } from './task';
 import { runStatus } from './status';
+import { runStart, StartOptions } from './start';
 
 const VERSION = '0.1.0';
 
@@ -57,10 +58,14 @@ program
 program
   .command('start')
   .description('Start the orchestrator loop')
-  .option('-p, --provider <provider>', 'Override default provider')
-  .action((options) => {
-    console.log(chalk.yellow('⏳ Orchestrator not yet implemented — coming Day 2!'));
-    console.log(chalk.gray('This will: poll queue, dispatch tasks, run agents in parallel.'));
+  .option('-p, --provider <provider>', 'Override default provider for all agents')
+  .action(async (options: StartOptions) => {
+    try {
+      await runStart(options);
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exit(1);
+    }
   });
 
 // ─── maos plan ────────────────────────────────────────────────

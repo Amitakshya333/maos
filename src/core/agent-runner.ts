@@ -256,16 +256,19 @@ export async function runAgent(
 
 /**
  * Quick file count for stuck detection.
+ * Cross-platform: counts lines from git ls-files directly in Node
+ * instead of piping through wc (Unix-only).
  */
 function countFiles(dir: string): number {
   try {
     const { execSync } = require('child_process');
-    const output = execSync('git ls-files | wc -l', {
+    const output = execSync('git ls-files', {
       cwd: dir,
       encoding: 'utf-8',
       timeout: 5000,
     });
-    return parseInt(output.trim()) || 0;
+    // Count non-empty lines
+    return output.split('\n').filter((line: string) => line.trim().length > 0).length;
   } catch {
     return 0;
   }
