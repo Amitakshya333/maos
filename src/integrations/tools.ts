@@ -1,0 +1,310 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { execSync } from 'child_process';
+import { ToolDef } from '../backends/provider';
+
+/**
+ * MAOS Agent Tool Definitions
+ * 
+ * These are the tools that every agent has access to.
+ * The agent runner calls these when the model requests tool execution.
+ */
+
+// ─── Tool Definitions (sent to the model) ─────────────────────
+
+export const AGENT_TOOLS: ToolDef[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'read_file',
+      description: 'Read the contents of a file in the project. Use this before modifying any file to understand existing code.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path to the file from the project root (e.g., "src/api/auth.ts")',
+          },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_file',
+      description: 'Write content to a file. Creates the file if it does not exist, overwrites if it does. Parent directories are created automatically.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path to the file from the project root',
+          },
+          content: {
+            type: 'string',
+            description: 'The full content to write to the file',
+          },
+        },
+        required: ['path', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_dir',
+      description: 'List the contents of a directory. Returns file names, sizes, and whether each entry is a file or directory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path to the directory from the project root (e.g., "src/components/")',
+          },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_command',
+      description: 'Run a shell command and return stdout/stderr. Use for npm install, running tests, checking types, etc. Commands run from the project root.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: 'The shell command to execute (e.g., "npm test", "npx tsc --noEmit")',
+          },
+        },
+        required: ['command'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_commit',
+      description: 'Stage all changes and create a git commit with the given message. Use when you have completed a logical unit of work.',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: {
+            type: 'string',
+            description: 'Descriptive commit message (e.g., "feat: add login page with glassmorphism design")',
+          },
+        },
+        required: ['message'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_code',
+      description: 'Search the codebase for a pattern. Returns matching lines with file paths and line numbers. Use to understand existing patterns before writing new code.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search pattern (text or regex)',
+          },
+          file_pattern: {
+            type: 'string',
+            description: 'Optional glob pattern to filter files (e.g., "*.ts", "src/**/*.tsx")',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'task_complete',
+      description: 'Signal that you have finished the task. Call this when all work is done and committed. Provide a summary of what you accomplished.',
+      parameters: {
+        type: 'object',
+        properties: {
+          summary: {
+            type: 'string',
+            description: 'A brief summary of what was accomplished (e.g., "Created login page with email/password form, glassmorphism styling, and responsive layout")',
+          },
+          files_changed: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'List of files that were created or modified',
+          },
+        },
+        required: ['summary'],
+      },
+    },
+  },
+];
+
+// ─── Tool Executors ───────────────────────────────────────────
+
+/**
+ * Scope enforcement: check if a file path is within allowed directories.
+ */
+function isPathInScope(filePath: string, scope: string[], projectRoot: string): boolean {
+  // If scope includes "/" → no restrictions
+  if (scope.includes('/')) return true;
+
+  const normalizedPath = path.normalize(filePath).replace(/\\/g, '/');
+  
+  return scope.some(scopeDir => {
+    const normalizedScope = path.normalize(scopeDir).replace(/\\/g, '/');
+    return normalizedPath.startsWith(normalizedScope);
+  });
+}
+
+/**
+ * Execute a tool call and return the result as a string.
+ */
+export function executeTool(
+  toolName: string,
+  args: Record<string, any>,
+  projectRoot: string,
+  scope: string[],
+): { result: string; isComplete: boolean } {
+  try {
+    switch (toolName) {
+      case 'read_file': {
+        const filePath = path.resolve(projectRoot, args.path);
+        if (!fs.existsSync(filePath)) {
+          return { result: `Error: File not found: ${args.path}`, isComplete: false };
+        }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const lines = content.split('\n').length;
+        return {
+          result: `File: ${args.path} (${lines} lines)\n\n${content}`,
+          isComplete: false,
+        };
+      }
+
+      case 'write_file': {
+        if (!isPathInScope(args.path, scope, projectRoot)) {
+          return {
+            result: `SCOPE VIOLATION: Cannot write to "${args.path}". Your scope is limited to: [${scope.join(', ')}]`,
+            isComplete: false,
+          };
+        }
+        const filePath = path.resolve(projectRoot, args.path);
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, args.content, 'utf-8');
+        const lines = args.content.split('\n').length;
+        return {
+          result: `Written: ${args.path} (${lines} lines)`,
+          isComplete: false,
+        };
+      }
+
+      case 'list_dir': {
+        const dirPath = path.resolve(projectRoot, args.path || '.');
+        if (!fs.existsSync(dirPath)) {
+          return { result: `Error: Directory not found: ${args.path}`, isComplete: false };
+        }
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        const listing = entries.map(e => {
+          const isDir = e.isDirectory();
+          const fullPath = path.join(dirPath, e.name);
+          if (isDir) {
+            return `📁 ${e.name}/`;
+          } else {
+            const stats = fs.statSync(fullPath);
+            const sizeKB = (stats.size / 1024).toFixed(1);
+            return `📄 ${e.name} (${sizeKB} KB)`;
+          }
+        });
+        return {
+          result: `Directory: ${args.path || '.'}\n\n${listing.join('\n')}`,
+          isComplete: false,
+        };
+      }
+
+      case 'run_command': {
+        try {
+          const output = execSync(args.command, {
+            cwd: projectRoot,
+            encoding: 'utf-8',
+            timeout: 30_000, // 30s max
+            maxBuffer: 1024 * 1024, // 1MB
+          });
+          return {
+            result: `Command: ${args.command}\nExit: 0\n\n${output.substring(0, 5000)}`,
+            isComplete: false,
+          };
+        } catch (cmdErr: any) {
+          return {
+            result: `Command: ${args.command}\nExit: ${cmdErr.status || 1}\n\nStdout:\n${(cmdErr.stdout || '').substring(0, 2500)}\n\nStderr:\n${(cmdErr.stderr || '').substring(0, 2500)}`,
+            isComplete: false,
+          };
+        }
+      }
+
+      case 'git_commit': {
+        try {
+          execSync('git add -A', { cwd: projectRoot, encoding: 'utf-8' });
+          execSync(`git commit -m "${args.message.replace(/"/g, '\\"')}"`, {
+            cwd: projectRoot,
+            encoding: 'utf-8',
+          });
+          return {
+            result: `Committed: "${args.message}"`,
+            isComplete: false,
+          };
+        } catch (gitErr: any) {
+          return {
+            result: `Git error: ${gitErr.message}`,
+            isComplete: false,
+          };
+        }
+      }
+
+      case 'search_code': {
+        try {
+          const grepCmd = args.file_pattern
+            ? `git grep -n -I "${args.query}" -- "${args.file_pattern}"`
+            : `git grep -n -I "${args.query}"`;
+          const output = execSync(grepCmd, {
+            cwd: projectRoot,
+            encoding: 'utf-8',
+            maxBuffer: 1024 * 1024,
+          });
+          const lines = output.split('\n').slice(0, 50); // Cap at 50 results
+          return {
+            result: `Search results for "${args.query}":\n\n${lines.join('\n')}`,
+            isComplete: false,
+          };
+        } catch {
+          return {
+            result: `No results found for "${args.query}"`,
+            isComplete: false,
+          };
+        }
+      }
+
+      case 'task_complete': {
+        const files = args.files_changed || [];
+        return {
+          result: `Task completed!\nSummary: ${args.summary}\nFiles changed: ${files.join(', ') || 'none listed'}`,
+          isComplete: true,
+        };
+      }
+
+      default:
+        return { result: `Unknown tool: ${toolName}`, isComplete: false };
+    }
+  } catch (err: any) {
+    return { result: `Tool error [${toolName}]: ${err.message}`, isComplete: false };
+  }
+}
