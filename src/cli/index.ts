@@ -12,6 +12,8 @@ import { runStart, StartOptions } from './start';
 import { runPool, PoolOptions } from './pool';
 import { runPlan, PlanOptions } from './plan';
 import { runLogs, LogsOptions } from './logs';
+import { runBrain } from './brain';
+import { runRepl } from './repl';
 
 const VERSION = '0.1.0';
 
@@ -128,6 +130,14 @@ program
     runLogs(options);
   });
 
+// ─── maos brain ───────────────────────────────────────────────
+program
+  .command('brain <action>')
+  .description('Codebase scanner & telemetry (actions: init, status, context, telemetry)')
+  .action((action: string) => {
+    runBrain(action);
+  });
+
 // ─── maos clean ───────────────────────────────────────────────
 program
   .command('clean')
@@ -174,8 +184,8 @@ program
 // Parse
 program.parse(process.argv);
 
-// Show help if no command provided
+// Launch interactive REPL if no command provided
 if (!process.argv.slice(2).length) {
-  program.outputHelp();
+  runRepl();
 }
 

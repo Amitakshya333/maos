@@ -21,6 +21,7 @@ import { IProvider, ProviderConfig } from '../backends/provider';
 import { createLogger, Logger } from '../utils/logger';
 import { createRouter, Router, AgentProfile, TaskRequirements, RoutingDecision } from './router';
 import { prepareAgentBranch, tagAgentWork, getCurrentBranch } from '../integrations/git';
+import { recordTelemetry, TelemetryRecord } from './telemetry';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -295,10 +296,53 @@ export async function startOrchestrator(
           `${result.iterations} iters, ${result.totalTokens} tokens, $${result.costUSD.toFixed(4)}, ` +
           `${(result.latencyMs / 1000).toFixed(1)}s`
         );
+
+        // Record telemetry
+        recordTelemetry(cwd, {
+          timestamp: new Date().toISOString(),
+          taskId: task.id,
+          agentId: agentDef.id,
+          provider: agentDef.provider,
+          model: agentDef.model,
+          routingStrategy: config.routing.strategy || 'capability_score',
+          routingScore: 0, // TODO: pass routing decision score
+          capabilities: task.capabilities || [],
+          complexity: task.complexity || 'medium',
+          category: task.category || 'general',
+          iterations: result.iterations,
+          totalTokens: result.totalTokens,
+          costUSD: result.costUSD,
+          latencyMs: result.latencyMs,
+          success: true,
+          filesChanged: result.filesChanged,
+          summary: result.summary,
+        });
       } else {
         state.failedTasks++;
         writeAgentStatus(agentDef.id, 'FAILED', result.error || 'Unknown error', cwd);
         logger.error('ORCHESTRATOR', `${agentDef.id} failed ${task.id}: ${result.error}`);
+
+        // Record failure telemetry
+        recordTelemetry(cwd, {
+          timestamp: new Date().toISOString(),
+          taskId: task.id,
+          agentId: agentDef.id,
+          provider: agentDef.provider,
+          model: agentDef.model,
+          routingStrategy: config.routing.strategy || 'capability_score',
+          routingScore: 0,
+          capabilities: task.capabilities || [],
+          complexity: task.complexity || 'medium',
+          category: task.category || 'general',
+          iterations: result.iterations,
+          totalTokens: result.totalTokens,
+          costUSD: result.costUSD,
+          latencyMs: result.latencyMs,
+          success: false,
+          error: result.error,
+          filesChanged: [],
+          summary: result.summary || 'Task failed',
+        });
       }
     } catch (err: any) {
       state.failedTasks++;
