@@ -106,7 +106,7 @@ MAOS follows a **Plan → Route → Execute → Report** cycle:
 maos/
 ├── src/
 │   ├── cli/                    # CLI commands
-│   │   ├── index.ts            # Entry point — 8 commands
+│   │   ├── index.ts            # Entry point — 10 commands + REPL
 │   │   ├── init.ts             # maos init — scaffold .maos/
 │   │   ├── task.ts             # maos task — queue a task
 │   │   ├── plan.ts             # maos plan — AI decomposition
@@ -114,6 +114,9 @@ maos/
 │   │   ├── status.ts           # maos status — fleet dashboard
 │   │   ├── pool.ts             # maos pool — agent management
 │   │   ├── logs.ts             # maos logs — view/tail logs
+│   │   ├── brain.ts            # maos brain — codebase scanner + telemetry
+│   │   ├── dashboard.ts        # maos dashboard — web UI at localhost:3847
+│   │   ├── repl.ts             # Interactive REPL shell
 │   │   └── clean.ts            # maos clean — reset queue
 │   │
 │   ├── core/                   # Core orchestration engine
@@ -122,11 +125,15 @@ maos/
 │   │   ├── decomposer.ts       # AI task decomposition
 │   │   ├── agent-runner.ts     # Agentic tool-calling loop
 │   │   ├── queue.ts            # File-based task queue (pending → active → done)
-│   │   └── pool-manager.ts     # Agent pool state management
+│   │   ├── pool-manager.ts     # Agent pool state management
+│   │   ├── telemetry.ts        # Append-only JSONL task telemetry
+│   │   └── brain.ts            # Codebase scanner + context injection
 │   │
-│   ├── backends/               # LLM provider abstraction
+│   ├── backends/               # LLM provider abstraction (12+ providers)
 │   │   ├── provider.ts         # IProvider interface
-│   │   ├── openai-provider.ts  # OpenAI-compatible provider (GPT, Claude, Gemini, etc.)
+│   │   ├── openai-provider.ts  # OpenAI-compatible (GPT, DeepSeek, Qwen, Groq, etc.)
+│   │   ├── anthropic-provider.ts # Native Anthropic SDK (Claude)
+│   │   ├── gemini-provider.ts  # Native Google Gemini SDK
 │   │   └── factory.ts          # Provider factory
 │   │
 │   ├── integrations/           # External tool integrations
@@ -164,7 +171,10 @@ maos/
 | `maos status` | Show fleet dashboard (agents, queue, statuses) |
 | `maos pool` | Enable/disable agents (`--enable DEV`, `--disable all`) |
 | `maos logs` | View orchestrator logs (`-f` to follow, `-a` to filter by agent) |
+| `maos brain <action>` | Codebase scanner & telemetry (`init`, `status`, `context`, `telemetry`) |
+| `maos dashboard` | Launch web dashboard at `http://localhost:3847` |
 | `maos clean` | Clear queue, reset statuses, truncate logs |
+| `maos` *(no args)* | Launch interactive REPL shell with tab completion |
 
 ### Examples
 
@@ -248,20 +258,30 @@ MAOS is configured via `.maos/maos.config.json`:
 }
 ```
 
-### Supported Providers
+### Supported Providers (12+)
 
-MAOS works with **any OpenAI-compatible API**:
+MAOS supports **3 adapter types** covering every major AI provider:
+
+**OpenAI-Compatible Adapters** (any OpenAI-style API):
 
 | Provider | Base URL | Notes |
 |----------|----------|-------|
 | Freemodel | `https://api.freemodel.dev/v1` | Free tier, hackathon-friendly |
 | OpenAI | `https://api.openai.com/v1` | GPT-4o, GPT-5 |
-| Anthropic (via proxy) | varies | Claude 3.5, Claude 4 |
-| Google (via proxy) | varies | Gemini 2.5 Pro |
+| DeepSeek | `https://api.deepseek.com/v1` | DeepSeek Coder V3 |
+| Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Alibaba Qwen |
+| Together AI | `https://api.together.xyz/v1` | Open-source models |
+| Groq | `https://api.groq.com/openai/v1` | Ultra-fast inference |
+| Fireworks | `https://api.fireworks.ai/inference/v1` | Fast + cheap |
 | Ollama | `http://localhost:11434/v1` | Local models (Llama, Qwen) |
 | LM Studio | `http://localhost:1234/v1` | Local GUI-based |
-| DeepSeek | `https://api.deepseek.com/v1` | DeepSeek Coder V3 |
-| Together AI | `https://api.together.xyz/v1` | Open-source models |
+
+**Native Adapters** (dedicated SDKs for best-in-class support):
+
+| Provider | SDK | Models |
+|----------|-----|--------|
+| Anthropic | `@anthropic-ai/sdk` | Claude 3.5 Sonnet, Claude 3.5 Haiku, Claude Opus 4 |
+| Google Gemini | `@google/generative-ai` | Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 1.5 Pro |
 
 ---
 
@@ -309,12 +329,15 @@ SCORE = (capability_match × capabilityWeight)
 - [x] AI task decomposition (`maos plan`)
 - [x] Git branch isolation per agent
 - [x] File-based task queue
-- [x] Provider abstraction (any OpenAI-compatible API)
+- [x] Provider abstraction (12+ providers, 3 adapter types)
+- [x] Native Anthropic adapter (Claude)
+- [x] Native Google Gemini adapter
 - [x] Agent pool management
 - [x] Structured logging
 - [x] Cost + token telemetry
-- [ ] Web dashboard (real-time fleet visualization)
-- [ ] Multi-provider routing (different models for different tasks)
+- [x] Codebase brain scanner
+- [x] Interactive REPL shell
+- [x] Web dashboard (real-time fleet visualization)
 - [ ] Historical performance learning
 - [ ] Plugin system for custom tools
 - [ ] VS Code extension

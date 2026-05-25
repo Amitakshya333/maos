@@ -14,6 +14,7 @@ import { runPlan, PlanOptions } from './plan';
 import { runLogs, LogsOptions } from './logs';
 import { runBrain } from './brain';
 import { runRepl } from './repl';
+import { runDashboard } from './dashboard';
 
 const VERSION = '0.1.0';
 
@@ -136,6 +137,15 @@ program
   .description('Codebase scanner & telemetry (actions: init, status, context, telemetry)')
   .action((action: string) => {
     runBrain(action);
+  });
+
+// ─── maos dashboard ─────────────────────────────────────────
+program
+  .command('dashboard')
+  .alias('dash')
+  .description('Launch web dashboard at http://localhost:3847')
+  .action(() => {
+    runDashboard();
   });
 
 // ─── maos clean ───────────────────────────────────────────────
