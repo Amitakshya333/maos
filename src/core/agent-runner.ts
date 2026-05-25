@@ -114,8 +114,13 @@ export async function runAgent(
       iterations++;
       onProgress?.(iterations, 'thinking');
 
-      // Call the model
-      const response = await provider.generate(messages, AGENT_TOOLS);
+      // Call the model (with retry for transient errors)
+      const response = await retryOnTransient(
+        () => provider.generate(messages, AGENT_TOOLS),
+        2, // max retries
+        logger,
+        agent.id,
+      );
       totalTokens += response.usage.totalTokens;
 
       logger.debug(agent.id, `Iteration ${iterations}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms`);
@@ -267,4 +272,47 @@ function countFiles(dir: string): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Retry a function on transient errors (rate limits, server errors, connection errors).
+ * Uses exponential backoff: 2s, 4s between retries.
+ */
+async function retryOnTransient<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  logger: Logger,
+  agentId: string,
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      const isTransient =
+        err.message?.includes('429') ||
+        err.message?.includes('rate limit') ||
+        err.message?.includes('Rate limit') ||
+        err.message?.includes('500') ||
+        err.message?.includes('502') ||
+        err.message?.includes('503') ||
+        err.message?.includes('ECONNRESET') ||
+        err.message?.includes('ETIMEDOUT') ||
+        err.message?.includes('timed out') ||
+        err.message?.includes('Request timed out') ||
+        err.message?.includes('Empty or malformed response');
+
+      if (!isTransient || attempt === maxRetries) {
+        throw err;
+      }
+
+      const delayMs = (attempt + 1) * 2000; // 2s, 4s
+      logger.warn(agentId, `Transient error (attempt ${attempt + 1}/${maxRetries + 1}): ${err.message}. Retrying in ${delayMs / 1000}s...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError || new Error('Retry failed');
 }

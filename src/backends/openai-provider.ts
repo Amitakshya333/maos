@@ -45,7 +45,7 @@ export class OpenAIProvider implements IProvider {
     this.client = new OpenAI({
       apiKey: opts.apiKey,
       baseURL: opts.baseURL,
-      timeout: opts.timeout || 120_000, // 2 min default timeout
+      timeout: opts.timeout || 180_000, // 3 min default timeout
       maxRetries: 2,
     });
   }
@@ -76,35 +76,70 @@ export class OpenAIProvider implements IProvider {
         requestBody.tool_choice = 'auto';
       }
 
-      const response = await this.client.chat.completions.create(requestBody);
+      const rawResponse = await this.client.chat.completions.create(requestBody);
       const latencyMs = Date.now() - startMs;
-      const choice = response.choices[0];
 
-      if (!choice) {
-        throw new Error(`Empty response from ${this.name}/${this.model}`);
+      // CRITICAL: Freemodel (and some other OpenAI-compatible providers) return
+      // raw JSON strings instead of parsed objects when using OpenAI SDK v5+.
+      // Detect and parse accordingly.
+      let response: any = rawResponse;
+      if (typeof response === 'string') {
+        try {
+          response = JSON.parse(response);
+        } catch (parseErr) {
+          throw new Error(
+            `Failed to parse response from ${this.name}/${this.model}: ` +
+            `${(response as string).substring(0, 200)}`
+          );
+        }
+      }
+
+      // Try to get choices — handle both parsed SDK objects and raw JSON
+      let choices = response?.choices;
+      if (!choices && response?.data?.choices) {
+        choices = response.data.choices; // Some SDKs nest under .data
+      }
+
+      if (!choices || !Array.isArray(choices) || choices.length === 0) {
+        // Last resort: try parsing if response is somehow a string
+        throw new Error(
+          `Empty response from ${this.name}/${this.model} (no choices array). ` +
+          `Keys: [${Object.keys(response || {}).join(', ')}]`
+        );
+      }
+
+      const choice = choices[0];
+      const message = choice?.message;
+
+      if (!message) {
+        throw new Error(
+          `No message in response from ${this.name}/${this.model}. ` +
+          `Choice keys: [${Object.keys(choice || {}).join(', ')}]`
+        );
       }
 
       // Extract tool calls (cast needed: SDK union type includes custom tool calls)
-      const rawToolCalls: any[] = choice.message.tool_calls || [];
+      const rawToolCalls: any[] = message.tool_calls || [];
       const toolCalls: ToolCall[] = rawToolCalls
-        .filter(tc => tc.type === 'function' && tc.function)
+        .filter(tc => tc && tc.type === 'function' && tc.function)
         .map(tc => ({
-          id: tc.id,
+          id: tc.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
           type: 'function' as const,
           function: {
             name: tc.function.name,
-            arguments: tc.function.arguments,
+            arguments: tc.function.arguments || '{}',
           },
         }));
 
       // Map finish reason
       let finishReason: ProviderResponse['finishReason'] = 'unknown';
-      if (choice.finish_reason === 'stop') finishReason = 'stop';
-      else if (choice.finish_reason === 'tool_calls') finishReason = 'tool_calls';
-      else if (choice.finish_reason === 'length') finishReason = 'length';
+      const rawFinish = choice.finish_reason;
+      if (rawFinish === 'stop') finishReason = 'stop';
+      else if (rawFinish === 'tool_calls') finishReason = 'tool_calls';
+      else if (rawFinish === 'length') finishReason = 'length';
 
       return {
-        content: choice.message.content,
+        content: message.content,
         toolCalls,
         usage: {
           promptTokens: response.usage?.prompt_tokens ?? 0,
