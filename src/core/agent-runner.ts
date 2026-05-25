@@ -120,10 +120,12 @@ export async function runAgent(
 
       logger.debug(agent.id, `Iteration ${iterations}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms`);
 
-      // If model returned text content, add it
-      if (response.content) {
-        messages.push({ role: 'assistant', content: response.content });
-      }
+      // Add assistant message with tool calls to the conversation history
+      messages.push({
+        role: 'assistant',
+        content: response.content,
+        tool_calls: response.toolCalls.length > 0 ? response.toolCalls : undefined,
+      });
 
       // If no tool calls and model stopped → done (shouldn't happen without task_complete)
       if (response.toolCalls.length === 0) {
@@ -135,13 +137,6 @@ export async function runAgent(
         messages.push({ role: 'user', content: 'Continue with your task. Use the available tools.' });
         continue;
       }
-
-      // Add assistant message with tool calls
-      // We need to reconstruct the assistant message for the conversation
-      messages.push({
-        role: 'assistant',
-        content: response.content || '',
-      });
 
       // Process each tool call
       let isComplete = false;
@@ -238,7 +233,7 @@ export async function runAgent(
     };
 
   } catch (err: any) {
-    logger.error(agent.id, `Agent error: ${err.message}`);
+    logger.error(agent.id, `Agent error: ${err.stack || err.message}`);
     return {
       agentId: agent.id,
       taskId: task.id,

@@ -145,10 +145,12 @@ export class OpenAIProvider implements IProvider {
       }
 
       // Re-throw with context
-      throw new Error(
+      const newErr = new Error(
         `Provider error [${this.name}/${this.model}]: ${err.message}\n` +
         `Latency: ${latencyMs}ms`
       );
+      newErr.stack = err.stack;
+      throw newErr;
     }
   }
 
@@ -161,7 +163,7 @@ export class OpenAIProvider implements IProvider {
     if (msg.role === 'tool') {
       return {
         role: 'tool',
-        content: msg.content,
+        content: msg.content ?? '',
         tool_call_id: msg.tool_call_id || '',
       };
     }
@@ -170,20 +172,28 @@ export class OpenAIProvider implements IProvider {
       return {
         role: 'assistant',
         content: msg.content,
+        tool_calls: msg.tool_calls?.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
+        })),
       };
     }
 
     if (msg.role === 'system') {
       return {
         role: 'system',
-        content: msg.content,
+        content: msg.content ?? '',
       };
     }
 
     // Default: user
     return {
       role: 'user',
-      content: msg.content,
+      content: msg.content ?? '',
     };
   }
 }

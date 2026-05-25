@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import 'dotenv/config';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { runInit } from './init';
@@ -7,6 +8,7 @@ import { runTask, TaskOptions } from './task';
 import { runStatus } from './status';
 import { runStart, StartOptions } from './start';
 import { runPool, PoolOptions } from './pool';
+import { runPlan, PlanOptions } from './plan';
 
 const VERSION = '0.1.0';
 
@@ -73,10 +75,15 @@ program
 program
   .command('plan <goal>')
   .description('Decompose a goal into subtasks using AI')
-  .action((goal: string) => {
-    console.log(chalk.yellow('⏳ Planner not yet implemented — coming Day 4!'));
-    console.log(chalk.gray(`Goal: "${goal}"`));
-    console.log(chalk.gray('This will: use the ARCHITECT agent to decompose into tagged subtasks.'));
+  .option('-p, --provider <provider>', 'Provider to use for decomposition')
+  .option('-y, --yes', 'Auto-confirm and queue all tasks without prompting')
+  .action(async (goal: string, options: PlanOptions) => {
+    try {
+      await runPlan(goal, options);
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exit(1);
+    }
   });
 
 // ─── maos pool ────────────────────────────────────────────────

@@ -3,3 +3,4 @@ node_modules/
 .maos/agents/*/auth/
 dist/
 *.log
+test-project/

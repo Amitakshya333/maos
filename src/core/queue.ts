@@ -64,7 +64,7 @@ ${task.description}
 function parseTaskFile(filePath: string): TaskFile | null {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (!frontmatterMatch) return null;
 
     const frontmatter = frontmatterMatch[1];
