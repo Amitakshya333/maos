@@ -1,0 +1,5 @@
+node_modules/
+.env
+.maos/agents/*/auth/
+dist/
+*.log

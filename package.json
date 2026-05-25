@@ -1,0 +1,13 @@
+{
+  "name": "maos",
+  "version": "0.1.0",
+  "description": "Multi-Agent Orchestrator System",
+  "bin": {
+    "maos": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/cli/index.ts",
+    "start": "node dist/cli/index.js"
+  }
+}
