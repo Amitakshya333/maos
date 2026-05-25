@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import { IProvider, ProviderConfig } from './provider';
 import { OpenAIProvider } from './openai-provider';
+import { AnthropicProvider } from './anthropic-provider';
+import { GeminiProvider } from './gemini-provider';
 
 /**
  * Known provider base URLs.
@@ -106,11 +108,22 @@ export class ProviderFactory {
           baseURL,
         });
 
-      // Future native adapters (Day 5+):
-      // case 'anthropic':
-      //   return new AnthropicProvider({ name, apiKey, model });
-      // case 'gemini':
-      //   return new GeminiProvider({ name, apiKey, model });
+      // Native Anthropic adapter — true Claude support
+      case 'anthropic':
+        return new AnthropicProvider({
+          name,
+          apiKey,
+          model,
+        });
+
+      // Native Google Gemini adapter — true Gemini support
+      case 'gemini':
+      case 'google':
+        return new GeminiProvider({
+          name,
+          apiKey,
+          model,
+        });
 
       default:
         // Unknown provider → try OpenAI-compatible format as fallback
