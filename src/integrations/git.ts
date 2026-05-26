@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import * as path from 'path';
 
 /**
  * MAOS Git Operations
@@ -31,6 +32,12 @@ function git(cmd: string, cwd: string): string {
       encoding: 'utf-8',
       timeout: 15000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        // Hard-scope git to the project root — NEVER escape upward
+        GIT_DIR: path.join(cwd, '.git'),
+        GIT_WORK_TREE: cwd,
+      },
     }).trim();
   } catch (err: any) {
     const stderr = err.stderr?.trim() || err.message;

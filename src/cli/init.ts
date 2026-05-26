@@ -221,8 +221,35 @@ export async function runInit(): Promise<void> {
   const configPath = getConfigPath();
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
 
+  // Initialize git repo if none exists (prevents git operations from escaping upward)
+  const cwd = process.cwd();
+  const gitDir = path.join(cwd, '.git');
+  if (!fs.existsSync(gitDir)) {
+    try {
+      const { execSync } = require('child_process');
+      execSync('git init', { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      console.log(chalk.gray('  Initialized git repo for branch isolation'));
+    } catch {
+      console.log(chalk.yellow('  ⚠ Could not auto-init git repo. Git features may not work.'));
+    }
+  }
+
+  // Create .gitignore if it doesn't exist
+  const gitignorePath = path.join(cwd, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    fs.writeFileSync(gitignorePath, [
+      'node_modules/',
+      '.env',
+      '.maos/logs/',
+      '.maos/telemetry/',
+      '.maos/brain/',
+      '.maos/status/',
+      '',
+    ].join('\n'), 'utf-8');
+  }
+
   // Create .env file if it doesn't exist
-  const envPath = path.join(process.cwd(), '.env');
+  const envPath = path.join(cwd, '.env');
   if (!fs.existsSync(envPath) && providerName !== 'ollama') {
     fs.writeFileSync(envPath, `${envKeyName}=your-api-key-here\n`, 'utf-8');
   }

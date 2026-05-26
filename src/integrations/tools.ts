@@ -253,11 +253,22 @@ export function executeTool(
 
       case 'git_commit': {
         try {
-          execSync('git add -A', { cwd: projectRoot, encoding: 'utf-8' });
-          execSync(`git commit -m "${args.message.replace(/"/g, '\\"')}"`, {
-            cwd: projectRoot,
-            encoding: 'utf-8',
-          });
+          // Hard-scope git to the project root — NEVER escape upward
+          const gitEnv = {
+            ...process.env,
+            GIT_DIR: path.join(projectRoot, '.git'),
+            GIT_WORK_TREE: projectRoot,
+          };
+          const gitOpts = { cwd: projectRoot, encoding: 'utf-8' as const, env: gitEnv, timeout: 30_000 };
+
+          // Auto-init git repo if none exists (prevents walking up to parent .git)
+          if (!fs.existsSync(path.join(projectRoot, '.git'))) {
+            execSync('git init', gitOpts);
+            execSync('git checkout -b main', { ...gitOpts, stdio: ['pipe', 'pipe', 'pipe'] });
+          }
+
+          execSync('git add -A', gitOpts);
+          execSync(`git commit -m "${args.message.replace(/"/g, '\\"')}"`, gitOpts);
           return {
             result: `Committed: "${args.message}"`,
             isComplete: false,
@@ -272,14 +283,34 @@ export function executeTool(
 
       case 'search_code': {
         try {
-          const grepCmd = args.file_pattern
-            ? `git grep -n -I "${args.query}" -- "${args.file_pattern}"`
-            : `git grep -n -I "${args.query}"`;
-          const output = execSync(grepCmd, {
-            cwd: projectRoot,
-            encoding: 'utf-8',
-            maxBuffer: 1024 * 1024,
-          });
+          const gitDir = path.join(projectRoot, '.git');
+          const hasGit = fs.existsSync(gitDir);
+
+          let output: string;
+          if (hasGit) {
+            const gitEnv = { ...process.env, GIT_DIR: gitDir, GIT_WORK_TREE: projectRoot };
+            const grepCmd = args.file_pattern
+              ? `git grep -n -I "${args.query}" -- "${args.file_pattern}"`
+              : `git grep -n -I "${args.query}"`;
+            output = execSync(grepCmd, {
+              cwd: projectRoot,
+              encoding: 'utf-8',
+              maxBuffer: 1024 * 1024,
+              env: gitEnv,
+            });
+          } else {
+            // Fallback: use findstr on Windows, grep on Unix
+            const isWin = process.platform === 'win32';
+            const cmd = isWin
+              ? `findstr /S /N /I "${args.query}" ${args.file_pattern || '*.*'}`
+              : `grep -rnI "${args.query}" ${args.file_pattern || '.'}`;
+            output = execSync(cmd, {
+              cwd: projectRoot,
+              encoding: 'utf-8',
+              maxBuffer: 1024 * 1024,
+              timeout: 15000,
+            });
+          }
           const lines = output.split('\n').slice(0, 50); // Cap at 50 results
           return {
             result: `Search results for "${args.query}":\n\n${lines.join('\n')}`,
