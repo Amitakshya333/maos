@@ -45,9 +45,115 @@ const CONTEXT_TOKEN_LIMIT = 60_000;  // Compress context when exceeding this
 const NUDGE_AT_PERCENT = 0.80;       // Nudge agent to finish at 80% of iteration budget
 const MAX_BONUS_ITERATIONS = 5;      // Extra iterations granted for productive agents
 
+// ---- SEMANTIC PROGRESS TRACKER ----
+
 /**
- * Build the system prompt for an agent.
+ * Tracks whether the agent is making genuine progress vs spinning in place.
+ *
+ * Progress is detected when the agent:
+ *   - Reads a file it has never read before
+ *   - Lists a directory it has never listed before
+ *   - Runs a search query it has never run before
+ *   - Uses a write/exec/commit tool (always productive)
+ *   - Calls a diverse mix of tool types
+ *
+ * Idle is ONLY counted when:
+ *   - Repeated identical reads (same path, same content)
+ *   - Repeated identical searches (same query)
+ *   - No new files/directories discovered
+ *   - No tool diversity (same tool called repeatedly)
+ *   - No state progression whatsoever
  */
+class ProgressTracker {
+  private seenFiles = new Set<string>();       // Files already read
+  private seenDirs = new Set<string>();        // Dirs already listed
+  private seenSearches = new Set<string>();    // Search queries already run
+  private toolCallsThisIteration = new Set<string>(); // Tool types this iteration
+  private lastIterationTools: string[] = [];   // Tool names from last iteration
+
+  idleCount = 0;
+  private readonly MAX_IDLE = 6;
+
+  /**
+   * Record all tool calls from one iteration and return whether this
+   * iteration was productive (true) or idle (false).
+   */
+  recordIteration(toolCalls: Array<{ name: string; args: Record<string, any> }>): boolean {
+    this.toolCallsThisIteration.clear();
+    let newContextDiscovered = false;
+    let hasMutatingCall = false;
+    const thisIterToolNames: string[] = [];
+
+    for (const { name, args } of toolCalls) {
+      this.toolCallsThisIteration.add(name);
+      thisIterToolNames.push(name);
+
+      switch (name) {
+        case 'read_file': {
+          const p = (args.path || '').toLowerCase().trim();
+          if (p && !this.seenFiles.has(p)) {
+            this.seenFiles.add(p);
+            newContextDiscovered = true; // New file = new context
+          }
+          break;
+        }
+        case 'list_dir': {
+          const d = (args.path || '.').toLowerCase().trim();
+          if (!this.seenDirs.has(d)) {
+            this.seenDirs.add(d);
+            newContextDiscovered = true; // New directory = new context
+          }
+          break;
+        }
+        case 'search_code': {
+          // Normalize query for dedup
+          const q = (args.query || '').toLowerCase().trim().substring(0, 80);
+          if (q && !this.seenSearches.has(q)) {
+            this.seenSearches.add(q);
+            newContextDiscovered = true; // New search = new context
+          }
+          break;
+        }
+        case 'write_file':
+        case 'run_command':
+        case 'git_commit':
+          hasMutatingCall = true; // Always productive
+          newContextDiscovered = true;
+          break;
+      }
+    }
+
+    // Tool diversity: using different tool types from last iteration = exploration
+    const toolDiversitySignal = !this.arraysIdentical(thisIterToolNames, this.lastIterationTools)
+      && thisIterToolNames.length > 0;
+    this.lastIterationTools = thisIterToolNames;
+
+    const productive = hasMutatingCall || newContextDiscovered || toolDiversitySignal;
+
+    if (productive) {
+      this.idleCount = 0;
+    } else {
+      this.idleCount++;
+    }
+
+    return productive;
+  }
+
+  isStuck(): boolean {
+    return this.idleCount >= this.MAX_IDLE;
+  }
+
+  statusLine(): string {
+    return `files_seen=${this.seenFiles.size} dirs_seen=${this.seenDirs.size} searches_seen=${this.seenSearches.size} idle=${this.idleCount}/${this.MAX_IDLE}`;
+  }
+
+  private arraysIdentical(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+  }
+}
+
+
 function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: string): string {
   return `You are ${agent.id}, a ${agent.role} agent working on this project.
 
@@ -103,12 +209,15 @@ export async function runAgent(
   const startTime = Date.now();
   let totalTokens = 0;
   let iterations = 0;
-  let idleIterations = 0;
   let lastSnapshot = snapshotFilesystem(projectRoot);
   let hadMutatingToolCall = false;
   let bonusIterationsGranted = 0;
   let nudgeSent = false;
   const initialSnapshot = lastSnapshot;
+
+  // Semantic progress tracker -- smarter than blunt file-count diffing
+  const progress = new ProgressTracker();
+
 
   // Build conversation
   const systemPrompt = buildSystemPrompt(agent, task, projectRoot);
@@ -234,7 +343,7 @@ export async function runAgent(
         onProgress?.(iterations, `tool:${toolName}`);
         logger.info(agent.id, `Tool: ${toolName}(${JSON.stringify(args).substring(0, 100)})`);
 
-        // Track mutating tool calls as progress signals
+        // Track mutating tool calls as progress signals (for bonus iterations)
         if (toolName === 'write_file' || toolName === 'run_command' || toolName === 'git_commit') {
           hadMutatingToolCall = true;
         }
@@ -281,24 +390,33 @@ export async function runAgent(
         };
       }
 
-      // ---- PRODUCTIVE ITERATION DETECTION ----
+      // ---- SEMANTIC PROGRESS / IDLE DETECTION ----
       const currentSnapshot = snapshotFilesystem(projectRoot);
       const filesChanged = currentSnapshot !== lastSnapshot;
 
-      if (filesChanged || hadMutatingToolCall) {
-        // Progress detected -- reset idle counter
-        idleIterations = 0;
-        lastSnapshot = currentSnapshot;
+      // Build tool call list for the tracker
+      const toolCallsForTracker = response.toolCalls.map(tc => {
+        let args: Record<string, any> = {};
+        try { args = JSON.parse(tc.function.arguments); } catch { /* skip */ }
+        return { name: tc.function.name, args };
+      });
 
-        // Grant bonus iterations for productive agents (up to MAX_BONUS)
+      const productive = progress.recordIteration(toolCallsForTracker);
+
+      if (filesChanged) {
+        lastSnapshot = currentSnapshot;
+      }
+
+      if (productive || filesChanged) {
+        // Grant bonus iterations only for actual mutations
         if (hadMutatingToolCall && bonusIterationsGranted < MAX_BONUS_ITERATIONS) {
           bonusIterationsGranted++;
-          logger.debug(agent.id, `Productive iteration detected. Budget extended to ${getEffectiveMax()}`);
+          logger.debug(agent.id, `Productive mutation. Budget extended to ${getEffectiveMax()}`);
         }
       } else {
-        idleIterations++;
-        if (idleIterations >= 5) {
-          logger.warn(agent.id, `Circuit breaker: ${idleIterations} idle iterations. Stopping.`);
+        logger.debug(agent.id, `Idle iteration ${progress.idleCount}/${6}. ${progress.statusLine()}`);
+        if (progress.isStuck()) {
+          logger.warn(agent.id, `Circuit breaker: agent truly stuck (no new files, no new searches, no new dirs, repeated calls). Stopping. ${progress.statusLine()}`);
           break; // Fall through to partial-success check below
         }
       }
