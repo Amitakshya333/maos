@@ -40,6 +40,11 @@ export interface AgentRunResult {
   error?: string;
 }
 
+// ---- Constants ----
+const CONTEXT_TOKEN_LIMIT = 60_000;  // Compress context when exceeding this
+const NUDGE_AT_PERCENT = 0.80;       // Nudge agent to finish at 80% of iteration budget
+const MAX_BONUS_ITERATIONS = 5;      // Extra iterations granted for productive agents
+
 /**
  * Build the system prompt for an agent.
  */
@@ -72,17 +77,19 @@ ${task.description}
 ## Important
 - You have a maximum of ${agent.maxIterations} tool calls. Be efficient.
 - If you get stuck, commit what you have and call task_complete with a partial summary.
-- Read before you write. Always check existing files first.`;
+- Read before you write. Always check existing files first.
+- ALWAYS call task_complete when you are done. This is mandatory.
+- Do NOT re-read files you already read unless they changed.`;
 }
 
 /**
  * Run an agent on a task.
  * 
- * This is the agentic loop:
- * 1. Send system prompt + task to the model
- * 2. Model responds with text or tool calls
- * 3. Execute tool calls, feed results back
- * 4. Repeat until task_complete is called or max iterations reached
+ * Agentic loop with:
+ * - Sliding context window (prevents token explosion)
+ * - Productive iteration detection (extends budget for working agents)
+ * - Auto-nudge at 80% budget (forces task_complete)
+ * - Partial success detection (files changed = success even without task_complete)
  */
 export async function runAgent(
   provider: IProvider,
@@ -96,9 +103,12 @@ export async function runAgent(
   const startTime = Date.now();
   let totalTokens = 0;
   let iterations = 0;
-  let idleIterations = 0; // Iterations with no file changes
+  let idleIterations = 0;
   let lastSnapshot = snapshotFilesystem(projectRoot);
-  let hadMutatingToolCall = false; // Track if write_file/run_command was called
+  let hadMutatingToolCall = false;
+  let bonusIterationsGranted = 0;
+  let nudgeSent = false;
+  const initialSnapshot = lastSnapshot;
 
   // Build conversation
   const systemPrompt = buildSystemPrompt(agent, task, projectRoot);
@@ -110,40 +120,59 @@ export async function runAgent(
   logger.info(agent.id, `Starting task: ${task.id}`);
   logger.info(agent.id, `Branch: ${task.branch} | Model: ${provider.name}/${provider.model}`);
 
+  // Effective max = base + bonus for productive agents
+  const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
+
   try {
-    while (iterations < agent.maxIterations) {
+    while (iterations < getEffectiveMax()) {
       iterations++;
       onProgress?.(iterations, 'thinking');
 
-      // Call the model (with retry for transient errors)
+      // ---- CONTEXT COMPRESSION ----
+      // If estimated tokens are too high, compress old messages
+      if (totalTokens > CONTEXT_TOKEN_LIMIT) {
+        compressContext(messages, logger, agent.id);
+      }
+
+      // ---- AUTO-NUDGE at 80% budget ----
+      if (!nudgeSent && iterations >= Math.floor(getEffectiveMax() * NUDGE_AT_PERCENT)) {
+        const remaining = getEffectiveMax() - iterations;
+        logger.info(agent.id, `Budget warning: ${remaining} iterations remaining. Nudging to finalize.`);
+        messages.push({
+          role: 'user',
+          content: `IMPORTANT: You have only ${remaining} iterations remaining. Please wrap up your work NOW. Commit any changes with git_commit and then call task_complete with a summary. Do not start new work.`,
+        });
+        nudgeSent = true;
+      }
+
+      // Call the model (with retry for transient errors including 504)
       const response = await retryOnTransient(
         () => provider.generate(messages, AGENT_TOOLS),
-        2, // max retries
+        3, // 3 retries for 504/timeout resilience
         logger,
         agent.id,
       );
       totalTokens += response.usage.totalTokens;
 
-      logger.debug(agent.id, `Iteration ${iterations}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms`);
+      logger.debug(agent.id, `Iteration ${iterations}/${getEffectiveMax()}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms (total: ${totalTokens})`);
 
-      // Add assistant message with tool calls to the conversation history
+      // Add assistant message
       messages.push({
         role: 'assistant',
         content: response.content,
         tool_calls: response.toolCalls.length > 0 ? response.toolCalls : undefined,
       });
 
-      // If no tool calls and model stopped → nudge to call task_complete
+      // If no tool calls and model stopped -> nudge to call task_complete
       if (response.toolCalls.length === 0) {
         if (response.finishReason === 'stop') {
           // Give the model a chance to call task_complete properly
-          logger.warn(agent.id, 'Model stopped without calling task_complete — nudging to finalize');
+          logger.warn(agent.id, 'Model stopped without calling task_complete -- nudging to finalize');
           messages.push({
             role: 'user',
             content: 'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
           });
 
-          // Try one more time
           const retryResponse = await retryOnTransient(
             () => provider.generate(messages, AGENT_TOOLS),
             1,
@@ -178,11 +207,11 @@ export async function runAgent(
               }
             }
           }
-          // Still didn't call task_complete — break out
+          // Still didn't call task_complete -- break out
           logger.warn(agent.id, 'Model still did not call task_complete after nudge. Treating as partial completion.');
           break;
         }
-        // Model returned content but no tools — continue
+        // Model returned content but no tools -- continue
         messages.push({ role: 'user', content: 'Continue with your task. Use the available tools.' });
         continue;
       }
@@ -217,10 +246,15 @@ export async function runAgent(
           agent.scope,
         );
 
+        // Truncate huge tool results to prevent context bloat
+        const truncatedResult = result.length > 8000
+          ? result.substring(0, 8000) + '\n... [truncated, showing first 8000 chars]'
+          : result;
+
         // Add tool result to conversation
         messages.push({
           role: 'tool',
-          content: result,
+          content: truncatedResult,
           tool_call_id: toolCall.id,
         });
 
@@ -231,7 +265,7 @@ export async function runAgent(
         }
       }
 
-      // If task_complete was called, we're done (check BEFORE circuit breaker)
+      // If task_complete was called, we're done
       if (isComplete) {
         logger.success(agent.id, `Task completed: ${completionSummary}`);
         return {
@@ -247,46 +281,40 @@ export async function runAgent(
         };
       }
 
-      // Check for stuck detection (circuit breaker)
-      // Uses BOTH filesystem snapshots AND tool call tracking
+      // ---- PRODUCTIVE ITERATION DETECTION ----
       const currentSnapshot = snapshotFilesystem(projectRoot);
       const filesChanged = currentSnapshot !== lastSnapshot;
 
       if (filesChanged || hadMutatingToolCall) {
-        // Progress detected — reset counter
+        // Progress detected -- reset idle counter
         idleIterations = 0;
         lastSnapshot = currentSnapshot;
+
+        // Grant bonus iterations for productive agents (up to MAX_BONUS)
+        if (hadMutatingToolCall && bonusIterationsGranted < MAX_BONUS_ITERATIONS) {
+          bonusIterationsGranted++;
+          logger.debug(agent.id, `Productive iteration detected. Budget extended to ${getEffectiveMax()}`);
+        }
       } else {
         idleIterations++;
         if (idleIterations >= 5) {
-          logger.warn(agent.id, `Circuit breaker: ${idleIterations} iterations with no file changes. Stopping.`);
-          return {
-            agentId: agent.id,
-            taskId: task.id,
-            success: false,
-            summary: 'Agent stuck — no progress detected after 5 iterations',
-            filesChanged: [],
-            iterations,
-            totalTokens,
-            costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
-            latencyMs: Date.now() - startTime,
-            error: 'STUCK: No file changes detected',
-          };
+          logger.warn(agent.id, `Circuit breaker: ${idleIterations} idle iterations. Stopping.`);
+          break; // Fall through to partial-success check below
         }
       }
     }
 
-    // Max iterations reached OR model stopped without task_complete
-    // Check if the agent actually made progress (files changed on disk)
+    // ---- PARTIAL SUCCESS DETECTION ----
+    // Agent exited loop without task_complete. Check if it actually did useful work.
     const finalSnapshot = snapshotFilesystem(projectRoot);
-    const madeProgress = finalSnapshot !== lastSnapshot;
+    const madeProgress = finalSnapshot !== initialSnapshot;
 
     if (madeProgress) {
       logger.warn(agent.id, `Agent did not call task_complete but DID modify files. Treating as partial success.`);
       return {
         agentId: agent.id,
         taskId: task.id,
-        success: true, // Partial success — work was done
+        success: true,
         summary: `Partial completion: agent modified files but did not finalize (${iterations} iterations)`,
         filesChanged: [],
         iterations,
@@ -296,12 +324,12 @@ export async function runAgent(
       };
     }
 
-    logger.warn(agent.id, `Max iterations (${agent.maxIterations}) reached with no file changes`);
+    logger.warn(agent.id, `Max iterations (${getEffectiveMax()}) reached with no file changes`);
     return {
       agentId: agent.id,
       taskId: task.id,
       success: false,
-      summary: `Reached max iterations (${agent.maxIterations}) without completing`,
+      summary: `Reached max iterations (${getEffectiveMax()}) without completing`,
       filesChanged: [],
       iterations,
       totalTokens,
@@ -311,6 +339,25 @@ export async function runAgent(
     };
 
   } catch (err: any) {
+    // ---- GRACEFUL FAILURE WITH PARTIAL SUCCESS ----
+    const crashSnapshot = snapshotFilesystem(projectRoot);
+    const crashedButWorked = crashSnapshot !== initialSnapshot;
+
+    if (crashedButWorked) {
+      logger.warn(agent.id, `Agent crashed but DID modify files. Treating as partial success. Error: ${err.message}`);
+      return {
+        agentId: agent.id,
+        taskId: task.id,
+        success: true,
+        summary: `Partial completion (crashed): agent modified files before error (${iterations} iterations). Error: ${err.message}`,
+        filesChanged: [],
+        iterations,
+        totalTokens,
+        costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
+        latencyMs: Date.now() - startTime,
+      };
+    }
+
     logger.error(agent.id, `Agent error: ${err.stack || err.message}`);
     return {
       agentId: agent.id,
@@ -327,13 +374,70 @@ export async function runAgent(
   }
 }
 
+// ---- CONTEXT COMPRESSION ----
+
+/**
+ * Sliding context window: when conversation gets too large,
+ * compress older messages into a summary, keeping:
+ * - System prompt (always)
+ * - Last 6 message pairs (recent context)
+ * - A compressed summary of everything in between
+ */
+function compressContext(messages: ChatMessage[], logger: Logger, agentId: string): void {
+  // Keep at least system + user + 12 recent messages (6 pairs)
+  const KEEP_RECENT = 12;
+  if (messages.length <= KEEP_RECENT + 2) return;
+
+  const systemMsg = messages[0]; // System prompt
+  const recentMessages = messages.slice(-KEEP_RECENT);
+  const middleMessages = messages.slice(1, messages.length - KEEP_RECENT);
+
+  // Build a compressed summary of the middle messages
+  const summaryParts: string[] = [];
+  const filesRead = new Set<string>();
+  const filesWritten = new Set<string>();
+  const commandsRun: string[] = [];
+  let toolCallCount = 0;
+
+  for (const msg of middleMessages) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        toolCallCount++;
+        try {
+          const args = JSON.parse(tc.function.arguments);
+          switch (tc.function.name) {
+            case 'read_file': filesRead.add(args.path); break;
+            case 'write_file': filesWritten.add(args.path); break;
+            case 'run_command': commandsRun.push(args.command?.substring(0, 80)); break;
+            case 'list_dir': filesRead.add(`DIR:${args.path}`); break;
+          }
+        } catch { /* skip */ }
+      }
+    }
+  }
+
+  if (filesRead.size > 0) summaryParts.push(`Files read: ${[...filesRead].join(', ')}`);
+  if (filesWritten.size > 0) summaryParts.push(`Files written: ${[...filesWritten].join(', ')}`);
+  if (commandsRun.length > 0) summaryParts.push(`Commands run: ${commandsRun.slice(-5).join('; ')}`);
+  summaryParts.push(`Total tool calls compressed: ${toolCallCount}`);
+
+  const compressedSummary: ChatMessage = {
+    role: 'user',
+    content: `[CONTEXT COMPRESSED - Previous ${middleMessages.length} messages summarized]\n${summaryParts.join('\n')}\n\nContinue your current task. The recent messages below are the most relevant context.`,
+  };
+
+  // Replace messages array in-place
+  messages.length = 0;
+  messages.push(systemMsg, compressedSummary, ...recentMessages);
+
+  logger.info(agentId, `Context compressed: ${middleMessages.length} messages -> 1 summary. Keeping ${KEEP_RECENT} recent.`);
+}
+
+// ---- FILESYSTEM SNAPSHOT ----
+
 /**
  * Snapshot the filesystem state for stuck detection.
  * Returns a hash based on file count + total modification time.
- * 
- * Uses recursive filesystem walk instead of `git ls-files` because:
- * - Files created via `run_command` are untracked and invisible to git ls-files
- * - We need to detect ALL filesystem changes, not just git-tracked ones
  */
 function snapshotFilesystem(dir: string): number {
   try {
@@ -343,11 +447,10 @@ function snapshotFilesystem(dir: string): number {
     let count = 0;
 
     function walk(d: string, depth: number) {
-      if (depth > 6) return; // Don't recurse too deep
+      if (depth > 6) return;
       try {
         const entries = fs.readdirSync(d, { withFileTypes: true });
         for (const entry of entries) {
-          // Skip hidden dirs, node_modules, .git, .maos
           if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
           const full = path.join(d, entry.name);
           if (entry.isDirectory()) {
@@ -370,9 +473,14 @@ function snapshotFilesystem(dir: string): number {
   }
 }
 
+// ---- RETRY WITH EXPONENTIAL BACKOFF ----
+
 /**
- * Retry a function on transient errors (rate limits, server errors, connection errors).
- * Uses exponential backoff: 2s, 4s between retries.
+ * Retry on transient errors with exponential backoff.
+ * Handles: 429 rate limits, 500/502/503/504 server errors,
+ * connection resets, timeouts, and malformed responses.
+ * 
+ * Backoff: 3s, 6s, 12s (doubles each attempt)
  */
 async function retryOnTransient<T>(
   fn: () => Promise<T>,
@@ -387,25 +495,36 @@ async function retryOnTransient<T>(
       return await fn();
     } catch (err: any) {
       lastError = err;
+      const msg = err.message || '';
       const isTransient =
-        err.message?.includes('429') ||
-        err.message?.includes('rate limit') ||
-        err.message?.includes('Rate limit') ||
-        err.message?.includes('500') ||
-        err.message?.includes('502') ||
-        err.message?.includes('503') ||
-        err.message?.includes('ECONNRESET') ||
-        err.message?.includes('ETIMEDOUT') ||
-        err.message?.includes('timed out') ||
-        err.message?.includes('Request timed out') ||
-        err.message?.includes('Empty or malformed response');
+        msg.includes('429') ||
+        msg.includes('rate limit') ||
+        msg.includes('Rate limit') ||
+        msg.includes('500') ||
+        msg.includes('502') ||
+        msg.includes('503') ||
+        msg.includes('504') ||
+        msg.includes('Gateway') ||
+        msg.includes('gateway') ||
+        msg.includes('ECONNRESET') ||
+        msg.includes('ECONNREFUSED') ||
+        msg.includes('ETIMEDOUT') ||
+        msg.includes('EPIPE') ||
+        msg.includes('timed out') ||
+        msg.includes('Request timed out') ||
+        msg.includes('timeout') ||
+        msg.includes('Timeout') ||
+        msg.includes('Empty or malformed response') ||
+        msg.includes('socket hang up') ||
+        msg.includes('network');
 
       if (!isTransient || attempt === maxRetries) {
         throw err;
       }
 
-      const delayMs = (attempt + 1) * 2000; // 2s, 4s
-      logger.warn(agentId, `Transient error (attempt ${attempt + 1}/${maxRetries + 1}): ${err.message}. Retrying in ${delayMs / 1000}s...`);
+      // Exponential backoff: 3s, 6s, 12s
+      const delayMs = 3000 * Math.pow(2, attempt);
+      logger.warn(agentId, `Transient error (attempt ${attempt + 1}/${maxRetries + 1}): ${msg.substring(0, 120)}. Retrying in ${delayMs / 1000}s...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
