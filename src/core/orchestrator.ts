@@ -16,12 +16,14 @@ import {
   TaskFile,
 } from './queue';
 import { runAgent, AgentConfig, AgentTask, AgentRunResult } from './agent-runner';
-import { ProviderFactory } from '../backends/factory';
-import { IProvider, ProviderConfig } from '../backends/provider';
+import { RuntimeFactory } from '../backends/factory';
+import { IRuntime, AgentRuntimeConfig } from '../backends/runtime';
+import { ProviderConfig } from '../backends/provider';
 import { createLogger, Logger } from '../utils/logger';
 import { createRouter, Router, AgentProfile, TaskRequirements, RoutingDecision } from './router';
 import { prepareAgentBranch, tagAgentWork, getCurrentBranch } from '../integrations/git';
 import { recordTelemetry, TelemetryRecord } from './telemetry';
+import { MessageBus, getMessageBus, createEvent } from './message-bus';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -29,13 +31,9 @@ interface MaosConfig {
   projectName: string;
   routingMode: string;
   providers: Record<string, ProviderConfig & { costPerMillionTokens?: number }>;
-  agents: Array<{
-    id: string;
-    role: string;
+  agents: Array<AgentRuntimeConfig & {
     provider: string;
     model: string;
-    capabilities: string[];
-    scope: string[];
     maxIterations: number;
     costTier: string;
   }>;
@@ -177,25 +175,36 @@ export async function startOrchestrator(
   logger.info('ORCHESTRATOR', `Agents: ${config.agents.map(a => a.id).join(', ')}`);
   logger.info('ORCHESTRATOR', `Poll interval: ${pollInterval}ms`);
 
-  // Create provider instances
-  const providerMap: Map<string, IProvider> = new Map();
+  // Initialize message bus
+  const bus = getMessageBus();
+
+  // Log all bus events for debugging
+  bus.onAll((event) => {
+    const detail = event.data ? ` | ${JSON.stringify(event.data).substring(0, 100)}` : '';
+    logger.info('BUS', `[${event.type}] ${event.agentId}${event.taskId ? ` task:${event.taskId}` : ''}${detail}`);
+  });
+
+  // Create runtime instances (API, CLI, or local — per agent config)
+  const runtimeMap: Map<string, IRuntime> = new Map();
   for (const agent of config.agents) {
-    const providerName = options.providerOverride || agent.provider;
-    const providerConfig = config.providers[providerName];
-    if (!providerConfig) {
-      logger.warn('ORCHESTRATOR', `No provider config for "${providerName}" — skipping agent ${agent.id}`);
-      continue;
+    // Apply provider override if specified
+    const agentConfig = { ...agent };
+    if (options.providerOverride && (!agent.runtime || agent.runtime === 'api')) {
+      agentConfig.provider = options.providerOverride;
     }
+
     try {
-      const provider = ProviderFactory.create(providerName, providerConfig, agent.model);
-      providerMap.set(agent.id, provider);
+      const runtime = RuntimeFactory.create(agentConfig, config.providers, bus);
+      runtimeMap.set(agent.id, runtime);
+      const runtimeType = agent.runtime || 'api';
+      logger.info('ORCHESTRATOR', `Runtime: ${agent.id} → ${runtimeType} (${runtime.name}/${runtime.model})`);
     } catch (err: any) {
-      logger.error('ORCHESTRATOR', `Failed to create provider for ${agent.id}: ${err.message}`);
+      logger.error('ORCHESTRATOR', `Failed to create runtime for ${agent.id}: ${err.message}`);
     }
   }
 
-  if (providerMap.size === 0) {
-    throw new Error('No providers could be initialized. Check your config and API keys.');
+  if (runtimeMap.size === 0) {
+    throw new Error('No runtimes could be initialized. Check your config and API keys.');
   }
 
   // Create the router
@@ -218,28 +227,17 @@ export async function startOrchestrator(
   }
 
   // ─── Dispatch a single task ─────────────────────────────────
+  //
+  // The orchestrator no longer cares HOW the task is executed.
+  // It calls runtime.execute() and gets back a RuntimeResult.
+  // Whether the runtime uses API tool-calling, a CLI subprocess,
+  // or a local model is completely transparent.
 
   async function dispatchTask(
     task: TaskFile,
     agentDef: typeof config.agents[0],
-    provider: IProvider,
+    runtime: IRuntime,
   ): Promise<void> {
-    const agentConfig: AgentConfig = {
-      id: agentDef.id,
-      role: agentDef.role,
-      provider: agentDef.provider,
-      model: agentDef.model,
-      capabilities: agentDef.capabilities,
-      scope: agentDef.scope,
-      maxIterations: agentDef.maxIterations,
-    };
-
-    const agentTask: AgentTask = {
-      id: task.id,
-      description: task.description,
-      branch: task.branch,
-    };
-
     // Move task to active
     const activeTask = moveToActive(task, cwd);
     state.activeAgents.set(agentDef.id, {
@@ -251,26 +249,29 @@ export async function startOrchestrator(
     const branchName = prepareAgentBranch(agentDef.id, task.id, 'main', cwd);
 
     // Update status
+    const runtimeType = agentDef.runtime || 'api';
     writeAgentStatus(agentDef.id, 'BUSY', task.id, cwd);
-    logger.info('ORCHESTRATOR', `Dispatched ${task.id} → ${agentDef.id} (${provider.name}/${provider.model}) [branch: ${branchName}]`);
+    logger.info('ORCHESTRATOR',
+      `Dispatched ${task.id} → ${agentDef.id} ` +
+      `(${runtime.name}/${runtime.model}) ` +
+      `[runtime: ${runtimeType}, branch: ${branchName}]`
+    );
     options.onStatusUpdate?.(state);
 
-    // Get cost per million tokens
-    const providerName = options.providerOverride || agentDef.provider;
-    const costPerMillion = config.providers[providerName]?.costPerMillionTokens || 0.50;
-
     try {
-      // Run the agent
-      const result: AgentRunResult = await runAgent(
-        provider,
-        agentConfig,
-        agentTask,
-        cwd,
-        costPerMillion,
-        (iteration, action) => {
-          writeAgentStatus(agentDef.id, 'BUSY', `${task.id} [iter ${iteration}: ${action}]`, cwd);
-        },
-      );
+      // ── THE KEY LINE ──
+      // runtime.execute() is the universal interface.
+      // ApiRuntime -> calls runAgent() with tool-calling loop
+      // CliRuntime -> spawns CLI in Windows Terminal tab
+      // Both return the same RuntimeResult.
+      const result = await runtime.execute({
+        id: task.id,
+        description: task.description,
+        branch: branchName,
+        projectRoot: cwd,
+        scope: agentDef.scope,
+        agentId: agentDef.id,
+      });
 
       // Move to done
       moveToDone(activeTask, cwd);
@@ -291,10 +292,13 @@ export async function startOrchestrator(
           logger.warn('ORCHESTRATOR', `Git branch tag failed: ${gitErr.message}`);
         }
 
+        const costStr = result.costUSD > 0 ? `$${result.costUSD.toFixed(4)}` : 'subscription';
+        const tokenStr = result.totalTokens > 0 ? `${result.totalTokens} tokens` : 'N/A';
         logger.success('ORCHESTRATOR',
-          `${agentDef.id} completed ${task.id} — ` +
-          `${result.iterations} iters, ${result.totalTokens} tokens, $${result.costUSD.toFixed(4)}, ` +
-          `${(result.latencyMs / 1000).toFixed(1)}s`
+          `${agentDef.id} completed ${task.id} [${runtimeType}] — ` +
+          `${result.iterations} iters, ${tokenStr}, ${costStr}, ` +
+          `${(result.latencyMs / 1000).toFixed(1)}s, ` +
+          `${result.filesChanged.length} files`
         );
 
         // Record telemetry
@@ -302,10 +306,10 @@ export async function startOrchestrator(
           timestamp: new Date().toISOString(),
           taskId: task.id,
           agentId: agentDef.id,
-          provider: agentDef.provider,
-          model: agentDef.model,
+          provider: agentDef.provider || agentDef.cliCommand || 'unknown',
+          model: agentDef.model || agentDef.cliCommand || 'cli',
           routingStrategy: config.routing.strategy || 'capability_score',
-          routingScore: 0, // TODO: pass routing decision score
+          routingScore: 0,
           capabilities: task.capabilities || [],
           complexity: task.complexity || 'medium',
           category: task.category || 'general',
@@ -320,15 +324,15 @@ export async function startOrchestrator(
       } else {
         state.failedTasks++;
         writeAgentStatus(agentDef.id, 'FAILED', result.error || 'Unknown error', cwd);
-        logger.error('ORCHESTRATOR', `${agentDef.id} failed ${task.id}: ${result.error}`);
+        logger.error('ORCHESTRATOR', `${agentDef.id} failed ${task.id} [${runtimeType}]: ${result.error}`);
 
         // Record failure telemetry
         recordTelemetry(cwd, {
           timestamp: new Date().toISOString(),
           taskId: task.id,
           agentId: agentDef.id,
-          provider: agentDef.provider,
-          model: agentDef.model,
+          provider: agentDef.provider || agentDef.cliCommand || 'unknown',
+          model: agentDef.model || agentDef.cliCommand || 'cli',
           routingStrategy: config.routing.strategy || 'capability_score',
           routingScore: 0,
           capabilities: task.capabilities || [],
@@ -340,7 +344,7 @@ export async function startOrchestrator(
           latencyMs: result.latencyMs,
           success: false,
           error: result.error,
-          filesChanged: [],
+          filesChanged: result.filesChanged,
           summary: result.summary || 'Task failed',
         });
       }
@@ -401,15 +405,16 @@ export async function startOrchestrator(
             const agentDef = config.agents.find(a => a.id === decision.agentId);
             if (!agentDef) continue;
 
-            const provider = providerMap.get(agentDef.id);
-            if (!provider) {
-              logger.warn('ORCHESTRATOR', `No provider for agent ${agentDef.id} — skipping task ${task.id}`);
+            const runtime = runtimeMap.get(agentDef.id);
+            if (!runtime) {
+              logger.warn('ORCHESTRATOR', `No runtime for agent ${agentDef.id} — skipping task ${task.id}`);
               continue;
             }
 
             // Log routing decision
+            const runtimeLabel = agentDef.runtime || 'api';
             logger.info('ORCHESTRATOR',
-              `Routed ${task.id} → ${decision.agentId} ` +
+              `Routed ${task.id} → ${decision.agentId} [${runtimeLabel}] ` +
               `(score: ${decision.score.toFixed(3)}, ` +
               `cap: ${decision.breakdown.capabilityScore.toFixed(2)}, ` +
               `role: +${decision.breakdown.roleBonus.toFixed(2)}, ` +
@@ -418,7 +423,7 @@ export async function startOrchestrator(
             );
 
             // Dispatch in its own async context (fire-and-forget)
-            dispatchTask(task, agentDef, provider).catch(err => {
+            dispatchTask(task, agentDef, runtime).catch(err => {
               logger.error('ORCHESTRATOR', `Unhandled dispatch error: ${err.message}`);
             });
           }
@@ -435,7 +440,7 @@ export async function startOrchestrator(
   };
 
   // Handle shutdown
-  const shutdown = () => {
+  const shutdown = async () => {
     if (!state.running) return;
     state.running = false;
     logger.info('ORCHESTRATOR', '⏹️ Shutting down...');
@@ -443,6 +448,18 @@ export async function startOrchestrator(
       `Session summary: ${state.completedTasks} completed, ${state.failedTasks} failed, ` +
       `${state.totalTokensUsed} tokens, $${state.totalCostUSD.toFixed(4)}`
     );
+
+    // Dispose all runtimes (kill CLI processes, close connections)
+    for (const [agentId, runtime] of runtimeMap) {
+      try {
+        await runtime.dispose();
+      } catch (err: any) {
+        logger.warn('ORCHESTRATOR', `Failed to dispose runtime for ${agentId}: ${err.message}`);
+      }
+    }
+
+    // Dispose message bus
+    bus.dispose();
 
     // Mark all agents as IDLE
     for (const agent of config.agents) {

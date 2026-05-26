@@ -96,6 +96,48 @@ const PRESET_AGENTS: Record<string, AgentDefinition[]> = {
       costTier: 'low',
     },
   ],
+  'mixed': [
+    {
+      id: 'ARCHITECT',
+      role: 'planner',
+      provider: 'freemodel',
+      model: 'gpt-5.4',
+      capabilities: ['planning', 'reasoning', 'decomposition'],
+      scope: ['/'],
+      maxIterations: 10,
+      costTier: 'medium',
+    },
+    {
+      id: 'CODER_1',
+      role: 'coder',
+      provider: '',
+      model: 'copilot',
+      capabilities: ['coding', 'frontend', 'apis'],
+      scope: ['src/'],
+      maxIterations: 1,
+      costTier: 'low',
+    },
+    {
+      id: 'CODER_2',
+      role: 'coder',
+      provider: '',
+      model: 'codex',
+      capabilities: ['coding', 'backend', 'database'],
+      scope: ['src/'],
+      maxIterations: 1,
+      costTier: 'low',
+    },
+    {
+      id: 'REVIEWER',
+      role: 'reviewer',
+      provider: 'freemodel',
+      model: 'gpt-5.4',
+      capabilities: ['review', 'testing', 'debugging'],
+      scope: ['/'],
+      maxIterations: 10,
+      costTier: 'low',
+    },
+  ],
 };
 
 const BANNER = `
@@ -141,6 +183,7 @@ export async function runInit(): Promise<void> {
         { name: `${chalk.bold('Solo')}    — 1 agent (fastest setup)`, value: 'solo' },
         { name: `${chalk.bold('Duo')}     — 2 agents (backend + frontend)`, value: 'duo' },
         { name: `${chalk.bold('Team')}    — 3 agents (architect + backend + frontend)`, value: 'team' },
+        { name: `${chalk.bold('Mixed')}   — 4 agents (API + CLI runtimes)  ${chalk.yellow('★ NEW')}`, value: 'mixed' },
       ],
       default: 'team',
     },
@@ -196,10 +239,40 @@ export async function runInit(): Promise<void> {
   };
 
   // Build agents with selected provider
-  const agents = PRESET_AGENTS[answers.teamSize].map(a => ({
-    ...a,
-    provider: providerName,
-  }));
+  let agents: any[];
+  if (answers.teamSize === 'mixed') {
+    // Mixed preset: some agents are API, some are CLI
+    agents = PRESET_AGENTS['mixed'].map(a => {
+      if (a.model === 'copilot') {
+        return {
+          ...a,
+          runtime: 'cli',
+          cliCommand: 'copilot',
+          auth: { COPILOT_HOME: '.maos/auth/CODER_1' },
+          timeoutMs: 300000,
+          quiescenceMs: 30000,
+        };
+      }
+      if (a.model === 'codex') {
+        return {
+          ...a,
+          runtime: 'cli',
+          cliCommand: 'codex',
+          cliArgs: ['-a', 'full-auto'],
+          auth: { CODEX_HOME: '.maos/auth/CODER_2' },
+          timeoutMs: 300000,
+          quiescenceMs: 30000,
+        };
+      }
+      // API agents use the selected provider
+      return { ...a, provider: providerName };
+    });
+  } else {
+    agents = PRESET_AGENTS[answers.teamSize].map(a => ({
+      ...a,
+      provider: providerName,
+    }));
+  }
 
   // Build config
   const config: MaosConfig = {
@@ -273,8 +346,10 @@ export async function runInit(): Promise<void> {
   console.log('');
   console.log(chalk.cyan('Your team:'));
   agents.forEach(a => {
-    const icon = a.role === 'planner' ? '🧠' : a.role === 'coder' ? '⚙️' : '🎨';
-    console.log(`  ${icon}  ${chalk.bold(a.id)} (${a.role}) → ${a.provider}/${a.model}`);
+    const icon = a.role === 'planner' ? '🧠' : a.role === 'coder' ? '⚙️' : a.role === 'reviewer' ? '🔍' : '🎨';
+    const runtimeLabel = a.runtime === 'cli' ? `${a.cliCommand}-cli` : `${a.provider}/${a.model}`;
+    const runtimeBadge = a.runtime === 'cli' ? chalk.magenta(' [CLI]') : chalk.blue(' [API]');
+    console.log(`  ${icon}  ${chalk.bold(a.id)} (${a.role}) → ${runtimeLabel}${runtimeBadge}`);
   });
   console.log('');
   console.log(chalk.white('Next steps:'));

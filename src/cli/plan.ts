@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
 import { isMaosInitialized, getConfigPath } from '../utils/paths';
-import { ProviderFactory } from '../backends/factory';
+import { createProviderDirect } from '../backends/factory';
 import { decompose, SubTask, DecompositionResult } from '../core/decomposer';
 import { createTask } from '../core/queue';
 import { createRouter } from '../core/router';
@@ -142,7 +142,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
   // Create provider
   let provider;
   try {
-    provider = ProviderFactory.create(providerName, providerConfig, plannerAgent.model);
+    provider = createProviderDirect(providerName, providerConfig, plannerAgent.model);
   } catch (err: any) {
     console.log(chalk.red(`❌ Failed to create provider: ${err.message}`));
     process.exit(1);

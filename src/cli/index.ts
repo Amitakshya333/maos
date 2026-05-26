@@ -12,6 +12,7 @@ import { runStart, StartOptions } from './start';
 import { runPool, PoolOptions } from './pool';
 import { runPlan, PlanOptions } from './plan';
 import { runLogs, LogsOptions } from './logs';
+import { runLogin, LoginOptions } from './login';
 import { runBrain } from './brain';
 import { runRepl } from './repl';
 import { runDashboard } from './dashboard';
@@ -129,6 +130,21 @@ program
   .option('-a, --agent <agent>', 'Filter logs by agent ID')
   .action((options: LogsOptions) => {
     runLogs(options);
+  });
+
+// ─── maos login ───────────────────────────────────────────────
+program
+  .command('login')
+  .description('Authenticate a CLI agent (copilot, codex, claude)')
+  .option('-a, --agent <agent>', 'Agent ID to authenticate')
+  .option('-c, --cli <cli>', 'CLI to authenticate with (copilot, codex, claude)')
+  .action(async (options: LoginOptions) => {
+    try {
+      await runLogin(options);
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exit(1);
+    }
   });
 
 // ─── maos brain ───────────────────────────────────────────────

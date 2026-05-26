@@ -3,6 +3,10 @@ import { IProvider, ProviderConfig } from './provider';
 import { OpenAIProvider } from './openai-provider';
 import { AnthropicProvider } from './anthropic-provider';
 import { GeminiProvider } from './gemini-provider';
+import { IRuntime, AgentRuntimeConfig } from './runtime';
+import { ApiRuntime } from './api-runtime';
+import { CliRuntime } from './cli-runtime';
+import { MessageBus } from '../core/message-bus';
 
 /**
  * Known provider base URLs.
@@ -26,10 +30,27 @@ const KNOWN_BASE_URLS: Record<string, string> = {
 const NO_KEY_PROVIDERS = new Set(['ollama', 'lmstudio']);
 
 /**
+ * Default cost per million tokens for known providers.
+ */
+const DEFAULT_COSTS: Record<string, number> = {
+  openai: 2.50,
+  freemodel: 0.50,
+  deepseek: 0.14,
+  qwen: 0.50,
+  together: 0.50,
+  groq: 0.27,
+  fireworks: 0.20,
+  ollama: 0,
+  lmstudio: 0,
+  anthropic: 3.00,
+  gemini: 1.25,
+};
+
+/**
  * Resolve an API key value.
  * Supports:
- *   - "env:VAR_NAME" → reads from process.env
- *   - Direct string → used as-is
+ *   - "env:VAR_NAME" -> reads from process.env
+ *   - Direct string -> used as-is
  */
 function resolveApiKey(value: string | undefined, providerName: string): string {
   if (!value) {
@@ -58,120 +79,166 @@ function resolveApiKey(value: string | undefined, providerName: string): string 
   return value;
 }
 
-// ─── Factory ──────────────────────────────────────────────────
+/**
+ * Create an IProvider instance (for API runtimes).
+ */
+function createProvider(
+  providerName: string,
+  config: ProviderConfig,
+  model: string,
+): IProvider {
+  const name = providerName.toLowerCase();
+  const apiKey = resolveApiKey(config.apiKey, name);
+  const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
+
+  switch (name) {
+    case 'openai':
+    case 'freemodel':
+    case 'deepseek':
+    case 'qwen':
+    case 'together':
+    case 'groq':
+    case 'fireworks':
+    case 'ollama':
+    case 'lmstudio':
+      return new OpenAIProvider({ name, apiKey, model, baseURL });
+
+    case 'anthropic':
+      return new AnthropicProvider({ name, apiKey, model });
+
+    case 'gemini':
+    case 'google':
+      return new GeminiProvider({ name, apiKey, model });
+
+    default:
+      // Unknown provider -> try OpenAI-compatible format as fallback
+      return new OpenAIProvider({ name, apiKey, model, baseURL });
+  }
+}
+
+// ---- Runtime Factory ----
 
 /**
- * ProviderFactory creates the right IProvider instance for any provider name.
- * 
- * The key insight: most providers are OpenAI-compatible. So one adapter
- * class (OpenAIProvider) covers 80%+ of the market. We just swap the
- * baseURL and apiKey.
- * 
- * Usage:
- *   const provider = ProviderFactory.create('freemodel', config, 'gpt-5.4');
- *   const response = await provider.generate(messages, tools);
+ * RuntimeFactory creates the right IRuntime for any agent configuration.
+ *
+ * The evolution of ProviderFactory:
+ *   - runtime: 'api'   -> ApiRuntime (wraps IProvider + agent-runner)
+ *   - runtime: 'cli'   -> CliRuntime (spawns CLI in WT tab)
+ *   - runtime: 'local' -> ApiRuntime (via localhost, same as Ollama/LM Studio)
+ *
+ * Backward compatible: if 'runtime' is missing, defaults to 'api'.
  */
-export class ProviderFactory {
+export class RuntimeFactory {
   /**
-   * Create a provider instance.
-   * 
-   * @param providerName - Name of the provider (e.g., 'freemodel', 'deepseek', 'ollama')
-   * @param config - Provider configuration from maos.config.json
-   * @param model - Model identifier (e.g., 'gpt-5.4', 'deepseek-coder-v3')
+   * Create a runtime instance for an agent.
    */
   static create(
-    providerName: string,
-    config: ProviderConfig,
-    model: string,
-  ): IProvider {
-    const name = providerName.toLowerCase();
-    const apiKey = resolveApiKey(config.apiKey, name);
+    agentConfig: AgentRuntimeConfig,
+    providerConfigs: Record<string, ProviderConfig & { costPerMillionTokens?: number }>,
+    bus: MessageBus,
+  ): IRuntime {
+    const runtimeType = agentConfig.runtime || 'api';
 
-    // Resolve base URL: config override → known URL → SDK default
-    const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
+    switch (runtimeType) {
+      case 'api':
+      case 'local': {
+        // API and Local both use the same ApiRuntime —
+        // local just uses a localhost URL (Ollama/LM Studio)
+        const providerName = agentConfig.provider || 'freemodel';
+        const model = agentConfig.model || 'gpt-5.4';
+        const providerConfig = providerConfigs[providerName];
 
-    // All OpenAI-compatible providers use the same adapter
-    switch (name) {
-      case 'openai':
-      case 'freemodel':
-      case 'deepseek':
-      case 'qwen':
-      case 'together':
-      case 'groq':
-      case 'fireworks':
-      case 'ollama':
-      case 'lmstudio':
-        return new OpenAIProvider({
-          name,
-          apiKey,
-          model,
-          baseURL,
-        });
+        if (!providerConfig) {
+          throw new Error(
+            `Agent "${agentConfig.id}" references provider "${providerName}" ` +
+            `which is not defined in the providers section of maos.config.json`
+          );
+        }
 
-      // Native Anthropic adapter — true Claude support
-      case 'anthropic':
-        return new AnthropicProvider({
-          name,
-          apiKey,
-          model,
-        });
+        const provider = createProvider(providerName, providerConfig, model);
+        const costPerMillion = providerConfig.costPerMillionTokens
+          ?? DEFAULT_COSTS[providerName.toLowerCase()]
+          ?? 0.50;
 
-      // Native Google Gemini adapter — true Gemini support
-      case 'gemini':
-      case 'google':
-        return new GeminiProvider({
-          name,
-          apiKey,
-          model,
-        });
-
-      default:
-        // Unknown provider → try OpenAI-compatible format as fallback
-        // This lets users plug in ANY OpenAI-compat endpoint
-        return new OpenAIProvider({
-          name,
-          apiKey,
-          model,
-          baseURL,
-        });
-    }
-  }
-
-  /**
-   * Create all provider instances from a full MAOS config.
-   * Returns a map of agentId → IProvider.
-   */
-  static createFromConfig(config: {
-    providers: Record<string, ProviderConfig>;
-    agents: Array<{ id: string; provider: string; model: string }>;
-  }): Map<string, IProvider> {
-    const providers = new Map<string, IProvider>();
-
-    for (const agent of config.agents) {
-      const providerConfig = config.providers[agent.provider];
-      if (!providerConfig) {
-        throw new Error(
-          `Agent "${agent.id}" references provider "${agent.provider}" ` +
-          `which is not defined in the providers section of maos.config.json`
-        );
+        return new ApiRuntime({
+          provider,
+          role: agentConfig.role,
+          capabilities: agentConfig.capabilities,
+          maxIterations: agentConfig.maxIterations || 25,
+          costPerMillionTokens: costPerMillion,
+        }, bus);
       }
 
-      const provider = ProviderFactory.create(
-        agent.provider,
-        providerConfig,
-        agent.model,
-      );
+      case 'cli': {
+        if (!agentConfig.cliCommand) {
+          throw new Error(
+            `Agent "${agentConfig.id}" has runtime "cli" but no cliCommand specified. ` +
+            `Set cliCommand to: copilot, codex, claude, or a custom CLI.`
+          );
+        }
 
-      providers.set(agent.id, provider);
+        return new CliRuntime({
+          cliCommand: agentConfig.cliCommand,
+          cliArgs: agentConfig.cliArgs || [],
+          authEnv: agentConfig.auth || {},
+          timeoutMs: agentConfig.timeoutMs || 300_000,
+          quiescenceMs: agentConfig.quiescenceMs || 30_000,
+          role: agentConfig.role,
+          capabilities: agentConfig.capabilities,
+        }, bus);
+      }
+
+      default:
+        throw new Error(`Unknown runtime type: "${runtimeType}" for agent "${agentConfig.id}"`);
     }
-
-    return providers;
   }
 
   /**
-   * List all known provider names for the CLI help text.
+   * Create all runtime instances from a full MAOS config.
+   * Returns a map of agentId -> IRuntime.
+   */
+  static createFromConfig(
+    agents: AgentRuntimeConfig[],
+    providerConfigs: Record<string, ProviderConfig & { costPerMillionTokens?: number }>,
+    bus: MessageBus,
+  ): Map<string, IRuntime> {
+    const runtimes = new Map<string, IRuntime>();
+
+    for (const agent of agents) {
+      const runtime = RuntimeFactory.create(agent, providerConfigs, bus);
+      runtimes.set(agent.id, runtime);
+    }
+
+    return runtimes;
+  }
+
+  /**
+   * List all known provider names for CLI help text.
    */
   static getKnownProviders(): string[] {
     return Object.keys(KNOWN_BASE_URLS);
   }
+
+  /**
+   * List all known CLI runtimes for CLI help text.
+   */
+  static getKnownCliRuntimes(): string[] {
+    return ['copilot', 'codex', 'claude', 'antigravity'];
+  }
 }
+
+// ---- Direct Provider Creation ----
+// Used by decomposer/plan.ts which needs raw IProvider.generate() access.
+
+export function createProviderDirect(
+  providerName: string,
+  config: ProviderConfig,
+  model: string,
+): IProvider {
+  return createProvider(providerName, config, model);
+}
+
+// ---- Backward Compatibility ----
+// Keep ProviderFactory as an alias so existing code doesn't break during transition.
+
+export { RuntimeFactory as ProviderFactory };
