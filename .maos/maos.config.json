@@ -1,0 +1,37 @@
+{
+  "projectName": "maos",
+  "routingMode": "auto",
+  "providers": {
+    "freemodel": {
+      "apiKey": "env:FREEMODEL_API_KEY",
+      "baseURL": "https://api.freemodel.dev/v1",
+      "costPerMillionTokens": 0.5
+    }
+  },
+  "agents": [
+    {
+      "id": "DEV",
+      "role": "coder",
+      "provider": "freemodel",
+      "model": "gpt-5.4",
+      "capabilities": [
+        "planning",
+        "coding",
+        "design",
+        "testing"
+      ],
+      "scope": [
+        "/"
+      ],
+      "maxIterations": 25,
+      "costTier": "low"
+    }
+  ],
+  "routing": {
+    "strategy": "capability_score",
+    "costWeight": 0.3,
+    "capabilityWeight": 0.7,
+    "maxParallelAgents": 1,
+    "fallbackProvider": "freemodel"
+  }
+}

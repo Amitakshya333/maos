@@ -97,7 +97,8 @@ export async function runAgent(
   let totalTokens = 0;
   let iterations = 0;
   let idleIterations = 0; // Iterations with no file changes
-  let lastFileCount = countFiles(projectRoot);
+  let lastSnapshot = snapshotFilesystem(projectRoot);
+  let hadMutatingToolCall = false; // Track if write_file/run_command was called
 
   // Build conversation
   const systemPrompt = buildSystemPrompt(agent, task, projectRoot);
@@ -147,6 +148,7 @@ export async function runAgent(
       let isComplete = false;
       let completionSummary = '';
       let completionFiles: string[] = [];
+      hadMutatingToolCall = false;
 
       for (const toolCall of response.toolCalls) {
         let args: Record<string, any>;
@@ -159,6 +161,11 @@ export async function runAgent(
         const toolName = toolCall.function.name;
         onProgress?.(iterations, `tool:${toolName}`);
         logger.info(agent.id, `Tool: ${toolName}(${JSON.stringify(args).substring(0, 100)})`);
+
+        // Track mutating tool calls as progress signals
+        if (toolName === 'write_file' || toolName === 'run_command' || toolName === 'git_commit') {
+          hadMutatingToolCall = true;
+        }
 
         const { result, isComplete: done } = executeTool(
           toolName,
@@ -198,8 +205,15 @@ export async function runAgent(
       }
 
       // Check for stuck detection (circuit breaker)
-      const currentFileCount = countFiles(projectRoot);
-      if (currentFileCount === lastFileCount) {
+      // Uses BOTH filesystem snapshots AND tool call tracking
+      const currentSnapshot = snapshotFilesystem(projectRoot);
+      const filesChanged = currentSnapshot !== lastSnapshot;
+
+      if (filesChanged || hadMutatingToolCall) {
+        // Progress detected — reset counter
+        idleIterations = 0;
+        lastSnapshot = currentSnapshot;
+      } else {
         idleIterations++;
         if (idleIterations >= 5) {
           logger.warn(agent.id, `Circuit breaker: ${idleIterations} iterations with no file changes. Stopping.`);
@@ -216,9 +230,6 @@ export async function runAgent(
             error: 'STUCK: No file changes detected',
           };
         }
-      } else {
-        idleIterations = 0;
-        lastFileCount = currentFileCount;
       }
     }
 
@@ -255,20 +266,43 @@ export async function runAgent(
 }
 
 /**
- * Quick file count for stuck detection.
- * Cross-platform: counts lines from git ls-files directly in Node
- * instead of piping through wc (Unix-only).
+ * Snapshot the filesystem state for stuck detection.
+ * Returns a hash based on file count + total modification time.
+ * 
+ * Uses recursive filesystem walk instead of `git ls-files` because:
+ * - Files created via `run_command` are untracked and invisible to git ls-files
+ * - We need to detect ALL filesystem changes, not just git-tracked ones
  */
-function countFiles(dir: string): number {
+function snapshotFilesystem(dir: string): number {
   try {
-    const { execSync } = require('child_process');
-    const output = execSync('git ls-files', {
-      cwd: dir,
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    // Count non-empty lines
-    return output.split('\n').filter((line: string) => line.trim().length > 0).length;
+    const fs = require('fs');
+    const path = require('path');
+    let hash = 0;
+    let count = 0;
+
+    function walk(d: string, depth: number) {
+      if (depth > 6) return; // Don't recurse too deep
+      try {
+        const entries = fs.readdirSync(d, { withFileTypes: true });
+        for (const entry of entries) {
+          // Skip hidden dirs, node_modules, .git, .maos
+          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+          const full = path.join(d, entry.name);
+          if (entry.isDirectory()) {
+            walk(full, depth + 1);
+          } else if (entry.isFile()) {
+            count++;
+            try {
+              const stat = fs.statSync(full);
+              hash += stat.mtimeMs + stat.size;
+            } catch { /* skip */ }
+          }
+        }
+      } catch { /* skip unreadable dirs */ }
+    }
+
+    walk(dir, 0);
+    return count * 100000 + Math.round(hash % 1_000_000_000);
   } catch {
     return 0;
   }
