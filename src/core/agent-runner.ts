@@ -133,10 +133,53 @@ export async function runAgent(
         tool_calls: response.toolCalls.length > 0 ? response.toolCalls : undefined,
       });
 
-      // If no tool calls and model stopped → done (shouldn't happen without task_complete)
+      // If no tool calls and model stopped → nudge to call task_complete
       if (response.toolCalls.length === 0) {
         if (response.finishReason === 'stop') {
-          logger.warn(agent.id, 'Model stopped without calling task_complete');
+          // Give the model a chance to call task_complete properly
+          logger.warn(agent.id, 'Model stopped without calling task_complete — nudging to finalize');
+          messages.push({
+            role: 'user',
+            content: 'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
+          });
+
+          // Try one more time
+          const retryResponse = await retryOnTransient(
+            () => provider.generate(messages, AGENT_TOOLS),
+            1,
+            logger,
+            agent.id,
+          );
+          totalTokens += retryResponse.usage.totalTokens;
+
+          messages.push({
+            role: 'assistant',
+            content: retryResponse.content,
+            tool_calls: retryResponse.toolCalls.length > 0 ? retryResponse.toolCalls : undefined,
+          });
+
+          // Check if it called task_complete this time
+          if (retryResponse.toolCalls.length > 0) {
+            for (const tc of retryResponse.toolCalls) {
+              let tcArgs: Record<string, any>;
+              try { tcArgs = JSON.parse(tc.function.arguments); } catch { tcArgs = {}; }
+              const { result, isComplete: done } = executeTool(tc.function.name, tcArgs, projectRoot, agent.scope);
+              messages.push({ role: 'tool', content: result, tool_call_id: tc.id });
+              if (done) {
+                logger.success(agent.id, `Task completed (after nudge): ${tcArgs.summary || 'Task completed'}`);
+                return {
+                  agentId: agent.id, taskId: task.id, success: true,
+                  summary: tcArgs.summary || 'Task completed',
+                  filesChanged: tcArgs.files_changed || [],
+                  iterations, totalTokens,
+                  costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
+                  latencyMs: Date.now() - startTime,
+                };
+              }
+            }
+          }
+          // Still didn't call task_complete — break out
+          logger.warn(agent.id, 'Model still did not call task_complete after nudge. Treating as partial completion.');
           break;
         }
         // Model returned content but no tools — continue
@@ -233,8 +276,27 @@ export async function runAgent(
       }
     }
 
-    // Max iterations reached
-    logger.warn(agent.id, `Max iterations (${agent.maxIterations}) reached without task_complete`);
+    // Max iterations reached OR model stopped without task_complete
+    // Check if the agent actually made progress (files changed on disk)
+    const finalSnapshot = snapshotFilesystem(projectRoot);
+    const madeProgress = finalSnapshot !== lastSnapshot;
+
+    if (madeProgress) {
+      logger.warn(agent.id, `Agent did not call task_complete but DID modify files. Treating as partial success.`);
+      return {
+        agentId: agent.id,
+        taskId: task.id,
+        success: true, // Partial success — work was done
+        summary: `Partial completion: agent modified files but did not finalize (${iterations} iterations)`,
+        filesChanged: [],
+        iterations,
+        totalTokens,
+        costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
+        latencyMs: Date.now() - startTime,
+      };
+    }
+
+    logger.warn(agent.id, `Max iterations (${agent.maxIterations}) reached with no file changes`);
     return {
       agentId: agent.id,
       taskId: task.id,

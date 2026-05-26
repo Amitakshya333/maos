@@ -151,16 +151,36 @@ export const AGENT_TOOLS: ToolDef[] = [
 
 /**
  * Scope enforcement: check if a file path is within allowed directories.
+ * Supports patterns like "/", "src/", "src/api/" etc.
+ * "/" means unrestricted access.
  */
 function isPathInScope(filePath: string, scope: string[], projectRoot: string): boolean {
-  // If scope includes "/" → no restrictions
-  if (scope.includes('/')) return true;
+  // Unrestricted scopes
+  if (scope.includes('/') || scope.includes('**/*') || scope.includes('*')) return true;
 
-  const normalizedPath = path.normalize(filePath).replace(/\\/g, '/');
+  const normalizedPath = path.normalize(filePath).replace(/\\/g, '/').replace(/^\//, '');
   
-  return scope.some(scopeDir => {
-    const normalizedScope = path.normalize(scopeDir).replace(/\\/g, '/');
-    return normalizedPath.startsWith(normalizedScope);
+  return scope.some(scopePattern => {
+    let pattern = path.normalize(scopePattern).replace(/\\/g, '/').replace(/^\//, '');
+    
+    // "**" or "**/*" suffix → match the base directory and everything under it
+    if (pattern.endsWith('**/*')) {
+      pattern = pattern.replace(/\*\*\/\*$/, '');
+    } else if (pattern.endsWith('**')) {
+      pattern = pattern.replace(/\*\*$/, '');
+    }
+
+    // Remove trailing slash for comparison
+    pattern = pattern.replace(/\/$/, '');
+    
+    // If pattern is empty after stripping, it means root → allow all
+    if (!pattern) return true;
+
+    // Check if the file path starts with the scope directory
+    // e.g., scope "src/" allows "src/calculator/calc.ts"
+    const normalizedForMatch = normalizedPath.replace(/\/$/, '');
+    return normalizedForMatch === pattern || 
+           normalizedForMatch.startsWith(pattern + '/');
   });
 }
 
