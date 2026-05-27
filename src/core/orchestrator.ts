@@ -252,6 +252,9 @@ export async function startOrchestrator(
     totalCostUSD: 0,
   };
 
+  // Keep track of tasks currently being finalized to prevent race conditions / double cleanup
+  const finalizedTasks = new Set<string>();
+
   // Initialize all agents as IDLE + register with health monitor
   for (const agent of config.agents) {
     writeAgentStatus(agent.id, 'IDLE', '', cwd);
@@ -323,16 +326,39 @@ export async function startOrchestrator(
         agentId: agentDef.id,
       });
 
-      // Move to done
-      moveToDone(activeTask, cwd);
+      // Check if already finalized to prevent race conditions / double cleanup
+      if (finalizedTasks.has(task.id)) {
+        logger.warn('ORCHESTRATOR', `Task ${task.id} is already finalized. Skipping duplicate finalization.`);
+        return;
+      }
+      finalizedTasks.add(task.id);
 
       // Update telemetry
-      state.totalTokensUsed += result.totalTokens;
-      state.totalCostUSD += result.costUSD;
+      state.totalTokensUsed += result.totalTokens || 0;
+      state.totalCostUSD += result.costUSD || 0;
+
+      // Safely read content from active file before any moves/deletes
+      let taskContent = '';
+      if (fs.existsSync(activeTask.filePath)) {
+        try {
+          taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
+        } catch (err: any) {
+          logger.error('ORCHESTRATOR', `Failed to read active task file ${activeTask.filePath}: ${err.message}`);
+        }
+      }
 
       if (result.success) {
         state.completedTasks++;
         writeAgentStatus(agentDef.id, 'DONE', result.summary.substring(0, 80), cwd);
+
+        // Move to done
+        if (fs.existsSync(activeTask.filePath)) {
+          try {
+            moveToDone(activeTask, cwd);
+          } catch (err: any) {
+            logger.error('ORCHESTRATOR', `Failed to move task ${task.id} to done: ${err.message}`);
+          }
+        }
 
         // Tag the agent's work with a named branch
         try {
@@ -389,9 +415,9 @@ export async function startOrchestrator(
           error: (result.error || '').substring(0, 200),
           iterations: result.iterations,
         }, task.id, runtimeType as any));
+
         // ---- RETRY QUEUE ----
         // Instead of permanently failing, try to enqueue for retry with backoff.
-        const taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
         const retryPolicy = {
           ...DEFAULT_RETRY_POLICY,
           maxRetries: (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
@@ -413,6 +439,15 @@ export async function startOrchestrator(
           );
         } else {
           logger.error('ORCHESTRATOR', `${task.id} dead-lettered — max retries exceeded or not retryable`);
+        }
+
+        // Clean up the active task file so it doesn't linger in active/
+        if (fs.existsSync(activeTask.filePath)) {
+          try {
+            fs.unlinkSync(activeTask.filePath);
+          } catch (err: any) {
+            logger.error('ORCHESTRATOR', `Failed to delete active task file for failed task ${task.id}: ${err.message}`);
+          }
         }
 
         // Record failure telemetry
@@ -438,18 +473,38 @@ export async function startOrchestrator(
         });
       }
     } catch (err: any) {
+      if (finalizedTasks.has(task.id)) {
+        return;
+      }
+      finalizedTasks.add(task.id);
+
       state.failedTasks++;
       writeAgentStatus(agentDef.id, 'FAILED', err.message, cwd);
       logger.error('ORCHESTRATOR', `${agentDef.id} crashed on ${task.id}: ${err.message}`);
 
+      // Safely read content from active file before any moves/deletes
+      let taskContent = '';
+      if (fs.existsSync(activeTask.filePath)) {
+        try {
+          taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
+        } catch {}
+      }
+
       // Enqueue crashed tasks for retry too
       try {
-        const taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
         enqueueRetry(activeTask, taskContent, err.message, [], 0, DEFAULT_RETRY_POLICY, cwd);
-      } catch { /* non-fatal */ }
+      } catch (retryErr: any) {
+        logger.error('ORCHESTRATOR', `Failed to enqueue crashed task ${task.id} for retry: ${retryErr.message}`);
+      }
 
-      // Still move to done so it doesn't stay stuck in active
-      try { moveToDone(activeTask, cwd); } catch {}
+      // Clean up the active task file
+      if (fs.existsSync(activeTask.filePath)) {
+        try {
+          fs.unlinkSync(activeTask.filePath);
+        } catch (unlinkErr: any) {
+          logger.error('ORCHESTRATOR', `Failed to delete active task file for crashed task ${task.id}: ${unlinkErr.message}`);
+        }
+      }
     } finally {
       // Release agent
       state.activeAgents.delete(agentDef.id);
