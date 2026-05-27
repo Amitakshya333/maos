@@ -162,55 +162,141 @@ export function validateCommand(
   return null;
 }
 
-// ---- File Lock Registry ----
-// Prevents two agents from writing to the same file simultaneously.
+// ---- File Ownership Engine (P3.3) ----
+// Evolved from simple file locks → semantic ownership model.
+// Tracks reads, writes, ownership transfer, and conflict resolution.
 
-interface FileLock {
-  agentId: string;
+export type AccessType = 'READ' | 'WRITE' | 'EXCLUSIVE';
+
+export interface FileOwnership {
+  /** File path (normalized) */
+  path: string;
+  /** Current owner agent ID */
+  owner: string;
+  /** Task that claimed ownership */
   taskId: string;
-  lockedAt: number;
+  /** When ownership was claimed */
+  ownedSince: number;
+  /** Last access time (read or write) */
+  lastAccessed: number;
+  /** Current access type */
+  accessType: AccessType;
+  /** Number of writes to this file by the owner */
+  writeCount: number;
 }
 
-class FileLockRegistry {
-  private locks = new Map<string, FileLock>();
+export interface OwnershipReport {
+  path: string;
+  owner: string;
+  accessType: AccessType;
+  taskId: string;
+  ageMs: number;
+  silenceMs: number;
+  writeCount: number;
+}
+
+class FileOwnershipEngine {
+  private ownerships = new Map<string, FileOwnership>();
+  private readLog = new Map<string, Set<string>>(); // path → set of agent IDs that read it
+
+  /** Idle timeout: ownership released if agent hasn't touched file in 60s */
+  private idleTimeoutMs = 60_000;
+
+  /** Stale timeout: force-release after 10 minutes regardless */
+  private staleTimeoutMs = 10 * 60_000;
 
   /**
-   * Attempt to acquire a lock on a file for an agent.
-   * Returns true if lock acquired (or already held by same agent).
-   * Returns false if locked by a different agent.
+   * Claim ownership of a file for writing.
+   *
+   * Returns null if ownership granted.
+   * Returns a ScopeViolation if conflict cannot be resolved.
    */
-  acquire(filePath: string, agentId: string, taskId: string): boolean {
+  claimWrite(filePath: string, agentId: string, taskId: string): ScopeViolation | null {
     const normalized = this.normalizePath(filePath);
-    const existing = this.locks.get(normalized);
+    const existing = this.ownerships.get(normalized);
+    const now = Date.now();
 
+    // No owner → claim
     if (!existing) {
-      this.locks.set(normalized, { agentId, taskId, lockedAt: Date.now() });
-      return true;
+      this.ownerships.set(normalized, {
+        path: normalized,
+        owner: agentId,
+        taskId,
+        ownedSince: now,
+        lastAccessed: now,
+        accessType: 'WRITE',
+        writeCount: 1,
+      });
+      return null;
     }
 
-    // Same agent can re-acquire its own lock
-    if (existing.agentId === agentId) {
-      return true;
+    // Same agent → re-acquire (update access time + count)
+    if (existing.owner === agentId) {
+      existing.lastAccessed = now;
+      existing.writeCount++;
+      return null;
     }
 
-    // Stale lock? (older than 10 minutes → auto-release)
-    if (Date.now() - existing.lockedAt > 10 * 60 * 1000) {
-      this.locks.set(normalized, { agentId, taskId, lockedAt: Date.now() });
-      return true;
+    // Stale ownership? (10 min without any access → auto-transfer)
+    if (now - existing.lastAccessed > this.staleTimeoutMs) {
+      this.ownerships.set(normalized, {
+        path: normalized,
+        owner: agentId,
+        taskId,
+        ownedSince: now,
+        lastAccessed: now,
+        accessType: 'WRITE',
+        writeCount: 1,
+      });
+      return null;
     }
 
-    // Locked by another agent
-    return false;
+    // Idle ownership? (60s without access → transfer)
+    if (now - existing.lastAccessed > this.idleTimeoutMs) {
+      this.ownerships.set(normalized, {
+        path: normalized,
+        owner: agentId,
+        taskId,
+        ownedSince: now,
+        lastAccessed: now,
+        accessType: 'WRITE',
+        writeCount: 1,
+      });
+      return null;
+    }
+
+    // Active conflict → WRITE_CONFLICT
+    const silenceMs = now - existing.lastAccessed;
+    return {
+      type: 'FILE_LOCKED',
+      agentId,
+      filePath,
+      detail: 'File "' + filePath + '" is owned by ' + existing.owner +
+        ' (task: ' + existing.taskId + ', ' + existing.accessType +
+        ', active ' + Math.round(silenceMs / 1000) + 's ago). ' +
+        'Try again when ownership is released.',
+    };
   }
 
   /**
-   * Release all locks held by an agent.
+   * Record that an agent read a file (no ownership claim, just tracking).
+   */
+  recordRead(filePath: string, agentId: string): void {
+    const normalized = this.normalizePath(filePath);
+    if (!this.readLog.has(normalized)) {
+      this.readLog.set(normalized, new Set());
+    }
+    this.readLog.get(normalized)!.add(agentId);
+  }
+
+  /**
+   * Release all ownerships held by an agent (on task complete/fail).
    */
   releaseAll(agentId: string): number {
     let released = 0;
-    for (const [key, lock] of this.locks) {
-      if (lock.agentId === agentId) {
-        this.locks.delete(key);
+    for (const [key, ownership] of this.ownerships) {
+      if (ownership.owner === agentId) {
+        this.ownerships.delete(key);
         released++;
       }
     }
@@ -218,19 +304,32 @@ class FileLockRegistry {
   }
 
   /**
-   * Get info about who holds a lock on a file.
+   * Release ownership of a specific file.
    */
-  getOwner(filePath: string): FileLock | undefined {
-    return this.locks.get(this.normalizePath(filePath));
+  release(filePath: string, agentId: string): boolean {
+    const normalized = this.normalizePath(filePath);
+    const existing = this.ownerships.get(normalized);
+    if (existing && existing.owner === agentId) {
+      this.ownerships.delete(normalized);
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Get all locks held by an agent.
+   * Get info about who owns a file.
    */
-  getAgentLocks(agentId: string): string[] {
+  getOwner(filePath: string): FileOwnership | undefined {
+    return this.ownerships.get(this.normalizePath(filePath));
+  }
+
+  /**
+   * Get all files owned by an agent.
+   */
+  getAgentFiles(agentId: string): string[] {
     const files: string[] = [];
-    for (const [key, lock] of this.locks) {
-      if (lock.agentId === agentId) {
+    for (const [key, ownership] of this.ownerships) {
+      if (ownership.owner === agentId) {
         files.push(key);
       }
     }
@@ -238,10 +337,56 @@ class FileLockRegistry {
   }
 
   /**
-   * Get all active locks.
+   * Get all active ownerships (for dashboard).
    */
-  getAllLocks(): Map<string, FileLock> {
-    return new Map(this.locks);
+  getAllOwnerships(): Map<string, FileOwnership> {
+    return new Map(this.ownerships);
+  }
+
+  /**
+   * Get a dashboard-friendly ownership report.
+   */
+  getReport(): OwnershipReport[] {
+    const now = Date.now();
+    const report: OwnershipReport[] = [];
+
+    for (const [, ownership] of this.ownerships) {
+      report.push({
+        path: ownership.path,
+        owner: ownership.owner,
+        accessType: ownership.accessType,
+        taskId: ownership.taskId,
+        ageMs: now - ownership.ownedSince,
+        silenceMs: now - ownership.lastAccessed,
+        writeCount: ownership.writeCount,
+      });
+    }
+
+    return report.sort((a, b) => a.silenceMs - b.silenceMs);
+  }
+
+  /**
+   * Get all agents that have read a specific file.
+   */
+  getReaders(filePath: string): string[] {
+    const normalized = this.normalizePath(filePath);
+    const readers = this.readLog.get(normalized);
+    return readers ? Array.from(readers) : [];
+  }
+
+  /**
+   * Sweep stale ownerships. Called periodically by the health monitor.
+   */
+  sweepStale(): number {
+    const now = Date.now();
+    let swept = 0;
+    for (const [key, ownership] of this.ownerships) {
+      if (now - ownership.lastAccessed > this.staleTimeoutMs) {
+        this.ownerships.delete(key);
+        swept++;
+      }
+    }
+    return swept;
   }
 
   private normalizePath(p: string): string {
@@ -251,19 +396,26 @@ class FileLockRegistry {
 
 // ---- Singleton ----
 
-let _registry: FileLockRegistry | null = null;
+let _registry: FileOwnershipEngine | null = null;
 
-export function getFileLockRegistry(): FileLockRegistry {
+/**
+ * Get the file ownership engine singleton.
+ * Backward compatible: same function name as before.
+ */
+export function getFileLockRegistry(): FileOwnershipEngine {
   if (!_registry) {
-    _registry = new FileLockRegistry();
+    _registry = new FileOwnershipEngine();
   }
   return _registry;
 }
 
+// Explicit new name (aliased from old name for compat)
+export { getFileLockRegistry as getFileOwnershipEngine };
+
 // ---- Combined Guard Function ----
 
 /**
- * Full scope + lock check for a write_file call.
+ * Full scope + ownership check for a write_file call.
  * Returns null if allowed, ScopeViolation if blocked.
  */
 export function guardWriteFile(
@@ -279,21 +431,17 @@ export function guardWriteFile(
       type: 'WRITE_BLOCKED',
       agentId,
       filePath,
-      detail: `Cannot write to "${filePath}". Scope: [${scope.join(', ')}]`,
+      detail: 'Cannot write to "' + filePath + '". Scope: [' + scope.join(', ') + ']',
     };
   }
 
-  // 2. File lock check
-  const registry = getFileLockRegistry();
-  if (!registry.acquire(filePath, agentId, taskId)) {
-    const owner = registry.getOwner(filePath);
-    return {
-      type: 'FILE_LOCKED',
-      agentId,
-      filePath,
-      detail: `File "${filePath}" is locked by agent ${owner?.agentId} (task: ${owner?.taskId})`,
-    };
+  // 2. File ownership check (replaces simple lock)
+  const engine = getFileLockRegistry();
+  const conflict = engine.claimWrite(filePath, agentId, taskId);
+  if (conflict) {
+    return conflict;
   }
 
   return null;
 }
+
