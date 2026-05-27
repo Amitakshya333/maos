@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
+dotenv.config({ override: true });
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as fs from 'fs';
