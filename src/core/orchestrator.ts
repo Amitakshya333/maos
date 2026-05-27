@@ -227,9 +227,10 @@ export async function startOrchestrator(
     throw new Error('No runtimes could be initialized. Check your config and API keys.');
   }
 
-  // Create the router
-  const router = createRouter(config.routing);
-  logger.info('ORCHESTRATOR', `Routing strategy: ${config.routing.strategy || 'capability_score'}`);
+  // Create the router (with telemetry feedback for adaptive scoring)
+  const router = createRouter(config.routing, cwd);
+  const routerInfo = router.feedback ? 'adaptive (telemetry loaded)' : 'static';
+  logger.info('ORCHESTRATOR', 'Routing strategy: ' + (config.routing.strategy || 'capability_score') + ' [' + routerInfo + ']');
 
   // ---- HEALTH MONITOR ----
   // Watches heartbeats from all agents. Fires HEALTH_ALERT on dead/degraded agents.

@@ -1,5 +1,5 @@
 /**
- * MAOS Capability-Based Routing Engine
+ * MAOS Capability-Based Routing Engine (Adaptive)
  *
  * The router decides which agent handles which task.
  * It scores agents based on:
@@ -7,10 +7,15 @@
  *   - Role alignment (is the agent's role suited for this task category?)
  *   - Cost efficiency (prefer cheaper models when capable)
  *   - Complexity matching (route hard tasks to powerful models)
- *   - Historical performance (future: learn from telemetry)
+ *   - Historical performance (ADAPTIVE: learns from telemetry)
  *
- * This is the "brain" that makes MAOS smarter than round-robin assignment.
+ * P3.2: The router now reads telemetry data and builds a performance
+ * matrix per agent. Agents that historically succeed on certain
+ * capability types get boosted; agents that fail get penalized.
+ * This creates a self-improving routing loop.
  */
+
+import { readTelemetry, TelemetryRecord } from './telemetry';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -88,9 +93,18 @@ const COMPLEXITY_MIN_TIER: Record<string, number> = {
 
 export class Router {
   private config: RoutingConfig;
+  readonly feedback: TelemetryFeedbackLoop | null;
 
-  constructor(config: RoutingConfig) {
+  constructor(config: RoutingConfig, projectRoot?: string) {
     this.config = config;
+    this.feedback = null;
+
+    // Load telemetry for adaptive routing
+    if (projectRoot) {
+      try {
+        this.feedback = new TelemetryFeedbackLoop(projectRoot);
+      } catch { /* telemetry not available — pure static routing */ }
+    }
   }
 
   /**
@@ -245,14 +259,31 @@ export class Router {
     let capabilityScore: number;
     if (task.capabilities.length === 0) {
       capabilityScore = 0.5; // Neutral — no capabilities specified
-      reasoning.push('No required capabilities → neutral (0.5)');
+      reasoning.push('No required capabilities \u2192 neutral (0.5)');
     } else {
       const matched = task.capabilities.filter(c => agent.capabilities.includes(c));
       capabilityScore = matched.length / task.capabilities.length;
       reasoning.push(
-        `Capabilities: ${matched.length}/${task.capabilities.length} match ` +
-        `(${matched.join(', ') || 'none'}) → ${capabilityScore.toFixed(2)}`
+        'Capabilities: ' + matched.length + '/' + task.capabilities.length + ' match ' +
+        '(' + (matched.join(', ') || 'none') + ') \u2192 ' + capabilityScore.toFixed(2)
       );
+    }
+
+    // 1b. ADAPTIVE BOOST (P3.2) — blend static score with learned performance
+    let adaptiveBoost = 0.5; // Neutral default (no data)
+    if (this.feedback && task.capabilities.length > 0) {
+      const learnedRate = this.feedback.getSuccessRate(agent.id, task.capabilities);
+      if (learnedRate !== null) {
+        adaptiveBoost = learnedRate;
+        // Blend: 60% static match + 40% learned performance
+        const blendedScore = capabilityScore * 0.6 + adaptiveBoost * 0.4;
+        reasoning.push(
+          'Adaptive: learned success rate ' + adaptiveBoost.toFixed(2) +
+          ' \u2192 blended ' + capabilityScore.toFixed(2) + '*0.6 + ' +
+          adaptiveBoost.toFixed(2) + '*0.4 = ' + blendedScore.toFixed(2)
+        );
+        capabilityScore = blendedScore;
+      }
     }
 
     // 2. Role bonus (0.0 → 0.25)
@@ -314,10 +345,146 @@ export function createRouter(routingConfig: {
   strategy?: string;
   costWeight?: number;
   capabilityWeight?: number;
-}): Router {
+}, projectRoot?: string): Router {
   return new Router({
     strategy: (routingConfig.strategy || 'capability_score') as RoutingConfig['strategy'],
     costWeight: routingConfig.costWeight ?? 0.3,
     capabilityWeight: routingConfig.capabilityWeight ?? 0.7,
-  });
+  }, projectRoot);
+}
+
+// ─── Telemetry Feedback Loop (P3.2) ────────────────────────
+
+export interface PerformanceCell {
+  successes: number;
+  total: number;
+  rate: number;
+}
+
+export type PerformanceMatrix = Record<string, Record<string, PerformanceCell>>;
+
+/**
+ * Reads telemetry history and builds a performance profile per agent.
+ *
+ * Performance matrix:
+ *                  coding    frontend    testing    planning
+ *   CODER_1         0.92      0.45        0.80       —
+ *   CODER_2         0.88      0.91        0.60       —
+ *   ARCHITECT       0.20      —           —          0.95
+ *
+ * Each cell = successes / total for that agent × capability pair.
+ */
+export class TelemetryFeedbackLoop {
+  private matrix: PerformanceMatrix = {};
+  private records: TelemetryRecord[];
+
+  constructor(projectRoot: string) {
+    this.records = readTelemetry(projectRoot);
+    this.buildMatrix();
+  }
+
+  /**
+   * Get success rate for an agent on a set of capabilities.
+   * Returns null if no data exists.
+   */
+  getSuccessRate(agentId: string, capabilities: string[]): number | null {
+    const agentData = this.matrix[agentId];
+    if (!agentData) return null;
+
+    let totalRate = 0;
+    let count = 0;
+
+    for (const cap of capabilities) {
+      const cell = agentData[cap];
+      if (cell && cell.total >= 1) {
+        totalRate += cell.rate;
+        count++;
+      }
+    }
+
+    if (count === 0) return null;
+    return totalRate / count;
+  }
+
+  /**
+   * Get the full performance matrix (for dashboard display).
+   */
+  getMatrix(): PerformanceMatrix {
+    return this.matrix;
+  }
+
+  /**
+   * Get a formatted summary for CLI display.
+   */
+  getSummary(): string {
+    if (this.records.length === 0) {
+      return 'No telemetry data. Run some tasks first.';
+    }
+
+    const agents = Object.keys(this.matrix);
+    if (agents.length === 0) return 'No performance data.';
+
+    // Collect all capabilities across all agents
+    const allCaps = new Set<string>();
+    for (const agentData of Object.values(this.matrix)) {
+      for (const cap of Object.keys(agentData)) {
+        allCaps.add(cap);
+      }
+    }
+    const caps = Array.from(allCaps).sort();
+
+    // Build table
+    const capWidth = 10;
+    const header = '  ' + 'Agent'.padEnd(16) + caps.map(c => c.substring(0, capWidth).padEnd(capWidth)).join(' ');
+    const separator = '  ' + '-'.repeat(header.length - 2);
+
+    const rows = agents.map(agentId => {
+      const agentData = this.matrix[agentId];
+      const cells = caps.map(cap => {
+        const cell = agentData[cap];
+        if (!cell) return '-'.padEnd(capWidth);
+        const pct = Math.round(cell.rate * 100);
+        const label = pct + '% (' + cell.total + ')';
+        return label.padEnd(capWidth);
+      });
+      return '  ' + agentId.padEnd(16) + cells.join(' ');
+    });
+
+    return [
+      'Performance Matrix (' + this.records.length + ' telemetry records):',
+      '',
+      header,
+      separator,
+      ...rows,
+    ].join('\n');
+  }
+
+  /**
+   * Get the number of telemetry records used.
+   */
+  get recordCount(): number {
+    return this.records.length;
+  }
+
+  // ---- Build the matrix ----
+
+  private buildMatrix(): void {
+    for (const record of this.records) {
+      if (!this.matrix[record.agentId]) {
+        this.matrix[record.agentId] = {};
+      }
+      const agentData = this.matrix[record.agentId];
+
+      for (const cap of record.capabilities) {
+        if (!agentData[cap]) {
+          agentData[cap] = { successes: 0, total: 0, rate: 0 };
+        }
+        agentData[cap].total++;
+        if (record.success) {
+          agentData[cap].successes++;
+        }
+        agentData[cap].rate = agentData[cap].successes / agentData[cap].total;
+      }
+    }
+  }
 }
