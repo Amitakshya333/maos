@@ -3,6 +3,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { ToolDef } from '../backends/provider';
 import { guardWriteFile, validateCommand, getFileLockRegistry, ScopeViolation } from '../core/scope-guard';
+import { getMemoryStore, MemoryType } from '../core/context-memory';
 
 /**
  * MAOS Agent Tool Definitions
@@ -143,6 +144,37 @@ export const AGENT_TOOLS: ToolDef[] = [
           },
         },
         required: ['summary'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'share_knowledge',
+      description: 'Share a discovery, decision, or warning with other agents on the team. Use this when you learn something that would help other agents work more efficiently (e.g., project structure, tech stack, important constraints, architectural decisions).',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['DISCOVERY', 'DECISION', 'WARNING', 'FILE_MAP'],
+            description: 'Type of knowledge: DISCOVERY (factual finding), DECISION (architectural choice), WARNING (pitfall/constraint), FILE_MAP (project structure)',
+          },
+          content: {
+            type: 'string',
+            description: 'The knowledge to share (be concise but specific)',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Searchable tags (e.g., ["frontend", "react", "routing"])',
+          },
+          confidence: {
+            type: 'number',
+            description: 'How confident you are: 0.0 = guess, 0.5 = inference, 1.0 = verified fact. Default: 1.0',
+          },
+        },
+        required: ['type', 'content', 'tags'],
       },
     },
   },
@@ -347,6 +379,28 @@ export function executeTool(
         return {
           result: `Task completed!\nSummary: ${args.summary}\nFiles changed: ${files.join(', ') || 'none listed'}`,
           isComplete: true,
+        };
+      }
+
+      case 'share_knowledge': {
+        const memStore = getMemoryStore();
+        if (!memStore) {
+          return {
+            result: 'Knowledge shared (memory store not active — will not persist).',
+            isComplete: false,
+          };
+        }
+        const entry = memStore.add({
+          agentId: agentId || 'unknown',
+          taskId: taskId || 'unknown',
+          type: (args.type || 'DISCOVERY') as MemoryType,
+          content: args.content || '',
+          tags: Array.isArray(args.tags) ? args.tags : [],
+          confidence: typeof args.confidence === 'number' ? args.confidence : 1.0,
+        });
+        return {
+          result: `Knowledge shared with the team!\nType: ${entry.type}\nTags: ${entry.tags.join(', ')}\nOther agents will see this in their context.`,
+          isComplete: false,
         };
       }
 

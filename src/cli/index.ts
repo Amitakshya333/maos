@@ -18,6 +18,7 @@ import { runRepl } from './repl';
 import { runDashboard } from './dashboard';
 import { EventStore } from '../core/event-store';
 import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
+import { MemoryStore } from '../core/context-memory';
 
 const VERSION = '0.1.0';
 
@@ -291,6 +292,119 @@ program
       }
     }
   });
+
+// ─── maos memory ─────────────────────────────────────────────
+// Inter-agent knowledge transfer store
+program
+  .command('memory')
+  .alias('mem')
+  .description('View and manage shared agent memory')
+  .option('--list', 'List all live memory entries')
+  .option('--search <query>', 'Search memory by content')
+  .option('--tag <tag>', 'Search memory by tag')
+  .option('--stats', 'Show memory statistics')
+  .option('--clear', 'Clear all memories (archive current session)')
+  .action((opts: any) => {
+    const cwd = process.cwd();
+    const maosDir = path.join(cwd, '.maos');
+
+    if (!fs.existsSync(maosDir)) {
+      console.log(chalk.red('\u274C MAOS is not initialized in this directory.'));
+      process.exit(1);
+    }
+
+    const store = new MemoryStore(cwd);
+
+    if (opts.clear) {
+      store.clear();
+      console.log(chalk.green('\u2705 Memory cleared (previous session archived).'));
+      return;
+    }
+
+    if (opts.stats) {
+      const s = store.getStats();
+      console.log(chalk.bold.cyan('\n\uD83E\uDDE0 Context Memory Statistics'));
+      console.log(chalk.gray('\u2500'.repeat(40)));
+      console.log('  Total entries  : ' + chalk.white(s.total));
+      console.log('  Live entries   : ' + chalk.green(s.live));
+      console.log('  Expired        : ' + chalk.yellow(s.expired));
+      console.log(chalk.bold('\n  By type:'));
+      for (const [type, count] of Object.entries(s.byType).sort((a, b) => b[1] - a[1])) {
+        console.log('    ' + chalk.cyan(type.padEnd(15)) + ' ' + chalk.white(count));
+      }
+      console.log(chalk.bold('\n  By agent:'));
+      for (const [agent, count] of Object.entries(s.byAgent).sort((a, b) => b[1] - a[1])) {
+        console.log('    ' + chalk.yellow(agent.padEnd(15)) + ' ' + chalk.white(count));
+      }
+      return;
+    }
+
+    if (opts.search) {
+      const results = store.searchByContent(opts.search);
+      if (results.length === 0) {
+        console.log(chalk.yellow('\n\u26A0\uFE0F  No memories match: "' + opts.search + '"'));
+        return;
+      }
+      console.log(chalk.bold.cyan('\n\uD83D\uDD0D Search results (' + results.length + ')'));
+      printMemories(results);
+      return;
+    }
+
+    if (opts.tag) {
+      const results = store.searchByTag(opts.tag);
+      if (results.length === 0) {
+        console.log(chalk.yellow('\n\u26A0\uFE0F  No memories tagged: "' + opts.tag + '"'));
+        return;
+      }
+      console.log(chalk.bold.cyan('\n\uD83C\uDFF7\uFE0F  Tag: ' + opts.tag + ' (' + results.length + ')'));
+      printMemories(results);
+      return;
+    }
+
+    // Default: --list
+    const live = store.getLive();
+    if (live.length === 0) {
+      console.log(chalk.yellow('\n\u26A0\uFE0F  No memories in current session.'));
+      console.log(chalk.gray('  Memories are created by agents using the share_knowledge tool.'));
+      return;
+    }
+
+    console.log(chalk.bold.cyan('\n\uD83E\uDDE0 Shared Memory (' + live.length + ' live entries)'));
+    printMemories(live);
+  });
+
+function printMemories(entries: any[]): void {
+  console.log(chalk.gray('\u2500'.repeat(70)));
+  for (const e of entries) {
+    const age = formatMemAge(Date.now() - e.timestamp);
+    const confBadge = e.confidence < 0.8
+      ? chalk.yellow(' conf:' + e.confidence)
+      : '';
+    const typeBadge =
+      e.type === 'DISCOVERY' ? chalk.green('[DISCOVERY]') :
+      e.type === 'DECISION' ? chalk.blue('[DECISION]') :
+      e.type === 'WARNING' ? chalk.red('[WARNING]') :
+      chalk.magenta('[FILE_MAP]');
+
+    console.log(
+      '  ' + typeBadge + ' ' +
+      chalk.yellow(e.agentId) + ' ' +
+      chalk.gray(age + ' ago') + confBadge
+    );
+    console.log('    ' + chalk.white(e.content.substring(0, 100)));
+    if (e.tags.length > 0) {
+      console.log('    ' + chalk.gray('tags: ' + e.tags.join(', ')));
+    }
+    console.log('');
+  }
+  console.log(chalk.gray('\u2500'.repeat(70)));
+}
+
+function formatMemAge(ms: number): string {
+  if (ms < 60000) return Math.round(ms / 1000) + 's';
+  if (ms < 3600000) return Math.round(ms / 60000) + 'm';
+  return Math.round(ms / 3600000) + 'h';
+}
 
 // ─── maos clean ───────────────────────────────────────────────
 program

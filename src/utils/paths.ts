@@ -66,6 +66,10 @@ export function getEventsDir(cwd?: string): string {
   return path.join(getMaosRoot(cwd), 'events');
 }
 
+export function getMemoryDir(cwd?: string): string {
+  return path.join(getMaosRoot(cwd), 'memory');
+}
+
 /**
  * Ensure all required .maos/ subdirectories exist.
  */
@@ -84,6 +88,7 @@ export function ensureMaosDirectories(cwd?: string): void {
     getRetryDir(cwd),
     getFailedDir(cwd),
     getEventsDir(cwd),
+    getMemoryDir(cwd),
   ];
 
   for (const dir of dirs) {

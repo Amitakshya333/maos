@@ -28,6 +28,7 @@ import { recoverOrphanedTasks } from './checkpoint';
 import { enqueueRetry, drainRetryQueue, DEFAULT_RETRY_POLICY } from './retry-queue';
 import { wireEventStore } from './event-store';
 import { createHealthMonitor, HealthMonitor } from './health-monitor';
+import { createMemoryStore } from './context-memory';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -260,6 +261,13 @@ export async function startOrchestrator(
   // Start health sweeps
   healthMonitor.start();
   logger.info('ORCHESTRATOR', `Health monitor active (sweep every 15s)`);
+
+  // ---- CONTEXT MEMORY ----
+  // Initialize shared memory store for inter-agent knowledge transfer.
+  // New session = clear previous session's memories.
+  const memoryStore = createMemoryStore(cwd);
+  memoryStore.clear();
+  logger.info('ORCHESTRATOR', `Context memory active (new session, previous entries archived)`);
 
   // ─── Dispatch a single task ─────────────────────────────────
   //

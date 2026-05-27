@@ -5,6 +5,7 @@ import { getFileLockRegistry } from './scope-guard';
 import { saveCheckpoint, deleteCheckpoint, TaskCheckpoint } from './checkpoint';
 import { getMessageBus, createEvent } from './message-bus';
 import { getBrainContext } from './brain';
+import { getMemoryStore } from './context-memory';
 
 /**
  * Agent configuration passed to the runner.
@@ -170,6 +171,19 @@ function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: str
     }
   } catch { /* brain not available — non-fatal */ }
 
+  // ---- CONTEXT MEMORY INJECTION ----
+  // Inject recent team memories so this agent benefits from other agents' discoveries.
+  let memorySection = '';
+  try {
+    const memStore = getMemoryStore();
+    if (memStore && memStore.size > 0) {
+      const memCtx = memStore.getForPrompt(agent.id);
+      if (memCtx) {
+        memorySection = memCtx;
+      }
+    }
+  } catch { /* memory not available — non-fatal */ }
+
   return `You are ${agent.id}, a ${agent.role} agent working on this project.
 
 ## Your Identity
@@ -183,7 +197,7 @@ You may ONLY modify files in: [${agent.scope.join(', ')}]
 You are on git branch: ${task.branch}
 Project root: ${projectRoot}
 DO NOT touch files outside your scope. The system will reject out-of-scope writes.
-${brainSection}
+${brainSection}${memorySection}
 ## Your Task
 ${task.description}
 
@@ -194,6 +208,7 @@ ${task.description}
 4. After completing your work, use git_commit with a descriptive message.
 5. Finally, call task_complete with a summary of what you accomplished.
 6. Do NOT merge to main. Leave your work on branch: ${task.branch}
+7. Use share_knowledge to share important discoveries with other agents (tech stack, patterns, constraints).
 
 ## Important
 - You have a maximum of ${agent.maxIterations} tool calls. Be efficient.
