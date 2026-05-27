@@ -16,6 +16,8 @@ import { runLogin, LoginOptions } from './login';
 import { runBrain } from './brain';
 import { runRepl } from './repl';
 import { runDashboard } from './dashboard';
+import { EventStore } from '../core/event-store';
+import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
 
 const VERSION = '0.1.0';
 
@@ -164,6 +166,132 @@ program
     runDashboard();
   });
 
+// ─── maos replay ─────────────────────────────────────────────
+program
+  .command('replay [taskId]')
+  .description('Show event timeline for a task (or list recent events)')
+  .option('--agent <agentId>', 'Filter by agent ID')
+  .option('--type <type>', 'Filter by event type')
+  .option('-n, --limit <n>', 'Max events to show', '50')
+  .option('--stats', 'Show event store statistics')
+  .action((taskId: string | undefined, opts: any) => {
+    const cwd = process.cwd();
+    const maosDir = path.join(cwd, '.maos');
+
+    if (!fs.existsSync(maosDir)) {
+      console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
+      process.exit(1);
+    }
+
+    const store = new EventStore(cwd);
+
+    if (opts.stats) {
+      const s = store.stats();
+      console.log(chalk.bold.cyan('\n📊 Event Store Statistics'));
+      console.log(chalk.gray('─'.repeat(40)));
+      console.log(`  Total events   : ${chalk.white(s.totalEvents)}`);
+      console.log(`  File size      : ${chalk.white((s.fileSize / 1024).toFixed(1) + ' KB')}`);
+      if (s.oldestEvent) console.log(`  Oldest event   : ${chalk.gray(s.oldestEvent)}`);
+      if (s.newestEvent) console.log(`  Newest event   : ${chalk.gray(s.newestEvent)}`);
+      console.log(chalk.bold('\n  Events by type:'));
+      for (const [type, count] of Object.entries(s.eventsByType).sort((a, b) => b[1] - a[1])) {
+        console.log(`    ${chalk.cyan(type.padEnd(25))} ${chalk.white(count)}`);
+      }
+      return;
+    }
+
+    if (taskId) {
+      // Full task replay
+      const timeline = store.getTaskTimeline(taskId);
+      if (timeline.length === 0) {
+        console.log(chalk.yellow(`\n⚠️  No events found for task: ${taskId}`));
+        return;
+      }
+
+      console.log(chalk.bold.cyan(`\n🔁 Event Timeline: ${taskId}`));
+      console.log(chalk.gray('─'.repeat(70)));
+      console.log(chalk.gray(`${'SEQ'.padEnd(6)} ${'TIME'.padEnd(26)} ${'TYPE'.padEnd(22)} ${'AGENT'.padEnd(15)} NOTE`));
+      console.log(chalk.gray('─'.repeat(70)));
+
+      for (const evt of timeline) {
+        const time = new Date(evt.time).toLocaleTimeString();
+        const seqStr = String(evt.seq).padEnd(6);
+        const typeColor = evt.type.includes('FAIL') || evt.type.includes('ERROR')
+          ? chalk.red(evt.type.padEnd(22))
+          : evt.type.includes('COMPLETE') || evt.type.includes('DONE')
+          ? chalk.green(evt.type.padEnd(22))
+          : chalk.cyan(evt.type.padEnd(22));
+
+        console.log(
+          `${chalk.gray(seqStr)} ${chalk.gray(time.padEnd(26))} ${typeColor} ` +
+          `${chalk.yellow(evt.agentId.padEnd(15))} ${chalk.gray(evt.note.substring(0, 40))}`
+        );
+      }
+      console.log(chalk.gray('─'.repeat(70)));
+      console.log(chalk.gray(`  ${timeline.length} events`));
+    } else {
+      // Show recent events
+      const limit = parseInt(opts.limit, 10) || 50;
+      const events = store.query({
+        agentId: opts.agent,
+        type: opts.type,
+        limit,
+      });
+
+      if (events.length === 0) {
+        console.log(chalk.yellow('\n⚠️  No events found.'));
+        return;
+      }
+
+      console.log(chalk.bold.cyan(`\n📜 Recent Events (${events.length})`));
+      console.log(chalk.gray('─'.repeat(70)));
+
+      for (const evt of events) {
+        const time = new Date(evt.timestamp).toLocaleTimeString();
+        const typeColor = evt.type.includes('FAIL') ? chalk.red(evt.type) : chalk.cyan(evt.type);
+        const task = evt.taskId ? chalk.gray(` [${evt.taskId.substring(0, 20)}]`) : '';
+        console.log(`  ${chalk.gray(String(evt.seq).padEnd(5))} ${chalk.gray(time)} ${typeColor}${task} ${chalk.yellow(evt.agentId)}`);
+      }
+    }
+  });
+
+// ─── maos queue ──────────────────────────────────────────────
+program
+  .command('queue')
+  .description('Show retry queue and dead-letter queue status')
+  .action(() => {
+    const cwd = process.cwd();
+    const retrying = getRetryQueueStatus(cwd);
+    const dead = getDeadLetterQueue(cwd);
+
+    console.log(chalk.bold.cyan('\n🔄 Retry Queue'));
+    if (retrying.length === 0) {
+      console.log(chalk.gray('  (empty)'));
+    } else {
+      for (const r of retrying) {
+        const readySecs = Math.round(r.readyInMs / 1000);
+        const status = r.readyInMs === 0
+          ? chalk.green('READY')
+          : chalk.yellow(`in ${readySecs}s`);
+        console.log(
+          `  ${chalk.white(r.taskId.substring(0, 30).padEnd(30))} ` +
+          `attempt ${r.attemptNumber}/${r.maxRetries} ` +
+          `[${chalk.red(r.lastErrorType)}] ` +
+          status
+        );
+      }
+    }
+
+    console.log(chalk.bold.red('\n💀 Dead Letter Queue'));
+    if (dead.length === 0) {
+      console.log(chalk.gray('  (empty)'));
+    } else {
+      for (const d of dead) {
+        console.log(`  ${chalk.red('✗')} ${chalk.gray(d.taskId)}`);
+      }
+    }
+  });
+
 // ─── maos clean ───────────────────────────────────────────────
 program
   .command('clean')
@@ -175,17 +303,25 @@ program
       process.exit(1);
     }
 
-    // Clear queue directories
-    const queueDirs = ['pending', 'active', 'done'];
+    // Clear queue directories (including retry + failed)
+    const queueDirs = ['pending', 'active', 'done', 'retry', 'failed'];
     let cleared = 0;
     for (const dir of queueDirs) {
       const dirPath = path.join(maosDir, 'queue', dir);
       if (fs.existsSync(dirPath)) {
-        const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.md'));
+        const files = fs.readdirSync(dirPath);
         for (const file of files) {
           fs.unlinkSync(path.join(dirPath, file));
           cleared++;
         }
+      }
+    }
+
+    // Clear checkpoints
+    const checkpointDir = path.join(maosDir, 'checkpoints');
+    if (fs.existsSync(checkpointDir)) {
+      for (const file of fs.readdirSync(checkpointDir)) {
+        fs.unlinkSync(path.join(checkpointDir, file));
       }
     }
 

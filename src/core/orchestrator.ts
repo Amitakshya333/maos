@@ -25,6 +25,8 @@ import { prepareAgentBranch, tagAgentWork, getCurrentBranch } from '../integrati
 import { recordTelemetry, TelemetryRecord } from './telemetry';
 import { MessageBus, getMessageBus, createEvent } from './message-bus';
 import { recoverOrphanedTasks } from './checkpoint';
+import { enqueueRetry, drainRetryQueue, DEFAULT_RETRY_POLICY } from './retry-queue';
+import { wireEventStore } from './event-store';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -190,6 +192,10 @@ export async function startOrchestrator(
   // Initialize message bus
   const bus = getMessageBus();
 
+  // Wire event store — ALL bus events now persisted to .maos/events/events.jsonl
+  const eventStore = wireEventStore(bus, cwd);
+  logger.info('ORCHESTRATOR', `Event store active → .maos/events/events.jsonl`);
+
   // Log all bus events for debugging
   bus.onAll((event) => {
     const detail = event.data ? ` | ${JSON.stringify(event.data).substring(0, 100)}` : '';
@@ -338,6 +344,32 @@ export async function startOrchestrator(
         writeAgentStatus(agentDef.id, 'FAILED', result.error || 'Unknown error', cwd);
         logger.error('ORCHESTRATOR', `${agentDef.id} failed ${task.id} [${runtimeType}]: ${result.error}`);
 
+        // ---- RETRY QUEUE ----
+        // Instead of permanently failing, try to enqueue for retry with backoff.
+        const taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
+        const retryPolicy = {
+          ...DEFAULT_RETRY_POLICY,
+          maxRetries: (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
+        };
+        const retryRecord = enqueueRetry(
+          activeTask,
+          taskContent,
+          result.error || 'Task failed (no error message)',
+          result.filesChanged || [],
+          result.iterations || 0,
+          retryPolicy,
+          cwd,
+        );
+        if (retryRecord) {
+          const delaySecs = Math.round(retryRecord.retryDelayMs / 1000);
+          logger.warn('ORCHESTRATOR',
+            `${task.id} queued for retry #${retryRecord.attemptNumber} ` +
+            `(${retryRecord.lastErrorType}) in ${delaySecs}s`
+          );
+        } else {
+          logger.error('ORCHESTRATOR', `${task.id} dead-lettered — max retries exceeded or not retryable`);
+        }
+
         // Record failure telemetry
         recordTelemetry(cwd, {
           timestamp: new Date().toISOString(),
@@ -365,6 +397,12 @@ export async function startOrchestrator(
       writeAgentStatus(agentDef.id, 'FAILED', err.message, cwd);
       logger.error('ORCHESTRATOR', `${agentDef.id} crashed on ${task.id}: ${err.message}`);
 
+      // Enqueue crashed tasks for retry too
+      try {
+        const taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
+        enqueueRetry(activeTask, taskContent, err.message, [], 0, DEFAULT_RETRY_POLICY, cwd);
+      } catch { /* non-fatal */ }
+
       // Still move to done so it doesn't stay stuck in active
       try { moveToDone(activeTask, cwd); } catch {}
     } finally {
@@ -391,6 +429,13 @@ export async function startOrchestrator(
     if (!state.running) return;
 
     try {
+      // ---- RETRY QUEUE DRAIN ----
+      // Check if any retry-eligible tasks are ready to be re-queued.
+      const requeued = drainRetryQueue(cwd);
+      if (requeued > 0) {
+        logger.info('RETRY', `${requeued} task(s) moved from retry queue back to pending`);
+      }
+
       const pool = loadPool(cwd);
       const pending = getPendingTasks(cwd);
 

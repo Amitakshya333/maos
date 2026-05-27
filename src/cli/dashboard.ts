@@ -6,6 +6,8 @@ import { isMaosInitialized, getStatusDir, getLogsDir } from '../utils/paths';
 import { getQueueCounts, getPendingTasks, getActiveTasks, getDoneTasks } from '../core/queue';
 import { readTelemetry, summarizeTelemetry } from '../core/telemetry';
 import { loadBrain } from '../core/brain';
+import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
+import { EventStore } from '../core/event-store';
 
 const PORT = 3847;
 
@@ -74,15 +76,25 @@ function getDashboardState(cwd: string) {
   }
 
   const telemetry = summarizeTelemetry(cwd);
+  const retryQueue = getRetryQueueStatus(cwd);
+  const deadLetterQueue = getDeadLetterQueue(cwd);
+  const eventStats = new EventStore(cwd).stats();
 
   return {
     timestamp: new Date().toISOString(),
     project: config.projectName || path.basename(cwd),
-    queue: counts,
+    queue: {
+      ...counts,
+      retry: retryQueue.length,
+      failed: deadLetterQueue.length,
+    },
     agents,
     agentDefs: config.agents || [],
     tasks: { pending, active, done },
+    retryQueue,
+    deadLetterQueue: deadLetterQueue.map(d => d.taskId),
     telemetry,
+    events: eventStats,
   };
 }
 

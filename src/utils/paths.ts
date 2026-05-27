@@ -54,6 +54,18 @@ export function getCheckpointsDir(cwd?: string): string {
   return path.join(getMaosRoot(cwd), 'checkpoints');
 }
 
+export function getRetryDir(cwd?: string): string {
+  return path.join(getMaosRoot(cwd), 'queue', 'retry');
+}
+
+export function getFailedDir(cwd?: string): string {
+  return path.join(getMaosRoot(cwd), 'queue', 'failed');
+}
+
+export function getEventsDir(cwd?: string): string {
+  return path.join(getMaosRoot(cwd), 'events');
+}
+
 /**
  * Ensure all required .maos/ subdirectories exist.
  */
@@ -69,6 +81,9 @@ export function ensureMaosDirectories(cwd?: string): void {
     getBrainDir(cwd),
     getTelemetryDir(cwd),
     getCheckpointsDir(cwd),
+    getRetryDir(cwd),
+    getFailedDir(cwd),
+    getEventsDir(cwd),
   ];
 
   for (const dir of dirs) {
