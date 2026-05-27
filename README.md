@@ -311,14 +311,29 @@ SCORE = (capability_match × capabilityWeight)
 
 ---
 
-## 🛡️ Safety Features
+## 🧠 The Intelligence Layer (P3)
 
-- **Git branch isolation** — Each agent works on its own branch (`maos/<agent>/<task>`)
-- **Scope enforcement** — Agents can only modify files matching their `scope` globs
-- **Circuit breaker** — Agents stuck for 5 iterations with no file changes are stopped
-- **Max iteration limit** — Hard cap on tool calls per agent per task
-- **Cost tracking** — Real-time cost tracking per agent and per task
-- **Graceful shutdown** — SIGINT/SIGTERM handlers clean up agent statuses
+MAOS features a self-improving, data-driven **Intelligence Layer** that connects fleet telemetry with orchestrator execution to allow agents to learn, collaborate, and adapt in real-time:
+
+*   **Shared Context Memory (Inter-Agent Transfer):** Agents dynamically share discoveries and codebase maps through an append-only memory store. Injected automatically into system prompts, this eliminates redundant exploration and saves up to 5 iterations per agent task.
+*   **Adaptive Capability Router:** The router goes beyond static rules. It reads historical run telemetry and computes an agent-to-capability **success rate matrix**. Scoring uses a 60/40 blend of static capability match and learned reputation to prefer agents with proven reliability on specific task types.
+*   **File Ownership Engine:** Evolved from simple file locks to a high-concurrency ownership map with `READ`, `WRITE`, and `EXCLUSIVE` scopes. It tracks agent-file associations, detects line-level overlaps via git, defers concurrent writes to a conflict retry queue, and auto-releases files after 60 seconds of inactivity.
+*   **Intelligent Task Decomposer:** Uses telemetry data to pre-compute task complexity. The decomposer generates plans with scope-aware boundaries that respect individual agent file access limits, and runs DFS cycle detection to validate task dependency graphs.
+
+---
+
+## 🛡️ Safety & Security (Secret Shield)
+
+MAOS enforces strict isolation, safety, and security guardrails to keep codebase changes safe and prevent repository credential leakage:
+
+*   **Branch Isolation:** Every agent operates in a dedicated git branch (`maos/<agent>/<task>`). Code is merged back only on task completion.
+*   **Scope Enforcement:** Agents are restricted to specific file paths using glob patterns (e.g. `src/components/**`). They cannot read or write outside their defined boundaries.
+*   **Circuit Breaker:** Automatically detects hung agents. If an agent runs for 5 iterations with no file system changes, execution halts gracefully.
+*   **Secret Shield (Pre-Commit Guard):** A lightweight, zero-dependency pre-commit Git hook that scans staged changes before every commit:
+    *   **Blocks Staged `.env` Files:** Instantly rejects commits staging `.env` or non-example environment files.
+    *   **Credentials Scanner:** Scans staged additions for Freemodel keys (`fe_oa_...`), OpenAI keys (`sk-...`), and obvious token or API key assignments using entropy matching.
+    *   **Interactive Terminal Warning:** Displays clean, structured error alerts directly in your shell showing the exact file, match line, and remediation instructions.
+*   **Graceful Shutdown:** SIGINT/SIGTERM handlers clean up agent statuses and release file ownerships.
 
 ---
 
@@ -338,7 +353,10 @@ SCORE = (capability_match × capabilityWeight)
 - [x] Codebase brain scanner
 - [x] Interactive REPL shell
 - [x] Web dashboard (real-time fleet visualization)
-- [ ] Historical performance learning
+- [x] Historical performance learning & Adaptive Router
+- [x] Shared inter-agent Context Memory
+- [x] High-concurrency File Ownership Engine
+- [x] Automated pre-commit Secret Shield scanner
 - [ ] Plugin system for custom tools
 - [ ] VS Code extension
 
