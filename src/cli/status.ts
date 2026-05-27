@@ -44,16 +44,16 @@ export function runStatus(): void {
 
   // Agent table
   console.log(chalk.bold('  Agents:'));
-  console.log(chalk.gray('  ─────────────────────────────────────────────────────'));
+  console.log(chalk.gray('  ─────────────────────────────────────────────────────────────────'));
   console.log(
     chalk.gray('  ') +
     chalk.bold(padRight('ID', 16)) +
     chalk.bold(padRight('ROLE', 10)) +
-    chalk.bold(padRight('MODEL', 18)) +
+    chalk.bold(padRight('RUNTIME/MODEL', 22)) +
     chalk.bold(padRight('STATUS', 12)) +
     chalk.bold('POOL')
   );
-  console.log(chalk.gray('  ─────────────────────────────────────────────────────'));
+  console.log(chalk.gray('  ─────────────────────────────────────────────────────────────────'));
 
   for (const agent of agents) {
     const enabled = pool[agent.id] !== false;
@@ -69,17 +69,28 @@ export function runStatus(): void {
                      agent.role === 'coder' ? '⚙️' :
                      agent.role === 'designer' ? '🎨' : '📦';
 
+    // Build a runtime-aware label for heterogeneous metadata support
+    let runtimeLabel = '';
+    const runtimeType = (agent.runtime || 'api').toLowerCase();
+    if (runtimeType === 'cli') {
+      runtimeLabel = `${agent.cliCommand || 'cli'}-cli/${agent.cliCommand || 'cli'}`;
+    } else if (runtimeType === 'local') {
+      runtimeLabel = `local/${agent.model || 'local'}`;
+    } else {
+      runtimeLabel = `${agent.provider || 'unknown'}/${agent.model || 'unknown'}`;
+    }
+
     console.log(
       chalk.gray('  ') +
       `${roleIcon} ${padRight(agent.id, 14)}` +
       padRight(agent.role, 10) +
-      chalk.gray(padRight(`${agent.provider}/${agent.model}`, 18)) +
+      chalk.gray(padRight(runtimeLabel, 22)) +
       statusColor(padRight(status.substring(0, 10), 12)) +
       poolIcon
     );
   }
 
-  console.log(chalk.gray('  ─────────────────────────────────────────────────────'));
+  console.log(chalk.gray('  ─────────────────────────────────────────────────────────────────'));
   console.log('');
 
   // Queue summary
