@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { IProvider, ChatMessage, ToolDef } from '../backends/provider';
 import { createLogger } from '../utils/logger';
+import { readTelemetry, TelemetryRecord } from './telemetry';
 
 /**
  * MAOS AI Task Decomposer
@@ -119,12 +120,24 @@ const DECOMPOSE_TOOL: ToolDef = {
 
 function buildDecomposePrompt(
   goal: string,
-  agentRoster: { id: string; role: string; capabilities: string[] }[],
+  agentRoster: { id: string; role: string; capabilities: string[]; scope?: string[] }[],
   projectContext?: string,
+  telemetryHint?: string,
 ): string {
   const rosterText = agentRoster
-    .map(a => `  - ${a.id} (${a.role}): capabilities = [${a.capabilities.join(', ')}]`)
+    .map(a => {
+      const scopeInfo = a.scope && a.scope.length > 0
+        ? ' | scope = [' + a.scope.join(', ') + ']'
+        : '';
+      return '  - ' + a.id + ' (' + a.role + '): capabilities = [' +
+        a.capabilities.join(', ') + ']' + scopeInfo;
+    })
     .join('\n');
+
+  let telemetrySection = '';
+  if (telemetryHint) {
+    telemetrySection = '\n## Historical Performance Data\n' + telemetryHint + '\n';
+  }
 
   return `You are MAOS ARCHITECT — an expert software architect who decomposes high-level goals into atomic, actionable subtasks for a team of AI coding agents.
 
@@ -138,6 +151,7 @@ Decompose the following goal into atomic subtasks. Each subtask should be:
 3. **Capability-tagged** — tag each with the capabilities needed so the router assigns the right agent
 4. **Dependency-aware** — mark which tasks must finish before others can start
 5. **Realistic** — 3-8 subtasks for simple goals, 5-15 for complex ones
+6. **Scope-aligned** — each task should only touch files within ONE agent's scope
 
 ## Rules
 - Each subtask should take an agent 1-5 tool iterations to complete
@@ -146,8 +160,9 @@ Decompose the following goal into atomic subtasks. Each subtask should be:
 - Backend tasks should include API endpoints, data models, and business logic
 - Prefer parallel execution: minimize dependencies between tasks
 - If a task is clearly suited for a specific agent role, tag its category accordingly
-${projectContext ? `\n## Current Project Context\n${projectContext}` : ''}
-
+- DO NOT create tasks that require files spanning multiple agent scopes
+- When suggesting file paths, keep them within the scope of the agent best suited for the task
+${projectContext ? '\n## Current Project Context\n' + projectContext : ''}${telemetrySection}
 ## Goal
 "${goal}"
 
@@ -167,7 +182,7 @@ Call the submit_plan tool with your decomposition. Be thorough but practical.`;
 export async function decompose(
   provider: IProvider,
   goal: string,
-  agents: { id: string; role: string; capabilities: string[] }[],
+  agents: { id: string; role: string; capabilities: string[]; scope?: string[] }[],
   cwd?: string,
 ): Promise<DecompositionResult> {
   const logger = createLogger(cwd);
@@ -186,7 +201,10 @@ export async function decompose(
     // No project context available — that's fine
   }
 
-  const systemPrompt = buildDecomposePrompt(goal, agents, projectContext);
+  const systemPrompt = buildDecomposePrompt(
+    goal, agents, projectContext,
+    buildTelemetryHint(cwd),
+  );
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: `Decompose this goal into subtasks: "${goal}"` },
@@ -234,16 +252,27 @@ export async function decompose(
     throw new Error('Decomposer: Model returned an empty task list. Try rephrasing the goal.');
   }
 
+  // ---- P3.4: DEPENDENCY GRAPH VALIDATION ----
+  const depWarnings = validateDependencyGraph(tasks);
+  for (const warn of depWarnings) {
+    logger.warn('DECOMPOSER', warn);
+  }
+
+  // ---- P3.4: TELEMETRY-INFORMED COMPLEXITY OVERRIDE ----
+  const overriddenComplexity = estimateComplexityFromTelemetry(
+    tasks, cwd,
+  );
+
   const result: DecompositionResult = {
     goal,
     tasks,
-    estimatedComplexity: planData.estimatedComplexity || 'medium',
+    estimatedComplexity: overriddenComplexity || planData.estimatedComplexity || 'medium',
     model: response.model,
     tokensUsed: response.usage.totalTokens,
     latencyMs: response.latencyMs,
   };
 
-  logger.success('DECOMPOSER', `Decomposed into ${tasks.length} subtasks (${result.estimatedComplexity} complexity)`);
+  logger.success('DECOMPOSER', 'Decomposed into ' + tasks.length + ' subtasks (' + result.estimatedComplexity + ' complexity)');
   return result;
 }
 
@@ -308,3 +337,159 @@ function scanDirRecursive(
 
   return results;
 }
+
+// ─── P3.4 Intelligence Enhancements ──────────────────────────
+
+/**
+ * Validate the dependency graph returned by the model.
+ * Returns an array of warning messages.
+ * Auto-fixes: removes invalid dependency references.
+ */
+function validateDependencyGraph(tasks: SubTask[]): string[] {
+  const warnings: string[] = [];
+  const titleSet = new Set(tasks.map(t => t.title));
+
+  // 1. Remove dangling dependency references
+  for (const task of tasks) {
+    const validDeps: string[] = [];
+    for (const dep of task.dependsOn) {
+      if (titleSet.has(dep)) {
+        validDeps.push(dep);
+      } else {
+        warnings.push(
+          'Removed invalid dependency: "' + task.title +
+          '" depends on "' + dep + '" which does not exist'
+        );
+      }
+    }
+    task.dependsOn = validDeps;
+  }
+
+  // 2. Detect cycles using DFS
+  const visited = new Set<string>();
+  const inStack = new Set<string>();
+
+  function hasCycle(title: string): boolean {
+    if (inStack.has(title)) return true;
+    if (visited.has(title)) return false;
+
+    visited.add(title);
+    inStack.add(title);
+
+    const task = tasks.find(t => t.title === title);
+    if (task) {
+      for (const dep of task.dependsOn) {
+        if (hasCycle(dep)) {
+          // Break the cycle by removing this edge
+          task.dependsOn = task.dependsOn.filter(d => d !== dep);
+          warnings.push(
+            'Broke dependency cycle: "' + title + '" -> "' + dep + '"'
+          );
+          return false; // Fixed, continue
+        }
+      }
+    }
+
+    inStack.delete(title);
+    return false;
+  }
+
+  for (const task of tasks) {
+    visited.clear();
+    inStack.clear();
+    hasCycle(task.title);
+  }
+
+  // 3. Check for orphaned tasks (no path to any root)
+  const roots = tasks.filter(t => t.dependsOn.length === 0);
+  if (roots.length === 0 && tasks.length > 0) {
+    warnings.push(
+      'No root tasks (tasks with empty dependsOn). All tasks have dependencies. ' +
+      'This may cause a deadlock. Consider removing unnecessary dependencies.'
+    );
+  }
+
+  return warnings;
+}
+
+/**
+ * Estimate overall complexity from telemetry history.
+ * Returns a complexity string or null if insufficient data.
+ */
+function estimateComplexityFromTelemetry(
+  tasks: SubTask[],
+  cwd?: string,
+): 'low' | 'medium' | 'high' | null {
+  if (!cwd) return null;
+
+  try {
+    const records = readTelemetry(cwd);
+    if (records.length < 3) return null; // Not enough data
+
+    // Gather capabilities across all tasks
+    const allCaps = new Set<string>();
+    for (const t of tasks) {
+      for (const c of t.requiredCapabilities) {
+        allCaps.add(c);
+      }
+    }
+
+    // Find past tasks with similar capabilities
+    const similar = records.filter(r =>
+      r.capabilities.some(c => allCaps.has(c))
+    );
+
+    if (similar.length < 2) return null;
+
+    // Calculate average iterations for similar tasks
+    const avgIterations = similar.reduce((s, r) => s + r.iterations, 0) / similar.length;
+    const successRate = similar.filter(r => r.success).length / similar.length;
+
+    // High iteration count or low success rate → higher complexity
+    if (avgIterations > 15 || successRate < 0.5) return 'high';
+    if (avgIterations > 8 || successRate < 0.75) return 'medium';
+    return 'low';
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a telemetry hint for the decomposer prompt.
+ * Summarizes past performance to guide complexity estimation.
+ */
+function buildTelemetryHint(cwd?: string): string | undefined {
+  if (!cwd) return undefined;
+
+  try {
+    const records = readTelemetry(cwd);
+    if (records.length === 0) return undefined;
+
+    const successes = records.filter(r => r.success).length;
+    const avgIterations = records.reduce((s, r) => s + r.iterations, 0) / records.length;
+    const avgTokens = records.reduce((s, r) => s + r.totalTokens, 0) / records.length;
+
+    // Count capability frequencies
+    const capFreq: Record<string, number> = {};
+    for (const r of records) {
+      for (const c of r.capabilities) {
+        capFreq[c] = (capFreq[c] || 0) + 1;
+      }
+    }
+    const topCaps = Object.entries(capFreq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([cap, count]) => cap + ' (' + count + ')')
+      .join(', ');
+
+    return 'From ' + records.length + ' past task executions:\n' +
+      '- Success rate: ' + Math.round(successes / records.length * 100) + '%\n' +
+      '- Average iterations per task: ' + Math.round(avgIterations) + '\n' +
+      '- Average tokens per task: ' + Math.round(avgTokens) + '\n' +
+      '- Most common capabilities: ' + topCaps + '\n' +
+      'Use this data to set realistic complexity estimates.';
+  } catch {
+    return undefined;
+  }
+}
+
