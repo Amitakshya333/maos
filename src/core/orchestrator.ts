@@ -27,6 +27,7 @@ import { MessageBus, getMessageBus, createEvent } from './message-bus';
 import { recoverOrphanedTasks } from './checkpoint';
 import { enqueueRetry, drainRetryQueue, DEFAULT_RETRY_POLICY } from './retry-queue';
 import { wireEventStore } from './event-store';
+import { createHealthMonitor, HealthMonitor } from './health-monitor';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -229,6 +230,16 @@ export async function startOrchestrator(
   const router = createRouter(config.routing);
   logger.info('ORCHESTRATOR', `Routing strategy: ${config.routing.strategy || 'capability_score'}`);
 
+  // ---- HEALTH MONITOR ----
+  // Watches heartbeats from all agents. Fires HEALTH_ALERT on dead/degraded agents.
+  const healthMonitor = createHealthMonitor(bus, {}, (alert) => {
+    if (alert.state === 'DEAD') {
+      logger.error('HEALTH', alert.message);
+    } else {
+      logger.warn('HEALTH', alert.message);
+    }
+  });
+
   // State
   const state: OrchestratorState = {
     running: true,
@@ -239,10 +250,16 @@ export async function startOrchestrator(
     totalCostUSD: 0,
   };
 
-  // Initialize all agents as IDLE
+  // Initialize all agents as IDLE + register with health monitor
   for (const agent of config.agents) {
     writeAgentStatus(agent.id, 'IDLE', '', cwd);
+    const runtimeType = (agent.runtime || 'api') as 'api' | 'cli' | 'local';
+    healthMonitor.registerAgent(agent.id, runtimeType);
   }
+
+  // Start health sweeps
+  healthMonitor.start();
+  logger.info('ORCHESTRATOR', `Health monitor active (sweep every 15s)`);
 
   // ─── Dispatch a single task ─────────────────────────────────
   //
@@ -274,6 +291,12 @@ export async function startOrchestrator(
       `(${runtime.name}/${runtime.model}) ` +
       `[runtime: ${runtimeType}, branch: ${branchName}]`
     );
+    // Emit TASK_STARTED for HealthMonitor + dashboard
+    bus.emit(createEvent('TASK_STARTED', agentDef.id, {
+      model: runtime.model,
+      runtimeType,
+      branch: branchName,
+    }, task.id, runtimeType as any));
     options.onStatusUpdate?.(state);
 
     try {
@@ -339,11 +362,24 @@ export async function startOrchestrator(
           filesChanged: result.filesChanged,
           summary: result.summary,
         });
+
+        // Emit TASK_COMPLETED for HealthMonitor + event store
+        bus.emit(createEvent('TASK_COMPLETED', agentDef.id, {
+          iterations: result.iterations,
+          filesChanged: result.filesChanged.length,
+          costUSD: result.costUSD,
+          latencyMs: result.latencyMs,
+        }, task.id, runtimeType as any));
       } else {
         state.failedTasks++;
         writeAgentStatus(agentDef.id, 'FAILED', result.error || 'Unknown error', cwd);
         logger.error('ORCHESTRATOR', `${agentDef.id} failed ${task.id} [${runtimeType}]: ${result.error}`);
 
+        // Emit TASK_FAILED for HealthMonitor + event store
+        bus.emit(createEvent('TASK_FAILED', agentDef.id, {
+          error: (result.error || '').substring(0, 200),
+          iterations: result.iterations,
+        }, task.id, runtimeType as any));
         // ---- RETRY QUEUE ----
         // Instead of permanently failing, try to enqueue for retry with backoff.
         const taskContent = fs.readFileSync(activeTask.filePath, 'utf-8');
@@ -514,6 +550,9 @@ export async function startOrchestrator(
         logger.warn('ORCHESTRATOR', `Failed to dispose runtime for ${agentId}: ${err.message}`);
       }
     }
+
+    // Stop health monitor sweep
+    healthMonitor.stop();
 
     // Dispose message bus
     bus.dispose();

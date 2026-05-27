@@ -8,6 +8,7 @@ import { readTelemetry, summarizeTelemetry } from '../core/telemetry';
 import { loadBrain } from '../core/brain';
 import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
 import { EventStore } from '../core/event-store';
+import { getHealthMonitor } from '../core/health-monitor';
 
 const PORT = 3847;
 
@@ -30,6 +31,17 @@ export function runDashboard(): void {
     if (req.url === '/api/logs') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify(getRecentLogs(cwd)));
+      return;
+    }
+
+    if (req.url === '/api/health') {
+      const monitor = getHealthMonitor();
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({
+        agents: monitor ? monitor.getStatus() : [],
+        summary: monitor ? monitor.getSummary() : null,
+        alerts: monitor ? monitor.getAlerts(10) : [],
+      }));
       return;
     }
 
@@ -216,6 +228,33 @@ function getDashboardHTML(): string {
   .badge-busy { background: #2a2a1a; color: var(--yellow); animation: pulse 1.5s infinite; }
   .badge-done { background: #1a1a2a; color: var(--accent2); }
   .badge-failed { background: #2a1a1a; color: var(--red); }
+  .badge-stuck { background: #2a1a1a; color: var(--red); animation: pulse 1s infinite; }
+
+  /* Runtime type badges */
+  .badge-rt {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 12px;
+    text-transform: uppercase; letter-spacing: 0.7px; margin-left: 6px;
+  }
+  .badge-rt-api   { background: rgba(99,102,241,0.2); color: #818cf8; border: 1px solid rgba(99,102,241,0.4); }
+  .badge-rt-cli   { background: rgba(6,182,212,0.2);  color: #06b6d4; border: 1px solid rgba(6,182,212,0.4); }
+  .badge-rt-local { background: rgba(168,85,247,0.2); color: #a855f7; border: 1px solid rgba(168,85,247,0.4); }
+
+  /* Health state badges */
+  .badge-health {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-left: 4px;
+  }
+  .badge-health-healthy  { background: rgba(34,197,94,0.15);  color: #22c55e; }
+  .badge-health-degraded { background: rgba(234,179,8,0.15);  color: #eab308; animation: pulse 2s infinite; }
+  .badge-health-dead     { background: rgba(239,68,68,0.2);   color: #ef4444; animation: pulse 0.8s infinite; }
+  .badge-health-idle     { background: rgba(136,136,160,0.1); color: #8888a0; }
+
+  /* Health panel table */
+  .health-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .health-table th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .health-table td { padding: 6px 8px; border-bottom: 1px solid rgba(42,42,58,0.4); }
+  .health-table tr:last-child td { border-bottom: none; }
+  .health-alert { padding: 6px 10px; background: rgba(239,68,68,0.1); border-left: 3px solid var(--red); margin-bottom: 6px; font-size: 12px; border-radius: 0 4px 4px 0; }
 
   .task-item {
     padding: 10px 0;
@@ -288,6 +327,10 @@ function getDashboardHTML(): string {
     <div class="label">💰 Total Cost</div>
     <div class="value purple" id="stat-cost">-</div>
   </div>
+  <div class="stat-card" id="stat-retry-card" style="display:none">
+    <div class="label">🔄 Retrying</div>
+    <div class="value" style="color:var(--red)" id="stat-retry">0</div>
+  </div>
 </div>
 
 <div class="main-grid">
@@ -302,6 +345,13 @@ function getDashboardHTML(): string {
     <div class="panel-header">📋 Task Queue</div>
     <div class="panel-body" id="tasks-list" style="max-height:300px;overflow-y:auto;">
       <div style="color:var(--text-dim)">Loading...</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">❤️ Health Monitor</div>
+    <div class="panel-body" id="health-panel">
+      <div style="color:var(--text-dim)">Waiting for orchestrator...</div>
     </div>
   </div>
 
@@ -332,12 +382,14 @@ function getDashboardHTML(): string {
 <script>
 async function refresh() {
   try {
-    const [stateRes, logsRes] = await Promise.all([
+    const [stateRes, logsRes, healthRes] = await Promise.all([
       fetch('/api/state'),
       fetch('/api/logs'),
+      fetch('/api/health'),
     ]);
     const state = await stateRes.json();
     const logs = await logsRes.json();
+    window._health = await healthRes.json();
 
     // Project name
     document.getElementById('project-name').textContent = 'Project: ' + state.project;
@@ -348,20 +400,49 @@ async function refresh() {
     document.getElementById('stat-done').textContent = state.queue.done;
     document.getElementById('stat-cost').textContent = '$' + (state.telemetry.totalCostUSD || 0).toFixed(4);
 
+    // Retry / dead letter counts in stats bar (if non-zero)
+    const retryCount = (state.queue.retry || 0) + (state.queue.failed || 0);
+    const retryCard = document.getElementById('stat-retry-card');
+    const retryVal = document.getElementById('stat-retry');
+    if (retryCard && retryVal) {
+      retryVal.textContent = retryCount;
+      retryCard.style.display = retryCount > 0 ? 'flex' : 'none';
+    }
+
     // Agents
     const agentsEl = document.getElementById('agents-list');
     if (state.agentDefs.length === 0) {
       agentsEl.innerHTML = '<div style="color:var(--text-dim)">No agents configured</div>';
     } else {
-      agentsEl.innerHTML = state.agentDefs.map(a => {
+    agentsEl.innerHTML = state.agentDefs.map(a => {
         const st = state.agents[a.id] || { status: 'UNKNOWN', detail: '' };
         const badgeClass = st.status === 'IDLE' ? 'badge-idle' :
                           st.status === 'BUSY' ? 'badge-busy' :
                           st.status === 'DONE' ? 'badge-done' :
-                          st.status === 'FAILED' ? 'badge-failed' : 'badge-idle';
+                          st.status === 'FAILED' ? 'badge-failed' :
+                          st.status === 'STUCK' ? 'badge-stuck' : 'badge-idle';
+
+        // Runtime type badge
+        const rt = (a.runtime || 'api').toLowerCase();
+        const rtBadge = '<span class="badge-rt badge-rt-' + rt + '">' + rt + '</span>';
+
+        // Health badge (from /api/health)
+        let healthBadge = '';
+        if (window._health && window._health.agents) {
+          const h = window._health.agents.find(x => x.agentId === a.id);
+          if (h) {
+            const hs = h.state.toLowerCase();
+            const icon = hs === 'healthy' ? '\u2665' : hs === 'degraded' ? '\u26a0' : hs === 'dead' ? '\u2620' : '\u25cb';
+            healthBadge = '<span class="badge-health badge-health-' + hs + '">' + icon + ' ' + h.state + '</span>';
+          }
+        }
+
+        // Task detail
+        const detail = st.detail ? '<div style="color:var(--text-dim);font-size:11px;margin-top:2px;">' + st.detail.substring(0,60) + '</div>' : '';
+
         return '<div class="agent-row">' +
-          '<div><div class="agent-id">' + a.id + '</div>' +
-          '<div class="agent-model">' + (a.provider || '?') + '/' + (a.model || '?') + '</div></div>' +
+          '<div><div class="agent-id">' + a.id + rtBadge + healthBadge + '</div>' +
+          '<div class="agent-model">' + (a.provider || a.cliCommand || '?') + '/' + (a.model || a.cliCommand || '?') + '</div>' + detail + '</div>' +
           '<div><span class="badge ' + badgeClass + '">' + st.status + '</span></div>' +
           '</div>';
       }).join('');
@@ -383,6 +464,68 @@ async function refresh() {
         '<div class="task-desc">' + (t.description || '').substring(0, 80) + '</div>' +
         '</div>'
       ).join('');
+    }
+
+    // Health Monitor panel
+    const healthEl = document.getElementById('health-panel');
+    if (window._health && window._health.agents && window._health.agents.length > 0) {
+      const agents = window._health.agents;
+      const alerts = (window._health.alerts || []).slice(-3);
+
+      let html = '';
+
+      // Alerts first (if any)
+      if (alerts.length > 0) {
+        for (const alert of alerts) {
+          const ago = Math.round((Date.now() - alert.timestamp) / 1000);
+          html += '<div class="health-alert">' +
+            (alert.state === 'DEAD' ? '☠ ' : '⚠ ') +
+            escapeHtml(alert.message) +
+            ' <span style="color:var(--text-dim)">(' + ago + 's ago)</span>' +
+            '</div>';
+        }
+      }
+
+      // Agent health table
+      html += '<table class="health-table"><thead><tr>' +
+        '<th>Agent</th><th>State</th><th>Runtime</th><th>Task</th><th>Silent</th>' +
+        '</tr></thead><tbody>';
+
+      for (const h of agents) {
+        const hs = h.state.toLowerCase();
+        const icon = hs === 'healthy' ? '♥' : hs === 'degraded' ? '⚠' : hs === 'dead' ? '☠' : '○';
+        const silentMs = h.lastHeartbeatAt ? Date.now() - h.lastHeartbeatAt : null;
+        const silentStr = silentMs !== null
+          ? (silentMs < 5000 ? 'just now' : Math.round(silentMs / 1000) + 's ago')
+          : (hs === 'idle' ? '—' : 'never');
+        const taskStr = h.currentTaskId ? h.currentTaskId.substring(0, 16) + '…' : '—';
+        const rt = (h.runtimeType || 'api').toLowerCase();
+
+        html += '<tr>' +
+          '<td style="font-weight:600">' + h.agentId + '</td>' +
+          '<td><span class="badge-health badge-health-' + hs + '">' + icon + ' ' + h.state + '</span></td>' +
+          '<td><span class="badge-rt badge-rt-' + rt + '">' + rt + '</span></td>' +
+          '<td style="font-family:monospace;font-size:11px;color:var(--cyan)">' + taskStr + '</td>' +
+          '<td style="color:var(--text-dim);font-size:11px">' + silentStr + '</td>' +
+          '</tr>';
+      }
+
+      html += '</tbody></table>';
+
+      // Summary line
+      const s = window._health.summary;
+      if (s) {
+        html += '<div style="margin-top:10px;font-size:11px;color:var(--text-dim)">' +
+          '♥ ' + s.healthy + ' healthy · ' +
+          '⚠ ' + s.degraded + ' degraded · ' +
+          '☠ ' + s.dead + ' dead · ' +
+          'alerts: ' + s.totalAlerts +
+          '</div>';
+      }
+
+      healthEl.innerHTML = html;
+    } else {
+      healthEl.innerHTML = '<div style="color:var(--text-dim)">Waiting for orchestrator to start...</div>';
     }
 
     // Cost analytics

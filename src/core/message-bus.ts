@@ -22,7 +22,8 @@ export type EventType =
   | 'AGENT_READY'      // Agent is idle and available for work
   | 'AGENT_DISPOSED'   // Agent runtime was cleaned up
   | 'CONTEXT_COMPRESSED' // API runtime compressed its context window
-  | 'BUDGET_WARNING';  // Agent nearing iteration/timeout limit
+  | 'BUDGET_WARNING'   // Agent nearing iteration/timeout limit
+  | 'HEALTH_ALERT';    // Health monitor detected a dead/degraded agent
 
 // ---- Event Payload ----
 

@@ -3,6 +3,8 @@ import { AGENT_TOOLS, executeTool } from '../integrations/tools';
 import { Logger, createLogger } from '../utils/logger';
 import { getFileLockRegistry } from './scope-guard';
 import { saveCheckpoint, deleteCheckpoint, TaskCheckpoint } from './checkpoint';
+import { getMessageBus, createEvent } from './message-bus';
+import { getBrainContext } from './brain';
 
 /**
  * Agent configuration passed to the runner.
@@ -157,6 +159,17 @@ class ProgressTracker {
 
 
 function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: string): string {
+  // ---- BRAIN INJECTION ----
+  // If brain has been initialized, inject compact project context.
+  // This saves the agent 2-5 exploration iterations.
+  let brainSection = '';
+  try {
+    const brainCtx = getBrainContext(projectRoot);
+    if (brainCtx) {
+      brainSection = `\n\n${brainCtx}\n`;
+    }
+  } catch { /* brain not available — non-fatal */ }
+
   return `You are ${agent.id}, a ${agent.role} agent working on this project.
 
 ## Your Identity
@@ -170,7 +183,7 @@ You may ONLY modify files in: [${agent.scope.join(', ')}]
 You are on git branch: ${task.branch}
 Project root: ${projectRoot}
 DO NOT touch files outside your scope. The system will reject out-of-scope writes.
-
+${brainSection}
 ## Your Task
 ${task.description}
 
@@ -246,6 +259,20 @@ export async function runAgent(
     while (iterations < getEffectiveMax()) {
       iterations++;
       onProgress?.(iterations, 'thinking');
+
+      // ---- HEARTBEAT (every 5 iterations) ----
+      // Emitted so the HealthMonitor knows the agent is alive.
+      if (iterations % 5 === 0) {
+        try {
+          getMessageBus().emit(createEvent(
+            'HEARTBEAT',
+            agent.id,
+            { iteration: iterations, maxIterations: getEffectiveMax(), totalTokens },
+            task.id,
+            'api',
+          ));
+        } catch { /* non-fatal */ }
+      }
 
       // ---- CONTEXT COMPRESSION ----
       // If estimated tokens are too high, compress old messages
@@ -357,6 +384,20 @@ export async function runAgent(
         // Track mutating tool calls as progress signals (for bonus iterations)
         if (toolName === 'write_file' || toolName === 'run_command' || toolName === 'git_commit') {
           hadMutatingToolCall = true;
+          // Emit TASK_PROGRESS so HealthMonitor counts this as an implicit heartbeat
+          try {
+            getMessageBus().emit(createEvent(
+              'TASK_PROGRESS',
+              agent.id,
+              {
+                tool: toolName,
+                iteration: iterations,
+                file: args.path || args.command || undefined,
+              },
+              task.id,
+              'api',
+            ));
+          } catch { /* non-fatal */ }
         }
 
         const { result, isComplete: done } = executeTool(
