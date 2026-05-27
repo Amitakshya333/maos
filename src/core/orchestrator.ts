@@ -24,6 +24,7 @@ import { createRouter, Router, AgentProfile, TaskRequirements, RoutingDecision }
 import { prepareAgentBranch, tagAgentWork, getCurrentBranch } from '../integrations/git';
 import { recordTelemetry, TelemetryRecord } from './telemetry';
 import { MessageBus, getMessageBus, createEvent } from './message-bus';
+import { recoverOrphanedTasks } from './checkpoint';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -168,6 +169,17 @@ export async function startOrchestrator(
 
   // Ensure dirs exist
   ensureMaosDirectories(cwd);
+
+  // ---- CRASH RECOVERY ----
+  // Scan for orphaned active tasks from a previous crashed session.
+  // Requeue recoverable tasks, mark partial successes as done.
+  const recovery = recoverOrphanedTasks(cwd);
+  if (recovery.recovered > 0 || recovery.markedDone > 0) {
+    logger.info('RECOVERY', `Recovered ${recovery.recovered} tasks (requeued), ${recovery.markedDone} tasks (marked done)`);
+    for (const d of recovery.details) {
+      logger.info('RECOVERY', `  ${d.taskId}: ${d.action} — ${d.reason}`);
+    }
+  }
 
   // Load config
   const config = loadConfig(cwd);

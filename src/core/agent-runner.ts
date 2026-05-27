@@ -1,6 +1,8 @@
 import { IProvider, ChatMessage } from '../backends/provider';
 import { AGENT_TOOLS, executeTool } from '../integrations/tools';
 import { Logger, createLogger } from '../utils/logger';
+import { getFileLockRegistry } from './scope-guard';
+import { saveCheckpoint, deleteCheckpoint, TaskCheckpoint } from './checkpoint';
 
 /**
  * Agent configuration passed to the runner.
@@ -218,6 +220,14 @@ export async function runAgent(
   // Semantic progress tracker -- smarter than blunt file-count diffing
   const progress = new ProgressTracker();
 
+  // File lock cleanup: release all locks held by this agent when done
+  const releaseLocks = () => {
+    const released = getFileLockRegistry().releaseAll(agent.id);
+    if (released > 0) {
+      logger.debug(agent.id, `Released ${released} file lock(s)`);
+    }
+  };
+
 
   // Build conversation
   const systemPrompt = buildSystemPrompt(agent, task, projectRoot);
@@ -301,10 +311,11 @@ export async function runAgent(
             for (const tc of retryResponse.toolCalls) {
               let tcArgs: Record<string, any>;
               try { tcArgs = JSON.parse(tc.function.arguments); } catch { tcArgs = {}; }
-              const { result, isComplete: done } = executeTool(tc.function.name, tcArgs, projectRoot, agent.scope);
+              const { result, isComplete: done } = executeTool(tc.function.name, tcArgs, projectRoot, agent.scope, agent.id, task.id);
               messages.push({ role: 'tool', content: result, tool_call_id: tc.id });
               if (done) {
                 logger.success(agent.id, `Task completed (after nudge): ${tcArgs.summary || 'Task completed'}`);
+                deleteCheckpoint(projectRoot, task.id);
                 return {
                   agentId: agent.id, taskId: task.id, success: true,
                   summary: tcArgs.summary || 'Task completed',
@@ -353,6 +364,8 @@ export async function runAgent(
           args,
           projectRoot,
           agent.scope,
+          agent.id,
+          task.id,
         );
 
         // Truncate huge tool results to prevent context bloat
@@ -377,6 +390,7 @@ export async function runAgent(
       // If task_complete was called, we're done
       if (isComplete) {
         logger.success(agent.id, `Task completed: ${completionSummary}`);
+        deleteCheckpoint(projectRoot, task.id);
         return {
           agentId: agent.id,
           taskId: task.id,
@@ -419,6 +433,36 @@ export async function runAgent(
           logger.warn(agent.id, `Circuit breaker: agent truly stuck (no new files, no new searches, no new dirs, repeated calls). Stopping. ${progress.statusLine()}`);
           break; // Fall through to partial-success check below
         }
+      }
+
+      // ---- CHECKPOINT SAVE (every iteration) ----
+      // Snapshot current progress to disk so we can recover if MAOS crashes.
+      try {
+        const changedFiles = getChangedFiles(projectRoot, initialSnapshot);
+        const cp: TaskCheckpoint = {
+          taskId: task.id,
+          agentId: agent.id,
+          iteration: iterations,
+          maxIterations: getEffectiveMax(),
+          progressPct: iterations / getEffectiveMax(),
+          totalTokens,
+          filesChanged: changedFiles,
+          lastToolCalls: response.toolCalls.map(tc => {
+            let args: Record<string, any> = {};
+            try { args = JSON.parse(tc.function.arguments); } catch { /* skip */ }
+            return { name: tc.function.name, summary: JSON.stringify(args).substring(0, 100) };
+          }),
+          wasProductive: productive || filesChanged,
+          idleCount: progress.idleCount,
+          costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
+          savedAt: Date.now(),
+          startedAt: startTime,
+          progressSummary: `Iteration ${iterations}/${getEffectiveMax()}: ${changedFiles.length} files changed, ${totalTokens} tokens used`,
+          retryCount: 0,
+        };
+        saveCheckpoint(projectRoot, cp);
+      } catch {
+        // Checkpoint save failure is non-fatal — don't crash the agent
       }
     }
 
@@ -489,6 +533,9 @@ export async function runAgent(
       latencyMs: Date.now() - startTime,
       error: err.message,
     };
+  } finally {
+    // ALWAYS release file locks when the agent finishes (success or failure)
+    releaseLocks();
   }
 }
 
@@ -589,6 +636,44 @@ function snapshotFilesystem(dir: string): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Get list of changed files since initial snapshot.
+ * Compares modification times to detect files that were created or modified.
+ */
+function getChangedFiles(projectRoot: string, initialSnapshotHash: number): string[] {
+  const changed: string[] = [];
+  const fsModule = require('fs');
+  const pathModule = require('path');
+
+  function walk(dir: string, depth: number) {
+    if (depth > 6) return;
+    try {
+      const entries = fsModule.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const full = pathModule.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full, depth + 1);
+        } else if (entry.isFile()) {
+          try {
+            const stat = fsModule.statSync(full);
+            // Check if file was modified in the last hour (proxy for "during this run")
+            if (Date.now() - stat.mtimeMs < 60 * 60 * 1000) {
+              changed.push(pathModule.relative(projectRoot, full).replace(/\\/g, '/'));
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  try {
+    walk(projectRoot, 0);
+  } catch { /* skip */ }
+
+  return changed.slice(0, 50); // Cap at 50 files
 }
 
 // ---- RETRY WITH EXPONENTIAL BACKOFF ----

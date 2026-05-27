@@ -50,6 +50,10 @@ export function getTelemetryDir(cwd?: string): string {
   return path.join(getMaosRoot(cwd), 'telemetry');
 }
 
+export function getCheckpointsDir(cwd?: string): string {
+  return path.join(getMaosRoot(cwd), 'checkpoints');
+}
+
 /**
  * Ensure all required .maos/ subdirectories exist.
  */
@@ -64,6 +68,7 @@ export function ensureMaosDirectories(cwd?: string): void {
     getLogsDir(cwd),
     getBrainDir(cwd),
     getTelemetryDir(cwd),
+    getCheckpointsDir(cwd),
   ];
 
   for (const dir of dirs) {

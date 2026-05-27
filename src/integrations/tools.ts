@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { ToolDef } from '../backends/provider';
+import { guardWriteFile, validateCommand, getFileLockRegistry, ScopeViolation } from '../core/scope-guard';
 
 /**
  * MAOS Agent Tool Definitions
@@ -153,35 +154,13 @@ export const AGENT_TOOLS: ToolDef[] = [
  * Scope enforcement: check if a file path is within allowed directories.
  * Supports patterns like "/", "src/", "src/api/" etc.
  * "/" means unrestricted access.
+ *
+ * NOTE: This is now a thin wrapper around scope-guard.ts.
+ * Kept for backward compat but the real logic is in scope-guard.
  */
 function isPathInScope(filePath: string, scope: string[], projectRoot: string): boolean {
-  // Unrestricted scopes
-  if (scope.includes('/') || scope.includes('**/*') || scope.includes('*')) return true;
-
-  const normalizedPath = path.normalize(filePath).replace(/\\/g, '/').replace(/^\//, '');
-  
-  return scope.some(scopePattern => {
-    let pattern = path.normalize(scopePattern).replace(/\\/g, '/').replace(/^\//, '');
-    
-    // "**" or "**/*" suffix → match the base directory and everything under it
-    if (pattern.endsWith('**/*')) {
-      pattern = pattern.replace(/\*\*\/\*$/, '');
-    } else if (pattern.endsWith('**')) {
-      pattern = pattern.replace(/\*\*$/, '');
-    }
-
-    // Remove trailing slash for comparison
-    pattern = pattern.replace(/\/$/, '');
-    
-    // If pattern is empty after stripping, it means root → allow all
-    if (!pattern) return true;
-
-    // Check if the file path starts with the scope directory
-    // e.g., scope "src/" allows "src/calculator/calc.ts"
-    const normalizedForMatch = normalizedPath.replace(/\/$/, '');
-    return normalizedForMatch === pattern || 
-           normalizedForMatch.startsWith(pattern + '/');
-  });
+  const { isPathInScope: check } = require('../core/scope-guard');
+  return check(filePath, scope, projectRoot);
 }
 
 /**
@@ -192,6 +171,8 @@ export function executeTool(
   args: Record<string, any>,
   projectRoot: string,
   scope: string[],
+  agentId?: string,
+  taskId?: string,
 ): { result: string; isComplete: boolean } {
   try {
     switch (toolName) {
@@ -209,9 +190,17 @@ export function executeTool(
       }
 
       case 'write_file': {
-        if (!isPathInScope(args.path, scope, projectRoot)) {
+        // HARD SCOPE ENFORCEMENT + FILE LOCK
+        const violation = guardWriteFile(
+          args.path,
+          agentId || 'unknown',
+          taskId || 'unknown',
+          scope,
+          projectRoot,
+        );
+        if (violation) {
           return {
-            result: `SCOPE VIOLATION: Cannot write to "${args.path}". Your scope is limited to: [${scope.join(', ')}]`,
+            result: `🚫 ${violation.type}: ${violation.detail}`,
             isComplete: false,
           };
         }
@@ -252,6 +241,15 @@ export function executeTool(
       }
 
       case 'run_command': {
+        // COMMAND SAFETY VALIDATION
+        const cmdViolation = validateCommand(args.command, agentId || 'unknown', projectRoot);
+        if (cmdViolation && cmdViolation.type === 'COMMAND_BLOCKED') {
+          return {
+            result: `🚫 COMMAND BLOCKED: ${cmdViolation.detail}\nThis command is not allowed for security reasons.`,
+            isComplete: false,
+          };
+        }
+        // Warnings are logged but allowed through
         try {
           const output = execSync(args.command, {
             cwd: projectRoot,
