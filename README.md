@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 MAOS — Multi-Agent Orchestrator System
+# 🤖 MAOS - Multi-Agent Orchestrator System
 
 ### *docker-compose for AI coding agents*
 
