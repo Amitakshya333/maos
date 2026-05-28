@@ -4,9 +4,14 @@
 
 ### *docker-compose for AI coding agents*
 
+[![npm](https://img.shields.io/npm/v/maosorch?style=flat-square&logo=npm&label=maosorch)](https://www.npmjs.com/package/maosorch)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+
+```bash
+npm install -g maosorch
+```
 
 **MAOS lets you define, orchestrate, and run multiple AI coding agents on a single project — each with their own role, scope, and capabilities — using a simple config file.**
 
@@ -32,25 +37,39 @@ Modern AI coding assistants are powerful but **single-threaded**. You can only u
 
 ## 🚀 Quick Start
 
+### Install
+
 ```bash
-# 1. Clone and install
-git clone https://github.com/Amitakshya333/maos.git
-cd maos
-npm install
-npm run build
+npm install -g maosorch
+```
 
-# 2. Initialize a project
+### Or use directly with npx (no install needed)
+
+```bash
+npx maosorch init
+```
+
+### Step by step
+
+```bash
+# 1. Initialize MAOS in your project
 cd your-project
-node /path/to/maos/dist/cli/index.js init
+maos init
 
-# 3. Add your API key
+# 2. Set your API key (Freemodel is default — free tier available)
 echo "FREEMODEL_API_KEY=your_key_here" > .env
 
-# 4. Decompose a goal into subtasks
-node /path/to/maos/dist/cli/index.js plan "Build a REST API with auth"
+# 3. Run diagnostics to verify everything works
+maos doctor
 
-# 5. Start the orchestrator
-node /path/to/maos/dist/cli/index.js start
+# 4. Decompose a complex goal into subtasks
+maos plan "Build a REST API with auth" --yes
+
+# 5. Start the orchestrator — agents work in parallel
+maos start
+
+# 6. Watch the fleet in your browser
+maos dashboard
 ```
 
 ---
@@ -357,8 +376,16 @@ MAOS enforces strict isolation, safety, and security guardrails to keep codebase
 - [x] Shared inter-agent Context Memory
 - [x] High-concurrency File Ownership Engine
 - [x] Automated pre-commit Secret Shield scanner
+- [x] CLI runtime orchestration (Copilot, Codex, Claude Code)
+- [x] Adaptive scheduler with crash-aware routing
+- [x] Health monitor with incident lifecycle management
+- [x] Runtime crash detection and auto-recovery
+- [x] Event sourcing and task replay system
+- [x] Environment diagnostics (`maos doctor`)
+- [x] npm-installable CLI (`npm install -g maosorch`)
 - [ ] Plugin system for custom tools
 - [ ] VS Code extension
+- [ ] Cross-platform CLI launcher (Linux/macOS)
 
 ---
 
@@ -373,5 +400,7 @@ MIT © [Amitakshya Sutar](https://github.com/Amitakshya333)
 **Built for the Freemodel Hackathon 2025** 🏆
 
 *MAOS — because one AI agent is never enough.*
+
+📦 **[View on npm →](https://www.npmjs.com/package/maosorch)** · 🌐 **[maos.web.app](https://maos.web.app)**
 
 </div>
