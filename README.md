@@ -13,7 +13,7 @@
 npm install -g maosorch
 ```
 
-**MAOS lets you define, orchestrate, and run multiple AI coding agents on a single project — each with their own role, scope, and capabilities — using a simple config file.**
+**MAOS lets you define, orchestrate, and run multiple AI coding agents on a single project - each with their own role, scope, and capabilities - using a simple config file.**
 
 [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Architecture](#-architecture) · [Commands](#-commands) · [Config](#-configuration)
 
@@ -28,7 +28,7 @@ Modern AI coding assistants are powerful but **single-threaded**. You can only u
 - Have a **planner agent** decompose a goal into subtasks
 - Route each subtask to the **best-suited agent** based on capabilities
 - Run a **backend coder**, **frontend designer**, and **test writer** in parallel
-- Use **any model** — GPT-5, Claude, Gemini, Llama, Qwen, DeepSeek — through one unified interface
+- Use **any model** - GPT-5, Claude, Gemini, Llama, Qwen, DeepSeek - through one unified interface
 - Track cost, tokens, and latency across your entire AI fleet
 
 **MAOS makes this possible.**
@@ -397,10 +397,11 @@ MIT © [Amitakshya Sutar](https://github.com/Amitakshya333)
 
 <div align="center">
 
-**Built for the Freemodel Hackathon 2025** 🏆
+**Built for the WORLD** 🏆
 
-*MAOS — because one AI agent is never enough.*
+*MAOS - because one AI agent is never enough.*
 
-📦 **[View on npm →](https://www.npmjs.com/package/maosorch)** · 🌐 **[maos.web.app](https://maos.web.app)**
+📦 **[View on npm →](https://www.npmjs.com/package/maosorch)** · 
 
 </div>
+
