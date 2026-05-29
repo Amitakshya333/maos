@@ -23,8 +23,43 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as child_process from 'child_process';
-import { IRuntime, RuntimeTask, RuntimeResult } from './runtime';
+import { IRuntime, RuntimeTask, RuntimeResult, RuntimeCapabilityProfile } from './runtime';
 import { MessageBus, createEvent } from '../core/message-bus';
+
+// ---- Interactive Mode Detection ----
+// Patterns that indicate a CLI entered REPL/interactive mode instead of autonomous execution.
+const INTERACTIVE_PATTERNS = [
+  /^\s*>\s*$/m,                       // bare '>' prompt
+  /^\s*\$\s*$/m,                       // bare '$' prompt
+  /^\s*>>>\s*$/m,                      // Python REPL
+  /press enter/i,
+  /\(y\/n\)/i,
+  /\[Y\/n\]/i,
+  /confirm/i,
+  /sign in/i,
+  /log\s*in/i,
+  /authenticate/i,
+  /enter.*token/i,
+  /waiting for/i,
+  /interactive mode/i,
+];
+
+/** Check if output indicates interactive/REPL mode */
+function detectInteractiveMode(output: string): string | null {
+  for (const pattern of INTERACTIVE_PATTERNS) {
+    const match = output.match(pattern);
+    if (match) {
+      return match[0].trim();
+    }
+  }
+  return null;
+}
+
+/** Get last N lines of text */
+function lastLines(text: string, n: number): string {
+  const lines = text.split('\n').filter(l => l.trim().length > 0);
+  return lines.slice(-n).join('\n');
+}
 
 // ---- CLI Profiles ----
 // Maps CLI names to their invocation patterns + auth env vars.
@@ -33,28 +68,33 @@ import { MessageBus, createEvent } from '../core/message-bus';
 interface CliProfile {
   command: string;
   buildArgs: (promptFile: string) => string[];
+  buildLauncherCommand: (promptFile: string, cliArgsStr: string) => string;
   authEnvKey?: string;
 }
 
 const CLI_PROFILES: Record<string, CliProfile> = {
   copilot: {
     command: 'copilot',
-    buildArgs: (promptFile) => ['-i', fs.readFileSync(promptFile, 'utf-8')],
+    buildArgs: (promptFile) => ['-p', fs.readFileSync(promptFile, 'utf-8'), '--yolo', '--no-ask-user'],
+    buildLauncherCommand: (promptFile, cliArgsStr) => `copilot -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --yolo --no-ask-user${cliArgsStr}`,
     authEnvKey: 'COPILOT_HOME',
   },
   codex: {
     command: 'codex',
-    buildArgs: (promptFile) => ['-q', fs.readFileSync(promptFile, 'utf-8')],
+    buildArgs: (promptFile) => ['exec', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-bypass-approvals-and-sandbox'],
+    buildLauncherCommand: (promptFile, cliArgsStr) => `codex exec (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-bypass-approvals-and-sandbox${cliArgsStr}`,
     authEnvKey: 'CODEX_HOME',
   },
   claude: {
     command: 'claude',
     buildArgs: (promptFile) => ['-p', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-skip-permissions'],
+    buildLauncherCommand: (promptFile, cliArgsStr) => `claude -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-skip-permissions${cliArgsStr}`,
     authEnvKey: 'CLAUDE_CONFIG_DIR',
   },
   antigravity: {
     command: 'antigravity',
     buildArgs: (promptFile) => ['--prompt-file', promptFile],
+    buildLauncherCommand: (promptFile, cliArgsStr) => `antigravity --prompt-file "${promptFile.replace(/\\/g, '\\\\')}"${cliArgsStr}`,
     authEnvKey: undefined,
   },
 };
@@ -84,6 +124,24 @@ export interface CliRuntimeConfig {
   capabilities: string[];
 }
 
+// ---- Helpers ----
+
+/**
+ * Convert a taskId into a filesystem-safe slug.
+ * Task IDs contain characters that are invalid on Windows filenames
+ * (colons in ISO timestamps, slashes, etc.).
+ *
+ * Examples:
+ *   AUTO__1780063937339  →  AUTO__1780063937339   (already safe)
+ *   task:2024-01-01T00:00:00Z  →  task_2024-01-01T00_00_00Z
+ */
+function sanitizeForFilename(id: string): string {
+  return id
+    .replace(/[:\\/<>|?*]/g, '_')  // Windows-invalid chars → underscore
+    .replace(/\.{2,}/g, '_')       // double dots → underscore
+    .slice(0, 80);                 // max 80 chars to stay well under path limits
+}
+
 // ---- CLI Runtime ----
 
 export class CliRuntime implements IRuntime {
@@ -101,27 +159,76 @@ export class CliRuntime implements IRuntime {
   }
 
   async execute(task: RuntimeTask): Promise<RuntimeResult> {
+    // Platform guard: CLI runtimes use Windows Terminal (wt.exe) + PowerShell launcher
+    if (process.platform !== 'win32') {
+      throw new Error(
+        `CLI runtime '${this.config.cliCommand}' requires Windows (PowerShell + Windows Terminal). ` +
+        `API runtimes (OpenAI, Anthropic, Gemini) work cross-platform. ` +
+        `Set runtime: "api" in your agent config for cross-platform use.`
+      );
+    }
+
     const startTime = Date.now();
     const maosDir = path.join(task.projectRoot, '.maos');
     const promptsDir = path.join(maosDir, 'prompts');
     const launchersDir = path.join(maosDir, 'launchers');
     const authDir = path.join(maosDir, 'auth', task.agentId);
-    const sentinelFile = path.join(maosDir, `agent-done-${task.agentId}`);
 
     // Ensure directories exist
-    for (const dir of [promptsDir, launchersDir, authDir]) {
+    const logsDir = path.join(maosDir, 'logs');
+    const archiveDir = path.join(logsDir, 'archive');
+    for (const dir of [promptsDir, launchersDir, authDir, logsDir, archiveDir]) {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Clear any stale sentinel
-    if (fs.existsSync(sentinelFile)) fs.unlinkSync(sentinelFile);
+    // ── Task-scoped log files ───────────────────────────────────────────────
+    // Files are keyed by taskId+agentId so each execution (including retries,
+    // crash-recovery, and parallel dispatch) gets its own handles — no Windows
+    // file-lock contention across overlapping executions of the same agent.
+    const taskSlug = sanitizeForFilename(task.id);
+    const fileBase = `${taskSlug}_${task.agentId}`;
+    const cliLogFile  = path.join(logsDir, `${fileBase}_cli.log`);
+    const stdoutFile  = path.join(logsDir, `${fileBase}_stdout.log`);
+    const stderrFile  = path.join(logsDir, `${fileBase}_stderr.log`);
+    const exitFile    = path.join(logsDir, `${fileBase}_exit.txt`);
+    // Liveness file: launcher writes a timestamp every 5s while alive.
+    // If this file goes stale (>15s), the launcher process was killed abruptly.
+    const livenessFile = path.join(logsDir, `${fileBase}_liveness.txt`);
 
-    // Emit TASK_STARTED
-    this.bus.emit(createEvent('TASK_STARTED', task.agentId, {
-      taskId: task.id,
-      cli: this.config.cliCommand,
-      mode: 'visible-terminal',
-    }, task.id, 'cli'));
+    // Clear any stale files from a previous attempt of the same task-agent pair.
+    // Because the filename is task-scoped a running execution of a *different*
+    // task on the same agent will have a different name → no lock collision.
+    const clearFile = (filePath: string) => {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        try {
+          fs.writeFileSync(filePath, '', 'utf-8');
+        } catch {
+          // ignore residual lock issues on the exact same task retry
+        }
+      }
+    };
+    clearFile(cliLogFile);
+    clearFile(stdoutFile);
+    clearFile(stderrFile);
+    clearFile(exitFile);
+    clearFile(livenessFile);
+
+    const delayMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const writeFileWithRetry = async (filePath: string, content: string, retries = 5, delay = 200) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          fs.writeFileSync(filePath, content, 'utf-8');
+          return;
+        } catch (err) {
+          if (i === retries - 1) throw err;
+          await delayMs(delay);
+        }
+      }
+    };
 
     // 1. Take filesystem snapshot (before)
     const beforeSnapshot = this.snapshotFiles(task.projectRoot);
@@ -129,7 +236,7 @@ export class CliRuntime implements IRuntime {
     // 2. Write task prompt file
     const promptFile = path.join(promptsDir, `${task.agentId}_task.md`);
     const prompt = this.buildPrompt(task);
-    fs.writeFileSync(promptFile, prompt, 'utf-8');
+    await writeFileWithRetry(promptFile, prompt);
 
     // 3. Resolve auth env vars to absolute paths
     const resolvedAuth: Record<string, string> = {};
@@ -144,9 +251,11 @@ export class CliRuntime implements IRuntime {
     }
 
     // 4. Generate launcher script
-    const launcherFile = path.join(launchersDir, `${task.agentId}_launcher.ps1`);
-    const launcherContent = this.buildLauncher(task, promptFile, resolvedAuth);
-    fs.writeFileSync(launcherFile, launcherContent, 'utf-8');
+    // Launcher is also task-scoped so a retry never clobbers an active launcher
+    // that may still be referenced by a lingering PowerShell process.
+    const launcherFile = path.join(launchersDir, `${fileBase}_launcher.ps1`);
+    const launcherContent = this.buildLauncher(task, promptFile, resolvedAuth, stdoutFile, stderrFile, exitFile, livenessFile);
+    await writeFileWithRetry(launcherFile, launcherContent);
 
     // 5. Open Windows Terminal tab
     try {
@@ -163,16 +272,28 @@ export class CliRuntime implements IRuntime {
       }, task.id, 'cli'));
     } catch (err: any) {
       // WT not available — fall back to spawning a hidden process
-      return this.executeFallback(task, promptFile, resolvedAuth, beforeSnapshot, startTime);
+      return this.executeFallback(task, promptFile, resolvedAuth, beforeSnapshot, startTime, cliLogFile, stdoutFile, stderrFile);
     }
 
     // 6. Monitor completion via lifecycle hierarchy
     const result = await this.monitorCompletion(
       task,
-      sentinelFile,
+      exitFile,
+      livenessFile,
       beforeSnapshot,
       startTime,
+      stdoutFile,
+      stderrFile,
     );
+
+    // 7. Archive task logs (non-blocking) so the logs/ dir doesn't fill up.
+    // Logs are moved to logs/archive/ and kept for 7 days before deletion.
+    setImmediate(() => {
+      this.archiveTaskLogs(
+        [cliLogFile, stdoutFile, stderrFile, exitFile, livenessFile, launcherFile],
+        archiveDir,
+      );
+    });
 
     return result;
   }
@@ -187,6 +308,9 @@ export class CliRuntime implements IRuntime {
     resolvedAuth: Record<string, string>,
     beforeSnapshot: Map<string, number>,
     startTime: number,
+    cliLogFile: string,
+    stdoutFile: string,
+    stderrFile: string,
   ): Promise<RuntimeResult> {
     const profile = CLI_PROFILES[this.config.cliCommand];
     const command = profile?.command || this.config.cliCommand;
@@ -205,35 +329,158 @@ export class CliRuntime implements IRuntime {
 
       this.childProcess = child;
       let output = '';
+      let lastOutputTime = Date.now();
+      let interactiveDetected = false;
+      let interactivePattern = '';
+
+      // Write log file header
+      const logHeader = `[MAOS CLI LOG] Agent: ${task.agentId} | CLI: ${this.config.cliCommand} | Started: ${new Date().toISOString()}\n${'='.repeat(80)}\n`;
+      fs.writeFileSync(cliLogFile, logHeader, 'utf-8');
+
+      const appendLog = (data: string) => {
+        try { fs.appendFileSync(cliLogFile, data, 'utf-8'); } catch { /* ignore */ }
+      };
 
       child.stdout?.on('data', (data: Buffer) => {
-        output += data.toString();
+        const chunk = data.toString();
+        output += chunk;
+        lastOutputTime = Date.now();
+        try { fs.appendFileSync(stdoutFile, chunk, 'utf-8'); } catch {}
+        try { fs.appendFileSync(cliLogFile, `[stdout] ${chunk}`, 'utf-8'); } catch {}
+
+        // Check for interactive mode patterns
+        if (!interactiveDetected) {
+          const match = detectInteractiveMode(output);
+          if (match) {
+            interactiveDetected = true;
+            interactivePattern = match;
+          }
+        }
       });
       child.stderr?.on('data', (data: Buffer) => {
-        output += data.toString();
+        const chunk = data.toString();
+        output += chunk;
+        lastOutputTime = Date.now();
+        try { fs.appendFileSync(stderrFile, chunk, 'utf-8'); } catch {}
+        try { fs.appendFileSync(cliLogFile, `[stderr] ${chunk}`, 'utf-8'); } catch {}
       });
+
+      // ---- Interactive Mode Detection (first 15 seconds) ----
+      const interactiveCheckTimer = setTimeout(() => {
+        // Check 1: No output at all — CLI is stuck waiting for input
+        if (output.trim().length === 0) {
+          child.kill('SIGTERM');
+          this.childProcess = null;
+
+          const msg = [
+            `CLI entered interactive shell instead of autonomous execution mode.`,
+            `Possible causes:`,
+            `  - missing --prompt flag`,
+            `  - auth incomplete (run: maos login --cli ${this.config.cliCommand})`,
+            `  - unsupported runtime mode`,
+            `No output received in first 15 seconds.`,
+          ].join('\n');
+          appendLog(`\n[MAOS] INTERACTIVE MODE DETECTED: ${msg}\n`);
+
+          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+            reason: 'interactive-mode',
+            cli: this.config.cliCommand,
+            taskResult: 'failed',
+          }, task.id, 'cli'));
+
+          resolve({
+            success: false,
+            summary: msg,
+            filesChanged: [],
+            iterations: 0,
+            totalTokens: 0,
+            costUSD: 0,
+            latencyMs: Date.now() - startTime,
+            runtimeType: 'cli',
+            error: msg,
+            taskResult: 'failed',
+            exitCode: 1,
+          });
+          return;
+        }
+
+        // Check 2: Interactive prompt pattern detected
+        if (interactiveDetected) {
+          child.kill('SIGTERM');
+          this.childProcess = null;
+
+          const lastOut = lastLines(output, 5);
+          const msg = [
+            `CLI entered interactive shell instead of autonomous execution mode.`,
+            `Detected interactive pattern: "${interactivePattern}"`,
+            `Possible causes:`,
+            `  - missing --prompt flag`,
+            `  - auth incomplete (run: maos login --cli ${this.config.cliCommand})`,
+            `  - unsupported runtime mode`,
+            `Last output:`,
+            lastOut,
+          ].join('\n');
+          appendLog(`\n[MAOS] INTERACTIVE MODE DETECTED: ${msg}\n`);
+
+          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+            reason: 'interactive-mode',
+            pattern: interactivePattern,
+            taskResult: 'failed',
+          }, task.id, 'cli'));
+
+          resolve({
+            success: false,
+            summary: msg,
+            filesChanged: [],
+            iterations: 0,
+            totalTokens: 0,
+            costUSD: 0,
+            latencyMs: Date.now() - startTime,
+            runtimeType: 'cli',
+            error: msg,
+            taskResult: 'failed',
+            exitCode: 1,
+          });
+          return;
+        }
+      }, 15_000);
 
       // Timeout
       const timer = setTimeout(() => {
         child.kill('SIGTERM');
+        const lastOut = lastLines(output, 20);
+        appendLog(`\n[MAOS] TIMEOUT after ${this.config.timeoutMs}ms\n`);
+
         this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
           reason: 'timeout',
           timeoutMs: this.config.timeoutMs,
+          lastOutput: lastOut.substring(0, 200),
+          taskResult: 'failed',
         }, task.id, 'cli'));
       }, this.config.timeoutMs);
 
       child.on('exit', (code) => {
         clearTimeout(timer);
+        clearTimeout(interactiveCheckTimer);
         this.childProcess = null;
+
+        appendLog(`\n[MAOS] Process exited with code: ${code}\n`);
 
         const afterSnapshot = this.snapshotFiles(task.projectRoot);
         const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
-        const success = code === 0 || filesChanged.length > 0;
+        const success = code === 0;
+
+        let taskResult: 'success' | 'partial_success' | 'failed' | 'no_mutation' = 'success';
+        if (code !== 0) {
+          taskResult = 'failed';
+        } else if (filesChanged.length === 0) {
+          taskResult = 'no_mutation';
+        }
 
         this.bus.emit(createEvent(
           success ? 'TASK_COMPLETED' : 'TASK_FAILED',
           task.agentId,
-          { exitCode: code, filesChanged: filesChanged.length },
+          { exitCode: code, filesChanged: filesChanged.length, taskResult },
           task.id, 'cli',
         ));
 
@@ -241,23 +488,29 @@ export class CliRuntime implements IRuntime {
           success,
           summary: success
             ? `CLI agent (${this.config.cliCommand}) completed. ${filesChanged.length} files changed.`
-            : `CLI agent (${this.config.cliCommand}) failed with exit code ${code}.`,
+            : `CLI agent (${this.config.cliCommand}) failed with exit code ${code}.\nLast output:\n${lastLines(output, 20)}`,
           filesChanged,
-          iterations: 1, // CLI = single execution
-          totalTokens: 0, // Subscription-based, no token tracking
+          iterations: 1,
+          totalTokens: 0,
           costUSD: 0,
           latencyMs: Date.now() - startTime,
           runtimeType: 'cli',
           error: success ? undefined : `Exit code: ${code}`,
+          taskResult,
+          exitCode: code !== null ? code : 1,
         });
       });
 
       child.on('error', (err) => {
         clearTimeout(timer);
+        clearTimeout(interactiveCheckTimer);
         this.childProcess = null;
+
+        appendLog(`\n[MAOS] Process error: ${err.message}\n`);
 
         this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
           error: err.message,
+          taskResult: 'failed',
         }, task.id, 'cli'));
 
         resolve({
@@ -270,6 +523,8 @@ export class CliRuntime implements IRuntime {
           latencyMs: Date.now() - startTime,
           runtimeType: 'cli',
           error: err.message,
+          taskResult: 'failed',
+          exitCode: 1,
         });
       });
     });
@@ -277,47 +532,271 @@ export class CliRuntime implements IRuntime {
 
   /**
    * Monitor a visible WT tab agent for completion.
-   * Uses the lifecycle hierarchy:
-   *   1. Sentinel file (.maos/agent-done-{agentId})
-   *   2. Filesystem quiescence (no changes for N seconds)
-   *   3. Timeout (hard kill)
+   *
+   * Lifecycle hierarchy (in priority order):
+   *   1. exit.txt written by launcher  →  graceful exit (success or failure)
+   *   2. Liveness file stale (>15s)    →  launcher killed abruptly → RUNTIME_CRASHED
+   *   3. Interactive-mode detection    →  stuck waiting for input → TASK_FAILED
+   *   4. Filesystem quiescence         →  files settled (only if liveness still fresh)
+   *   5. Timeout                       →  hard stop with diagnostics
+   *
+   * The liveness file is written by the PS1 launcher every 5s while it is
+   * alive.  When the WT tab is force-closed, the PowerShell process dies
+   * instantly and the liveness file stops being updated.  After 15s of
+   * staleness (3× the write interval, resilient to I/O hiccups) the monitor
+   * concludes the launcher was killed.
    */
   private async monitorCompletion(
     task: RuntimeTask,
-    sentinelFile: string,
+    exitFile: string,
+    livenessFile: string,
     beforeSnapshot: Map<string, number>,
     startTime: number,
+    stdoutFile: string,
+    stderrFile: string,
   ): Promise<RuntimeResult> {
-    const pollInterval = 3000; // Check every 3 seconds
+    const pollInterval = 3000;  // Check every 3 seconds
+    // Liveness staleness window: 15s = 3× the 5s write cadence in the PS1.
+    // After a force-close the file goes stale; we detect it within one poll cycle.
+    const livenessStaleMs = 15_000;
+    // Delay before we start enforcing liveness checks, to allow the launcher
+    // to start up and write its first heartbeat (allow 20s for slow machines).
+    const livenessGracePeriodMs = 20_000;
     let lastChangeTime = Date.now();
     let lastSnapshot = this.snapshotFiles(task.projectRoot);
     let quiescentCount = 0;
     const quiescentThreshold = Math.ceil(this.config.quiescenceMs / pollInterval);
+    // Track whether liveness file ever appeared (it may not on very old launchers)
+    let livenessEverSeen = false;
 
     return new Promise((resolve) => {
       const timer = setInterval(() => {
         const elapsed = Date.now() - startTime;
 
-        // 1. Check sentinel file (explicit completion signal)
-        if (fs.existsSync(sentinelFile)) {
+        // ── 0. Liveness check — detect abrupt launcher termination ────────────
+        // Only enforce after the grace period so the launcher has time to start.
+        if (elapsed > livenessGracePeriodMs) {
+          try {
+            if (fs.existsSync(livenessFile)) {
+              livenessEverSeen = true;
+              const stat = fs.statSync(livenessFile);
+              const livenessAge = Date.now() - stat.mtimeMs;
+              if (livenessAge > livenessStaleMs) {
+                // Liveness file went stale — launcher was killed abruptly.
+                clearInterval(timer);
+
+                const afterSnapshot = this.snapshotFiles(task.projectRoot);
+                const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
+
+                const crashMsg = [
+                  `RUNTIME_CRASHED: Launcher liveness heartbeat went stale after ${Math.round(livenessAge / 1000)}s.`,
+                  `The Windows Terminal tab was likely force-closed or the process was killed (SIGKILL/OOM).`,
+                  `exitType: forced_termination`,
+                  `filesChangedBeforeCrash: ${filesChanged.length}`,
+                ].join('\n');
+
+                // Emit RUNTIME_CRASHED so HealthMonitor immediately sets DEAD
+                this.bus.emit(createEvent(
+                  'RUNTIME_CRASHED' as any,
+                  task.agentId,
+                  {
+                    exitType: 'forced_termination',
+                    livenessStaleMs: livenessAge,
+                    filesChangedBeforeCrash: filesChanged.length,
+                    taskId: task.id,
+                  },
+                  task.id, 'cli',
+                ));
+
+                // Also emit TASK_FAILED for queue / telemetry
+                this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+                  reason: 'runtime_crashed',
+                  exitType: 'forced_termination',
+                  filesChanged: filesChanged.length,
+                  taskResult: 'failed',
+                }, task.id, 'cli'));
+
+                resolve({
+                  success: false,
+                  summary: crashMsg,
+                  filesChanged,
+                  iterations: 1,
+                  totalTokens: 0,
+                  costUSD: 0,
+                  latencyMs: elapsed,
+                  runtimeType: 'cli',
+                  error: crashMsg,
+                  taskResult: 'failed',
+                  exitCode: -1,
+                });
+                return;
+              }
+            } else if (livenessEverSeen) {
+              // Liveness file disappeared after being present — treat as crash.
+              clearInterval(timer);
+
+              const afterSnapshot = this.snapshotFiles(task.projectRoot);
+              const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
+
+              const crashMsg = [
+                `RUNTIME_CRASHED: Launcher liveness file disappeared unexpectedly.`,
+                `exitType: forced_termination`,
+              ].join('\n');
+
+              this.bus.emit(createEvent(
+                'RUNTIME_CRASHED' as any,
+                task.agentId,
+                { exitType: 'forced_termination', livenessDisappeared: true, taskId: task.id },
+                task.id, 'cli',
+              ));
+              this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+                reason: 'runtime_crashed',
+                exitType: 'forced_termination',
+                filesChanged: filesChanged.length,
+                taskResult: 'failed',
+              }, task.id, 'cli'));
+
+              resolve({
+                success: false,
+                summary: crashMsg,
+                filesChanged,
+                iterations: 1,
+                totalTokens: 0,
+                costUSD: 0,
+                latencyMs: elapsed,
+                runtimeType: 'cli',
+                error: crashMsg,
+                taskResult: 'failed',
+                exitCode: -1,
+              });
+              return;
+            }
+          } catch { /* I/O error reading liveness file — non-fatal, continue */ }
+        } else {
+          // Within grace period — track if liveness file appears
+          try {
+            if (fs.existsSync(livenessFile)) livenessEverSeen = true;
+          } catch { /* ignore */ }
+        }
+
+        // ── 1. Check stdout file for activity (extends quiescence awareness) ──
+        let logFileActive = false;
+        try {
+          if (fs.existsSync(stdoutFile)) {
+            const stat = fs.statSync(stdoutFile);
+            const logAge = Date.now() - stat.mtimeMs;
+            if (logAge < pollInterval * 2) {
+              logFileActive = true;
+            }
+          }
+        } catch { /* ignore */ }
+
+        // ── 2. Interactive Mode Detection ──────────────────────────────────
+        let interactiveDetected = false;
+        let interactivePattern = '';
+        try {
+          if (fs.existsSync(stdoutFile)) {
+            const content = fs.readFileSync(stdoutFile, 'utf-8');
+            const match = detectInteractiveMode(content);
+            if (match) {
+              interactiveDetected = true;
+              interactivePattern = match;
+            }
+          }
+        } catch { /* ignore */ }
+
+        if (interactiveDetected) {
           clearInterval(timer);
           const afterSnapshot = this.snapshotFiles(task.projectRoot);
           const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
 
-          // Read sentinel for summary
-          let summary = 'CLI agent completed (sentinel)';
-          try {
-            const sentinelContent = fs.readFileSync(sentinelFile, 'utf-8').trim();
-            if (sentinelContent) summary = sentinelContent;
-          } catch { /* use default */ }
+          this.bus.emit(createEvent('AGENT_PHASE', task.agentId, {
+            phase: 'WAITING_FOR_USER_INPUT',
+            reason: 'interactive-mode',
+            cli: this.config.cliCommand,
+          }, task.id, 'cli'));
 
-          this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
-            method: 'sentinel',
-            filesChanged: filesChanged.length,
+          const lastOut = lastLines(fs.existsSync(stdoutFile) ? fs.readFileSync(stdoutFile, 'utf-8') : '', 5);
+          const errorMsg = `INTERACTIVE_MODE_DETECTED: Pattern '${interactivePattern}' found in CLI output. Agent may be stuck.\nLast output:\n${lastOut}`;
+
+          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+            reason: 'interactive-mode',
+            pattern: interactivePattern,
+            taskResult: 'failed',
           }, task.id, 'cli'));
 
           resolve({
-            success: true,
+            success: false,
+            summary: errorMsg,
+            filesChanged,
+            iterations: 1,
+            totalTokens: 0,
+            costUSD: 0,
+            latencyMs: elapsed,
+            runtimeType: 'cli',
+            error: errorMsg,
+            taskResult: 'failed',
+            exitCode: 1,
+          });
+          return;
+        }
+
+        // ── 3. Check exit file (launcher completed gracefully) ─────────────
+        if (fs.existsSync(exitFile)) {
+          clearInterval(timer);
+          let exitCode = 0;
+          try {
+            const content = fs.readFileSync(exitFile, 'utf-8').trim();
+            exitCode = parseInt(content, 10);
+            if (isNaN(exitCode)) exitCode = 0;
+          } catch {
+            exitCode = 0;
+          }
+
+          const afterSnapshot = this.snapshotFiles(task.projectRoot);
+          const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
+          const success = exitCode === 0;
+
+          let taskResult: 'success' | 'partial_success' | 'failed' | 'no_mutation' = 'success';
+          if (!success) {
+            taskResult = 'failed';
+          } else if (filesChanged.length === 0) {
+            taskResult = 'no_mutation';
+          }
+
+          const summary = success
+            ? `CLI agent completed gracefully. ${filesChanged.length} files changed.`
+            : `CLI agent failed with exit code ${exitCode}.`;
+
+          if (success) {
+            this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
+              method: 'exit-file',
+              filesChanged: filesChanged.length,
+              taskResult,
+              exitCode,
+              exitType: 'graceful_exit',
+            }, task.id, 'cli'));
+          } else {
+            let errorMsg = `CLI agent execution failed with exit code ${exitCode}`;
+            try {
+              if (fs.existsSync(stderrFile)) {
+                const stderrContent = fs.readFileSync(stderrFile, 'utf-8').trim();
+                if (stderrContent) errorMsg += `\nStderr:\n${stderrContent}`;
+              }
+            } catch {}
+
+            this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+              method: 'exit-file',
+              error: errorMsg,
+              filesChanged: filesChanged.length,
+              taskResult,
+              exitCode,
+              exitType: 'graceful_exit',  // exited via launcher — graceful (just non-zero)
+            }, task.id, 'cli'));
+          }
+
+          resolve({
+            success,
             summary,
             filesChanged,
             iterations: 1,
@@ -325,64 +804,113 @@ export class CliRuntime implements IRuntime {
             costUSD: 0,
             latencyMs: elapsed,
             runtimeType: 'cli',
+            taskResult,
+            exitCode,
+            error: success ? undefined : `Exit code: ${exitCode}`,
           });
           return;
         }
 
-        // 2. Check filesystem quiescence
+        // ── 4. Filesystem quiescence ──────────────────────────────────────
+        // IMPORTANT: Only resolve quiescence as SUCCESS if the liveness file
+        // is still fresh (launcher is still alive). If liveness is not
+        // enforced yet (within grace period), allow quiescence to proceed.
         const currentSnapshot = this.snapshotFiles(task.projectRoot);
         const changed = this.diffSnapshots(lastSnapshot, currentSnapshot);
 
-        if (changed.length > 0) {
-          // Files are still being modified — reset quiescent counter
+        if (changed.length > 0 || logFileActive) {
           quiescentCount = 0;
           lastChangeTime = Date.now();
           lastSnapshot = currentSnapshot;
 
           this.bus.emit(createEvent('TASK_PROGRESS', task.agentId, {
             filesModified: changed.length,
+            logFileActive,
             elapsed,
           }, task.id, 'cli'));
         } else {
           quiescentCount++;
 
-          // Quiescent for long enough — consider done
-          // BUT only if the agent actually changed something (not just sitting idle from the start)
           const totalFilesChanged = this.diffSnapshots(beforeSnapshot, currentSnapshot);
           if (quiescentCount >= quiescentThreshold && totalFilesChanged.length > 0) {
-            clearInterval(timer);
+            // Final liveness check before declaring quiescence success.
+            // If liveness is enforced and file is stale → crash takes priority.
+            let livenessOk = true;
+            if (elapsed > livenessGracePeriodMs && livenessEverSeen) {
+              try {
+                if (fs.existsSync(livenessFile)) {
+                  const stat = fs.statSync(livenessFile);
+                  if (Date.now() - stat.mtimeMs > livenessStaleMs) {
+                    livenessOk = false;
+                  }
+                } else {
+                  livenessOk = false;
+                }
+              } catch { /* I/O error — be conservative, allow quiescence */ }
+            }
 
-            this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
-              method: 'quiescence',
-              quiescentMs: quiescentCount * pollInterval,
-              filesChanged: totalFilesChanged.length,
-            }, task.id, 'cli'));
+            if (!livenessOk) {
+              // Liveness stale at quiescence threshold — crash takes priority,
+              // the liveness-stale branch above will handle it on next tick.
+              // Just skip this quiescence resolution.
+            } else {
+              clearInterval(timer);
 
-            resolve({
-              success: true,
-              summary: `CLI agent (${this.config.cliCommand}) completed via quiescence. ${totalFilesChanged.length} files changed.`,
-              filesChanged: totalFilesChanged,
-              iterations: 1,
-              totalTokens: 0,
-              costUSD: 0,
-              latencyMs: elapsed,
-              runtimeType: 'cli',
-            });
-            return;
+              this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
+                method: 'quiescence',
+                quiescentMs: quiescentCount * pollInterval,
+                filesChanged: totalFilesChanged.length,
+                taskResult: 'success',
+                exitType: 'graceful_exit',
+              }, task.id, 'cli'));
+
+              resolve({
+                success: true,
+                summary: `CLI agent (${this.config.cliCommand}) completed via quiescence. ${totalFilesChanged.length} files changed.`,
+                filesChanged: totalFilesChanged,
+                iterations: 1,
+                totalTokens: 0,
+                costUSD: 0,
+                latencyMs: elapsed,
+                runtimeType: 'cli',
+                taskResult: 'success',
+                exitCode: 0,
+              });
+              return;
+            }
           }
         }
 
-        // 3. Timeout — hard stop
+        // ── 5. Timeout — hard stop with diagnostics ────────────────────────
         if (elapsed >= this.config.timeoutMs) {
           clearInterval(timer);
           const afterSnapshot = this.snapshotFiles(task.projectRoot);
           const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
           const madeProgress = filesChanged.length > 0;
+          const taskResult = madeProgress ? 'partial_success' : 'failed';
+
+          let lastOutput = '';
+          try {
+            if (fs.existsSync(stdoutFile)) {
+              const logContent = fs.readFileSync(stdoutFile, 'utf-8');
+              lastOutput = lastLines(logContent, 20);
+            }
+          } catch { /* ignore */ }
+
+          const timeoutDetail = lastOutput
+            ? `\nLast CLI output:\n${lastOutput}`
+            : '\nNo CLI output captured.';
 
           this.bus.emit(createEvent(
             madeProgress ? 'TASK_COMPLETED' : 'TASK_FAILED',
             task.agentId,
-            { method: 'timeout', filesChanged: filesChanged.length },
+            {
+              method: 'timeout',
+              filesChanged: filesChanged.length,
+              lastOutput: lastOutput.substring(0, 200),
+              taskResult,
+              exitType: 'timeout_kill',
+            },
             task.id, 'cli',
           ));
 
@@ -390,21 +918,26 @@ export class CliRuntime implements IRuntime {
             success: madeProgress,
             summary: madeProgress
               ? `CLI agent timed out but modified ${filesChanged.length} files. Partial success.`
-              : `CLI agent timed out with no file changes.`,
+              : `CLI agent timed out with no file changes.${timeoutDetail}`,
             filesChanged,
             iterations: 1,
             totalTokens: 0,
             costUSD: 0,
             latencyMs: elapsed,
             runtimeType: 'cli',
-            error: madeProgress ? undefined : 'TIMEOUT',
+            error: madeProgress ? undefined : `TIMEOUT${timeoutDetail}`,
+            taskResult,
+            exitCode: 1,
           });
+          return;
         }
 
         // Heartbeat
         this.bus.emit(createEvent('HEARTBEAT', task.agentId, {
           elapsed,
           quiescentCount,
+          logFileActive,
+          livenessEverSeen,
           cli: this.config.cliCommand,
         }, task.id, 'cli'));
 
@@ -439,13 +972,14 @@ ${this.config.capabilities.join(', ')}
 `;
   }
 
-  /**
-   * Build a PowerShell launcher script (like ARIOTH's launcher).
-   */
   private buildLauncher(
     task: RuntimeTask,
     promptFile: string,
     resolvedAuth: Record<string, string>,
+    stdoutFile: string,
+    stderrFile: string,
+    exitFile: string,
+    livenessFile: string,
   ): string {
     const profile = CLI_PROFILES[this.config.cliCommand];
     const command = profile?.command || this.config.cliCommand;
@@ -460,6 +994,16 @@ ${this.config.capabilities.join(', ')}
     const cliArgsStr = this.config.cliArgs.length > 0
       ? ' ' + this.config.cliArgs.join(' ')
       : '';
+
+    const launcherCmd = profile
+      ? profile.buildLauncherCommand(promptFile, cliArgsStr)
+      : `${command} -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --yolo --no-ask-user${cliArgsStr}`;
+
+    const livenessFileEscaped = livenessFile.replace(/\\/g, '\\\\');
+    const stdoutFileEscaped  = stdoutFile.replace(/\\/g, '\\\\');
+    const stderrFileEscaped  = stderrFile.replace(/\\/g, '\\\\');
+    const exitFileEscaped    = exitFile.replace(/\\/g, '\\\\');
+    const promptFileEscaped  = promptFile.replace(/\\/g, '\\\\');
 
     return `# Auto-generated MAOS launcher for ${task.agentId} at ${timestamp}
 # Runtime: ${this.config.cliCommand}-cli | Task: ${task.id}
@@ -484,19 +1028,91 @@ Write-Host ''
 
 # ── Display task ──
 Write-Host '  -- TASK --' -ForegroundColor Yellow
-Get-Content "${promptFile}" | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
+Get-Content "${promptFileEscaped}" | ForEach-Object { Write-Host "  $\_" -ForegroundColor DarkYellow }
 Write-Host ''
+
+# ── Liveness heartbeat (background job) ────────────────────────────
+# This job writes a timestamp every 5s while the launcher is alive.
+# The MAOS orchestrator watches this file; if it goes stale (>15s),
+# it classifies the runtime as RUNTIME_CRASHED (forced termination).
+$livenessPath = "${livenessFileEscaped}"
+$livenessJob = Start-Job -ScriptBlock {
+  param($p)
+  while ($true) {
+    try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $p -Encoding ASCII -Force } catch {}
+    Start-Sleep -Seconds 5
+  }
+} -ArgumentList $livenessPath
+
+# Write initial liveness immediately
+try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $livenessPath -Encoding ASCII -Force } catch {}
 
 # ── Launch CLI ──
-$taskText = Get-Content "${promptFile}" -Raw
-${command} -i $taskText${cliArgsStr}
+& {
+  ${launcherCmd}
+} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
 
-# ── Signal completion ──
-$sentinelFile = "${path.join(task.projectRoot, '.maos', `agent-done-${task.agentId}`).replace(/\\/g, '\\\\')}"
-"Task completed by ${task.agentId} at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $sentinelFile -Encoding UTF8
-Write-Host ''
-Write-Host '  [MAOS] Agent ${task.agentId} finished. Sentinel written.' -ForegroundColor Green
+$exitCode = $LASTEXITCODE
+
+# ── Stop liveness heartbeat ──
+Stop-Job -Job $livenessJob -ErrorAction SilentlyContinue
+Remove-Job -Job $livenessJob -Force -ErrorAction SilentlyContinue
+
+# ── Output stderr if any was captured ──
+if (Test-Path "${stderrFileEscaped}") {
+  $stderrContent = Get-Content "${stderrFileEscaped}" -Raw
+  if ($stderrContent) {
+    Write-Host '  -- STDERR --' -ForegroundColor Red
+    Write-Host $stderrContent -ForegroundColor Red
+  }
+}
+
+# ── Write exit code (graceful completion contract) ──
+$exitCode | Out-File -FilePath "${exitFileEscaped}" -Encoding ASCII
+
+if ($exitCode -eq 0) {
+  Write-Host ''
+  Write-Host "  [MAOS] Agent finished successfully. Exit code: $exitCode." -ForegroundColor Green
+} else {
+  Write-Host ''
+  Write-Host "  [MAOS] Agent failed. Exit code: $exitCode." -ForegroundColor Red
+}
 `;
+  }
+
+
+
+  /**
+   * Archive completed task log files to logs/archive/.
+   * Files older than LOG_RETENTION_DAYS are deleted from the archive.
+   */
+  private archiveTaskLogs(files: string[], archiveDir: string, retentionDays = 7): void {
+    const cutoffMs = retentionDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    // Move current task's log files to archive
+    for (const src of files) {
+      try {
+        if (fs.existsSync(src)) {
+          const dest = path.join(archiveDir, path.basename(src));
+          fs.renameSync(src, dest);
+        }
+      } catch { /* non-fatal — leave in place if rename fails (e.g. cross-device) */ }
+    }
+
+    // Prune archived files older than retention window
+    try {
+      const archived = fs.readdirSync(archiveDir);
+      for (const name of archived) {
+        const full = path.join(archiveDir, name);
+        try {
+          const stat = fs.statSync(full);
+          if (now - stat.mtimeMs > cutoffMs) {
+            fs.unlinkSync(full);
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* non-fatal */ }
   }
 
   /**
@@ -545,6 +1161,22 @@ Write-Host '  [MAOS] Agent ${task.agentId} finished. Sentinel written.' -Foregro
     }
 
     return changed;
+  }
+
+  getCapabilityProfile(): RuntimeCapabilityProfile {
+    return {
+      runtimeId:              this.name,          // e.g. 'copilot-cli'
+      runtimeType:            'cli',
+      provider:               this.config.cliCommand,
+      supportsTools:          false,  // CLI manages its own tool loop internally
+      supportsCodeMutation:   true,   // Primary purpose of CLI agents
+      supportsLongContext:    true,   // CLI manages own context window
+      supportsStreaming:      false,
+      supportsParallelism:    false,  // one WT tab per agent
+      estimatedAvgLatencyMs:  120_000, // CLIs are typically slower (no streaming, WT launch overhead)
+      estimatedCostPerTask:   0,       // Subscription-based; zero marginal cost
+      concurrencyLimit:       1,
+    };
   }
 
   async dispose(): Promise<void> {
