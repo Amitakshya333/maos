@@ -215,15 +215,28 @@ export async function runInit(): Promise<void> {
 
   let baseURL = PROVIDER_URLS[providerName];
   let costPerMillion = 0.50;
+  let ollamaModel = 'qwen2.5-coder';
+  let customModel = 'gpt-4o';
 
   if (providerName === 'custom') {
     const customAnswers = await inquirer.prompt([
       { type: 'input', name: 'baseURL', message: 'API Base URL:' },
+      { type: 'input', name: 'model', message: 'Custom Model Name:', default: 'gpt-4o' },
     ]);
     baseURL = customAnswers.baseURL;
+    customModel = customAnswers.model;
   }
 
   if (providerName === 'ollama') {
+    const ollamaAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'model',
+        message: 'Local Ollama model name (e.g., qwen2.5-coder, llama3, deepseek-coder):',
+        default: 'qwen2.5-coder',
+      },
+    ]);
+    ollamaModel = ollamaAnswers.model;
     costPerMillion = 0.00;
   } else if (providerName === 'openai') {
     costPerMillion = 10.00;
@@ -237,6 +250,16 @@ export async function runInit(): Promise<void> {
     ...(baseURL ? { baseURL } : {}),
     costPerMillionTokens: costPerMillion,
   };
+
+  const DEFAULT_MODELS: Record<string, string> = {
+    freemodel: 'gpt-5.4',
+    openai: 'gpt-4o',
+    deepseek: 'deepseek-chat',
+    ollama: ollamaModel,
+    custom: customModel,
+  };
+
+  const selectedModel = DEFAULT_MODELS[providerName] || 'gpt-5.4';
 
   // Build agents with selected provider
   let agents: any[];
@@ -265,12 +288,13 @@ export async function runInit(): Promise<void> {
         };
       }
       // API agents use the selected provider
-      return { ...a, provider: providerName };
+      return { ...a, provider: providerName, model: selectedModel };
     });
   } else {
     agents = PRESET_AGENTS[answers.teamSize].map(a => ({
       ...a,
       provider: providerName,
+      model: selectedModel,
     }));
   }
 

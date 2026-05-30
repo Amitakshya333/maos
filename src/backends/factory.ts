@@ -145,7 +145,11 @@ export class RuntimeFactory {
         // API and Local both use the same ApiRuntime —
         // local just uses a localhost URL (Ollama/LM Studio)
         const providerName = agentConfig.provider || 'freemodel';
-        const model = agentConfig.model || 'gpt-5.4';
+        const defaultModel = providerName.toLowerCase() === 'ollama' ? 'qwen2.5-coder'
+          : providerName.toLowerCase() === 'openai' ? 'gpt-4o'
+          : providerName.toLowerCase() === 'deepseek' ? 'deepseek-chat'
+          : 'gpt-5.4';
+        const model = agentConfig.model || defaultModel;
         const providerConfig = providerConfigs[providerName];
 
         if (!providerConfig) {
@@ -225,6 +229,139 @@ export class RuntimeFactory {
   static getKnownCliRuntimes(): string[] {
     return ['copilot', 'codex', 'claude', 'antigravity'];
   }
+
+  /**
+   * Validate credentials for all agents BEFORE creating runtimes.
+   * Fast, synchronous check — no network calls.
+   * Returns diagnostic array with per-agent status.
+   */
+  static validateCredentials(
+    agents: AgentRuntimeConfig[],
+    providerConfigs: Record<string, ProviderConfig & { costPerMillionTokens?: number }>,
+  ): CredentialCheckResult[] {
+    const results: CredentialCheckResult[] = [];
+
+    for (const agent of agents) {
+      const runtimeType = agent.runtime || 'api';
+
+      if (runtimeType === 'cli') {
+        // CLI agents don't have API keys — check CLI command existence
+        results.push({
+          agentId: agent.id,
+          provider: agent.cliCommand || 'unknown-cli',
+          runtimeType: 'cli',
+          status: agent.cliCommand ? 'ok' : 'missing',
+          message: agent.cliCommand
+            ? `CLI runtime: ${agent.cliCommand}`
+            : 'No cliCommand specified for CLI runtime',
+        });
+        continue;
+      }
+
+      // API / Local runtimes — check provider key
+      const providerName = agent.provider || 'freemodel';
+      const providerConfig = providerConfigs[providerName];
+
+      if (!providerConfig) {
+        results.push({
+          agentId: agent.id,
+          provider: providerName,
+          runtimeType,
+          status: 'missing',
+          message: `Provider "${providerName}" not found in config`,
+        });
+        continue;
+      }
+
+      // Skip key check for local providers
+      if (NO_KEY_PROVIDERS.has(providerName.toLowerCase())) {
+        results.push({
+          agentId: agent.id,
+          provider: providerName,
+          runtimeType,
+          status: 'ok',
+          message: `Local provider (no key required)`,
+        });
+        continue;
+      }
+
+      // Resolve the key
+      try {
+        const keyValue = providerConfig.apiKey;
+        if (!keyValue) {
+          results.push({
+            agentId: agent.id,
+            provider: providerName,
+            runtimeType,
+            status: 'missing',
+            message: `No API key configured`,
+          });
+          continue;
+        }
+
+        // Check for env: reference
+        if (keyValue.startsWith('env:')) {
+          const envVar = keyValue.slice(4);
+          const resolved = process.env[envVar];
+          if (!resolved) {
+            results.push({
+              agentId: agent.id,
+              provider: providerName,
+              runtimeType,
+              status: 'missing',
+              message: `Environment variable "${envVar}" is not set`,
+            });
+            continue;
+          }
+          // Check for placeholder values
+          if (isPlaceholder(resolved)) {
+            results.push({
+              agentId: agent.id,
+              provider: providerName,
+              runtimeType,
+              status: 'placeholder',
+              message: `API key is a placeholder: "${resolved.substring(0, 20)}..."`,
+            });
+            continue;
+          }
+        } else {
+          // Direct string key — check for placeholder
+          if (isPlaceholder(keyValue)) {
+            results.push({
+              agentId: agent.id,
+              provider: providerName,
+              runtimeType,
+              status: 'placeholder',
+              message: `API key is a placeholder: "${keyValue.substring(0, 20)}..."`,
+            });
+            continue;
+          }
+        }
+
+        // Key looks valid
+        const maskedKey = maskKey(keyValue.startsWith('env:')
+          ? process.env[keyValue.slice(4)]!
+          : keyValue);
+        results.push({
+          agentId: agent.id,
+          provider: providerName,
+          runtimeType,
+          status: 'ok',
+          message: `API key resolved (${maskedKey})`,
+        });
+      } catch (err: any) {
+        results.push({
+          agentId: agent.id,
+          provider: providerName,
+          runtimeType,
+          status: 'missing',
+          message: err.message,
+        });
+      }
+    }
+
+    return results;
+  }
 }
 
 // ---- Direct Provider Creation ----
@@ -242,3 +379,39 @@ export function createProviderDirect(
 // Keep ProviderFactory as an alias so existing code doesn't break during transition.
 
 export { RuntimeFactory as ProviderFactory };
+
+// ---- Credential Check Types ----
+
+export interface CredentialCheckResult {
+  agentId: string;
+  provider: string;
+  runtimeType: string;
+  status: 'ok' | 'missing' | 'placeholder';
+  message: string;
+}
+
+// ---- Helpers ----
+
+const PLACEHOLDER_VALUES = new Set([
+  'your-key-here',
+  'your-api-key',
+  'sk-your-key-here',
+  'your_api_key',
+  'CHANGE_ME',
+  'changeme',
+  'xxx',
+  'placeholder',
+  'undefined',
+  '',
+]);
+
+function isPlaceholder(value: string): boolean {
+  if (PLACEHOLDER_VALUES.has(value.toLowerCase().trim())) return true;
+  if (value.length < 8) return true; // Too short to be a real key
+  return false;
+}
+
+function maskKey(value: string): string {
+  if (value.length <= 8) return '***';
+  return value.substring(0, 6) + '...' + value.substring(value.length - 4);
+}
