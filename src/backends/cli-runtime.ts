@@ -28,26 +28,28 @@ import { MessageBus, createEvent } from '../core/message-bus';
 
 // ---- Interactive Mode Detection ----
 // Patterns that indicate a CLI entered REPL/interactive mode instead of autonomous execution.
+// We make these specific (requiring trailing prompt-like symbols/structure) to avoid false-positives
+// in natural conversation/logs.
 const INTERACTIVE_PATTERNS = [
-  /^\s*>\s*$/m,                       // bare '>' prompt
-  /^\s*\$\s*$/m,                       // bare '$' prompt
-  /^\s*>>>\s*$/m,                      // Python REPL
-  /press enter/i,
-  /\(y\/n\)/i,
-  /\[Y\/n\]/i,
-  /confirm/i,
-  /sign in/i,
-  /log\s*in/i,
-  /authenticate/i,
-  /enter.*token/i,
-  /waiting for/i,
-  /interactive mode/i,
+  /^\s*>\s*$/m,                          // bare '>' prompt
+  /^\s*\$\s*$/m,                          // bare '$' prompt
+  /^\s*>>>\s*$/m,                         // Python REPL
+  /press\s+enter\s+to/i,                  // press enter to ...
+  /\(y\/n\)\s*$/mi,                       // ends with (y/n)
+  /\[Y\/n\]\s*$/mi,                       // ends with [Y/n]
+  /\bconfirm\b.*[:?]\s*$/mi,              // confirm prompt at end
+  /\b(?:log\s*in|sign\s*in)\b.*[:?]\s*$/mi, // login prompt at end
+  /\bauthenticate\b.*[:?]\s*$/mi,         // authenticate prompt at end
+  /\benter\b.*\btoken\b.*[:?]\s*$/mi,     // token prompt at end
+  /\bpassword\b\s*:\s*$/mi,               // password: prompt at end
 ];
 
 /** Check if output indicates interactive/REPL mode */
 function detectInteractiveMode(output: string): string | null {
+  // Prompts are always at the end of the output stream (last 200 characters)
+  const checkText = output.substring(Math.max(0, output.length - 200));
   for (const pattern of INTERACTIVE_PATTERNS) {
-    const match = output.match(pattern);
+    const match = checkText.match(pattern);
     if (match) {
       return match[0].trim();
     }
@@ -84,6 +86,12 @@ const CLI_PROFILES: Record<string, CliProfile> = {
     buildArgs: (promptFile) => ['exec', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-bypass-approvals-and-sandbox'],
     buildLauncherCommand: (promptFile, cliArgsStr) => `codex exec (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-bypass-approvals-and-sandbox${cliArgsStr}`,
     authEnvKey: 'CODEX_HOME',
+  },
+  opencode: {
+    command: 'opencode',
+    buildArgs: (promptFile) => ['run', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-skip-permissions'],
+    buildLauncherCommand: (promptFile, cliArgsStr) => `opencode run (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-skip-permissions${cliArgsStr}`,
+    authEnvKey: 'OPENCODE_HOME',
   },
   claude: {
     command: 'claude',
@@ -168,6 +176,19 @@ export class CliRuntime implements IRuntime {
       );
     }
 
+    // Validate agent ID, CLI command name, and CLI arguments to prevent command/shell injection attacks
+    if (!/^[a-zA-Z0-9_-]+$/.test(task.agentId)) {
+      throw new Error(`Security Violation: Invalid agent ID '${task.agentId}'. Agent IDs must only contain alphanumeric characters, underscores, and dashes.`);
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(this.config.cliCommand)) {
+      throw new Error(`Security Violation: Invalid CLI command '${this.config.cliCommand}'. CLI commands must only contain alphanumeric characters, underscores, and dashes.`);
+    }
+    for (const arg of this.config.cliArgs) {
+      if (/[\;&\|`\$\(\)]/.test(arg)) {
+        throw new Error(`Security Violation: Dangerous characters detected in CLI argument '${arg}'`);
+      }
+    }
+
     const startTime = Date.now();
     const maosDir = path.join(task.projectRoot, '.maos');
     const promptsDir = path.join(maosDir, 'prompts');
@@ -231,7 +252,7 @@ export class CliRuntime implements IRuntime {
     };
 
     // 1. Take filesystem snapshot (before)
-    const beforeSnapshot = this.snapshotFiles(task.projectRoot);
+    const beforeSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
 
     // 2. Write task prompt file
     const promptFile = path.join(promptsDir, `${task.agentId}_task.md`);
@@ -257,14 +278,25 @@ export class CliRuntime implements IRuntime {
     const launcherContent = this.buildLauncher(task, promptFile, resolvedAuth, stdoutFile, stderrFile, exitFile, livenessFile);
     await writeFileWithRetry(launcherFile, launcherContent);
 
-    // 5. Open Windows Terminal tab
+    // 5. Open Windows Terminal tab securely using spawnSync (no shell evaluation)
     try {
-      const wtArgs = `new-tab --title "${task.agentId}" -- pwsh.exe -NoExit -File "${launcherFile}"`;
-      child_process.execSync(`wt.exe ${wtArgs}`, {
+      const wtArgs = [
+        'new-tab',
+        '--title', task.agentId,
+        '--',
+        'pwsh.exe',
+        '-NoExit',
+        '-File', launcherFile
+      ];
+      const spawnResult = child_process.spawnSync('wt.exe', wtArgs, {
         cwd: task.projectRoot,
         stdio: 'ignore',
         windowsHide: false,
       });
+
+      if (spawnResult.error) {
+        throw spawnResult.error;
+      }
 
       this.bus.emit(createEvent('TASK_PROGRESS', task.agentId, {
         action: 'terminal-tab-opened',
@@ -466,7 +498,7 @@ export class CliRuntime implements IRuntime {
 
         appendLog(`\n[MAOS] Process exited with code: ${code}\n`);
 
-        const afterSnapshot = this.snapshotFiles(task.projectRoot);
+        const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
         const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
         const success = code === 0;
 
@@ -495,7 +527,7 @@ export class CliRuntime implements IRuntime {
           costUSD: 0,
           latencyMs: Date.now() - startTime,
           runtimeType: 'cli',
-          error: success ? undefined : `Exit code: ${code}`,
+          error: success ? undefined : `CLI agent failed with exit code ${code}.\nOutput:\n${output}`,
           taskResult,
           exitCode: code !== null ? code : 1,
         });
@@ -563,7 +595,7 @@ export class CliRuntime implements IRuntime {
     // to start up and write its first heartbeat (allow 20s for slow machines).
     const livenessGracePeriodMs = 20_000;
     let lastChangeTime = Date.now();
-    let lastSnapshot = this.snapshotFiles(task.projectRoot);
+    let lastSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
     let quiescentCount = 0;
     const quiescentThreshold = Math.ceil(this.config.quiescenceMs / pollInterval);
     // Track whether liveness file ever appeared (it may not on very old launchers)
@@ -585,7 +617,7 @@ export class CliRuntime implements IRuntime {
                 // Liveness file went stale — launcher was killed abruptly.
                 clearInterval(timer);
 
-                const afterSnapshot = this.snapshotFiles(task.projectRoot);
+                const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
                 const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
 
                 const crashMsg = [
@@ -635,7 +667,7 @@ export class CliRuntime implements IRuntime {
               // Liveness file disappeared after being present — treat as crash.
               clearInterval(timer);
 
-              const afterSnapshot = this.snapshotFiles(task.projectRoot);
+              const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
               const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
 
               const crashMsg = [
@@ -707,7 +739,7 @@ export class CliRuntime implements IRuntime {
 
         if (interactiveDetected) {
           clearInterval(timer);
-          const afterSnapshot = this.snapshotFiles(task.projectRoot);
+          const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
           const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
 
           this.bus.emit(createEvent('AGENT_PHASE', task.agentId, {
@@ -753,7 +785,7 @@ export class CliRuntime implements IRuntime {
             exitCode = 0;
           }
 
-          const afterSnapshot = this.snapshotFiles(task.projectRoot);
+          const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
           const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
           const success = exitCode === 0;
 
@@ -768,6 +800,17 @@ export class CliRuntime implements IRuntime {
             ? `CLI agent completed gracefully. ${filesChanged.length} files changed.`
             : `CLI agent failed with exit code ${exitCode}.`;
 
+          let errorMsg: string | undefined = undefined;
+          if (!success) {
+            errorMsg = `CLI agent execution failed with exit code ${exitCode}`;
+            try {
+              if (fs.existsSync(stderrFile)) {
+                const stderrContent = fs.readFileSync(stderrFile, 'utf-8').trim();
+                if (stderrContent) errorMsg += `\nStderr:\n${stderrContent}`;
+              }
+            } catch {}
+          }
+
           if (success) {
             this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
               method: 'exit-file',
@@ -777,14 +820,6 @@ export class CliRuntime implements IRuntime {
               exitType: 'graceful_exit',
             }, task.id, 'cli'));
           } else {
-            let errorMsg = `CLI agent execution failed with exit code ${exitCode}`;
-            try {
-              if (fs.existsSync(stderrFile)) {
-                const stderrContent = fs.readFileSync(stderrFile, 'utf-8').trim();
-                if (stderrContent) errorMsg += `\nStderr:\n${stderrContent}`;
-              }
-            } catch {}
-
             this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
               method: 'exit-file',
               error: errorMsg,
@@ -806,7 +841,7 @@ export class CliRuntime implements IRuntime {
             runtimeType: 'cli',
             taskResult,
             exitCode,
-            error: success ? undefined : `Exit code: ${exitCode}`,
+            error: success ? undefined : errorMsg,
           });
           return;
         }
@@ -815,7 +850,7 @@ export class CliRuntime implements IRuntime {
         // IMPORTANT: Only resolve quiescence as SUCCESS if the liveness file
         // is still fresh (launcher is still alive). If liveness is not
         // enforced yet (within grace period), allow quiescence to proceed.
-        const currentSnapshot = this.snapshotFiles(task.projectRoot);
+        const currentSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
         const changed = this.diffSnapshots(lastSnapshot, currentSnapshot);
 
         if (changed.length > 0 || logFileActive) {
@@ -832,7 +867,7 @@ export class CliRuntime implements IRuntime {
           quiescentCount++;
 
           const totalFilesChanged = this.diffSnapshots(beforeSnapshot, currentSnapshot);
-          if (quiescentCount >= quiescentThreshold && totalFilesChanged.length > 0) {
+          if (quiescentCount >= quiescentThreshold) {
             // Final liveness check before declaring quiescence success.
             // If liveness is enforced and file is stale → crash takes priority.
             let livenessOk = true;
@@ -884,7 +919,7 @@ export class CliRuntime implements IRuntime {
         // ── 5. Timeout — hard stop with diagnostics ────────────────────────
         if (elapsed >= this.config.timeoutMs) {
           clearInterval(timer);
-          const afterSnapshot = this.snapshotFiles(task.projectRoot);
+          const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
           const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
           const madeProgress = filesChanged.length > 0;
           const taskResult = madeProgress ? 'partial_success' : 'failed';
@@ -985,31 +1020,51 @@ ${this.config.capabilities.join(', ')}
     const command = profile?.command || this.config.cliCommand;
     const timestamp = new Date().toISOString();
 
-    // Build auth env var lines
+    // Build auth env var lines (escaped safely as double-quoted PowerShell string literals)
     const authLines = Object.entries(resolvedAuth)
-      .map(([key, val]) => `$env:${key} = "${val}"`)
+      .map(([key, val]) => `$env:${key} = "${val.replace(/`/g, '``').replace(/"/g, '`"')}"`)
       .join('\n');
 
-    // Build CLI invocation
-    const cliArgsStr = this.config.cliArgs.length > 0
-      ? ' ' + this.config.cliArgs.join(' ')
-      : '';
+    // Build the PowerShell arguments array dynamically to use native splatting.
+    // This is 100% immune to command injection.
+    const promptFileEscaped = promptFile.replace(/\\/g, '\\\\');
+    
+    let baseArgsPs: string[] = [];
+    if (this.config.cliCommand === 'copilot') {
+      baseArgsPs = ['"-p"', '$taskText', '"--yolo"', '"--no-ask-user"'];
+    } else if (this.config.cliCommand === 'codex') {
+      baseArgsPs = ['"exec"', '$taskText', '"--dangerously-bypass-approvals-and-sandbox"'];
+    } else if (this.config.cliCommand === 'opencode') {
+      baseArgsPs = ['"run"', '$taskText', '"--dangerously-skip-permissions"'];
+    } else if (this.config.cliCommand === 'claude') {
+      baseArgsPs = ['"-p"', '$taskText', '"--dangerously-skip-permissions"'];
+    } else if (this.config.cliCommand === 'antigravity') {
+      baseArgsPs = ['"--prompt-file"', `"${promptFileEscaped}"`];
+    } else {
+      // Default fallback
+      baseArgsPs = ['"-p"', '$taskText', '"--yolo"', '"--no-ask-user"'];
+    }
 
-    const launcherCmd = profile
-      ? profile.buildLauncherCommand(promptFile, cliArgsStr)
-      : `${command} -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --yolo --no-ask-user${cliArgsStr}`;
+    // Escape user arguments safely for PowerShell double-quoted string literals
+    const userArgsPs = this.config.cliArgs.map(arg => {
+      const escaped = arg
+        .replace(/`/g, '``')
+        .replace(/"/g, '`"');
+      return `"${escaped}"`;
+    });
+
+    const allArgsPs = [...baseArgsPs, ...userArgsPs].join(', ');
 
     const livenessFileEscaped = livenessFile.replace(/\\/g, '\\\\');
     const stdoutFileEscaped  = stdoutFile.replace(/\\/g, '\\\\');
     const stderrFileEscaped  = stderrFile.replace(/\\/g, '\\\\');
     const exitFileEscaped    = exitFile.replace(/\\/g, '\\\\');
-    const promptFileEscaped  = promptFile.replace(/\\/g, '\\\\');
 
     return `# Auto-generated MAOS launcher for ${task.agentId} at ${timestamp}
 # Runtime: ${this.config.cliCommand}-cli | Task: ${task.id}
 # Do NOT edit manually - regenerated on each dispatch.
 
-Set-Location "${task.projectRoot}"
+Set-Location "${task.projectRoot.replace(/`/g, '``').replace(/"/g, '`"')}"
 
 # ── Set isolated auth credentials ──
 ${authLines}
@@ -1047,9 +1102,11 @@ $livenessJob = Start-Job -ScriptBlock {
 # Write initial liveness immediately
 try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $livenessPath -Encoding ASCII -Force } catch {}
 
-# ── Launch CLI ──
+# ── Launch CLI safely with native argument splatting ──
+$taskText = Get-Content -Raw "${promptFileEscaped}"
+$cliArgs = @(${allArgsPs})
 & {
-  ${launcherCmd}
+  & "${command}" @cliArgs
 } 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
 
 $exitCode = $LASTEXITCODE
@@ -1118,7 +1175,7 @@ if ($exitCode -eq 0) {
   /**
    * Snapshot all files in the project (path -> mtime).
    */
-  private snapshotFiles(dir: string): Map<string, number> {
+  private snapshotFiles(dir: string, scope: string[]): Map<string, number> {
     const snapshot = new Map<string, number>();
 
     function walk(d: string, depth: number) {
@@ -1140,7 +1197,25 @@ if ($exitCode -eq 0) {
       } catch { /* skip */ }
     }
 
-    walk(dir, 0);
+    const cleanScopes = scope.filter(s => s !== '/' && s !== '*' && s !== '**/*');
+    if (cleanScopes.length > 0) {
+      for (const sc of cleanScopes) {
+        const fullScopePath = path.resolve(dir, sc);
+        if (fs.existsSync(fullScopePath)) {
+          try {
+            const stat = fs.statSync(fullScopePath);
+            if (stat.isDirectory()) {
+              walk(fullScopePath, 0);
+            } else if (stat.isFile()) {
+              snapshot.set(fullScopePath, stat.mtimeMs);
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } else {
+      walk(dir, 0);
+    }
+
     return snapshot;
   }
 
