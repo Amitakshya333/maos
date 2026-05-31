@@ -5,6 +5,7 @@
 ### *docker-compose for AI coding agents*
 
 [![npm](https://img.shields.io/npm/v/maosorch?style=flat-square&logo=npm&label=maosorch)](https://www.npmjs.com/package/maosorch)
+[![Website](https://img.shields.io/badge/Website-maos.web.app-FF6B35?style=flat-square&logo=firebase)](https://maos.web.app/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
@@ -401,7 +402,7 @@ MIT © [Amitakshya Sutar](https://github.com/Amitakshya333)
 
 *MAOS - because one AI agent is never enough.*
 
-📦 **[View on npm →](https://www.npmjs.com/package/maosorch)** · 
+📦 **[View on npm →](https://www.npmjs.com/package/maosorch)** · 🌐 **[Visit Website →](https://maos.web.app/)** · 
 
 </div>
 
