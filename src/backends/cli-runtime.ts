@@ -31,17 +31,17 @@ import { MessageBus, createEvent } from '../core/message-bus';
 // We make these specific (requiring trailing prompt-like symbols/structure) to avoid false-positives
 // in natural conversation/logs.
 const INTERACTIVE_PATTERNS = [
-  /^\s*>\s*$/m,                          // bare '>' prompt
-  /^\s*\$\s*$/m,                          // bare '$' prompt
-  /^\s*>>>\s*$/m,                         // Python REPL
-  /press\s+enter\s+to/i,                  // press enter to ...
-  /\(y\/n\)\s*$/mi,                       // ends with (y/n)
-  /\[Y\/n\]\s*$/mi,                       // ends with [Y/n]
-  /\bconfirm\b.*[:?]\s*$/mi,              // confirm prompt at end
-  /\b(?:log\s*in|sign\s*in)\b.*[:?]\s*$/mi, // login prompt at end
-  /\bauthenticate\b.*[:?]\s*$/mi,         // authenticate prompt at end
-  /\benter\b.*\btoken\b.*[:?]\s*$/mi,     // token prompt at end
-  /\bpassword\b\s*:\s*$/mi,               // password: prompt at end
+  /^\s*>\s*$/m,                            // bare '>' prompt
+  /^\s*\$\s*$/m,                            // bare '$' prompt
+  /^\s*>>>\s*$/m,                           // Python REPL
+  /press\s+enter\s+to/i,                    // press enter to ...
+  /\(y\/n\)\s*$/mi,                         // ends with (y/n)
+  /\[Y\/n\]\s*$/mi,                         // ends with [Y/n]
+  /\bconfirm\b\s*[:?]\s*$/mi,                // confirm prompt (e.g. "confirm:")
+  /\b(?:log\s*in|sign\s*in|username|email)\b\s*[:?]\s*$/mi, // login / username prompt
+  /\bauthenticate\b\s*[:?]\s*$/mi,           // authenticate prompt
+  /\benter\b\s+(?:auth\s+)?token\b\s*[:?]\s*$/mi, // token prompt
+  /\bpassword\b\s*:\s*$/mi,                 // password: prompt
 ];
 
 /** Check if output indicates interactive/REPL mode */
