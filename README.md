@@ -22,6 +22,18 @@ npm install -g maosorch
 
 ---
 
+<div align="center">
+
+### 🖥️ Interactive REPL
+
+<img src="assets/maos-repl.png" alt="MAOS Interactive REPL" width="700">
+
+*The MAOS REPL — ask the fleet anything, tab-complete commands, and watch agents work in real-time.*
+
+</div>
+
+---
+
 ## 💡 The Problem
 
 Modern AI coding assistants are powerful but **single-threaded**. You can only use one model at a time, on one task. What if you could:
