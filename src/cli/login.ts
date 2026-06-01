@@ -183,7 +183,7 @@ export async function runLogin(options: LoginOptions): Promise<void> {
       cwd: projectRoot,
       env,
       stdio: 'inherit', // Show the login flow to the user
-      shell: false,
+      shell: process.platform === 'win32',
     });
 
     console.log('');
