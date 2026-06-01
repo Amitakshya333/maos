@@ -1047,46 +1047,89 @@ ${this.config.capabilities.join(', ')}
       .map(([key, val]) => `$env:${key} = "${val.replace(/`/g, '``').replace(/"/g, '`"')}"`)
       .join('\n');
 
-    // Build the PowerShell arguments array dynamically to use native splatting.
-    // This is 100% immune to command injection.
-    const promptFileEscaped = promptFile.replace(/\\/g, '\\\\');
-    
-    let baseArgsPs: string[] = [];
-    if (this.config.cliCommand === 'copilot') {
-      baseArgsPs = ['"-p"', '$taskText', '"--yolo"', '"--no-ask-user"'];
-    } else if (this.config.cliCommand === 'codex') {
-      baseArgsPs = ['"exec"', '$taskText', '"--dangerously-bypass-approvals-and-sandbox"'];
-    } else if (this.config.cliCommand === 'opencode') {
-      baseArgsPs = ['"run"', '$taskText', '"--dangerously-skip-permissions"'];
-    } else if (this.config.cliCommand === 'claude') {
-      baseArgsPs = ['"-p"', '$taskText', '"--dangerously-skip-permissions"'];
-    } else if (this.config.cliCommand === 'antigravity') {
-      baseArgsPs = ['"--prompt-file"', `"${promptFileEscaped}"`];
-    } else {
-      // Default fallback
-      baseArgsPs = ['"-p"', '$taskText', '"--yolo"', '"--no-ask-user"'];
-    }
-
-    // Escape user arguments safely for PowerShell double-quoted string literals
-    const userArgsPs = this.config.cliArgs.map(arg => {
-      const escaped = arg
-        .replace(/`/g, '``')
-        .replace(/"/g, '`"');
-      return `"${escaped}"`;
-    });
-
-    const allArgsPs = [...baseArgsPs, ...userArgsPs].join(', ');
-
+    // Pre-escape all file paths (needed in launchBlock template strings below)
+    const promptFileEscaped   = promptFile.replace(/\\/g, '\\\\');
     const livenessFileEscaped = livenessFile.replace(/\\/g, '\\\\');
-    const stdoutFileEscaped  = stdoutFile.replace(/\\/g, '\\\\');
-    const stderrFileEscaped  = stderrFile.replace(/\\/g, '\\\\');
-    const exitFileEscaped    = exitFile.replace(/\\/g, '\\\\');
+    const stdoutFileEscaped   = stdoutFile.replace(/\\/g, '\\\\');
+    const stderrFileEscaped   = stderrFile.replace(/\\/g, '\\\\');
+    const exitFileEscaped     = exitFile.replace(/\\/g, '\\\\');
+
+    // Build the PowerShell launch block per CLI type.
+    // Key insight from --help output:
+    //   copilot:   copilot -p "<text>" --yolo --no-ask-user
+    //   codex:     codex exec "<text>" --dangerously-bypass-approvals-and-sandbox
+    //              (also supports: codex exec - < promptFile for long prompts via stdin)
+    //   opencode:  opencode run [message..] -f <file>
+    //              NO --dangerously-skip-permissions flag — it does not exist.
+    //   claude:    claude -p "<text>" --dangerously-skip-permissions
+    //   antigravity: antigravity --prompt-file "<path>"
+    let launchBlock: string;
+
+    if (this.config.cliCommand === 'opencode') {
+      // opencode run: pass task via -f (attach file) so we avoid shell quoting limits.
+      // No permission bypass flag needed — opencode runs non-interactively with run subcommand.
+      const userExtraArgs = this.config.cliArgs.map(arg => {
+        const escaped = arg.replace(/`/g, '``').replace(/"/g, '`"');
+        return `"${escaped}"`;
+      }).join(', ');
+      const extraArgs = userExtraArgs ? `, ${userExtraArgs}` : '';
+      launchBlock = `
+$cliArgs = @("run", "-f", "${promptFileEscaped}"${extraArgs})
+& {
+  & "${command}" @cliArgs
+} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+    } else if (this.config.cliCommand === 'codex') {
+      // codex exec: pass task via stdin (codex exec - < file) to avoid arg-length issues.
+      // The dangerously-bypass-approvals-and-sandbox flag enables non-interactive mode.
+      const userExtraArgs = this.config.cliArgs.map(arg => {
+        const escaped = arg.replace(/`/g, '``').replace(/"/g, '`"');
+        return `"${escaped}"`;
+      }).join(', ');
+      const extraArgs = userExtraArgs ? `, ${userExtraArgs}` : '';
+      launchBlock = `
+$cliArgs = @("exec", "--dangerously-bypass-approvals-and-sandbox"${extraArgs})
+& {
+  Get-Content -Raw "${promptFileEscaped}" | & "${command}" @cliArgs
+} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+    } else if (this.config.cliCommand === 'antigravity') {
+      launchBlock = `
+$cliArgs = @("--prompt-file", "${promptFileEscaped}")
+& {
+  & "${command}" @cliArgs
+} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+    } else {
+      // copilot / claude / default: pass task text as -p argument
+      let flagArg: string;
+      let extraFlagsPs: string[];
+      if (this.config.cliCommand === 'copilot') {
+        flagArg = '"-p"';
+        extraFlagsPs = ['"--yolo"', '"--no-ask-user"'];
+      } else if (this.config.cliCommand === 'claude') {
+        flagArg = '"-p"';
+        extraFlagsPs = ['"--dangerously-skip-permissions"'];
+      } else {
+        flagArg = '"-p"';
+        extraFlagsPs = ['"--yolo"', '"--no-ask-user"'];
+      }
+      const userExtraArgs = this.config.cliArgs.map(arg => {
+        const escaped = arg.replace(/`/g, '``').replace(/"/g, '`"');
+        return `"${escaped}"`;
+      });
+      const allFlagsPs = [flagArg, '$taskText', ...extraFlagsPs, ...userExtraArgs].join(', ');
+      launchBlock = `
+$taskText = Get-Content -Raw "${promptFileEscaped}"
+$cliArgs = @(${allFlagsPs})
+& {
+  & "${command}" @cliArgs
+} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+    }
 
     return `# Auto-generated MAOS launcher for ${task.agentId} at ${timestamp}
 # Runtime: ${this.config.cliCommand}-cli | Task: ${task.id}
 # Do NOT edit manually - regenerated on each dispatch.
 
 Set-Location "${task.projectRoot.replace(/`/g, '``').replace(/"/g, '`"')}"
+
 
 # ── Set isolated auth credentials ──
 ${authLines}
@@ -1125,12 +1168,8 @@ $livenessJob = Start-Job -ScriptBlock {
 # Write initial liveness immediately
 try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $livenessPath -Encoding ASCII -Force } catch {}
 
-# ── Launch CLI safely with native argument splatting ──
-$taskText = Get-Content -Raw "${promptFileEscaped}"
-$cliArgs = @(${allArgsPs})
-& {
-  & "${command}" @cliArgs
-} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
+# ── Launch CLI (correct flags per runtime) ──
+${launchBlock}
 
 $exitCode = $LASTEXITCODE
 
