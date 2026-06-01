@@ -1076,6 +1076,7 @@ Set-Location "${task.projectRoot.replace(/`/g, '``').replace(/"/g, '`"')}"
 
 # ── Set isolated auth credentials ──
 ${authLines}
+$env:FORCE_COLOR = "3"
 
 Write-Host ''
 Write-Host '  +==========================================+' -ForegroundColor Cyan
@@ -1114,13 +1115,14 @@ try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $livenessPath -Encod
 $taskText = Get-Content -Raw "${promptFileEscaped}"
 $cliArgs = @(${allArgsPs})
 
-# Start PowerShell transcript to capture stdout/stderr natively without breaking TTY
-Start-Transcript -Path "${stdoutFileEscaped}" -Force -ErrorAction SilentlyContinue
+# ── Launch CLI safely with native argument splatting ──
+$taskText = Get-Content -Raw "${promptFileEscaped}"
+$cliArgs = @(${allArgsPs})
+& {
+  & "${command}" @cliArgs
+} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
 
-& "${command}" @cliArgs 2> "${stderrFileEscaped}"
 $exitCode = $LASTEXITCODE
-
-Stop-Transcript -ErrorAction SilentlyContinue
 
 # ── Stop liveness heartbeat ──
 Stop-Job -Job $livenessJob -ErrorAction SilentlyContinue
