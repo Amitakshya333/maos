@@ -1113,11 +1113,14 @@ try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $livenessPath -Encod
 # ── Launch CLI safely with native argument splatting ──
 $taskText = Get-Content -Raw "${promptFileEscaped}"
 $cliArgs = @(${allArgsPs})
-& {
-  & "${command}" @cliArgs
-} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
 
+# Start PowerShell transcript to capture stdout/stderr natively without breaking TTY
+Start-Transcript -Path "${stdoutFileEscaped}" -Force -ErrorAction SilentlyContinue
+
+& "${command}" @cliArgs 2> "${stderrFileEscaped}"
 $exitCode = $LASTEXITCODE
+
+Stop-Transcript -ErrorAction SilentlyContinue
 
 # ── Stop liveness heartbeat ──
 Stop-Job -Job $livenessJob -ErrorAction SilentlyContinue
