@@ -3,6 +3,7 @@ import * as path from 'path';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { getConfigPath, ensureMaosDirectories, isMaosInitialized } from '../utils/paths';
+import { renderPanel, getBrandBadge, icons } from '../utils/ui';
 
 interface AgentDefinition {
   id: string;
@@ -128,6 +129,16 @@ const PRESET_AGENTS: Record<string, AgentDefinition[]> = {
       costTier: 'low',
     },
     {
+      id: 'CODER_3',
+      role: 'coder',
+      provider: '',
+      model: 'opencode',
+      capabilities: ['coding', 'frontend', 'backend'],
+      scope: ['src/'],
+      maxIterations: 1,
+      costTier: 'low',
+    },
+    {
       id: 'REVIEWER',
       role: 'reviewer',
       provider: 'freemodel',
@@ -140,15 +151,13 @@ const PRESET_AGENTS: Record<string, AgentDefinition[]> = {
   ],
 };
 
-const BANNER = `
-${chalk.bold.cyan('╔══════════════════════════════════════════════╗')}
-${chalk.bold.cyan('║')}  ${chalk.bold.white('M A O S')}  ${chalk.gray('— Multi-Agent Orchestrator System')}  ${chalk.bold.cyan('║')}
-${chalk.bold.cyan('║')}  ${chalk.gray('docker-compose for AI coding agents')}          ${chalk.bold.cyan('║')}
-${chalk.bold.cyan('╚══════════════════════════════════════════════╝')}
-`;
-
 export async function runInit(): Promise<void> {
-  console.log(BANNER);
+  const bannerLines = [
+    `${getBrandBadge()} ${chalk.bold.hex('#F1F5F9')('Multi-Agent Orchestrator')}`,
+    `${chalk.gray('Isolated docker-compose system for AI coding agents')}`
+  ];
+  console.log(renderPanel(bannerLines, chalk.hex('#6366F1')));
+  console.log('');
 
   // Check if already initialized
   if (isMaosInitialized()) {
@@ -281,8 +290,17 @@ export async function runInit(): Promise<void> {
           ...a,
           runtime: 'cli',
           cliCommand: 'codex',
-          cliArgs: ['-a', 'full-auto'],
           auth: { CODEX_HOME: '.maos/auth/CODER_2' },
+          timeoutMs: 300000,
+          quiescenceMs: 30000,
+        };
+      }
+      if (a.model === 'opencode') {
+        return {
+          ...a,
+          runtime: 'cli',
+          cliCommand: 'opencode',
+          auth: { OPENCODE_HOME: '.maos/auth/CODER_3' },
           timeoutMs: 300000,
           quiescenceMs: 30000,
         };
@@ -345,10 +363,51 @@ export async function runInit(): Promise<void> {
     ].join('\n'), 'utf-8');
   }
 
-  // Create .env file if it doesn't exist
-  const envPath = path.join(cwd, '.env');
-  if (!fs.existsSync(envPath) && providerName !== 'ollama') {
-    fs.writeFileSync(envPath, `${envKeyName}=your-api-key-here\n`, 'utf-8');
+  // ── v0.3: INLINE API KEY SETUP ──
+  // Instead of writing a placeholder to .env, prompt the user for the key right now.
+  // This is the single biggest UX improvement: zero manual file editing.
+  if (providerName !== 'ollama') {
+    console.log('');
+    console.log(chalk.bold.cyan(`  ${providerName} requires an API key.`));
+    console.log('');
+
+    const { setCredential, testCredential, markCredentialTested } = require('../core/credentials');
+
+    const { apiKey } = await inquirer.prompt([{
+      type: 'password',
+      name: 'apiKey',
+      message: `Enter your ${providerName} API key:`,
+      mask: '•',
+      validate: (val: string) => {
+        if (!val || val.trim().length === 0) return 'API key cannot be empty. Press Ctrl+C to skip.';
+        if (val.trim().length < 8) return 'API key seems too short';
+        return true;
+      },
+    }]);
+
+    if (apiKey && apiKey.trim().length >= 8) {
+      console.log(chalk.gray('  ⏳ Validating key...'));
+      const testResult = await testCredential(providerName, apiKey.trim(), baseURL);
+
+      if (testResult.success) {
+        console.log(chalk.green(`  ✅ Connected${testResult.model ? ` (${testResult.model})` : ''}${testResult.latencyMs ? `, ${testResult.latencyMs}ms` : ''}`));
+        setCredential(providerName, apiKey.trim());
+        markCredentialTested(providerName, 'ok');
+        console.log(chalk.green('  ✅ Saved to .maos/credentials.json'));
+      } else {
+        console.log(chalk.yellow(`  ⚠️  Connection test failed: ${testResult.error}`));
+        const { saveAnyway } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'saveAnyway',
+          message: 'Save key anyway? (you can re-test later with: maos configure)',
+          default: true,
+        }]);
+        if (saveAnyway) {
+          setCredential(providerName, apiKey.trim());
+          markCredentialTested(providerName, 'failed');
+        }
+      }
+    }
   }
 
   // Create pool.json (all agents ON by default)
@@ -357,30 +416,48 @@ export async function runInit(): Promise<void> {
   const poolPath = path.join(path.dirname(configPath), 'pool.json');
   fs.writeFileSync(poolPath, JSON.stringify(pool, null, 2), 'utf-8');
 
-  // Output
+  // ── TEAM STATUS SUMMARY ──
+  // Show credential-aware status so the user knows immediately if anything needs attention.
   console.log('');
   console.log(chalk.green('✅ MAOS initialized successfully!'));
   console.log('');
-  console.log(chalk.gray('Created:'));
-  console.log(chalk.gray('  .maos/maos.config.json     — agent configuration'));
-  console.log(chalk.gray('  .maos/pool.json             — agent pool state'));
-  console.log(chalk.gray('  .maos/queue/                — task queue directories'));
-  console.log(chalk.gray('  .maos/status/               — agent status tracking'));
-  console.log(chalk.gray('  .maos/logs/                 — orchestrator logs'));
-  console.log('');
-  console.log(chalk.cyan('Your team:'));
-  agents.forEach(a => {
-    const icon = a.role === 'planner' ? '🧠' : a.role === 'coder' ? '⚙️' : a.role === 'reviewer' ? '🔍' : '🎨';
-    const runtimeLabel = a.runtime === 'cli' ? `${a.cliCommand}-cli` : `${a.provider}/${a.model}`;
-    const runtimeBadge = a.runtime === 'cli' ? chalk.magenta(' [CLI]') : chalk.blue(' [API]');
-    console.log(`  ${icon}  ${chalk.bold(a.id)} (${a.role}) → ${runtimeLabel}${runtimeBadge}`);
-  });
-  console.log('');
-  console.log(chalk.white('Next steps:'));
-  if (providerName !== 'ollama') {
-    console.log(chalk.white(`  1. Set your API key: export ${envKeyName}="sk-..."`));
+
+  // Team status panel
+  const { getAllCredentialStatuses } = require('../core/credentials');
+  const credStatuses = getAllCredentialStatuses(config);
+  const hasIssues = credStatuses.some((s: any) => s.status !== 'valid');
+
+  console.log(chalk.bold('  Team Status'));
+  console.log(chalk.gray('  ─────────────────────────────────────────'));
+
+  for (const agent of agents) {
+    const icon = agent.role === 'planner' ? '🧠' : agent.role === 'coder' ? '⚙️' : agent.role === 'reviewer' ? '🔍' : '🎨';
+    const cred = credStatuses.find((s: any) => s.agentId === agent.id);
+    const runtimeLabel = agent.runtime === 'cli' ? agent.cliCommand : `${agent.provider}/${agent.model}`;
+
+    if (cred && cred.status === 'valid') {
+      const sourceLabel = agent.runtime === 'cli' ? 'CLI' : 'Connected';
+      console.log(`  ${icon}  ${chalk.bold(agent.id).padEnd(20)} ${chalk.green('✅ ' + sourceLabel)}  ${chalk.gray(runtimeLabel)}`);
+    } else if (cred && cred.status === 'placeholder') {
+      console.log(`  ${icon}  ${chalk.bold(agent.id).padEnd(20)} ${chalk.yellow('⚠️  Placeholder key')}  ${chalk.gray(runtimeLabel)}`);
+    } else {
+      console.log(`  ${icon}  ${chalk.bold(agent.id).padEnd(20)} ${chalk.red('❌ Missing key')}  ${chalk.gray(runtimeLabel)}`);
+    }
   }
-  console.log(chalk.white(`  ${providerName === 'ollama' ? '1' : '2'}. Create a task:   ${chalk.cyan('maos task "Build a login page"')}`));
-  console.log(chalk.white(`  ${providerName === 'ollama' ? '2' : '3'}. Start agents:    ${chalk.cyan('maos start')}`));
+
+  console.log('');
+
+  if (hasIssues) {
+    console.log(chalk.yellow('  ⚠️  Some agents need API key configuration.'));
+    console.log(chalk.cyan('  Run: maos configure'));
+    console.log('');
+  }
+
+  console.log(chalk.white('Next steps:'));
+  console.log(chalk.white(`  1. Create a task:   ${chalk.cyan('maos task "Build a login page"')}`));
+  console.log(chalk.white(`  2. Start agents:    ${chalk.cyan('maos start')}`));
+  if (hasIssues) {
+    console.log(chalk.white(`  ${chalk.yellow('⚡')} Fix credentials: ${chalk.cyan('maos configure')}`));
+  }
   console.log('');
 }
