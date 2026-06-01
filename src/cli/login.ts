@@ -10,6 +10,7 @@
  * Usage:
  *   maos login --agent CODER_1 --cli copilot
  *   maos login --agent CODER_2 --cli codex
+ *   maos login --agent CODER_3 --cli opencode
  *   maos login --agent REVIEWER --cli claude
  */
 
@@ -19,6 +20,7 @@ import * as child_process from 'child_process';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { isMaosInitialized, getConfigPath } from '../utils/paths';
+import { renderPanel, getBrandBadge, renderDivider, icons, padRight } from '../utils/ui';
 
 // ---- CLI Login Profiles ----
 
@@ -47,6 +49,14 @@ const LOGIN_PROFILES: Record<string, LoginProfile> = {
     authEnvKey: 'CODEX_HOME',
     instructions: `1. Follow the prompts to authenticate with OpenAI.
 2. Each agent should use a separate API key or account.`,
+  },
+  opencode: {
+    command: 'opencode',
+    loginCmd: ['opencode', 'auth', 'login'],
+    authEnvKey: 'OPENCODE_HOME',
+    instructions: `1. Follow the prompts to authenticate with OpenCode.
+2. Each agent should use a separate profile or directory.
+3. If prompted for a provider, select your preferred one.`,
   },
   claude: {
     command: 'claude',
@@ -112,7 +122,7 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   const cliName = options.cli || agentConfig.cliCommand;
   if (!cliName) {
     console.log(chalk.red(`❌ No CLI specified for agent "${agentId}".`));
-    console.log(chalk.gray('  Use --cli copilot/codex/claude'));
+    console.log(chalk.gray('  Use --cli copilot/codex/opencode/claude'));
     process.exit(1);
   }
 
@@ -135,14 +145,15 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   }
 
   // Display banner
+  const bannerLines = [
+    `${getBrandBadge('AUTH')} ${chalk.bold.hex('#F1F5F9')('Agent Authentication')}`,
+    `${chalk.gray('Secure workspace isolation folder mapping')}`
+  ];
+  console.log(renderPanel(bannerLines, chalk.hex('#F59E0B')));
   console.log('');
-  console.log(chalk.bold.cyan('  ╔══════════════════════════════════════════╗'));
-  console.log(chalk.bold.cyan('  ║') + chalk.bold.white('  MAOS Agent Authentication') + '               ' + chalk.bold.cyan('║'));
-  console.log(chalk.bold.cyan('  ╚══════════════════════════════════════════╝'));
-  console.log('');
-  console.log(chalk.bold('  Agent        : ') + chalk.green(agentId));
-  console.log(chalk.bold('  CLI          : ') + chalk.cyan(cliName));
-  console.log(chalk.bold('  Auth Dir     : ') + chalk.gray(authDir));
+  console.log(`  ${chalk.bold.hex('#94A3B8')('👥 Agent ID:')}   ${chalk.bold.green(agentId)}`);
+  console.log(`  ${chalk.bold.hex('#94A3B8')('🔌 CLI Tool:')}   ${chalk.bold.cyan(cliName)}`);
+  console.log(`  ${chalk.bold.hex('#94A3B8')('📁 Auth Dir:')}   ${chalk.gray(authDir)}`);
   console.log('');
   console.log(chalk.yellow('  ┌─────────────────────────────────────────────────────┐'));
   console.log(chalk.yellow('  │  IMPORTANT — READ BEFORE PROCEEDING:                │'));
@@ -162,10 +173,17 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   try {
     const env = { ...process.env, [profile.authEnvKey]: authDir };
 
-    child_process.execSync(profile.loginCmd.join(' '), {
+    // Use execFileSync with an array (NOT execSync with a joined string).
+    // execSync(str) passes the command to PowerShell which misinterprets
+    // 'login' as the Set-Location (cd) alias, causing:
+    //   "Failed to change directory to ...\login"
+    // execFileSync with [cmd, ...args] bypasses shell evaluation entirely.
+    const [cmd, ...args] = profile.loginCmd;
+    child_process.execFileSync(cmd, args, {
       cwd: projectRoot,
       env,
       stdio: 'inherit', // Show the login flow to the user
+      shell: false,
     });
 
     console.log('');
