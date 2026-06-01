@@ -9,6 +9,7 @@ import {
   ensureMaosDirectories,
 } from '../utils/paths';
 import {
+  createTask,
   getPendingTasks,
   moveToActive,
   moveToDone,
@@ -30,6 +31,11 @@ import { wireEventStore } from './event-store';
 import { createHealthMonitor, HealthMonitor } from './health-monitor';
 import { createMemoryStore } from './context-memory';
 import { createRuntimeStatsStore, RuntimeStatsStore } from './runtime-stats';
+// v0.3 Multi-Agent Systems
+import { getDispatchableTasks, buildDoneIdSet } from './dependency-gate';
+import { createCoordinator, Coordinator } from './coordinator';
+import { Supervisor } from './supervisor';
+import { createObjective, loadObjective, recordPlanCompletion } from './objective-store';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -72,6 +78,8 @@ export interface OrchestratorOptions {
   cwd?: string;
   /** Callback for live status updates */
   onStatusUpdate?: (state: OrchestratorState) => void;
+  /** Force start with reduced fleet even if credentials are missing */
+  force?: boolean;
 }
 
 // ─── Status File I/O ──────────────────────────────────────────
@@ -212,29 +220,117 @@ export async function startOrchestrator(
     logger.info('BUS', `[${event.type}] ${event.agentId}${event.taskId ? ` task:${event.taskId}` : ''}${detail}`);
   });
 
-  // ---- CREDENTIAL VALIDATION ----
-  // Fast, synchronous check for missing/placeholder API keys before creating runtimes.
-  // Agents with bad keys are skipped (not crashed) so others can still work.
-  const credChecks = RuntimeFactory.validateCredentials(config.agents, config.providers);
+  // ── CREDENTIAL VALIDATION (v0.3: hard-stop by default) ──
+  // Use the new credential store for resolution (checks credentials.json → .env → env vars).
+  // If any API agents have missing/placeholder keys, HARD STOP with guidance.
+  // Use options.force to bypass (reduced fleet mode).
+  const { getAllCredentialStatuses } = require('./credentials');
+  const credStatuses = getAllCredentialStatuses(config, cwd);
   const badAgentIds = new Set<string>();
-  for (const check of credChecks) {
-    if (check.status === 'ok') {
-      logger.info('CREDENTIALS', `✅ ${check.agentId} → ${check.provider}: ${check.message}`);
-    } else if (check.status === 'placeholder') {
-      logger.error('CREDENTIALS', `⚠️  ${check.agentId} → ${check.provider}: ${check.message}`);
-      badAgentIds.add(check.agentId);
+
+  for (const check of credStatuses) {
+    if (check.status === 'valid') {
+      logger.info('CREDENTIALS', `✅ ${check.agentId} → ${check.provider}: ${check.detail}`);
     } else {
-      logger.error('CREDENTIALS', `❌ ${check.agentId} → ${check.provider}: ${check.message}`);
+      logger.error('CREDENTIALS', `❌ ${check.agentId} → ${check.provider}: ${check.detail}`);
       badAgentIds.add(check.agentId);
     }
   }
 
+  // Hard-stop: refuse to start if any agent has credential issues (unless --force)
+  if (badAgentIds.size > 0 && !options.force) {
+    const badList = credStatuses.filter((c: any) => c.status !== 'valid');
+
+    console.log('');
+    console.log(chalk.red.bold('  ❌ MAOS cannot start — credential issues detected:'));
+    console.log('');
+    for (const c of badList) {
+      console.log(chalk.red(`     ${c.agentId} → ${c.provider}: ${c.detail}`));
+    }
+    console.log('');
+
+    // Auto-launch configure if running interactively
+    if (process.stdout.isTTY) {
+      const inquirer = require('inquirer');
+      const { configureNow } = await inquirer.prompt([{
+        type: 'confirm',
+        name: 'configureNow',
+        message: 'Configure API keys now?',
+        default: true,
+      }]);
+
+      if (configureNow) {
+        const { runConfigure } = require('../cli/configure');
+        await runConfigure([]);
+        // Reload and retry
+        console.log('');
+        console.log(chalk.cyan('  Restarting credential check...'));
+        const retryStatuses = getAllCredentialStatuses(config, cwd);
+        const stillBad = retryStatuses.filter((c: any) => c.status !== 'valid');
+        if (stillBad.length > 0) {
+          console.log(chalk.red('  ❌ Some agents still have credential issues.'));
+          throw new Error(`Cannot start: ${stillBad.length} agent(s) still have credential issues.`);
+        }
+        // Clear bad list since we fixed it
+        badAgentIds.clear();
+        console.log(chalk.green('  ✅ All credentials valid!'));
+      } else {
+        console.log('');
+        console.log(chalk.white('  Options:'));
+        console.log(chalk.cyan('    1. Run: maos configure'));
+        console.log(chalk.gray('    2. Disable affected agents: pool --disable <agent>'));
+        console.log(chalk.gray('    3. Use: start --force  (reduced fleet mode)'));
+        console.log('');
+        throw new Error(
+          `Cannot start: ${badList.length} agent(s) have credential issues. ` +
+          `Run "maos configure" or use "start --force" for reduced fleet.`
+        );
+      }
+    } else {
+      // Non-interactive (CI/scripts) — just fail with message
+      throw new Error(
+        `Cannot start: ${badList.length} agent(s) have credential issues. ` +
+        `Run "maos configure" to fix, or use --force flag.`
+      );
+    }
+  } else if (badAgentIds.size > 0 && options.force) {
+    logger.warn('ORCHESTRATOR',
+      `--force: ${badAgentIds.size} agent(s) have credential issues, ` +
+      `starting with reduced fleet`
+    );
+  }
+
   // Create runtime instances (API, CLI, or local — per agent config)
+  // ── KEY FIX: Enrich providerConfigs with credential-store resolved keys ──
+  // The credential store (credentials.json) is the source of truth for keys
+  // saved via `maos configure` or `maos init`. The factory's resolveApiKey()
+  // only knows about env: references and direct strings in config.json.
+  // We bridge the gap here by resolving each provider's key from the full
+  // priority chain (credential store → env → config) and injecting it as a
+  // direct string so the factory always receives a real key.
+  const { resolveCredential } = require('./credentials');
+  const enrichedProviders: Record<string, any> = {};
+  for (const [providerName, providerConfig] of Object.entries(config.providers || {})) {
+    const pc = providerConfig as any;
+    const resolved = resolveCredential(providerName, pc.apiKey, cwd);
+    if (resolved) {
+      enrichedProviders[providerName] = { ...pc, apiKey: resolved.key };
+      logger.info('CREDENTIALS',
+        `${providerName}: credential source = ${resolved.source} ` +
+        `(key: ${resolved.key.substring(0, 4)}...${resolved.key.slice(-4)})`
+      );
+    } else {
+      enrichedProviders[providerName] = pc; // fallthrough — factory will throw
+    }
+  }
+
   const runtimeMap: Map<string, IRuntime> = new Map();
   for (const agent of config.agents) {
     // Skip agents with bad credentials
     if (badAgentIds.has(agent.id)) {
-      logger.warn('ORCHESTRATOR', `Skipping runtime creation for ${agent.id} (credential issue)`);
+      logger.warn('ORCHESTRATOR',
+        `${agent.id} is unavailable — no valid API key configured. Run: maos configure`
+      );
       continue;
     }
 
@@ -245,7 +341,8 @@ export async function startOrchestrator(
     }
 
     try {
-      const runtime = RuntimeFactory.create(agentConfig, config.providers, bus);
+      // Use enrichedProviders so credential-store keys are used for runtime execution
+      const runtime = RuntimeFactory.create(agentConfig, enrichedProviders, bus);
       runtimeMap.set(agent.id, runtime);
       const runtimeType = agent.runtime || 'api';
       logger.info('ORCHESTRATOR', `Runtime: ${agent.id} → ${runtimeType} (${runtime.name}/${runtime.model})`);
@@ -255,7 +352,11 @@ export async function startOrchestrator(
   }
 
   if (runtimeMap.size === 0) {
-    throw new Error('No runtimes could be initialized. Check your config and API keys.');
+    throw new Error(
+      'No runtimes could be initialized.\n\n' +
+      '  This usually means no valid API keys are configured.\n' +
+      '  Run: maos configure\n'
+    );
   }
 
   // Create the router (with telemetry feedback for adaptive scoring)
@@ -325,6 +426,20 @@ export async function startOrchestrator(
   memoryStore.clear();
   logger.info('ORCHESTRATOR', `Context memory active (new session, previous entries archived)`);
 
+  // ---- v0.3: COORDINATOR ----
+  // Reactive coordination layer: replanning, negotiation, inbox routing.
+  const coordinator = createCoordinator(bus, cwd, logger);
+  logger.info('ORCHESTRATOR', `Coordinator active (replanning + negotiation)`);
+
+  // ---- v0.3: SUPERVISOR ----
+  // Autonomous project manager: velocity tracking, stall detection, completion aggregation.
+  const hasPlannerAgent = config.agents.some(a => a.role === 'planner');
+  const supervisor = new Supervisor(bus, coordinator.getInbox(), cwd, logger);
+  if (hasPlannerAgent) {
+    logger.info('ORCHESTRATOR', `Supervisor active (planner agent detected)`);
+  }
+  let supervisorTickCounter = 0;
+
   // ─── Dispatch a single task ─────────────────────────────────
   //
   // The orchestrator no longer cares HOW the task is executed.
@@ -342,10 +457,10 @@ export async function startOrchestrator(
     // Generate a unique attempt ID for THIS dispatch (not just task ID).
     // This prevents stale guards from blocking legitimate retry re-dispatches.
     const attemptId = `${task.id}__${Date.now()}`;
-    state.activeAgents.set(agentDef.id, {
-      taskId: task.id,
-      startedAt: Date.now(),
-    });
+    // NOTE: state.activeAgents is now set by the CALLER (poll loop) BEFORE
+    // this async function is invoked, to prevent the race condition where
+    // fire-and-forget dispatch causes the router to see this agent as idle
+    // and route multiple tasks to the same agent.
 
     // Prepare git branch for this agent's work
     const branchName = prepareAgentBranch(agentDef.id, task.id, 'main', cwd);
@@ -478,7 +593,32 @@ export async function startOrchestrator(
           costUSD: result.costUSD,
           latencyMs: result.latencyMs,
           taskResult: result.taskResult,
+          // v0.3: pass objectiveId so coordinator can track completion
+          objectiveId: task.objectiveId || undefined,
         }, task.id, runtimeType as any));
+
+        // ── v0.3: OBJECTIVE-AWARE COMPLETION ──
+        if (task.objectiveId && task.type === 'subtask') {
+          coordinator.handleSubtaskCompletion(task.id, task.objectiveId);
+        }
+
+        // ── v0.3: REVIEW DISPATCH ──
+        if (task.type === 'subtask' && task.reviewRequired) {
+          const reviewerAgent = config.agents.find(a => a.role === 'reviewer');
+          if (reviewerAgent) {
+            createTask({
+              type: 'review',
+              objectiveId: task.objectiveId,
+              parentTaskId: task.id,
+              description: `## Code Review: ${task.id}\n\nReview the changes made by ${agentDef.id} for:\n${task.description.substring(0, 500)}\n\n### Summary of Changes\n${result.summary}\n\n### Files Changed\n${result.filesChanged.map((f: string) => '- ' + f).join('\n')}\n\n### Instructions\n1. Review the code for quality, correctness, and adherence to project patterns.\n2. If approved, call task_complete with "APPROVED".\n3. If changes are needed, call task_complete with "CHANGES_REQUIRED: [list of issues]".`,
+              capabilities: ['review'],
+              complexity: 'low',
+              category: 'review',
+              cwd,
+            });
+            logger.info('ORCHESTRATOR', `Review task created for ${task.id}`);
+          }
+        }
       } else {
         state.failedTasks++;
         writeAgentStatus(agentDef.id, 'FAILED', result.error || 'Unknown error', cwd);
@@ -492,6 +632,8 @@ export async function startOrchestrator(
           error: (result.error || '').substring(0, 200),
           iterations: result.iterations,
           taskResult: result.taskResult,
+          // v0.3: pass objectiveId for coordinator replanning
+          objectiveId: task.objectiveId || undefined,
         }, task.id, runtimeType as any));
 
         // ---- RETRY QUEUE ----
@@ -517,6 +659,17 @@ export async function startOrchestrator(
           );
         } else {
           logger.error('ORCHESTRATOR', `${task.id} dead-lettered — max retries exceeded or not retryable`);
+
+          // ── v0.3: DEAD LETTER → COORDINATOR REPLAN ──
+          // When a subtask is permanently dead-lettered, emit a secondary
+          // event so the coordinator can trigger replanning.
+          if (task.objectiveId && task.type === 'subtask') {
+            bus.emit(createEvent('TASK_FAILED', agentDef.id, {
+              error: (result.error || '').substring(0, 200),
+              objectiveId: task.objectiveId,
+              deadLettered: true,
+            }, task.id, runtimeType as any));
+          }
         }
 
         // Clean up the active task file so it doesn't linger in active/
@@ -563,6 +716,13 @@ export async function startOrchestrator(
       writeAgentStatus(agentDef.id, 'FAILED', err.message, cwd);
       logger.error('ORCHESTRATOR', `${agentDef.id} crashed on ${task.id}: ${err.message}`);
 
+      // Emit TASK_FAILED for HealthMonitor + event store
+      bus.emit(createEvent('TASK_FAILED', agentDef.id, {
+        error: err.message,
+        iterations: 0,
+        taskResult: 'failed',
+      }, task.id, runtimeType as any));
+
       // Safely read content from active file before any moves/deletes
       let taskContent = '';
       if (fs.existsSync(activeTask.filePath)) {
@@ -605,6 +765,9 @@ export async function startOrchestrator(
       // Release agent
       state.activeAgents.delete(agentDef.id);
 
+      // Release task from sessionDispatchedTaskIds so it can be retried if needed
+      sessionDispatchedTaskIds.delete(task.id);
+
       // Reset to IDLE after a brief delay so dashboard can show DONE/FAILED
       setTimeout(() => {
         const currentStatus = readAgentStatus(agentDef.id, cwd);
@@ -635,14 +798,29 @@ export async function startOrchestrator(
       const pool = loadPool(cwd);
       const pending = getPendingTasks(cwd);
 
-      if (pending.length > 0) {
+      // ── v0.3: DEPENDENCY GATE ──
+      // Only dispatch tasks whose dependsOn are ALL in done/.
+      const doneIds = buildDoneIdSet(cwd);
+      const dispatchable = getDispatchableTasks(pending, doneIds);
+      const blocked = pending.length - dispatchable.length;
+      if (blocked > 0) {
+        logger.info('SCHEDULER', `${blocked} task(s) blocked by unmet dependencies`);
+      }
+
+      // ── v0.3: SUPERVISOR SWEEP ──
+      supervisorTickCounter++;
+      if (supervisorTickCounter % 3 === 0) {
+        supervisor.sweep();
+      }
+
+      if (dispatchable.length > 0) {
         // Check parallel limit
         const maxParallel = config.routing.maxParallelAgents || config.agents.length;
         const slotsAvailable = maxParallel - state.activeAgents.size;
 
         if (slotsAvailable > 0) {
           // Try to dispatch up to slotsAvailable tasks
-          const toDispatch = pending.slice(0, slotsAvailable);
+          const toDispatch = dispatchable.slice(0, slotsAvailable);
 
           for (const task of toDispatch) {
             // ─── SESSION GUARDS ───────────────────────────────────
@@ -691,6 +869,13 @@ export async function startOrchestrator(
               const fbAgent = config.agents.find(a => a.id === fallbackDecision.agentId);
               const fbRuntime = fbAgent ? runtimeMap.get(fbAgent.id) : undefined;
               if (!fbAgent || !fbRuntime) continue;
+              // ── PRE-MARK agent as busy BEFORE fire-and-forget dispatch ──
+              // This prevents the race condition where the next loop iteration
+              // still sees this agent as idle and routes another task to it.
+              state.activeAgents.set(fbAgent.id, {
+                taskId: task.id,
+                startedAt: Date.now(),
+              });
               dispatchTask(task, fbAgent, fbRuntime).catch(err => {
                 logger.error('ORCHESTRATOR', `Unhandled dispatch error: ${err.message}`);
               });
@@ -723,6 +908,14 @@ export async function startOrchestrator(
             if (bd.mutationPenalty > 0.01) routeLog += ` mut:-${bd.mutationPenalty.toFixed(3)}`;
             if (blacklist.length > 0)      routeLog += ` [rerouted from: ${blacklist.join(', ')}]`;
             logger.info('SCHEDULER', routeLog);
+
+            // ── PRE-MARK agent as busy BEFORE fire-and-forget dispatch ──
+            // This is the critical fix: without this, the router sees the agent
+            // as idle on the next loop iteration and routes ALL tasks to CODER_1.
+            state.activeAgents.set(agentDef.id, {
+              taskId: task.id,
+              startedAt: Date.now(),
+            });
 
             // Dispatch in its own async context (fire-and-forget)
             dispatchTask(task, agentDef, runtime).catch(err => {

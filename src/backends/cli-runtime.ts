@@ -1114,10 +1114,6 @@ try { [DateTime]::UtcNow.ToString('o') | Out-File -FilePath $livenessPath -Encod
 # ── Launch CLI safely with native argument splatting ──
 $taskText = Get-Content -Raw "${promptFileEscaped}"
 $cliArgs = @(${allArgsPs})
-
-# ── Launch CLI safely with native argument splatting ──
-$taskText = Get-Content -Raw "${promptFileEscaped}"
-$cliArgs = @(${allArgsPs})
 & {
   & "${command}" @cliArgs
 } 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
