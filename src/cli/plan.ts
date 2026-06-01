@@ -260,7 +260,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
   renderPlan(result);
 
   // Show routing preview — where would each task go?
-  const router = createRouter(config.routing);
+  const router = createRouter(config.routing, process.cwd());
   const agentProfiles = config.agents.map((a: any) => ({
     id: a.id,
     role: a.role,

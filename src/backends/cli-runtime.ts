@@ -992,6 +992,19 @@ export class CliRuntime implements IRuntime {
    * Build the prompt text for the CLI agent.
    */
   private buildPrompt(task: RuntimeTask): string {
+    // CLI-specific rules. Codex 'apply patch' deletes files on Windows
+    // instead of modifying them — instruct it to write directly.
+    const cliSpecificRules = this.config.cliCommand === 'codex'
+      ? `
+## IMPORTANT: File Writing Rules (codex)
+- NEVER use 'apply patch' — it deletes files on Windows. Always write files in full using the write_file tool.
+- If you need to edit a file, read it first, then write the entire updated content back.
+- Verify each file exists after writing before moving on.
+`
+      : '';
+
+    const doneFilePath = task.projectRoot.replace(/\\/g, '/') + '/.maos/agent-done-' + task.agentId;
+
     return `You are ${task.agentId}, a ${this.config.role} agent.
 
 ## Task
@@ -1001,14 +1014,15 @@ ${task.description}
 You may ONLY modify files in: [${task.scope.join(', ')}]
 Project root: ${task.projectRoot}
 Git branch: ${task.branch}
-
+${cliSpecificRules}
 ## Rules
 1. Read existing code first to understand the project.
 2. Follow existing patterns and conventions.
 3. Write clean, production-quality code.
 4. Commit your work with a descriptive message.
-5. When finished, create the file: .maos/agent-done-${task.agentId}
-   with a brief summary of what you accomplished.
+5. When finished, create the file at this EXACT path: ${doneFilePath}
+   Write a brief summary of what you accomplished as the file content.
+   This signals the orchestrator that your task is complete.
 
 ## Capabilities
 ${this.config.capabilities.join(', ')}

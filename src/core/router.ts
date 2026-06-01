@@ -8,13 +8,20 @@
  *   - Cost efficiency (prefer cheaper models when capable)
  *   - Complexity matching (route hard tasks to powerful models)
  *   - Historical performance (ADAPTIVE: learns from telemetry)
+ *   - Recency (distributes tasks across equally-capable agents)
  *
  * P3.2: The router now reads telemetry data and builds a performance
  * matrix per agent. Agents that historically succeed on certain
  * capability types get boosted; agents that fail get penalized.
  * This creates a self-improving routing loop.
+ *
+ * P3.3: Persistent dispatch history — the recency penalty is now
+ * persisted to disk so it survives across restarts and maos plan
+ * invocations, ensuring tasks are spread across all agents.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { readTelemetry, TelemetryRecord } from './telemetry';
 import { RuntimeStats } from './runtime-stats';
 import { AgentHealthBase } from './health-monitor';
@@ -158,12 +165,12 @@ export class Router {
    * Used to break ties: when two agents score equally, the one that
    * was dispatched LESS recently gets a small boost.
    *
-   * This solves the problem where CODER_1 and CODER_3 have identical
-   * capabilities/scores but CODER_1 always wins because it comes first
-   * in the config array (stable sort preserves input order on ties).
+   * Now PERSISTED to disk at projectRoot/.maos/router-dispatch-history.json
+   * so the penalty applies across restarts and separate plan/start runs.
    */
   private dispatchHistory: Map<string, number> = new Map();
   private dispatchCounter: number = 0;
+  private historyFilePath: string | null = null;
 
   constructor(
     config: RoutingConfig,
@@ -179,6 +186,17 @@ export class Router {
       try {
         this.feedback = new TelemetryFeedbackLoop(projectRoot);
       } catch { /* telemetry not available — pure static routing */ }
+
+      // Load persistent dispatch history for cross-restart distribution
+      try {
+        this.historyFilePath = path.join(projectRoot, '.maos', 'router-dispatch-history.json');
+        if (fs.existsSync(this.historyFilePath)) {
+          const raw = JSON.parse(fs.readFileSync(this.historyFilePath, 'utf-8'));
+          this.dispatchCounter = raw.counter ?? 0;
+          this.dispatchHistory = new Map(Object.entries(raw.history ?? {})
+            .map(([k, v]) => [k, v as number]));
+        }
+      } catch { /* ignore — start fresh */ }
     }
   }
 
@@ -275,16 +293,28 @@ export class Router {
     const winner = scored[0];
     this.dispatchCounter++;
     this.dispatchHistory.set(winner.agentId, this.dispatchCounter);
+    this.saveDispatchHistory();
 
     return winner;
   }
 
   private roundRobinRouting(agents: AgentProfile[]): RoutingDecision {
-    const agent = agents[0];
+    // Round-robin: pick the agent dispatched LEAST recently
+    const sorted = [...agents].sort((a, b) => {
+      const lastA = this.dispatchHistory.get(a.id) ?? -1;
+      const lastB = this.dispatchHistory.get(b.id) ?? -1;
+      return lastA - lastB; // smallest = least recently dispatched
+    });
+    const agent = sorted[0];
+
+    this.dispatchCounter++;
+    this.dispatchHistory.set(agent.id, this.dispatchCounter);
+    this.saveDispatchHistory();
+
     return {
       agentId: agent.id,
       score: 50,
-      reasoning: ['Round-robin: first available agent'],
+      reasoning: ['Round-robin: least recently dispatched agent'],
       breakdown: {
         capabilityScore: 0.5,
         roleBonus:       0,
@@ -297,6 +327,19 @@ export class Router {
         mutationPenalty: 0,
       },
     };
+  }
+
+  /** Persist dispatch history to disk so it survives across restarts. */
+  private saveDispatchHistory(): void {
+    if (!this.historyFilePath) return;
+    try {
+      const data = {
+        counter: this.dispatchCounter,
+        history: Object.fromEntries(this.dispatchHistory),
+        updatedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(this.historyFilePath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch { /* non-fatal */ }
   }
 
   private cheapestFirstRouting(
