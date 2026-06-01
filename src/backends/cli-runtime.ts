@@ -285,6 +285,7 @@ export class CliRuntime implements IRuntime {
         '--title', task.agentId,
         '--',
         'pwsh.exe',
+        '-NoProfile',
         '-NoExit',
         '-File', launcherFile
       ];
@@ -711,69 +712,10 @@ export class CliRuntime implements IRuntime {
           } catch { /* ignore */ }
         }
 
-        // ── 1. Check stdout file for activity (extends quiescence awareness) ──
-        let logFileActive = false;
-        try {
-          if (fs.existsSync(stdoutFile)) {
-            const stat = fs.statSync(stdoutFile);
-            const logAge = Date.now() - stat.mtimeMs;
-            if (logAge < pollInterval * 2) {
-              logFileActive = true;
-            }
-          }
-        } catch { /* ignore */ }
-
-        // ── 2. Interactive Mode Detection ──────────────────────────────────
-        let interactiveDetected = false;
-        let interactivePattern = '';
-        try {
-          if (fs.existsSync(stdoutFile)) {
-            const content = fs.readFileSync(stdoutFile, 'utf-8');
-            const match = detectInteractiveMode(content);
-            if (match) {
-              interactiveDetected = true;
-              interactivePattern = match;
-            }
-          }
-        } catch { /* ignore */ }
-
-        if (interactiveDetected) {
-          clearInterval(timer);
-          const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
-          const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
-
-          this.bus.emit(createEvent('AGENT_PHASE', task.agentId, {
-            phase: 'WAITING_FOR_USER_INPUT',
-            reason: 'interactive-mode',
-            cli: this.config.cliCommand,
-          }, task.id, 'cli'));
-
-          const lastOut = lastLines(fs.existsSync(stdoutFile) ? fs.readFileSync(stdoutFile, 'utf-8') : '', 5);
-          const errorMsg = `INTERACTIVE_MODE_DETECTED: Pattern '${interactivePattern}' found in CLI output. Agent may be stuck.\nLast output:\n${lastOut}`;
-
-          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-            reason: 'interactive-mode',
-            pattern: interactivePattern,
-            taskResult: 'failed',
-          }, task.id, 'cli'));
-
-          resolve({
-            success: false,
-            summary: errorMsg,
-            filesChanged,
-            iterations: 1,
-            totalTokens: 0,
-            costUSD: 0,
-            latencyMs: elapsed,
-            runtimeType: 'cli',
-            error: errorMsg,
-            taskResult: 'failed',
-            exitCode: 1,
-          });
-          return;
-        }
-
-        // ── 3. Check exit file (launcher completed gracefully) ─────────────
+        // ── 1. Check exit file FIRST (launcher completed gracefully) ──────
+        // Priority: exit file is checked before interactive mode detection
+        // to prevent false positives when the agent has already completed
+        // (stdout log may contain prompt-like text from final output).
         if (fs.existsSync(exitFile)) {
           clearInterval(timer);
           let exitCode = 0;
@@ -795,6 +737,8 @@ export class CliRuntime implements IRuntime {
           } else if (filesChanged.length === 0) {
             taskResult = 'no_mutation';
           }
+
+          // (no early return here — fall through to the resolve below)
 
           const summary = success
             ? `CLI agent completed gracefully. ${filesChanged.length} files changed.`
@@ -842,6 +786,70 @@ export class CliRuntime implements IRuntime {
             taskResult,
             exitCode,
             error: success ? undefined : errorMsg,
+          });
+          return;
+        }
+
+        // ── 2. Check stdout file for activity (extends quiescence awareness) ──
+        let logFileActive = false;
+        try {
+          if (fs.existsSync(stdoutFile)) {
+            const stat = fs.statSync(stdoutFile);
+            const logAge = Date.now() - stat.mtimeMs;
+            if (logAge < pollInterval * 2) {
+              logFileActive = true;
+            }
+          }
+        } catch { /* ignore */ }
+
+        // ── 3. Interactive Mode Detection ──────────────────────────────────
+        // Only checked here (after exit file) so a completed agent whose
+        // stdout contained a bare `>` or `(y/n)` is never falsely failed.
+        let interactiveDetected = false;
+        let interactivePattern = '';
+        try {
+          if (fs.existsSync(stdoutFile)) {
+            const content = fs.readFileSync(stdoutFile, 'utf-8');
+            const match = detectInteractiveMode(content);
+            if (match) {
+              interactiveDetected = true;
+              interactivePattern = match;
+            }
+          }
+        } catch { /* ignore */ }
+
+        if (interactiveDetected) {
+          clearInterval(timer);
+          const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
+          const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
+
+          this.bus.emit(createEvent('AGENT_PHASE', task.agentId, {
+            phase: 'WAITING_FOR_USER_INPUT',
+            reason: 'interactive-mode',
+            cli: this.config.cliCommand,
+          }, task.id, 'cli'));
+
+          const lastOut = lastLines(fs.existsSync(stdoutFile) ? fs.readFileSync(stdoutFile, 'utf-8') : '', 5);
+          const errorMsg = `INTERACTIVE_MODE_DETECTED: Pattern '${interactivePattern}' found in CLI output. Agent may be stuck.\nLast output:\n${lastOut}`;
+
+          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
+            reason: 'interactive-mode',
+            pattern: interactivePattern,
+            taskResult: 'failed',
+          }, task.id, 'cli'));
+
+          resolve({
+            success: false,
+            summary: errorMsg,
+            filesChanged,
+            iterations: 1,
+            totalTokens: 0,
+            costUSD: 0,
+            latencyMs: elapsed,
+            runtimeType: 'cli',
+            error: errorMsg,
+            taskResult: 'failed',
+            exitCode: 1,
           });
           return;
         }
