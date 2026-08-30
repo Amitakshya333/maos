@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --test -r ts-node/register test/queue.test.ts",
+    "test": "node --test -r ts-node/register/transpile-only test/queue.test.ts",
     "dev": "ts-node src/cli/index.ts",
     "start": "node dist/cli/index.js"
   },
