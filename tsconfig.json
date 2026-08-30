@@ -5,9 +5,11 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
+    "types": ["node"],
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "declaration": true
   },
   "include": ["src/**/*"]
 }
+
