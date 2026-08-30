@@ -19,8 +19,14 @@ export interface TaskFile {
 /**
  * Generate a unique task ID based on agent + timestamp.
  */
+let lastTaskTimestamp = 0;
+
 function generateTaskId(agent: string): string {
-  const ts = Date.now();
+  // Date.now() alone is not unique when a plan queues multiple tasks in the
+  // same millisecond. Keep IDs monotonic within this process, while preserving
+  // the existing AGENT__timestamp format.
+  const ts = Math.max(Date.now(), lastTaskTimestamp + 1);
+  lastTaskTimestamp = ts;
   const slug = agent.toUpperCase().replace(/[^A-Z0-9]/g, '_');
   return `${slug}__${ts}`;
 }
@@ -114,38 +120,43 @@ export function createTask(opts: {
   cwd?: string;
 }): TaskFile {
   const agent = opts.agent || 'AUTO';
-  const id = generateTaskId(agent);
-  const branch = opts.branch || `maos/${agent.toLowerCase()}/${id}`;
   const now = new Date().toISOString();
-
-  const task = {
-    id,
-    agent,
-    branch,
-    description: opts.description,
-    capabilities: opts.capabilities || [],
-    complexity: opts.complexity || 'medium',
-    category: opts.category || 'general',
-    dependsOn: opts.dependsOn || [],
-    createdAt: now,
-  };
-
-  const content = buildTaskContent(task);
-  const fileName = `${id}.md`;
   const pendingDir = getPendingDir(opts.cwd);
 
   if (!fs.existsSync(pendingDir)) {
     fs.mkdirSync(pendingDir, { recursive: true });
   }
 
-  const filePath = path.join(pendingDir, fileName);
-  fs.writeFileSync(filePath, content, 'utf-8');
+  // Exclusive creation prevents a second MAOS process from overwriting a task
+  // if both processes happen to generate the same timestamp-based ID.
+  while (true) {
+    const id = generateTaskId(agent);
+    const branch = opts.branch || `maos/${agent.toLowerCase()}/${id}`;
+    const task = {
+      id,
+      agent,
+      branch,
+      description: opts.description,
+      capabilities: opts.capabilities || [],
+      complexity: opts.complexity || 'medium',
+      category: opts.category || 'general',
+      dependsOn: opts.dependsOn || [],
+      createdAt: now,
+    };
+    const content = buildTaskContent(task);
+    const filePath = path.join(pendingDir, `${id}.md`);
 
-  return {
-    ...task,
-    status: 'pending',
-    filePath,
-  };
+    try {
+      fs.writeFileSync(filePath, content, { encoding: 'utf-8', flag: 'wx' });
+      return {
+        ...task,
+        status: 'pending',
+        filePath,
+      };
+    } catch (err: any) {
+      if (err?.code !== 'EEXIST') throw err;
+    }
+  }
 }
 
 /**
@@ -234,3 +245,4 @@ export function getQueueCounts(cwd?: string): { pending: number; active: number;
     done: getDoneTasks(cwd).length,
   };
 }
+
