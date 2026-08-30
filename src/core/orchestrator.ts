@@ -300,10 +300,9 @@ export async function startOrchestrator(
   // Keep track of tasks currently being finalized to prevent race conditions / double cleanup
   const finalizedTasks = new Set<string>();
 
-  // Track ALL task IDs ever dispatched in this session to prevent re-dispatch loops.
-  // Even if a task appears in pending/ again (via retry queue), we won't re-dispatch
-  // if we've already completed it successfully in this session.
-  const sessionDispatchedTaskIds = new Set<string>();
+  // Completed tasks are kept in-memory so a stale retry artifact cannot re-run
+  // successful work during this orchestrator session. Failed tasks are intentionally
+  // not tracked here: they must be eligible for the retry queue.
   // Track task IDs that completed with success (including no_mutation) so they are never retried.
   const sessionCompletedTaskIds = new Set<string>();
 
@@ -660,13 +659,6 @@ export async function startOrchestrator(
               } catch {}
               continue;
             }
-            if (sessionDispatchedTaskIds.has(task.id)) {
-              // Already dispatched and currently running — skip
-              continue;
-            }
-            // Mark as dispatched for this session
-            sessionDispatchedTaskIds.add(task.id);
-
             // Determine retry blacklist (prefer alternate runtime for crashes / repeated failures)
             const retryStatus = getRetryQueueStatus(cwd);
             const retryRecord = retryStatus.find(r => r.taskId === task.id);
