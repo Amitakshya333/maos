@@ -1,0 +1,79 @@
+{
+  "projectName": "maos-industrial-demo",
+  "profile": {
+    "id": "industrial",
+    "displayName": "MAOS Industrial",
+    "mode": "sovereign-local",
+    "zeroCloud": true,
+    "evidenceRoot": "demo/industrial"
+  },
+  "routingMode": "auto",
+  "providers": {
+    "ollama": {
+      "apiKey": "",
+      "baseURL": "http://127.0.0.1:8000/v1",
+      "costPerMillionTokens": 0
+    }
+  },
+  "agents": [
+    {
+      "id": "INGEST_AGENT",
+      "role": "industrial_ingest",
+      "runtime": "local",
+      "provider": "ollama",
+      "model": "qwen2.5-3b-instruct-local",
+      "capabilities": ["document-ingestion", "evidence-normalization", "provenance"],
+      "scope": ["demo/industrial/"],
+      "allowedTools": ["list_dir", "read_file", "ingest_document", "share_knowledge", "task_complete"],
+      "systemPrompt": "You are the evidence intake specialist. Read only evidence under demo/industrial. Inventory each source, preserve filenames and measurement units, and return structured provenance plus data-quality warnings. Never infer missing measurements, alter source evidence, execute code, or issue a safety verdict.",
+      "maxIterations": 8,
+      "costTier": "low"
+    },
+    {
+      "id": "ANALYST_AGENT",
+      "role": "industrial_analyst",
+      "runtime": "local",
+      "provider": "ollama",
+      "model": "qwen2.5-3b-instruct-local",
+      "capabilities": ["time-series-analysis", "anomaly-detection", "condition-monitoring"],
+      "scope": ["demo/industrial/"],
+      "allowedTools": ["read_file", "ingest_document", "execute_python", "share_knowledge", "task_complete"],
+      "systemPrompt": "You are a turbine condition analyst. Use deterministic calculations to identify unusual vibration and temperature observations. Cite timestamp, row number, field, observed value, baseline context, and unit for every finding. Do not invent standards or declare compliance; send evidence-backed findings to the auditor and synthesizer.",
+      "maxIterations": 10,
+      "costTier": "low"
+    },
+    {
+      "id": "AUDITOR_AGENT",
+      "role": "industrial_auditor",
+      "runtime": "local",
+      "provider": "ollama",
+      "model": "qwen2.5-3b-instruct-local",
+      "capabilities": ["threshold-audit", "safety-review", "traceability"],
+      "scope": ["demo/industrial/"],
+      "allowedTools": ["read_file", "ingest_document", "check_compliance", "share_knowledge", "task_complete"],
+      "systemPrompt": "You are the deterministic safety auditor. Evaluate observations only against demo/industrial/safety_thresholds.json using check_compliance. Report the configured threshold, observed value, deviation, rule identifier, and PASS/WARNING/FAIL exactly as returned. Do not claim certification or substitute model judgment for a configured rule.",
+      "maxIterations": 10,
+      "costTier": "low"
+    },
+    {
+      "id": "SYNTHESIZER_AGENT",
+      "role": "industrial_synthesizer",
+      "runtime": "local",
+      "provider": "ollama",
+      "model": "qwen2.5-3b-instruct-local",
+      "capabilities": ["evidence-synthesis", "risk-communication", "maintenance-recommendations"],
+      "scope": ["demo/industrial/"],
+      "allowedTools": ["list_dir", "read_file", "ingest_document", "write_file", "share_knowledge", "task_complete"],
+      "systemPrompt": "You are the final industrial report editor. Combine the source inventory, analyst findings, and deterministic audit results into demo/industrial/generated/. Follow final_report_target.json. Clearly separate observed evidence, configured verdicts, interpretation, and recommendations. Cite timestamps and rule identifiers, preserve uncertainty, and never imply certified compliance.",
+      "maxIterations": 10,
+      "costTier": "low"
+    }
+  ],
+  "routing": {
+    "strategy": "capability_score",
+    "costWeight": 0.2,
+    "capabilityWeight": 0.8,
+    "maxParallelAgents": 4,
+    "fallbackProvider": "ollama"
+  }
+}

@@ -66,22 +66,28 @@ function getModelInfo(): ModelInfo {
         return {
           provider: agent.provider || 'unknown',
           model: agent.model || 'unknown',
-          tier: agent.costTier || 'low'
+          tier: agent.costTier || 'low',
         };
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return { provider: 'freemodel', model: 'gpt-5.4', tier: 'low' };
 }
 
 function getGitBranch(): string {
   try {
     const cp = require('child_process');
-    return cp.execSync('git rev-parse --abbrev-ref HEAD', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    }).trim();
-  } catch { return ''; }
+    return cp
+      .execSync('git rev-parse --abbrev-ref HEAD', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      .trim();
+  } catch {
+    return '';
+  }
 }
 
 interface FleetAgent {
@@ -110,7 +116,9 @@ function getFleetAgents(): FleetAgent[] {
     try {
       const { getAllCredentialStatuses } = require('../core/credentials');
       credStatuses = getAllCredentialStatuses(config, cwd);
-    } catch { /* credentials module not available yet — ignore */ }
+    } catch {
+      /* credentials module not available yet — ignore */
+    }
 
     return config.agents.map((a: any) => {
       const enabled = pool[a.id] !== false;
@@ -134,7 +142,9 @@ function getFleetAgents(): FleetAgent[] {
       else if (a.role === 'designer') icon = '🎨';
       return { id: a.id, role: a.role, status, icon, enabled };
     });
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 // ── Screen Renderers ─────────────────────────────────────────
@@ -166,10 +176,7 @@ function drawWelcome(): void {
   }
 
   process.stdout.write('\n');
-  process.stdout.write(centerText(
-    slate('docker-compose for AI coding agents'),
-    W
-  ) + '\n');
+  process.stdout.write(centerText(slate('docker-compose for AI coding agents'), W) + '\n');
   process.stdout.write('\n');
 
   // ── Input Card ──
@@ -182,23 +189,18 @@ function drawWelcome(): void {
   const ph = 'Ask the fleet anything... "Build a login page"';
   const phFill = Math.max(0, cardW - 6 - ph.length);
   process.stdout.write(
-    cardPad + border('│ ') + amber('┃') + chalk.gray(` ${ph}`) +
-    ' '.repeat(phFill) + border(' │') + '\n'
+    cardPad + border('│ ') + amber('┃') + chalk.gray(` ${ph}`) + ' '.repeat(phFill) + border(' │') + '\n',
   );
 
   // Empty line inside card
-  process.stdout.write(
-    cardPad + border('│ ') + amber('┃') +
-    ' '.repeat(cardW - 5) + border(' │') + '\n'
-  );
+  process.stdout.write(cardPad + border('│ ') + amber('┃') + ' '.repeat(cardW - 5) + border(' │') + '\n');
 
   // Model info line
   const modelDisplay = `${amber('Build')} ${slate('·')} ${chalk.bold.white(info.model)} ${slate(info.provider)} ${slate('·')} ${amber(info.tier)}`;
   const modelClean = stripAnsi(modelDisplay).length;
   const modelFill = Math.max(0, cardW - 5 - modelClean);
   process.stdout.write(
-    cardPad + border('│ ') + amber('┃') + ` ${modelDisplay}` +
-    ' '.repeat(modelFill) + border(' │') + '\n'
+    cardPad + border('│ ') + amber('┃') + ` ${modelDisplay}` + ' '.repeat(modelFill) + border(' │') + '\n',
   );
 
   process.stdout.write(cardPad + border('╰' + '─'.repeat(cardW - 2) + '╯') + '\n');
@@ -221,29 +223,45 @@ function drawWelcome(): void {
       let statusColor;
       let statusLabel = a.status.substring(0, 12);
       switch (a.status) {
-        case 'READY':       statusColor = emerald; statusLabel = '✅ READY'; break;
-        case 'IDLE':        statusColor = emerald; break;
-        case 'BUSY':        statusColor = chalk.bold.yellow; break;
-        case 'DONE':        statusColor = emerald; break;
-        case 'MISSING_KEY': statusColor = chalk.red.bold; statusLabel = '❌ MISSING_KEY'; credIssueCount++; break;
-        case 'INVALID_KEY': statusColor = chalk.red; statusLabel = '⚠️  INVALID_KEY'; credIssueCount++; break;
-        case 'DISABLED':    statusColor = slate; statusLabel = '○ DISABLED'; break;
-        default:            statusColor = chalk.gray; break;
+        case 'READY':
+          statusColor = emerald;
+          statusLabel = '✅ READY';
+          break;
+        case 'IDLE':
+          statusColor = emerald;
+          break;
+        case 'BUSY':
+          statusColor = chalk.bold.yellow;
+          break;
+        case 'DONE':
+          statusColor = emerald;
+          break;
+        case 'MISSING_KEY':
+          statusColor = chalk.red.bold;
+          statusLabel = '❌ MISSING_KEY';
+          credIssueCount++;
+          break;
+        case 'INVALID_KEY':
+          statusColor = chalk.red;
+          statusLabel = '⚠️  INVALID_KEY';
+          credIssueCount++;
+          break;
+        case 'DISABLED':
+          statusColor = slate;
+          statusLabel = '○ DISABLED';
+          break;
+        default:
+          statusColor = chalk.gray;
+          break;
       }
       const idLabel = a.enabled ? chalk.white(a.id) : slate(a.id);
-      process.stdout.write(
-        cardPad + `  ${a.icon} ${padRight(idLabel, 14)} ${statusColor(statusLabel)}` + '\n'
-      );
+      process.stdout.write(cardPad + `  ${a.icon} ${padRight(idLabel, 14)} ${statusColor(statusLabel)}` + '\n');
     }
 
     if (credIssueCount > 0) {
       process.stdout.write('\n');
-      process.stdout.write(
-        cardPad + chalk.yellow(`  ⚠️  ${credIssueCount} agent(s) need configuration.`) + '\n'
-      );
-      process.stdout.write(
-        cardPad + chalk.cyan('  Run: configure') + '\n'
-      );
+      process.stdout.write(cardPad + chalk.yellow(`  ⚠️  ${credIssueCount} agent(s) need configuration.`) + '\n');
+      process.stdout.write(cardPad + chalk.cyan('  Run: configure') + '\n');
     }
 
     process.stdout.write('\n');
@@ -264,8 +282,8 @@ function drawWelcome(): void {
   process.stdout.write(cardPad + amber('●') + amber(' Tip') + chalk.gray('  ' + tip) + '\n');
 
   // ── Fill remaining space to push status bar to bottom ──
-  const usedLines = topLines + LOGO.length + 1 + 1 + 1 + 5 + 1 + 1 + 1 +
-    (agents.length > 0 ? agents.length + 2 : 0) + 1;
+  const usedLines =
+    topLines + LOGO.length + 1 + 1 + 1 + 5 + 1 + 1 + 1 + (agents.length > 0 ? agents.length + 2 : 0) + 1;
   const remaining = Math.max(0, H - usedLines - 4);
   for (let i = 0; i < remaining; i++) process.stdout.write('\n');
 
@@ -287,12 +305,12 @@ function drawCompactHeader(): void {
   console.clear();
 
   const W = process.stdout.columns || 80;
-  const slate  = chalk.hex('#64748B');
-  const dim    = chalk.hex('#334155');
+  const slate = chalk.hex('#64748B');
+  const dim = chalk.hex('#334155');
   const emerald = chalk.hex('#10B981');
 
   // Collect live state
-  const info   = getModelInfo();
+  const info = getModelInfo();
   const branch = getGitBranch();
   const agents = getFleetAgents();
 
@@ -301,12 +319,12 @@ function drawCompactHeader(): void {
   const ma = slate('MA') + chalk.bold.white('OS');
   const ver = slate(`v${VERSION}`);
   const branchPart = branch ? slate(' · ') + chalk.white(branch) : '';
-  const modelPart  = slate(' · ') + chalk.bold.white(info.model) + slate(` ${info.provider}`);
+  const modelPart = slate(' · ') + chalk.bold.white(info.model) + slate(` ${info.provider}`);
 
   // Agent summary: "2 agents · DEV IDLE · QA BUSY"
   let agentSummary = '';
   if (agents.length > 0) {
-    const parts = agents.map(a => {
+    const parts = agents.map((a) => {
       const statusColor = a.status === 'IDLE' ? emerald : chalk.bold.yellow;
       return `${chalk.white(a.id)} ${statusColor(a.status)}`;
     });
@@ -339,12 +357,12 @@ async function capture(fn: () => void | Promise<void>): Promise<string[]> {
   const oLog = console.log;
   const oErr = console.error;
   console.log = (...a: any[]) => {
-    const raw = a.map(x => String(x)).join(' ');
+    const raw = a.map((x) => String(x)).join(' ');
     buf.push(...raw.split('\n'));
   };
   console.error = (...a: any[]) => {
-    const raw = a.map(x => String(x)).join(' ');
-    buf.push(...raw.split('\n').map(l => chalk.red(l)));
+    const raw = a.map((x) => String(x)).join(' ');
+    buf.push(...raw.split('\n').map((l) => chalk.red(l)));
   };
   try {
     await fn();
@@ -382,7 +400,7 @@ function runReplay(args: string[]): void {
   }
 
   // replay <taskId>
-  const taskId = args.find(a => !a.startsWith('--'));
+  const taskId = args.find((a) => !a.startsWith('--'));
   if (taskId) {
     const timeline = store.getTaskTimeline(taskId);
     if (timeline.length === 0) {
@@ -396,14 +414,15 @@ function runReplay(args: string[]): void {
     for (const evt of timeline) {
       const time = new Date(evt.time).toLocaleTimeString();
       const seqStr = String(evt.seq).padEnd(6);
-      const typeColor = evt.type.includes('FAIL') || evt.type.includes('ERROR')
-        ? chalk.red(evt.type.padEnd(22))
-        : evt.type.includes('COMPLETE') || evt.type.includes('DONE')
-        ? chalk.green(evt.type.padEnd(22))
-        : chalk.cyan(evt.type.padEnd(22));
+      const typeColor =
+        evt.type.includes('FAIL') || evt.type.includes('ERROR')
+          ? chalk.red(evt.type.padEnd(22))
+          : evt.type.includes('COMPLETE') || evt.type.includes('DONE')
+            ? chalk.green(evt.type.padEnd(22))
+            : chalk.cyan(evt.type.padEnd(22));
       console.log(
         `${chalk.gray(seqStr)} ${chalk.gray(time.padEnd(26))} ${typeColor} ` +
-        `${chalk.yellow(evt.agentId.padEnd(15))} ${chalk.gray(evt.note.substring(0, 40))}`
+          `${chalk.yellow(evt.agentId.padEnd(15))} ${chalk.gray(evt.note.substring(0, 40))}`,
       );
     }
     console.log(chalk.gray('─'.repeat(70)));
@@ -423,7 +442,9 @@ function runReplay(args: string[]): void {
     const time = new Date(evt.timestamp).toLocaleTimeString();
     const typeColor = evt.type.includes('FAIL') ? chalk.red(evt.type) : chalk.cyan(evt.type);
     const task = evt.taskId ? chalk.gray(` [${evt.taskId.substring(0, 20)}]`) : '';
-    console.log(`  ${chalk.gray(String(evt.seq).padEnd(5))} ${chalk.gray(time)} ${typeColor}${task} ${chalk.yellow(evt.agentId)}`);
+    console.log(
+      `  ${chalk.gray(String(evt.seq).padEnd(5))} ${chalk.gray(time)} ${typeColor}${task} ${chalk.yellow(evt.agentId)}`,
+    );
   }
 }
 
@@ -438,14 +459,12 @@ function runQueue(): void {
   } else {
     for (const r of retrying) {
       const readySecs = Math.round(r.readyInMs / 1000);
-      const status = r.readyInMs === 0
-        ? chalk.green('READY')
-        : chalk.yellow(`in ${readySecs}s`);
+      const status = r.readyInMs === 0 ? chalk.green('READY') : chalk.yellow(`in ${readySecs}s`);
       console.log(
         `  ${chalk.white(r.taskId.substring(0, 30).padEnd(30))} ` +
-        `attempt ${r.attemptNumber}/${r.maxRetries} ` +
-        `[${chalk.red(r.lastErrorType)}] ` +
-        status
+          `attempt ${r.attemptNumber}/${r.maxRetries} ` +
+          `[${chalk.red(r.lastErrorType)}] ` +
+          status,
       );
     }
   }
@@ -470,19 +489,16 @@ function printMemories(entries: any[]): void {
   console.log(chalk.gray('─'.repeat(70)));
   for (const e of entries) {
     const age = formatMemAge(Date.now() - e.timestamp);
-    const confBadge = e.confidence < 0.8
-      ? chalk.yellow(' conf:' + e.confidence)
-      : '';
+    const confBadge = e.confidence < 0.8 ? chalk.yellow(' conf:' + e.confidence) : '';
     const typeBadge =
-      e.type === 'DISCOVERY' ? chalk.green('[DISCOVERY]') :
-      e.type === 'DECISION' ? chalk.blue('[DECISION]') :
-      e.type === 'WARNING' ? chalk.red('[WARNING]') :
-      chalk.magenta('[FILE_MAP]');
-    console.log(
-      '  ' + typeBadge + ' ' +
-      chalk.yellow(e.agentId) + ' ' +
-      chalk.gray(age + ' ago') + confBadge
-    );
+      e.type === 'DISCOVERY'
+        ? chalk.green('[DISCOVERY]')
+        : e.type === 'DECISION'
+          ? chalk.blue('[DECISION]')
+          : e.type === 'WARNING'
+            ? chalk.red('[WARNING]')
+            : chalk.magenta('[FILE_MAP]');
+    console.log('  ' + typeBadge + ' ' + chalk.yellow(e.agentId) + ' ' + chalk.gray(age + ' ago') + confBadge);
     console.log('    ' + chalk.white(e.content.substring(0, 100)));
     if (e.tags.length > 0) {
       console.log('    ' + chalk.gray('tags: ' + e.tags.join(', ')));
@@ -590,7 +606,7 @@ function runClean(): void {
 
   const statusDir = path.join(maosDir, 'status');
   if (fs.existsSync(statusDir)) {
-    const files = fs.readdirSync(statusDir).filter(f => f.endsWith('.status'));
+    const files = fs.readdirSync(statusDir).filter((f) => f.endsWith('.status'));
     for (const file of files) {
       fs.unlinkSync(path.join(statusDir, file));
     }
@@ -636,7 +652,7 @@ function parseArgs(input: string): { positional: string; flags: Record<string, s
 
   // If no quoted positional, use first non-flag token
   if (!positional) {
-    const firstNonFlag = tokens.find(t => !t.startsWith('-'));
+    const firstNonFlag = tokens.find((t) => !t.startsWith('-'));
     if (firstNonFlag) positional = firstNonFlag;
   }
 
@@ -658,17 +674,37 @@ export function runRepl(): void {
 
   // All available commands for tab completion
   const ALL_COMMANDS = [
-    'status', 'start', 'stop',
-    'task', 'plan', 'objective', 'obj',
-    'brain init', 'brain status', 'brain context', 'brain telemetry',
-    'logs', 'pool',
-    'login', 'configure', 'init', 'doctor',
+    'status',
+    'start',
+    'stop',
+    'task',
+    'plan',
+    'objective',
+    'obj',
+    'brain init',
+    'brain status',
+    'brain context',
+    'brain telemetry',
+    'logs',
+    'pool',
+    'login',
+    'configure',
+    'init',
+    'doctor',
     'dashboard',
-    'replay', 'replay --stats',
+    'replay',
+    'replay --stats',
     'queue',
-    'memory', 'memory --list', 'memory --stats', 'memory --clear', 'memory --search', 'memory --tag',
+    'memory',
+    'memory --list',
+    'memory --stats',
+    'memory --clear',
+    'memory --search',
+    'memory --tag',
     'clean',
-    'clear', 'help', 'exit',
+    'clear',
+    'help',
+    'exit',
   ];
 
   // Create readline interface with styled prompt
@@ -680,7 +716,11 @@ export function runRepl(): void {
     prompt: prompt,
     completer: (line: string) => {
       const trimmed = line.trim().toLowerCase();
-      const hits = ALL_COMMANDS.filter(c => c.startsWith(trimmed));
+      const prefixMatch = trimmed.match(/^(maos|maosorch)\s+/i);
+      const prefix = prefixMatch ? prefixMatch[0] : '';
+      const query = prefix ? trimmed.substring(prefix.length) : trimmed;
+      const baseHits = ALL_COMMANDS.filter((c) => c.startsWith(query));
+      const hits = baseHits.map((h) => `${prefix}${h}`);
       return [hits.length ? hits : ALL_COMMANDS, line];
     },
   });
@@ -696,10 +736,14 @@ export function runRepl(): void {
       return;
     }
 
-    // Strip redundant "maos " prefix if present inside the REPL
-    if (raw.toLowerCase().startsWith('maos ')) {
-      raw = raw.substring(5).trim();
-    } else if (raw.toLowerCase() === 'maos') {
+    // Strip redundant launcher prefix inside REPL:
+    // supports both "maos ..." and "maosorch ..." with any whitespace.
+    const prefixed = raw.match(/^(?:maos|maosorch)(?:\s+|$)/i);
+    if (prefixed) {
+      raw = raw.substring(prefixed[0].length).trim();
+    }
+
+    if (!raw) {
       raw = 'help';
     }
 
@@ -711,7 +755,6 @@ export function runRepl(): void {
 
     try {
       switch (firstWord) {
-
         // ── Navigation ──────────────────────────────────────
         case 'clear':
         case 'cls':

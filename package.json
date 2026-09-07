@@ -1,14 +1,57 @@
 {
-  "name": "maos",
-  "version": "0.1.0",
-  "description": "Multi-Agent Orchestrator System",
+  "name": "maosorch",
+  "version": "0.3.0",
+  "description": "Multi-Agent Orchestrator System — docker-compose for AI coding agents",
+  "main": "./dist/cli/index.js",
+  "types": "./dist/cli/index.d.ts",
   "bin": {
-    "maos": "./dist/cli/index.js"
+    "maos": "./dist/cli/index.js",
+    "maosorch": "./dist/cli/index.js"
   },
+  "files": [
+    "dist/",
+    "scripts/",
+    "README.md",
+    "LICENSE",
+    "HACKATHON_SUBMISSION.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "orchestrator",
+    "multi-agent",
+    "llm",
+    "openai",
+    "anthropic",
+    "gemini",
+    "coding-agents",
+    "developer-tools",
+    "cli",
+    "copilot",
+    "codex",
+    "ai-orchestration",
+    "runtime"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Amitakshya333/maos.git"
+  },
+  "homepage": "https://github.com/Amitakshya333/maos#readme",
+  "bugs": "https://github.com/Amitakshya333/maos/issues",
+  "license": "MIT",
+  "author": "Amitakshya Sutar",
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/cli/index.ts",
-    "start": "node dist/cli/index.js"
+    "start": "node dist/cli/index.js",
+    "test": "vitest run",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "prepublishOnly": "npm run build",
+    "prepare": "husky"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
@@ -25,7 +68,14 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.9.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.0",
+    "prettier": "^3.9.6",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  },
+  "lint-staged": {
+    "*.ts": "prettier --write"
   }
 }

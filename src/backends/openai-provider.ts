@@ -1,18 +1,12 @@
 import OpenAI from 'openai';
-import {
-  IProvider,
-  ChatMessage,
-  ToolDef,
-  ToolCall,
-  ProviderResponse,
-} from './provider';
+import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderResponse } from './provider';
 
 /**
  * OpenAI-Compatible Provider Adapter
- * 
+ *
  * This single adapter covers 10+ providers because they all use
  * the OpenAI chat completions API format:
- * 
+ *
  *  - OpenAI (api.openai.com)
  *  - Freemodel (api.freemodel.dev)
  *  - DeepSeek (api.deepseek.com)
@@ -23,7 +17,7 @@ import {
  *  - Ollama (localhost)
  *  - LM Studio (localhost)
  *  - Any OpenAI-compatible endpoint
- * 
+ *
  * Just set a different baseURL and apiKey. That's it.
  */
 export class OpenAIProvider implements IProvider {
@@ -32,13 +26,7 @@ export class OpenAIProvider implements IProvider {
 
   private client: OpenAI;
 
-  constructor(opts: {
-    name: string;
-    apiKey: string;
-    model: string;
-    baseURL?: string;
-    timeout?: number;
-  }) {
+  constructor(opts: { name: string; apiKey: string; model: string; baseURL?: string; timeout?: number }) {
     this.name = opts.name;
     this.model = opts.model;
 
@@ -50,22 +38,19 @@ export class OpenAIProvider implements IProvider {
     });
   }
 
-  async generate(
-    messages: ChatMessage[],
-    tools?: ToolDef[],
-  ): Promise<ProviderResponse> {
+  async generate(messages: ChatMessage[], tools?: ToolDef[]): Promise<ProviderResponse> {
     const startMs = Date.now();
 
     try {
       // Build the request — only include tools if we have them
       const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
         model: this.model,
-        messages: messages.map(m => this.toOpenAIMessage(m)),
+        messages: messages.map((m) => this.toOpenAIMessage(m)),
         temperature: 0.2,
       };
 
       if (tools && tools.length > 0) {
-        requestBody.tools = tools.map(t => ({
+        requestBody.tools = tools.map((t) => ({
           type: t.type as 'function',
           function: {
             name: t.function.name,
@@ -88,8 +73,7 @@ export class OpenAIProvider implements IProvider {
           response = JSON.parse(response);
         } catch (parseErr) {
           throw new Error(
-            `Failed to parse response from ${this.name}/${this.model}: ` +
-            `${(response as string).substring(0, 200)}`
+            `Failed to parse response from ${this.name}/${this.model}: ` + `${(response as string).substring(0, 200)}`,
           );
         }
       }
@@ -104,7 +88,7 @@ export class OpenAIProvider implements IProvider {
         // Last resort: try parsing if response is somehow a string
         throw new Error(
           `Empty response from ${this.name}/${this.model} (no choices array). ` +
-          `Keys: [${Object.keys(response || {}).join(', ')}]`
+            `Keys: [${Object.keys(response || {}).join(', ')}]`,
         );
       }
 
@@ -114,15 +98,15 @@ export class OpenAIProvider implements IProvider {
       if (!message) {
         throw new Error(
           `No message in response from ${this.name}/${this.model}. ` +
-          `Choice keys: [${Object.keys(choice || {}).join(', ')}]`
+            `Choice keys: [${Object.keys(choice || {}).join(', ')}]`,
         );
       }
 
       // Extract tool calls (cast needed: SDK union type includes custom tool calls)
       const rawToolCalls: any[] = message.tool_calls || [];
       const toolCalls: ToolCall[] = rawToolCalls
-        .filter(tc => tc && tc.type === 'function' && tc.function)
-        .map(tc => ({
+        .filter((tc) => tc && tc.type === 'function' && tc.function)
+        .map((tc) => ({
           id: tc.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
           type: 'function' as const,
           function: {
@@ -154,35 +138,41 @@ export class OpenAIProvider implements IProvider {
       const latencyMs = Date.now() - startMs;
 
       // Provide helpful error messages for common failures
-      if (err.status === 401) {
+      if (err.status === 401 || err.status === 403) {
+        const rawBody = err.error ? JSON.stringify(err.error).substring(0, 200) : '';
         throw new Error(
           `Authentication failed for ${this.name}. Check your API key.\n` +
-          `Provider: ${this.name} | Model: ${this.model}`
+            `Provider: ${this.name} | Model: ${this.model}` +
+            (rawBody ? `\nAPI response: ${rawBody}` : ''),
         );
       }
       if (err.status === 429) {
         throw new Error(
           `Rate limit hit on ${this.name}. Wait and retry.\n` +
-          `Provider: ${this.name} | Model: ${this.model} | Latency: ${latencyMs}ms`
+            `Provider: ${this.name} | Model: ${this.model} | Latency: ${latencyMs}ms`,
+        );
+      }
+      if (err.status === 503 || err.status === 502 || err.status === 504) {
+        throw new Error(
+          `${this.name} is temporarily unavailable (HTTP ${err.status}).\n` +
+            `Provider: ${this.name} | Model: ${this.model} | This is a provider outage, not an auth issue.`,
         );
       }
       if (err.status === 404) {
         throw new Error(
-          `Model "${this.model}" not found on ${this.name}.\n` +
-          `Check available models at your provider's dashboard.`
+          `Model "${this.model}" not found on ${this.name}.\n` + `Check available models at your provider's dashboard.`,
         );
       }
       if (err.code === 'ECONNREFUSED') {
         throw new Error(
           `Cannot connect to ${this.name} at ${this.client.baseURL}.\n` +
-          `Is the server running? (Check Ollama/LM Studio if local)`
+            `Is the server running? (Check Ollama/LM Studio if local)`,
         );
       }
 
       // Re-throw with context
       const newErr = new Error(
-        `Provider error [${this.name}/${this.model}]: ${err.message}\n` +
-        `Latency: ${latencyMs}ms`
+        `Provider error [${this.name}/${this.model}]: ${err.message}\n` + `Latency: ${latencyMs}ms`,
       );
       newErr.stack = err.stack;
       throw newErr;
@@ -192,9 +182,7 @@ export class OpenAIProvider implements IProvider {
   /**
    * Convert our ChatMessage format to OpenAI's expected format.
    */
-  private toOpenAIMessage(
-    msg: ChatMessage,
-  ): OpenAI.Chat.ChatCompletionMessageParam {
+  private toOpenAIMessage(msg: ChatMessage): OpenAI.Chat.ChatCompletionMessageParam {
     if (msg.role === 'tool') {
       return {
         role: 'tool',
@@ -207,7 +195,7 @@ export class OpenAIProvider implements IProvider {
       return {
         role: 'assistant',
         content: msg.content,
-        tool_calls: msg.tool_calls?.map(tc => ({
+        tool_calls: msg.tool_calls?.map((tc) => ({
           id: tc.id,
           type: 'function',
           function: {

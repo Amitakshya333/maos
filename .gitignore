@@ -4,3 +4,43 @@ node_modules/
 dist/
 *.log
 test-project/
+
+# MAOS Runtime Internals
+.maos/auth/
+.maos/checkpoints/
+.maos/events/
+.maos/telemetry/
+.maos/memory/
+.maos/queue/
+.maos/logs/
+.maos/brain/
+.maos/status/
+.maos/prompts/
+.maos/worktrees/
+.maos/health-state.json
+.maos/router-dispatch-history.json
+.maos/runtime-stats.json
+.maos/file-locks.json
+.maos/test_completion.py
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.maos/credentials.json
+
+# Build & package artifacts
+*.tgz
+
+# Scratch & validation workspaces
+demo-v030/
+maos-022-validation/
+maos-testa1/
+sih-template-inspect/
+debug_script*.js
+debug_served.html
+test_transcript.txt
+__pycache__/
+*.pyc
+

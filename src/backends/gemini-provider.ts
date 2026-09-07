@@ -7,13 +7,7 @@ import {
   Tool as GeminiTool,
   GenerateContentResult,
 } from '@google/generative-ai';
-import {
-  IProvider,
-  ChatMessage,
-  ToolDef,
-  ToolCall,
-  ProviderResponse,
-} from './provider';
+import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderResponse } from './provider';
 
 /**
  * Native Google Gemini Provider Adapter
@@ -30,23 +24,18 @@ import {
 export class GeminiProvider implements IProvider {
   readonly name: string;
   readonly model: string;
+  private readonly timeoutMs: number;
 
   private genAI: GoogleGenerativeAI;
 
-  constructor(opts: {
-    name: string;
-    apiKey: string;
-    model: string;
-  }) {
+  constructor(opts: { name: string; apiKey: string; model: string; timeoutMs?: number }) {
     this.name = opts.name;
     this.model = opts.model;
+    this.timeoutMs = opts.timeoutMs ?? 120_000;
     this.genAI = new GoogleGenerativeAI(opts.apiKey);
   }
 
-  async generate(
-    messages: ChatMessage[],
-    tools?: ToolDef[],
-  ): Promise<ProviderResponse> {
+  async generate(messages: ChatMessage[], tools?: ToolDef[]): Promise<ProviderResponse> {
     const startTime = Date.now();
 
     // ─── Convert MAOS messages → Gemini format ────────────────
@@ -72,7 +61,9 @@ export class GeminiProvider implements IProvider {
             let parsedArgs: Record<string, unknown> = {};
             try {
               parsedArgs = JSON.parse(tc.function.arguments);
-            } catch { /* keep empty */ }
+            } catch {
+              /* keep empty */
+            }
 
             parts.push({
               functionCall: {
@@ -99,12 +90,14 @@ export class GeminiProvider implements IProvider {
 
         geminiContents.push({
           role: 'function',
-          parts: [{
-            functionResponse: {
-              name: msg.name || 'unknown',
-              response: resultObj,
+          parts: [
+            {
+              functionResponse: {
+                name: msg.name || 'unknown',
+                response: resultObj,
+              },
             },
-          }],
+          ],
         });
         continue;
       }
@@ -119,7 +112,7 @@ export class GeminiProvider implements IProvider {
     // ─── Convert MAOS tools → Gemini function declarations ────
     let geminiTools: GeminiTool[] | undefined;
     if (tools && tools.length > 0) {
-      const functionDeclarations: FunctionDeclaration[] = tools.map(t => ({
+      const functionDeclarations: FunctionDeclaration[] = tools.map((t) => ({
         name: t.function.name,
         description: t.function.description,
         parameters: convertJsonSchemaToGemini(t.function.parameters),
@@ -135,8 +128,19 @@ export class GeminiProvider implements IProvider {
         tools: geminiTools,
       });
 
-      const result: GenerateContentResult = await model.generateContent({
+      const generatePromise = model.generateContent({
         contents: geminiContents,
+      });
+
+      let timeoutHandle: any;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`Gemini request timed out after ${this.timeoutMs}ms`));
+        }, this.timeoutMs);
+      });
+
+      const result: GenerateContentResult = await Promise.race([generatePromise, timeoutPromise]).finally(() => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
       });
 
       const latencyMs = Date.now() - startTime;
@@ -205,9 +209,7 @@ export class GeminiProvider implements IProvider {
         throw new Error(`Gemini model not found: "${this.model}". Latency: ${latencyMs}ms`);
       }
 
-      throw new Error(
-        `Provider error [gemini/${this.model}]: ${err.message || err}. Latency: ${latencyMs}ms`
-      );
+      throw new Error(`Provider error [gemini/${this.model}]: ${err.message || err}. Latency: ${latencyMs}ms`);
     }
   }
 }

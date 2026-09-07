@@ -17,11 +17,12 @@ import { runLogin, LoginOptions } from './login';
 import { runBrain } from './brain';
 import { runRepl } from './repl';
 import { runDashboard } from './dashboard';
+import { runDoctor } from './doctor';
 import { EventStore } from '../core/event-store';
 import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
 import { MemoryStore } from '../core/context-memory';
 
-const VERSION = '0.1.0';
+const VERSION = '0.3.0';
 
 // ─── Global Error Handlers ───────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -48,8 +49,8 @@ program
   .version(VERSION)
   .description(
     chalk.bold('MAOS') +
-    chalk.gray(' — Multi-Agent Orchestrator System\n') +
-    chalk.gray('docker-compose for AI coding agents')
+      chalk.gray(' — Multi-Agent Orchestrator System\n') +
+      chalk.gray('docker-compose for AI coding agents'),
   );
 
 // ─── maos init ────────────────────────────────────────────────
@@ -91,9 +92,54 @@ program
   .command('start')
   .description('Start the orchestrator loop')
   .option('-p, --provider <provider>', 'Override default provider for all agents')
+  .option('-f, --force', 'Start with reduced fleet even if some agents have credential issues')
   .action(async (options: StartOptions) => {
     try {
       await runStart(options);
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+// ─── maos objective ───────────────────────────────────────────
+// Create and manage high-level objectives (v0.3 multi-agent decomposition)
+program
+  .command('objective [goal...]')
+  .alias('obj')
+  .description('Create or manage objectives (decomposed by ARCHITECT into subtasks)')
+  .option('--list', 'List all objectives')
+  .option('--status <id>', 'Show objective details by ID')
+  .action((goalParts: string[], opts: any) => {
+    const { runObjective } = require('./objective');
+
+    if (opts.list) {
+      runObjective(['list']);
+      return;
+    }
+    if (opts.status) {
+      runObjective(['status', opts.status]);
+      return;
+    }
+    if (goalParts && goalParts.length > 0) {
+      // Join multi-word goal back into a single string
+      runObjective([goalParts.join(' ')]);
+      return;
+    }
+    // No args — show list
+    runObjective(['list']);
+  });
+
+// ─── maos configure ───────────────────────────────────────────
+// Interactive credential wizard (v0.3 zero-friction UX)
+program
+  .command('configure [provider]')
+  .alias('config')
+  .description('Configure API keys for providers interactively')
+  .action(async (provider?: string) => {
+    const { runConfigure } = require('./configure');
+    try {
+      await runConfigure(provider ? [provider] : []);
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
       process.exit(1);
@@ -139,9 +185,9 @@ program
 // ─── maos login ───────────────────────────────────────────────
 program
   .command('login')
-  .description('Authenticate a CLI agent (copilot, codex, claude)')
+  .description('Authenticate a CLI agent (copilot, codex, opencode, claude)')
   .option('-a, --agent <agent>', 'Agent ID to authenticate')
-  .option('-c, --cli <cli>', 'CLI to authenticate with (copilot, codex, claude)')
+  .option('-c, --cli <cli>', 'CLI to authenticate with (copilot, codex, opencode, claude)')
   .action(async (options: LoginOptions) => {
     try {
       await runLogin(options);
@@ -166,6 +212,20 @@ program
   .description('Launch web dashboard at http://localhost:3847')
   .action(() => {
     runDashboard();
+  });
+
+// ─── maos doctor ─────────────────────────────────────────────
+program
+  .command('doctor')
+  .alias('doc')
+  .description('Run environment and connectivity diagnostics')
+  .action(async () => {
+    try {
+      await runDoctor();
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exit(1);
+    }
   });
 
 // ─── maos replay ─────────────────────────────────────────────
@@ -212,21 +272,24 @@ program
 
       console.log(chalk.bold.cyan(`\n🔁 Event Timeline: ${taskId}`));
       console.log(chalk.gray('─'.repeat(70)));
-      console.log(chalk.gray(`${'SEQ'.padEnd(6)} ${'TIME'.padEnd(26)} ${'TYPE'.padEnd(22)} ${'AGENT'.padEnd(15)} NOTE`));
+      console.log(
+        chalk.gray(`${'SEQ'.padEnd(6)} ${'TIME'.padEnd(26)} ${'TYPE'.padEnd(22)} ${'AGENT'.padEnd(15)} NOTE`),
+      );
       console.log(chalk.gray('─'.repeat(70)));
 
       for (const evt of timeline) {
         const time = new Date(evt.time).toLocaleTimeString();
         const seqStr = String(evt.seq).padEnd(6);
-        const typeColor = evt.type.includes('FAIL') || evt.type.includes('ERROR')
-          ? chalk.red(evt.type.padEnd(22))
-          : evt.type.includes('COMPLETE') || evt.type.includes('DONE')
-          ? chalk.green(evt.type.padEnd(22))
-          : chalk.cyan(evt.type.padEnd(22));
+        const typeColor =
+          evt.type.includes('FAIL') || evt.type.includes('ERROR')
+            ? chalk.red(evt.type.padEnd(22))
+            : evt.type.includes('COMPLETE') || evt.type.includes('DONE')
+              ? chalk.green(evt.type.padEnd(22))
+              : chalk.cyan(evt.type.padEnd(22));
 
         console.log(
           `${chalk.gray(seqStr)} ${chalk.gray(time.padEnd(26))} ${typeColor} ` +
-          `${chalk.yellow(evt.agentId.padEnd(15))} ${chalk.gray(evt.note.substring(0, 40))}`
+            `${chalk.yellow(evt.agentId.padEnd(15))} ${chalk.gray(evt.note.substring(0, 40))}`,
         );
       }
       console.log(chalk.gray('─'.repeat(70)));
@@ -252,7 +315,9 @@ program
         const time = new Date(evt.timestamp).toLocaleTimeString();
         const typeColor = evt.type.includes('FAIL') ? chalk.red(evt.type) : chalk.cyan(evt.type);
         const task = evt.taskId ? chalk.gray(` [${evt.taskId.substring(0, 20)}]`) : '';
-        console.log(`  ${chalk.gray(String(evt.seq).padEnd(5))} ${chalk.gray(time)} ${typeColor}${task} ${chalk.yellow(evt.agentId)}`);
+        console.log(
+          `  ${chalk.gray(String(evt.seq).padEnd(5))} ${chalk.gray(time)} ${typeColor}${task} ${chalk.yellow(evt.agentId)}`,
+        );
       }
     }
   });
@@ -272,14 +337,12 @@ program
     } else {
       for (const r of retrying) {
         const readySecs = Math.round(r.readyInMs / 1000);
-        const status = r.readyInMs === 0
-          ? chalk.green('READY')
-          : chalk.yellow(`in ${readySecs}s`);
+        const status = r.readyInMs === 0 ? chalk.green('READY') : chalk.yellow(`in ${readySecs}s`);
         console.log(
           `  ${chalk.white(r.taskId.substring(0, 30).padEnd(30))} ` +
-          `attempt ${r.attemptNumber}/${r.maxRetries} ` +
-          `[${chalk.red(r.lastErrorType)}] ` +
-          status
+            `attempt ${r.attemptNumber}/${r.maxRetries} ` +
+            `[${chalk.red(r.lastErrorType)}] ` +
+            status,
         );
       }
     }
@@ -378,20 +441,17 @@ function printMemories(entries: any[]): void {
   console.log(chalk.gray('\u2500'.repeat(70)));
   for (const e of entries) {
     const age = formatMemAge(Date.now() - e.timestamp);
-    const confBadge = e.confidence < 0.8
-      ? chalk.yellow(' conf:' + e.confidence)
-      : '';
+    const confBadge = e.confidence < 0.8 ? chalk.yellow(' conf:' + e.confidence) : '';
     const typeBadge =
-      e.type === 'DISCOVERY' ? chalk.green('[DISCOVERY]') :
-      e.type === 'DECISION' ? chalk.blue('[DECISION]') :
-      e.type === 'WARNING' ? chalk.red('[WARNING]') :
-      chalk.magenta('[FILE_MAP]');
+      e.type === 'DISCOVERY'
+        ? chalk.green('[DISCOVERY]')
+        : e.type === 'DECISION'
+          ? chalk.blue('[DECISION]')
+          : e.type === 'WARNING'
+            ? chalk.red('[WARNING]')
+            : chalk.magenta('[FILE_MAP]');
 
-    console.log(
-      '  ' + typeBadge + ' ' +
-      chalk.yellow(e.agentId) + ' ' +
-      chalk.gray(age + ' ago') + confBadge
-    );
+    console.log('  ' + typeBadge + ' ' + chalk.yellow(e.agentId) + ' ' + chalk.gray(age + ' ago') + confBadge);
     console.log('    ' + chalk.white(e.content.substring(0, 100)));
     if (e.tags.length > 0) {
       console.log('    ' + chalk.gray('tags: ' + e.tags.join(', ')));
@@ -443,7 +503,7 @@ program
     // Clear status files
     const statusDir = path.join(maosDir, 'status');
     if (fs.existsSync(statusDir)) {
-      const files = fs.readdirSync(statusDir).filter(f => f.endsWith('.status'));
+      const files = fs.readdirSync(statusDir).filter((f) => f.endsWith('.status'));
       for (const file of files) {
         fs.unlinkSync(path.join(statusDir, file));
       }
@@ -458,11 +518,10 @@ program
     console.log(chalk.green(`✅ Cleaned: ${cleared} tasks removed, statuses reset, logs cleared.`));
   });
 
+// Default action: launch interactive REPL when no subcommand is provided
+program.action(() => {
+  runRepl();
+});
+
 // Parse
 program.parse(process.argv);
-
-// Launch interactive REPL if no command provided
-if (!process.argv.slice(2).length) {
-  runRepl();
-}
-

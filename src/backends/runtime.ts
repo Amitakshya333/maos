@@ -62,6 +62,60 @@ export interface RuntimeResult {
 
   /** Error message if failed */
   error?: string;
+
+  /** Result classification: success, partial_success, failed, no_mutation */
+  taskResult?: 'success' | 'partial_success' | 'failed' | 'no_mutation';
+
+  /** Exit code if the execution was process-based */
+  exitCode?: number;
+}
+
+// ---- Runtime Capability Profile ----
+
+/**
+ * Static declaration of what a runtime is capable of.
+ * Used by the scheduling engine to match tasks to runtimes.
+ *
+ * Static fields come from config. Dynamic fields (avgLatencyMs etc.)
+ * are hints only — the RuntimeStatsStore provides the live values.
+ */
+export interface RuntimeCapabilityProfile {
+  /** Agent ID */
+  runtimeId: string;
+
+  /** Runtime execution type */
+  runtimeType: 'api' | 'cli' | 'local';
+
+  /** Provider/CLI identifier (e.g., 'openai', 'copilot', 'codex') */
+  provider: string;
+
+  // ── Static capability flags ──────────────────────────────────────────
+
+  /** Supports tool-calling loop (write_file, read_file, bash, etc.) */
+  supportsTools: boolean;
+
+  /** Can create/modify files (false for read-only analysis runtimes) */
+  supportsCodeMutation: boolean;
+
+  /** Handles long context without degrading (>32k tokens or no hard limit) */
+  supportsLongContext: boolean;
+
+  /** Supports response streaming */
+  supportsStreaming: boolean;
+
+  /** Can handle multiple concurrent tasks */
+  supportsParallelism: boolean;
+
+  // ── Static hint defaults (overridden by RuntimeStatsStore once data exists) ──
+
+  /** Expected avg latency in ms (hint — actual measured by stats store) */
+  estimatedAvgLatencyMs: number;
+
+  /** Expected cost per task in USD (hint — 0 for subscription CLIs) */
+  estimatedCostPerTask: number;
+
+  /** Max simultaneous tasks this runtime can handle */
+  concurrencyLimit: number;
 }
 
 // ---- Runtime Interface ----
@@ -82,6 +136,12 @@ export interface IRuntime {
    * Everything else is internal to the runtime.
    */
   execute(task: RuntimeTask): Promise<RuntimeResult>;
+
+  /**
+   * Return the static capability profile for this runtime.
+   * Used by the scheduling engine to score and route tasks.
+   */
+  getCapabilityProfile(): RuntimeCapabilityProfile;
 
   /**
    * Cleanup resources (kill child process, close connection, etc.)
@@ -118,6 +178,12 @@ export interface AgentRuntimeConfig {
 
   /** Agent capabilities for routing */
   capabilities: string[];
+
+  /** Optional role-specific instructions appended to the standard MAOS system prompt. */
+  systemPrompt?: string;
+
+  /** Optional least-privilege allowlist. Omit to preserve access to all registered tools. */
+  allowedTools?: string[];
 
   /** Filesystem scope restrictions */
   scope: string[];

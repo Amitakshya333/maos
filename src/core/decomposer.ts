@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import { IProvider, ChatMessage, ToolDef } from '../backends/provider';
+import { IProvider, ChatMessage, ToolDef, ProviderResponse } from '../backends/provider';
 import { createLogger } from '../utils/logger';
-import { readTelemetry, TelemetryRecord } from './telemetry';
+import { readTelemetry } from './telemetry';
 
 /**
  * MAOS AI Task Decomposer
@@ -12,7 +12,31 @@ import { readTelemetry, TelemetryRecord } from './telemetry';
  *
  * This is the "brain" of `maos plan` — the command that turns a one-liner
  * into a multi-agent build plan.
+ *
+ * Failure Modes (classified):
+ *   - SCHEMA_FAILURE      : model returned something but it didn't match the expected shape
+ *   - MALFORMED_RESPONSE  : JSON parse failed on tool args or extracted content block
+ *   - EMPTY_PLAN          : model returned 0 tasks
+ *   - PROVIDER_FAILURE    : network / auth / rate-limit error from the provider
+ *   - UNSUPPORTED_TOOL_CALLING : provider does not support function calling at all
  */
+
+// ─── Failure Classification ───────────────────────────────────
+
+export type DecomposerFailureKind =
+  'SCHEMA_FAILURE' | 'MALFORMED_RESPONSE' | 'EMPTY_PLAN' | 'PROVIDER_FAILURE' | 'UNSUPPORTED_TOOL_CALLING';
+
+export class DecomposerError extends Error {
+  readonly kind: DecomposerFailureKind;
+  readonly rawResponse?: string;
+
+  constructor(kind: DecomposerFailureKind, message: string, rawResponse?: string) {
+    super(`Decomposer [${kind}]: ${message}`);
+    this.name = 'DecomposerError';
+    this.kind = kind;
+    this.rawResponse = rawResponse;
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -75,12 +99,14 @@ const DECOMPOSE_TOOL: ToolDef = {
               },
               description: {
                 type: 'string',
-                description: 'Detailed instructions for the agent that will execute this task. Be specific about what to build, which files to create/modify, and acceptance criteria.',
+                description:
+                  'Detailed instructions for the agent that will execute this task. Be specific about what to build, which files to create/modify, and acceptance criteria.',
               },
               requiredCapabilities: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Capabilities needed. Choose from: planning, coding, apis, database, refactoring, testing, design, css, frontend, layout, styling, review, debugging',
+                description:
+                  'Capabilities needed. Choose from: planning, coding, apis, database, refactoring, testing, design, css, frontend, layout, styling, review, debugging',
               },
               complexity: {
                 type: 'string',
@@ -89,12 +115,14 @@ const DECOMPOSE_TOOL: ToolDef = {
               },
               category: {
                 type: 'string',
-                description: 'Task category for routing. Choose from: backend, frontend, design, testing, planning, api, database, styling, devops',
+                description:
+                  'Task category for routing. Choose from: backend, frontend, design, testing, planning, api, database, styling, devops',
               },
               dependsOn: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Titles of other subtasks that must complete before this one can start. Empty array if no dependencies.',
+                description:
+                  'Titles of other subtasks that must complete before this one can start. Empty array if no dependencies.',
               },
               suggestedFiles: {
                 type: 'array',
@@ -102,7 +130,15 @@ const DECOMPOSE_TOOL: ToolDef = {
                 description: 'File paths this task will likely create or modify',
               },
             },
-            required: ['title', 'description', 'requiredCapabilities', 'complexity', 'category', 'dependsOn', 'suggestedFiles'],
+            required: [
+              'title',
+              'description',
+              'requiredCapabilities',
+              'complexity',
+              'category',
+              'dependsOn',
+              'suggestedFiles',
+            ],
           },
         },
         estimatedComplexity: {
@@ -125,12 +161,9 @@ function buildDecomposePrompt(
   telemetryHint?: string,
 ): string {
   const rosterText = agentRoster
-    .map(a => {
-      const scopeInfo = a.scope && a.scope.length > 0
-        ? ' | scope = [' + a.scope.join(', ') + ']'
-        : '';
-      return '  - ' + a.id + ' (' + a.role + '): capabilities = [' +
-        a.capabilities.join(', ') + ']' + scopeInfo;
+    .map((a) => {
+      const scopeInfo = a.scope && a.scope.length > 0 ? ' | scope = [' + a.scope.join(', ') + ']' : '';
+      return '  - ' + a.id + ' (' + a.role + '): capabilities = [' + a.capabilities.join(', ') + ']' + scopeInfo;
     })
     .join('\n');
 
@@ -153,7 +186,16 @@ Decompose the following goal into atomic subtasks. Each subtask should be:
 5. **Realistic** — 3-8 subtasks for simple goals, 5-15 for complex ones
 6. **Scope-aligned** — each task should only touch files within ONE agent's scope
 
-## Rules
+## CRITICAL OUTPUT RULES
+- You MUST call the submit_plan function/tool with ALL subtasks as a single structured JSON call.
+- Do NOT write any prose, explanation, or markdown before or after the function call.
+- Do NOT wrap the JSON in code fences or markdown blocks.
+- The ONLY valid output is a single function call to submit_plan.
+- If you cannot use a function call, return ONLY a raw JSON object matching this exact schema:
+  {"tasks": [...], "estimatedComplexity": "low|medium|high"}
+  No markdown. No prose. No backticks. Only the JSON object.
+
+## Task Rules
 - Each subtask should take an agent 1-5 tool iterations to complete
 - Don't create "setup" tasks unless genuinely needed (the project may already exist)
 - Frontend tasks should include specific component names, layouts, and styling requirements
@@ -194,47 +236,118 @@ export async function decompose(
     if (cwd) {
       const files = scanProjectFiles(cwd);
       if (files.length > 0) {
-        projectContext = `Existing files in project:\n${files.map(f => `  - ${f}`).join('\n')}`;
+        projectContext = `Existing files in project:\n${files.map((f) => `  - ${f}`).join('\n')}`;
       }
     }
   } catch {
     // No project context available — that's fine
   }
 
-  const systemPrompt = buildDecomposePrompt(
-    goal, agents, projectContext,
-    buildTelemetryHint(cwd),
-  );
+  const systemPrompt = buildDecomposePrompt(goal, agents, projectContext, buildTelemetryHint(cwd));
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: `Decompose this goal into subtasks: "${goal}"` },
   ];
 
   // Call the model with the structured tool
-  const response = await provider.generate(messages, [DECOMPOSE_TOOL]);
+  let response: ProviderResponse;
+  try {
+    response = await provider.generate(messages, [DECOMPOSE_TOOL]);
+  } catch (err: any) {
+    throw new DecomposerError('PROVIDER_FAILURE', err.message);
+  }
 
+  // ── DIAGNOSTIC: log the full raw response before any parsing ──
   logger.info('DECOMPOSER', `Model responded in ${response.latencyMs}ms, ${response.usage.totalTokens} tokens`);
+  logger.info('DECOMPOSER', `Finish reason: ${response.finishReason}`);
+  if (process.env.MAOS_DEBUG) {
+    console.log('[DECOMPOSER] RAW RESPONSE CONTENT:', JSON.stringify(response.content, null, 2));
+    console.log('[DECOMPOSER] RAW TOOL CALLS:', JSON.stringify(response.toolCalls, null, 2));
+  }
 
-  // Extract the tool call result
-  if (response.toolCalls.length === 0) {
-    // Model didn't use the tool — try to parse from content
-    throw new Error(
-      'Decomposer: Model did not return a structured plan. ' +
-      'This may happen if the model is not capable of tool calling. ' +
-      'Try a different provider or model.'
+  // ── Step 1: Try the happy path — model returned a proper tool call ──
+  let planData: any;
+  let extractionSource = 'tool_call';
+
+  const planCall = response.toolCalls.find((tc) => tc.function.name === 'submit_plan');
+
+  if (planCall) {
+    // Model used the tool correctly — parse the arguments
+    try {
+      planData = JSON.parse(planCall.function.arguments);
+    } catch (err) {
+      const rawArgs = planCall.function.arguments;
+      // Try to recover a JSON block from within the arguments string
+      planData = tryExtractJsonFromString(rawArgs);
+      if (!planData) {
+        throw new DecomposerError(
+          'MALFORMED_RESPONSE',
+          `Failed to parse tool call arguments: ${err}. Arguments (first 500 chars): ${rawArgs.substring(0, 500)}`,
+          rawArgs,
+        );
+      }
+      logger.warn('DECOMPOSER', 'Tool call arguments were malformed JSON — recovered via extraction fallback');
+    }
+  } else {
+    // ── Step 2: Model didn't use the tool — try to extract JSON from content ──
+    // This handles models that respond with JSON in the content body instead of
+    // a structured tool call (e.g., freemodel with certain model variants).
+
+    if (process.env.MAOS_DEBUG) {
+      console.log('[DECOMPOSER] No tool call found. Attempting JSON extraction from content...');
+    }
+
+    if (!response.content || response.content.trim().length === 0) {
+      throw new DecomposerError(
+        'UNSUPPORTED_TOOL_CALLING',
+        `Model (${provider.name}/${provider.model}) returned neither a tool call nor any content. ` +
+          `This provider may not support structured output. Try: openai, anthropic, or gemini.`,
+      );
+    }
+
+    // Log full content for debugging
+    if (process.env.MAOS_DEBUG) {
+      console.log('[DECOMPOSER] Content to parse (first 2000 chars):');
+      console.log(response.content.substring(0, 2000));
+    }
+
+    planData = tryExtractJsonFromString(response.content);
+
+    if (!planData) {
+      throw new DecomposerError(
+        'SCHEMA_FAILURE',
+        `Model (${provider.name}/${provider.model}) responded with text but no valid JSON plan could be extracted. ` +
+          `The model may not support tool calling. Try a different provider. ` +
+          `Set MAOS_DEBUG=1 to see the full raw response.`,
+        response.content,
+      );
+    }
+
+    extractionSource = 'content_fallback';
+    logger.warn(
+      'DECOMPOSER',
+      `Plan extracted from content body (not tool call) — provider may not fully support function calling`,
     );
   }
 
-  const planCall = response.toolCalls.find(tc => tc.function.name === 'submit_plan');
-  if (!planCall) {
-    throw new Error('Decomposer: Model called an unexpected tool instead of submit_plan');
+  logger.info('DECOMPOSER', `Plan extraction source: ${extractionSource}`);
+
+  // ── Step 3: Validate the plan shape ──
+  if (!planData || typeof planData !== 'object') {
+    throw new DecomposerError('SCHEMA_FAILURE', 'Extracted plan is not a valid object');
   }
 
-  let planData: any;
-  try {
-    planData = JSON.parse(planCall.function.arguments);
-  } catch (err) {
-    throw new Error(`Decomposer: Failed to parse tool call arguments — ${err}`);
+  if (!Array.isArray(planData.tasks)) {
+    // Some models return the tasks directly as the top-level array
+    if (Array.isArray(planData)) {
+      planData = { tasks: planData, estimatedComplexity: 'medium' };
+    } else {
+      throw new DecomposerError(
+        'SCHEMA_FAILURE',
+        `Plan is missing the required "tasks" array. Got keys: [${Object.keys(planData).join(', ')}]`,
+        JSON.stringify(planData).substring(0, 500),
+      );
+    }
   }
 
   // Validate and normalize the tasks
@@ -249,19 +362,20 @@ export async function decompose(
   }));
 
   if (tasks.length === 0) {
-    throw new Error('Decomposer: Model returned an empty task list. Try rephrasing the goal.');
+    throw new DecomposerError(
+      'EMPTY_PLAN',
+      'Model returned an empty task list. Try rephrasing the goal or switching providers.',
+    );
   }
 
-  // ---- P3.4: DEPENDENCY GRAPH VALIDATION ----
+  // ── Step 4: Dependency graph validation ──
   const depWarnings = validateDependencyGraph(tasks);
   for (const warn of depWarnings) {
     logger.warn('DECOMPOSER', warn);
   }
 
-  // ---- P3.4: TELEMETRY-INFORMED COMPLEXITY OVERRIDE ----
-  const overriddenComplexity = estimateComplexityFromTelemetry(
-    tasks, cwd,
-  );
+  // ── Step 5: Telemetry-informed complexity override ──
+  const overriddenComplexity = estimateComplexityFromTelemetry(tasks, cwd);
 
   const result: DecompositionResult = {
     goal,
@@ -272,11 +386,94 @@ export async function decompose(
     latencyMs: response.latencyMs,
   };
 
-  logger.success('DECOMPOSER', 'Decomposed into ' + tasks.length + ' subtasks (' + result.estimatedComplexity + ' complexity)');
+  logger.success(
+    'DECOMPOSER',
+    'Decomposed into ' + tasks.length + ' subtasks (' + result.estimatedComplexity + ' complexity)',
+  );
   return result;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
+
+/**
+ * Attempt to extract a JSON object or array from a string that may contain
+ * markdown code fences, prose contamination, or mixed content.
+ *
+ * Strategies (in order):
+ *   1. Direct JSON.parse of the trimmed string
+ *   2. Extract from ```json ... ``` or ``` ... ``` code fence
+ *   3. Extract the first {...} or [...] block via balanced brace scan
+ *
+ * Returns the parsed object/array, or null if all strategies fail.
+ */
+function tryExtractJsonFromString(text: string): any | null {
+  if (!text || typeof text !== 'string') return null;
+
+  const trimmed = text.trim();
+
+  // Strategy 1: direct parse
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    /* fall through */
+  }
+
+  // Strategy 2: extract from markdown code fence
+  const codeFenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeFenceMatch) {
+    try {
+      return JSON.parse(codeFenceMatch[1].trim());
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // Strategy 3: find the first balanced { ... } or [ ... ] block
+  const firstBrace = trimmed.indexOf('{');
+  const firstBracket = trimmed.indexOf('[');
+  let startIdx = -1;
+  let openChar = '{';
+  let closeChar = '}';
+
+  if (firstBrace === -1 && firstBracket === -1) return null;
+
+  if (firstBrace === -1) {
+    startIdx = firstBracket;
+    openChar = '[';
+    closeChar = ']';
+  } else if (firstBracket === -1) {
+    startIdx = firstBrace;
+  } else if (firstBracket < firstBrace) {
+    startIdx = firstBracket;
+    openChar = '[';
+    closeChar = ']';
+  } else {
+    startIdx = firstBrace;
+  }
+
+  let depth = 0;
+  let endIdx = -1;
+  for (let i = startIdx; i < trimmed.length; i++) {
+    if (trimmed[i] === openChar) depth++;
+    else if (trimmed[i] === closeChar) {
+      depth--;
+      if (depth === 0) {
+        endIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (endIdx === -1) return null;
+
+  try {
+    return JSON.parse(trimmed.substring(startIdx, endIdx + 1));
+  } catch {
+    /* fall through */
+  }
+
+  return null;
+}
 
 /**
  * Quick project file scan for context injection.
@@ -300,17 +497,20 @@ function scanProjectFiles(cwd: string): string[] {
   }
 }
 
-function scanDirRecursive(
-  basePath: string,
-  relativePath: string,
-  depth: number,
-  maxFiles: number,
-): string[] {
+function scanDirRecursive(basePath: string, relativePath: string, depth: number, maxFiles: number): string[] {
   if (depth > 4) return []; // Don't go too deep
 
   const IGNORE = new Set([
-    'node_modules', '.git', '.maos', 'dist', '.next',
-    '__pycache__', '.venv', 'venv', 'target', 'build',
+    'node_modules',
+    '.git',
+    '.maos',
+    'dist',
+    '.next',
+    '__pycache__',
+    '.venv',
+    'venv',
+    'target',
+    'build',
   ]);
 
   const results: string[] = [];
@@ -347,7 +547,7 @@ function scanDirRecursive(
  */
 function validateDependencyGraph(tasks: SubTask[]): string[] {
   const warnings: string[] = [];
-  const titleSet = new Set(tasks.map(t => t.title));
+  const titleSet = new Set(tasks.map((t) => t.title));
 
   // 1. Remove dangling dependency references
   for (const task of tasks) {
@@ -356,10 +556,7 @@ function validateDependencyGraph(tasks: SubTask[]): string[] {
       if (titleSet.has(dep)) {
         validDeps.push(dep);
       } else {
-        warnings.push(
-          'Removed invalid dependency: "' + task.title +
-          '" depends on "' + dep + '" which does not exist'
-        );
+        warnings.push('Removed invalid dependency: "' + task.title + '" depends on "' + dep + '" which does not exist');
       }
     }
     task.dependsOn = validDeps;
@@ -376,15 +573,13 @@ function validateDependencyGraph(tasks: SubTask[]): string[] {
     visited.add(title);
     inStack.add(title);
 
-    const task = tasks.find(t => t.title === title);
+    const task = tasks.find((t) => t.title === title);
     if (task) {
       for (const dep of task.dependsOn) {
         if (hasCycle(dep)) {
           // Break the cycle by removing this edge
-          task.dependsOn = task.dependsOn.filter(d => d !== dep);
-          warnings.push(
-            'Broke dependency cycle: "' + title + '" -> "' + dep + '"'
-          );
+          task.dependsOn = task.dependsOn.filter((d) => d !== dep);
+          warnings.push('Broke dependency cycle: "' + title + '" -> "' + dep + '"');
           return false; // Fixed, continue
         }
       }
@@ -401,11 +596,11 @@ function validateDependencyGraph(tasks: SubTask[]): string[] {
   }
 
   // 3. Check for orphaned tasks (no path to any root)
-  const roots = tasks.filter(t => t.dependsOn.length === 0);
+  const roots = tasks.filter((t) => t.dependsOn.length === 0);
   if (roots.length === 0 && tasks.length > 0) {
     warnings.push(
       'No root tasks (tasks with empty dependsOn). All tasks have dependencies. ' +
-      'This may cause a deadlock. Consider removing unnecessary dependencies.'
+        'This may cause a deadlock. Consider removing unnecessary dependencies.',
     );
   }
 
@@ -416,10 +611,7 @@ function validateDependencyGraph(tasks: SubTask[]): string[] {
  * Estimate overall complexity from telemetry history.
  * Returns a complexity string or null if insufficient data.
  */
-function estimateComplexityFromTelemetry(
-  tasks: SubTask[],
-  cwd?: string,
-): 'low' | 'medium' | 'high' | null {
+function estimateComplexityFromTelemetry(tasks: SubTask[], cwd?: string): 'low' | 'medium' | 'high' | null {
   if (!cwd) return null;
 
   try {
@@ -435,15 +627,13 @@ function estimateComplexityFromTelemetry(
     }
 
     // Find past tasks with similar capabilities
-    const similar = records.filter(r =>
-      r.capabilities.some(c => allCaps.has(c))
-    );
+    const similar = records.filter((r) => r.capabilities.some((c) => allCaps.has(c)));
 
     if (similar.length < 2) return null;
 
     // Calculate average iterations for similar tasks
     const avgIterations = similar.reduce((s, r) => s + r.iterations, 0) / similar.length;
-    const successRate = similar.filter(r => r.success).length / similar.length;
+    const successRate = similar.filter((r) => r.success).length / similar.length;
 
     // High iteration count or low success rate → higher complexity
     if (avgIterations > 15 || successRate < 0.5) return 'high';
@@ -465,7 +655,7 @@ function buildTelemetryHint(cwd?: string): string | undefined {
     const records = readTelemetry(cwd);
     if (records.length === 0) return undefined;
 
-    const successes = records.filter(r => r.success).length;
+    const successes = records.filter((r) => r.success).length;
     const avgIterations = records.reduce((s, r) => s + r.iterations, 0) / records.length;
     const avgTokens = records.reduce((s, r) => s + r.totalTokens, 0) / records.length;
 
@@ -482,14 +672,25 @@ function buildTelemetryHint(cwd?: string): string | undefined {
       .map(([cap, count]) => cap + ' (' + count + ')')
       .join(', ');
 
-    return 'From ' + records.length + ' past task executions:\n' +
-      '- Success rate: ' + Math.round(successes / records.length * 100) + '%\n' +
-      '- Average iterations per task: ' + Math.round(avgIterations) + '\n' +
-      '- Average tokens per task: ' + Math.round(avgTokens) + '\n' +
-      '- Most common capabilities: ' + topCaps + '\n' +
-      'Use this data to set realistic complexity estimates.';
+    return (
+      'From ' +
+      records.length +
+      ' past task executions:\n' +
+      '- Success rate: ' +
+      Math.round((successes / records.length) * 100) +
+      '%\n' +
+      '- Average iterations per task: ' +
+      Math.round(avgIterations) +
+      '\n' +
+      '- Average tokens per task: ' +
+      Math.round(avgTokens) +
+      '\n' +
+      '- Most common capabilities: ' +
+      topCaps +
+      '\n' +
+      'Use this data to set realistic complexity estimates.'
+    );
   } catch {
     return undefined;
   }
 }
-

@@ -13,48 +13,50 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
+import { getMaosRoot } from '../utils/paths';
 
 // ---- Command Blocklist ----
 // Patterns that agents are NEVER allowed to run, regardless of scope.
 
 const BLOCKED_COMMAND_PATTERNS: RegExp[] = [
   // Destructive system commands
-  /\brm\s+-rf\s+[\/\\]/i,             // rm -rf / or rm -rf \
-  /\bformat\b/i,                       // format drive
-  /\bdel\s+\/[sf]\b/i,                // del /s /f (Windows recursive delete)
-  /\brd\s+\/s\b/i,                    // rd /s (Windows recursive delete)
-  /\brmdir\s+\/s\b/i,                 // rmdir /s
-  /\bshutdown\b/i,                     // shutdown
-  /\breboot\b/i,                       // reboot
-  /\bpowershell.*-enc/i,              // encoded powershell commands
+  /\brm\s+-rf\s+[\/\\]/i, // rm -rf / or rm -rf \
+  /\bformat\b/i, // format drive
+  /\bdel\s+\/[sf]\b/i, // del /s /f (Windows recursive delete)
+  /\brd\s+\/s\b/i, // rd /s (Windows recursive delete)
+  /\brmdir\s+\/s\b/i, // rmdir /s
+  /\bshutdown\b/i, // shutdown
+  /\breboot\b/i, // reboot
+  /\bpowershell.*-enc/i, // encoded powershell commands
   /\bcurl\b.*\|\s*(bash|sh|powershell)/i, // pipe to shell
 
   // Network exfiltration
-  /\bcurl\b.*-X\s*POST\b/i,           // curl POST (data exfiltration)
-  /\bwget\b.*--post/i,                // wget POST
-  /\bnc\b.*-l/i,                      // netcat listen
+  /\bcurl\b.*-X\s*POST\b/i, // curl POST (data exfiltration)
+  /\bwget\b.*--post/i, // wget POST
+  /\bnc\b.*-l/i, // netcat listen
 
   // Credential theft
-  /\bcat\b.*\.(env|pem|key)\b/i,      // read secrets
-  /\btype\b.*\.(env|pem|key)\b/i,     // Windows read secrets
-  /\.ssh\//i,                          // SSH directory access
+  /\bcat\b.*\.(env|pem|key)\b/i, // read secrets
+  /\btype\b.*\.(env|pem|key)\b/i, // Windows read secrets
+  /\.ssh\//i, // SSH directory access
 
   // Process manipulation
-  /\btaskkill\b/i,                     // kill processes (Windows)
-  /\bkill\s+-9\b/i,                   // force kill
+  /\btaskkill\b/i, // kill processes (Windows)
+  /\bkill\s+-9\b/i, // force kill
 
   // Registry/system
-  /\breg\s+(add|delete)\b/i,          // Windows registry
-  /\bschtasks\b/i,                    // Windows scheduled tasks
+  /\breg\s+(add|delete)\b/i, // Windows registry
+  /\bschtasks\b/i, // Windows scheduled tasks
 ];
 
 // Patterns that are suspicious but allowed with logging
 const WARN_COMMAND_PATTERNS: RegExp[] = [
-  /\bnpm\s+publish\b/i,               // publishing packages
-  /\bgit\s+push\b/i,                  // pushing to remote
-  /\bgit\s+force/i,                   // force push
-  /\bchmod\b/i,                        // changing permissions
-  /\bchown\b/i,                        // changing ownership
+  /\bnpm\s+publish\b/i, // publishing packages
+  /\bgit\s+push\b/i, // pushing to remote
+  /\bgit\s+force/i, // force push
+  /\bchmod\b/i, // changing permissions
+  /\bchown\b/i, // changing ownership
 ];
 
 // ---- Scope Guard ----
@@ -76,17 +78,29 @@ export interface ScopeViolation {
  *   "*.ts"      → any .ts file at root
  *   "src/*.tsx"  → any .tsx file directly in src/
  */
-export function isPathInScope(
-  filePath: string,
-  scope: string[],
-  projectRoot: string,
-): boolean {
-  // Unrestricted scopes
+export function isPathInScope(filePath: string, scope: string[], projectRoot: string): boolean {
+  // Resolve absolute paths and check directory traversal / scope escape first
+  const absolutePath = path.resolve(projectRoot, filePath);
+  const absoluteRoot = path.resolve(projectRoot);
+
+  // Windows case-insensitive and slash normalization
+  const normalizedPath = path.relative(absoluteRoot, absolutePath).replace(/\\/g, '/');
+
+  // Prevent escaping the project root (relative starts with '..' or is absolute)
+  if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
+    return false;
+  }
+
+  // Reject Windows Alternate Data Streams (contains colons after drive letter)
+  const cleanPathForAds = filePath.replace(/^[a-zA-Z]:/, '');
+  if (cleanPathForAds.includes(':')) {
+    return false;
+  }
+
+  // Unrestricted scopes within the project root
   if (scope.includes('/') || scope.includes('**/*') || scope.includes('*')) return true;
 
-  const normalizedPath = path.normalize(filePath).replace(/\\/g, '/').replace(/^\//, '');
-
-  return scope.some(scopePattern => {
+  return scope.some((scopePattern) => {
     let pattern = path.normalize(scopePattern).replace(/\\/g, '/').replace(/^\//, '');
 
     // Strip trailing wildcards
@@ -104,8 +118,7 @@ export function isPathInScope(
 
     // Check prefix match
     const normalizedForMatch = normalizedPath.replace(/\/$/, '');
-    return normalizedForMatch === pattern ||
-           normalizedForMatch.startsWith(pattern + '/');
+    return normalizedForMatch === pattern || normalizedForMatch.startsWith(pattern + '/');
   });
 }
 
@@ -113,11 +126,7 @@ export function isPathInScope(
  * Validate a command for safety.
  * Returns null if safe, a ScopeViolation if blocked or warned.
  */
-export function validateCommand(
-  command: string,
-  agentId: string,
-  projectRoot: string,
-): ScopeViolation | null {
+export function validateCommand(command: string, agentId: string, projectRoot: string): ScopeViolation | null {
   // Check against blocklist
   for (const pattern of BLOCKED_COMMAND_PATTERNS) {
     if (pattern.test(command)) {
@@ -137,11 +146,13 @@ export function validateCommand(
   let match;
   while ((match = absPathRegex.exec(command)) !== null) {
     const absPath = match[1].replace(/\\/g, '/').toLowerCase();
-    if (!absPath.startsWith(normalizedRoot) && 
-        !absPath.startsWith('/dev/null') &&
-        !absPath.startsWith('/tmp') &&
-        !absPath.match(/^\/usr\//) &&
-        !absPath.match(/^[a-z]:\\windows/i)) {
+    if (
+      !absPath.startsWith(normalizedRoot) &&
+      !absPath.startsWith('/dev/null') &&
+      !absPath.startsWith('/tmp') &&
+      !absPath.match(/^\/usr\//) &&
+      !absPath.match(/^[a-z]:\\windows/i)
+    ) {
       // This is an absolute path outside the project — suspicious but not always harmful
       // We'll allow it but it could be logged as a warning
     }
@@ -198,12 +209,53 @@ export interface OwnershipReport {
 class FileOwnershipEngine {
   private ownerships = new Map<string, FileOwnership>();
   private readLog = new Map<string, Set<string>>(); // path → set of agent IDs that read it
+  private lockFilePath: string | null = null;
 
   /** Idle timeout: ownership released if agent hasn't touched file in 60s */
   private idleTimeoutMs = 60_000;
 
   /** Stale timeout: force-release after 10 minutes regardless */
   private staleTimeoutMs = 10 * 60_000;
+
+  /**
+   * Initialize with optional project root for disk persistence.
+   * If projectRoot is provided, locks are persisted to .maos/file-locks.json.
+   */
+  init(projectRoot: string): void {
+    this.lockFilePath = path.join(getMaosRoot(projectRoot), 'file-locks.json');
+    this.loadFromDisk();
+  }
+
+  private loadFromDisk(): void {
+    if (!this.lockFilePath || !fs.existsSync(this.lockFilePath)) return;
+    try {
+      const data = JSON.parse(fs.readFileSync(this.lockFilePath, 'utf-8'));
+      if (Array.isArray(data)) {
+        const now = Date.now();
+        for (const entry of data) {
+          // Skip stale entries on load
+          if (now - entry.lastAccessed > this.staleTimeoutMs) continue;
+          this.ownerships.set(entry.path, entry);
+        }
+      }
+    } catch {
+      /* ignore corrupt lock file */
+    }
+  }
+
+  private persistToDisk(): void {
+    if (!this.lockFilePath) return;
+    try {
+      const dir = path.dirname(this.lockFilePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const data = Array.from(this.ownerships.values());
+      const tmpPath = this.lockFilePath + `.${Date.now()}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, this.lockFilePath);
+    } catch {
+      /* non-fatal */
+    }
+  }
 
   /**
    * Claim ownership of a file for writing.
@@ -227,6 +279,7 @@ class FileOwnershipEngine {
         accessType: 'WRITE',
         writeCount: 1,
       });
+      this.persistToDisk();
       return null;
     }
 
@@ -234,6 +287,7 @@ class FileOwnershipEngine {
     if (existing.owner === agentId) {
       existing.lastAccessed = now;
       existing.writeCount++;
+      this.persistToDisk();
       return null;
     }
 
@@ -248,6 +302,7 @@ class FileOwnershipEngine {
         accessType: 'WRITE',
         writeCount: 1,
       });
+      this.persistToDisk();
       return null;
     }
 
@@ -262,6 +317,7 @@ class FileOwnershipEngine {
         accessType: 'WRITE',
         writeCount: 1,
       });
+      this.persistToDisk();
       return null;
     }
 
@@ -271,9 +327,18 @@ class FileOwnershipEngine {
       type: 'FILE_LOCKED',
       agentId,
       filePath,
-      detail: 'File "' + filePath + '" is owned by ' + existing.owner +
-        ' (task: ' + existing.taskId + ', ' + existing.accessType +
-        ', active ' + Math.round(silenceMs / 1000) + 's ago). ' +
+      detail:
+        'File "' +
+        filePath +
+        '" is owned by ' +
+        existing.owner +
+        ' (task: ' +
+        existing.taskId +
+        ', ' +
+        existing.accessType +
+        ', active ' +
+        Math.round(silenceMs / 1000) +
+        's ago). ' +
         'Try again when ownership is released.',
     };
   }
@@ -300,6 +365,7 @@ class FileOwnershipEngine {
         released++;
       }
     }
+    if (released > 0) this.persistToDisk();
     return released;
   }
 
@@ -311,6 +377,7 @@ class FileOwnershipEngine {
     const existing = this.ownerships.get(normalized);
     if (existing && existing.owner === agentId) {
       this.ownerships.delete(normalized);
+      this.persistToDisk();
       return true;
     }
     return false;
@@ -386,6 +453,7 @@ class FileOwnershipEngine {
         swept++;
       }
     }
+    if (swept > 0) this.persistToDisk();
     return swept;
   }
 
@@ -444,4 +512,3 @@ export function guardWriteFile(
 
   return null;
 }
-

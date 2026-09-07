@@ -53,13 +53,22 @@ export interface RetryRecord {
   attemptNumber: number;
   maxRetries: number;
   lastError: string;
-  lastErrorType: 'timeout' | 'provider_error' | 'scope_violation' | 'max_iterations' | 'crash' | 'unknown';
-  retryAfterMs: number;  // Epoch ms — don't retry before this time
-  retryDelayMs: number;  // How long we're waiting this round
+  lastErrorType:
+    'timeout' | 'provider_error' | 'auth_failure' | 'scope_violation' | 'max_iterations' | 'crash' | 'unknown';
+  retryAfterMs: number; // Epoch ms — don't retry before this time
+  retryDelayMs: number; // How long we're waiting this round
   createdAt: number;
   lastAttemptAt: number;
   filesChangedSoFar: string[];
   iterationsCompleted: number;
+  /**
+   * When true, the orchestrator should blacklist this agent on retry
+   * and let the router pick an alternate runtime.
+   *
+   * Set when: errorType === 'crash' OR attemptNumber >= 2.
+   * If no alternate runtime exists, falls back to original agent.
+   */
+  preferAlternateRuntime: boolean;
 }
 
 export interface RetryPolicy {
@@ -70,8 +79,8 @@ export interface RetryPolicy {
 
 export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxRetries: 3,
-  initialDelayMs: 30_000,   // 30s first retry
-  backoffMultiplier: 2.0,    // 30s → 60s → 120s
+  initialDelayMs: 30_000, // 30s first retry
+  backoffMultiplier: 2.0, // 30s → 60s → 120s
 };
 
 // ---- Error Classification ----
@@ -82,15 +91,43 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
 export function classifyError(errorMessage: string): RetryRecord['lastErrorType'] {
   const msg = errorMessage.toLowerCase();
 
-  if (msg.includes('504') || msg.includes('timeout') || msg.includes('timed out') ||
-      msg.includes('gateway') || msg.includes('econnreset') || msg.includes('econnrefused') ||
-      msg.includes('etimedout') || msg.includes('socket hang up')) {
+  // Auth failures — NEVER retry (key is wrong, not transient)
+  if (
+    msg.includes('401') ||
+    msg.includes('authentication failed') ||
+    msg.includes('unauthorized') ||
+    msg.includes('invalid api key') ||
+    msg.includes('invalid.*key') ||
+    msg.includes('check your api key') ||
+    msg.includes('api key is') ||
+    msg.includes('not authenticated')
+  ) {
+    return 'auth_failure';
+  }
+
+  if (
+    msg.includes('504') ||
+    msg.includes('timeout') ||
+    msg.includes('timed out') ||
+    msg.includes('gateway') ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('etimedout') ||
+    msg.includes('socket hang up')
+  ) {
     return 'timeout';
   }
 
-  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('500') ||
-      msg.includes('502') || msg.includes('503') || msg.includes('provider') ||
-      msg.includes('api error') || msg.includes('model error')) {
+  if (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('500') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('provider') ||
+    msg.includes('api error') ||
+    msg.includes('model error')
+  ) {
     return 'provider_error';
   }
 
@@ -120,11 +157,13 @@ export function isRetryable(errorType: RetryRecord['lastErrorType']): boolean {
     case 'crash':
       return true;
     case 'max_iterations':
-      return true;  // Worth retrying — agent might do better with retry context
+      return true; // Worth retrying — agent might do better with retry context
+    case 'auth_failure':
+      return false; // Credential error — retrying won't help, dead-letter immediately
     case 'scope_violation':
       return false; // Task configuration error, not a transient failure
     case 'unknown':
-      return true;  // Give it a chance
+      return true; // Give it a chance
   }
 }
 
@@ -169,7 +208,9 @@ export function enqueueRetry(
   if (fs.existsSync(recordPath)) {
     try {
       record = JSON.parse(fs.readFileSync(recordPath, 'utf-8'));
-    } catch { /* corrupted, start fresh */ }
+    } catch {
+      /* corrupted, start fresh */
+    }
   }
 
   const attemptNumber = (record?.attemptNumber ?? 0) + 1;
@@ -200,6 +241,8 @@ export function enqueueRetry(
     lastAttemptAt: Date.now(),
     filesChangedSoFar,
     iterationsCompleted,
+    // Reroute to alternate runtime if this was a crash or repeated failure
+    preferAlternateRuntime: errorType === 'crash' || attemptNumber >= 2,
   };
 
   // Save retry record
@@ -216,13 +259,7 @@ export function enqueueRetry(
 /**
  * Move a task to the dead-letter queue (permanently failed).
  */
-export function deadLetter(
-  taskFile: TaskFile,
-  taskContent: string,
-  error: string,
-  reason: string,
-  cwd?: string,
-): void {
+export function deadLetter(taskFile: TaskFile, taskContent: string, error: string, reason: string, cwd?: string): void {
   ensureRetryDirs(cwd);
   const failedDir = getFailedDir(cwd);
   const safe = taskFile.id.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -252,12 +289,15 @@ export function drainRetryQueue(cwd?: string): number {
   let count = 0;
 
   // Find all retry records
-  const records = fs.readdirSync(retryDir)
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
+  const records = fs
+    .readdirSync(retryDir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => {
       try {
         return JSON.parse(fs.readFileSync(path.join(retryDir, f), 'utf-8')) as RetryRecord;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     })
     .filter((r): r is RetryRecord => r !== null);
 
@@ -299,13 +339,16 @@ export function getRetryQueueStatus(cwd?: string): Array<RetryRecord & { readyIn
   const retryDir = getRetryDir(cwd);
   const now = Date.now();
 
-  return fs.readdirSync(retryDir)
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
+  return fs
+    .readdirSync(retryDir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => {
       try {
         const record = JSON.parse(fs.readFileSync(path.join(retryDir, f), 'utf-8')) as RetryRecord;
         return { ...record, readyInMs: Math.max(0, record.retryAfterMs - now) };
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     })
     .filter((r): r is RetryRecord & { readyInMs: number } => r !== null);
 }
@@ -317,9 +360,10 @@ export function getDeadLetterQueue(cwd?: string): Array<{ taskId: string; file: 
   const failedDir = getFailedDir(cwd);
   if (!fs.existsSync(failedDir)) return [];
 
-  return fs.readdirSync(failedDir)
-    .filter(f => f.endsWith('.md'))
-    .map(f => ({
+  return fs
+    .readdirSync(failedDir)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => ({
       taskId: f.replace('.md', ''),
       file: path.join(failedDir, f),
     }));
@@ -345,20 +389,26 @@ function injectRetryContext(taskContent: string, record: RetryRecord): string {
     `**Files changed before failure**: ${record.filesChangedSoFar.length > 0 ? record.filesChangedSoFar.join(', ') : 'none'}`,
     ``,
     `**What to do differently this attempt**:`,
-    ...(record.lastErrorType === 'timeout' ? [
-      `- The previous attempt timed out. Be more focused and efficient.`,
-      `- Break the work into smaller steps. Commit early and often.`,
-      `- Don't re-read files you've already read unless necessary.`,
-    ] : []),
-    ...(record.lastErrorType === 'max_iterations' ? [
-      `- The previous attempt ran out of iterations without completing.`,
-      `- Start with the most critical parts of the task first.`,
-      `- Call task_complete even if not 100% done — partial completion is fine.`,
-    ] : []),
-    ...(record.lastErrorType === 'provider_error' ? [
-      `- The previous attempt encountered API errors. The service may have been degraded.`,
-      `- If you encounter errors, use simpler requests with less context.`,
-    ] : []),
+    ...(record.lastErrorType === 'timeout'
+      ? [
+          `- The previous attempt timed out. Be more focused and efficient.`,
+          `- Break the work into smaller steps. Commit early and often.`,
+          `- Don't re-read files you've already read unless necessary.`,
+        ]
+      : []),
+    ...(record.lastErrorType === 'max_iterations'
+      ? [
+          `- The previous attempt ran out of iterations without completing.`,
+          `- Start with the most critical parts of the task first.`,
+          `- Call task_complete even if not 100% done — partial completion is fine.`,
+        ]
+      : []),
+    ...(record.lastErrorType === 'provider_error'
+      ? [
+          `- The previous attempt encountered API errors. The service may have been degraded.`,
+          `- If you encounter errors, use simpler requests with less context.`,
+        ]
+      : []),
     `- If you find the files from previous attempts, continue from where they left off.`,
   ].join('\n');
 

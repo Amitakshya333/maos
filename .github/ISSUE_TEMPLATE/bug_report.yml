@@ -1,0 +1,71 @@
+name: Bug Report
+description: File a bug report to help us improve MAOS
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue with MAOS! Please fill out the sections below to help us reproduce and resolve the problem.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what went wrong.
+      placeholder: Describe the problem encountered in detail.
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Run 'maos init'
+        2. Run 'maos task "..."'
+        3. Run 'maos start'
+        4. Observe failure...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected outcome or behavior.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS and Node.js Version
+      description: Please specify your operating system and Node.js runtime version.
+      placeholder: "Windows 11 / Ubuntu 22.04 / macOS 14; Node v20.10.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider / Runtime Used
+      description: Select the LLM provider or runtime backend configured when the issue occurred.
+      options:
+        - "OpenAI (API)"
+        - "Anthropic Claude (API)"
+        - "Google Gemini (API)"
+        - "DeepSeek / Groq / Together / Qwen (OpenAI-compatible API)"
+        - "Ollama / LM Studio (Local API)"
+        - "GitHub Copilot (CLI)"
+        - "Codex (CLI)"
+        - "Claude CLI"
+        - "OpenCode (CLI)"
+        - "None / Core Scheduler / Queue Issue"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and Output
+      description: Paste relevant logs from `.maos/logs/orchestrator.log` or command output from `maos logs`.
+      render: shell
+    validations:
+      required: false

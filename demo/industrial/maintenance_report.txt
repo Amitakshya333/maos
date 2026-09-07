@@ -1,0 +1,21 @@
+MAOS INDUSTRIAL DEMO - TURBINE T-07 MAINTENANCE REPORT
+Report ID: MR-T07-2026-0822
+Inspection window: 2026-08-22 09:00-10:15 IST
+Asset: Steam Turbine T-07, drive-end bearing assembly
+Operating state: Steady load, nominal speed 3000 RPM
+
+Observations
+1. A light intermittent metallic sound was heard near the drive-end bearing housing.
+2. The drive-end bearing housing felt warmer than the non-drive-end housing.
+3. A small amount of dark lubricant residue was visible below the drive-end seal.
+4. No casing crack, loose foundation bolt, or active steam leak was observed.
+5. The operator reported two short vibration alarms during the preceding shift.
+
+Actions completed
+- Verified external fasteners were secure.
+- Cleaned the residue to make recurrence visible.
+- Requested review of the next sensor export before continued unrestricted operation.
+
+Limitations
+This visual inspection did not include bearing disassembly, lubricant laboratory
+analysis, shaft alignment measurement, or certified vibration instrumentation.

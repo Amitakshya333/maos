@@ -1,0 +1,2 @@
+node scripts/pre-commit-secrets.js
+npx lint-staged

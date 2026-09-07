@@ -1,11 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import {
-  IProvider,
-  ChatMessage,
-  ToolDef,
-  ToolCall,
-  ProviderResponse,
-} from './provider';
+import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderResponse } from './provider';
 
 /**
  * Native Anthropic Provider Adapter
@@ -25,12 +19,7 @@ export class AnthropicProvider implements IProvider {
 
   private client: Anthropic;
 
-  constructor(opts: {
-    name: string;
-    apiKey: string;
-    model: string;
-    timeout?: number;
-  }) {
+  constructor(opts: { name: string; apiKey: string; model: string; timeout?: number }) {
     this.name = opts.name;
     this.model = opts.model;
     this.client = new Anthropic({
@@ -39,10 +28,7 @@ export class AnthropicProvider implements IProvider {
     });
   }
 
-  async generate(
-    messages: ChatMessage[],
-    tools?: ToolDef[],
-  ): Promise<ProviderResponse> {
+  async generate(messages: ChatMessage[], tools?: ToolDef[]): Promise<ProviderResponse> {
     const startTime = Date.now();
 
     // ─── Convert MAOS messages → Anthropic format ─────────────
@@ -67,7 +53,9 @@ export class AnthropicProvider implements IProvider {
             let parsedInput: Record<string, unknown> = {};
             try {
               parsedInput = JSON.parse(tc.function.arguments);
-            } catch { /* keep empty */ }
+            } catch {
+              /* keep empty */
+            }
 
             contentBlocks.push({
               type: 'tool_use',
@@ -87,14 +75,24 @@ export class AnthropicProvider implements IProvider {
       }
 
       if (msg.role === 'tool') {
-        // Tool results go as user messages with tool_result content blocks
+        const toolResultBlock: Anthropic.ToolResultBlockParam = {
+          type: 'tool_result',
+          tool_use_id: msg.tool_call_id || '',
+          content: msg.content || '',
+        };
+
+        const lastMsg = anthropicMessages[anthropicMessages.length - 1];
+        if (lastMsg && lastMsg.role === 'user' && Array.isArray(lastMsg.content)) {
+          const hasToolResult = (lastMsg.content as any[]).some((b) => b.type === 'tool_result');
+          if (hasToolResult) {
+            (lastMsg.content as any[]).push(toolResultBlock);
+            continue;
+          }
+        }
+
         anthropicMessages.push({
           role: 'user',
-          content: [{
-            type: 'tool_result',
-            tool_use_id: msg.tool_call_id || '',
-            content: msg.content || '',
-          }],
+          content: [toolResultBlock],
         });
         continue;
       }
@@ -107,7 +105,7 @@ export class AnthropicProvider implements IProvider {
     }
 
     // ─── Convert MAOS tools → Anthropic tools ─────────────────
-    const anthropicTools: Anthropic.Tool[] | undefined = tools?.map(t => ({
+    const anthropicTools: Anthropic.Tool[] | undefined = tools?.map((t) => ({
       name: t.function.name,
       description: t.function.description,
       input_schema: t.function.parameters as Anthropic.Tool.InputSchema,
@@ -179,9 +177,7 @@ export class AnthropicProvider implements IProvider {
         throw new Error(`Anthropic API overloaded. Latency: ${latencyMs}ms. Retry later.`);
       }
 
-      throw new Error(
-        `Provider error [anthropic/${this.model}]: ${err.message || err}. Latency: ${latencyMs}ms`
-      );
+      throw new Error(`Provider error [anthropic/${this.model}]: ${err.message || err}. Latency: ${latencyMs}ms`);
     }
   }
 }

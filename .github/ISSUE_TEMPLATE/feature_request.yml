@@ -1,0 +1,40 @@
+name: Feature Request
+description: Suggest an idea or architectural improvement for MAOS
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement or new capability for MAOS!
+  - type: textarea
+    id: problem-description
+    attributes:
+      label: Problem Description
+      description: Is your feature request related to a problem or limitation? A clear and concise description of the challenge you are facing.
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: A clear and concise description of what you want to happen, including any API, CLI, or architectural design thoughts.
+      placeholder: "Describe the desired solution or interface..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives-considered
+    attributes:
+      label: Alternatives Considered
+      description: A clear and concise description of any alternative solutions, workflows, or workarounds you've considered.
+      placeholder: "I considered..."
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, use cases, or references about the feature request here.
+    validations:
+      required: false

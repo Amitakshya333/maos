@@ -45,6 +45,11 @@ export class Logger {
     return `[${timestamp}] [${level}] [${component}] ${message}`;
   }
 
+  /** Max log file size before rotation (10MB) */
+  private static readonly MAX_LOG_SIZE = 10 * 1024 * 1024;
+  /** Number of rotated log files to keep */
+  private static readonly MAX_ROTATED_FILES = 3;
+
   private log(level: LogLevel, component: string, message: string): void {
     const formatted = this.format(level, component, message);
     const color = LEVEL_COLORS[level];
@@ -53,13 +58,44 @@ export class Logger {
     // Console output (colored)
     console.log(`${icon} ${color(formatted)}`);
 
-    // File output (plain)
+    // File output (plain) with rotation
     if (this.logFile) {
       try {
+        this.rotateIfNeeded();
         fs.appendFileSync(this.logFile, formatted + '\n');
       } catch {
         // Don't crash if log write fails
       }
+    }
+  }
+
+  /**
+   * Rotate log file if it exceeds MAX_LOG_SIZE.
+   * Keeps up to MAX_ROTATED_FILES rotated copies.
+   * orchestrator.log → orchestrator.1.log → orchestrator.2.log → orchestrator.3.log (deleted)
+   */
+  private rotateIfNeeded(): void {
+    if (!this.logFile) return;
+    try {
+      if (!fs.existsSync(this.logFile)) return;
+      const stat = fs.statSync(this.logFile);
+      if (stat.size < Logger.MAX_LOG_SIZE) return;
+
+      // Shift rotated files: .3 → delete, .2 → .3, .1 → .2
+      for (let i = Logger.MAX_ROTATED_FILES; i >= 1; i--) {
+        const from: string = i === 1 ? this.logFile : `${this.logFile}.${i - 1}`;
+        const to = `${this.logFile}.${i}`;
+        if (i === Logger.MAX_ROTATED_FILES && fs.existsSync(to)) {
+          fs.unlinkSync(to);
+        }
+        if (fs.existsSync(from) && from !== this.logFile) {
+          fs.renameSync(from, to);
+        }
+      }
+      // Rotate current → .1
+      fs.renameSync(this.logFile, `${this.logFile}.1`);
+    } catch {
+      /* non-fatal */
     }
   }
 

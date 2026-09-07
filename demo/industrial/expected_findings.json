@@ -1,0 +1,18 @@
+{
+  "dataset": "turbine_vibration_log.csv",
+  "dataRows": 500,
+  "indexing": "CSV data rows are 1-based and exclude the header.",
+  "expectedOverallVerdict": "FAIL",
+  "documentedAnomalies": [
+    { "row": 121, "timestamp": "2026-08-22T09:30:00+05:30", "field": "vibration_rms_mm_s", "value": 5.2, "expectedVerdict": "WARNING" },
+    { "row": 238, "timestamp": "2026-08-22T09:59:15+05:30", "field": "bearing_temperature_c", "value": 88.4, "expectedVerdict": "WARNING" },
+    { "row": 367, "timestamp": "2026-08-22T10:31:30+05:30", "field": "vibration_rms_mm_s", "value": 8.3, "expectedVerdict": "FAIL" },
+    { "row": 442, "timestamp": "2026-08-22T10:50:15+05:30", "field": "bearing_temperature_c", "value": 97.2, "expectedVerdict": "FAIL" }
+  ],
+  "corroboratingEvidence": [
+    "Intermittent metallic sound near drive-end bearing housing",
+    "Drive-end bearing housing warmer than non-drive-end housing",
+    "Dark lubricant residue below drive-end seal",
+    "Two short vibration alarms reported during preceding shift"
+  ]
+}

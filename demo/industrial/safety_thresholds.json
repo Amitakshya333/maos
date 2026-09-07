@@ -1,0 +1,26 @@
+{
+  "rulesetId": "MAOS-DEMO-TURBINE-T07-V1",
+  "title": "Demonstration turbine operating thresholds",
+  "disclaimer": "Hackathon demonstration rules only; not a certified standard or operating authorization.",
+  "assetType": "steam_turbine",
+  "thresholds": {
+    "vibration_rms_mm_s": {
+      "unit": "mm/s RMS",
+      "warning": 4.5,
+      "critical": 7.1,
+      "recommendations": {
+        "WARNING": "Increase monitoring frequency and inspect bearing condition.",
+        "FAIL": "Escalate for engineering review and controlled shutdown assessment."
+      }
+    },
+    "bearing_temperature_c": {
+      "unit": "deg C",
+      "warning": 85.0,
+      "critical": 95.0,
+      "recommendations": {
+        "WARNING": "Verify lubrication and cooling; trend temperature closely.",
+        "FAIL": "Escalate immediately and assess safe shutdown requirements."
+      }
+    }
+  }
+}

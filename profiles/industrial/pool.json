@@ -1,0 +1,6 @@
+{
+  "INGEST_AGENT": true,
+  "ANALYST_AGENT": true,
+  "AUDITOR_AGENT": true,
+  "SYNTHESIZER_AGENT": true
+}

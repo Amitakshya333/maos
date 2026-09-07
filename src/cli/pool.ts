@@ -8,16 +8,13 @@ import {
   getPoolDashboard,
   getEnabledCount,
 } from '../core/pool-manager';
+import { renderPanel, getBrandBadge, renderDivider, icons, padRight } from '../utils/ui';
 
 export interface PoolOptions {
   enable?: string;
   disable?: string;
   all?: boolean;
   off?: boolean;
-}
-
-function padRight(str: string, len: number): string {
-  return str.length >= len ? str.substring(0, len) : str + ' '.repeat(len - str.length);
 }
 
 export function runPool(options: PoolOptions): void {
@@ -31,15 +28,15 @@ export function runPool(options: PoolOptions): void {
   if (options.enable) {
     if (options.enable === 'all') {
       enableAll();
-      console.log(chalk.green('✅ All agents enabled'));
+      console.log(`  ${icons.done} ${chalk.bold.green('All agents enabled in the active pool')}`);
       return;
     }
     const agentId = options.enable.toUpperCase();
     const result = enableAgent(agentId);
     if (result) {
-      console.log(chalk.green(`✅ ${agentId} enabled`));
+      console.log(`  ${icons.done} ${chalk.bold.green(`${agentId} successfully enabled`)}`);
     } else {
-      console.log(chalk.red(`❌ Agent "${agentId}" not found in config`));
+      console.log(`  ${icons.error} ${chalk.bold.red(`Agent "${agentId}" not found in config`)}`);
     }
     return;
   }
@@ -47,15 +44,15 @@ export function runPool(options: PoolOptions): void {
   if (options.disable) {
     if (options.disable === 'all') {
       disableAll();
-      console.log(chalk.yellow('⏸️ All agents disabled'));
+      console.log(`  ${icons.active} ${chalk.bold.yellow('All agents disabled (paused in pool)')}`);
       return;
     }
     const agentId = options.disable.toUpperCase();
     const result = disableAgent(agentId);
     if (result) {
-      console.log(chalk.yellow(`⏸️ ${agentId} disabled`));
+      console.log(`  ${icons.active} ${chalk.bold.yellow(`${agentId} successfully disabled`)}`);
     } else {
-      console.log(chalk.red(`❌ Agent "${agentId}" not found in config`));
+      console.log(`  ${icons.error} ${chalk.bold.red(`Agent "${agentId}" not found in config`)}`);
     }
     return;
   }
@@ -64,70 +61,81 @@ export function runPool(options: PoolOptions): void {
   const agents = getPoolDashboard();
   const enabledCount = getEnabledCount();
 
-  console.log('');
-  console.log(chalk.bold.cyan('  ╔═══════════════════════════════════════╗'));
-  console.log(chalk.bold.cyan('  ║') + chalk.bold.white('   M A O S — Agent Pool   ') + chalk.bold.cyan('            ║'));
-  console.log(chalk.bold.cyan('  ╚═══════════════════════════════════════╝'));
+  // Banner
+  const bannerLines = [
+    `${getBrandBadge('AGENT POOL')} ${chalk.bold.hex('#F1F5F9')('Concurrency Controllers')}`,
+    `${chalk.gray('Activate or pause specific agent processes in real-time')}`,
+  ];
+  console.log(renderPanel(bannerLines, chalk.hex('#EC4899')));
   console.log('');
 
   // Table header
-  console.log(chalk.gray('  ─────────────────────────────────────────────────────────────'));
+  console.log(`  ${chalk.bold.hex('#94A3B8')('🎯 Fleet Pool Allocations')}`);
+  console.log(renderDivider(75));
   console.log(
     chalk.gray('  ') +
-    chalk.bold(padRight('AGENT', 16)) +
-    chalk.bold(padRight('ROLE', 10)) +
-    chalk.bold(padRight('MODEL', 22)) +
-    chalk.bold(padRight('STATUS', 14)) +
-    chalk.bold('POOL')
+      chalk.bold.hex('#CBD5E1')(padRight('AGENT ID', 18)) +
+      chalk.bold.hex('#CBD5E1')(padRight('ROLE', 12)) +
+      chalk.bold.hex('#CBD5E1')(padRight('MODEL', 24)) +
+      chalk.bold.hex('#CBD5E1')(padRight('STATUS', 14)) +
+      chalk.bold.hex('#CBD5E1')('POOL'),
   );
-  console.log(chalk.gray('  ─────────────────────────────────────────────────────────────'));
+  console.log(renderDivider(75));
 
   for (const agent of agents) {
-    const roleIcon = agent.role === 'planner' ? '🧠' :
-                     agent.role === 'coder' ? '⚙️' :
-                     agent.role === 'designer' ? '🎨' :
-                     agent.role === 'tester' ? '🧪' : '📦';
+    const roleIcon =
+      agent.role === 'planner'
+        ? icons.planner
+        : agent.role === 'coder'
+          ? icons.coder
+          : agent.role === 'designer'
+            ? icons.designer
+            : agent.role === 'tester'
+              ? icons.tester
+              : icons.general;
 
-    const statusColor = agent.status === 'IDLE' ? chalk.green :
-                        agent.status.startsWith('BUSY') ? chalk.yellow :
-                        agent.status.startsWith('DONE') ? chalk.blue :
-                        agent.status.startsWith('FAILED') ? chalk.red :
-                        chalk.gray;
+    const statusColor =
+      agent.status === 'IDLE'
+        ? chalk.bold.green
+        : agent.status.startsWith('BUSY')
+          ? chalk.bold.yellow
+          : agent.status.startsWith('DONE')
+            ? chalk.bold.cyan
+            : agent.status.startsWith('FAILED')
+              ? chalk.bold.red
+              : chalk.bold.gray;
 
-    const poolIcon = agent.enabled
-      ? chalk.green.bold('● ON ')
-      : chalk.red.bold('● OFF');
+    const poolIcon = agent.enabled ? chalk.bold.green('● ON ') : chalk.bold.red('○ OFF');
 
     const modelStr = `${agent.provider}/${agent.model}`;
 
     console.log(
       chalk.gray('  ') +
-      `${roleIcon} ${padRight(agent.id, 14)}` +
-      padRight(agent.role, 10) +
-      chalk.gray(padRight(modelStr, 22)) +
-      statusColor(padRight(agent.status.substring(0, 12), 14)) +
-      poolIcon
+        `${roleIcon} ${padRight(chalk.bold.hex('#F1F5F9')(agent.id), 16)}` +
+        padRight(chalk.hex('#E2E8F0')(agent.role), 12) +
+        chalk.gray(padRight(modelStr, 24)) +
+        statusColor(padRight(agent.status.substring(0, 12), 14)) +
+        poolIcon,
     );
 
     // Show capabilities on a sub-line
     if (agent.capabilities.length > 0) {
-      console.log(
-        chalk.gray('     └─ ') +
-        chalk.gray(agent.capabilities.join(', '))
-      );
+      console.log(chalk.gray('     └─ ') + chalk.gray(agent.capabilities.join(', ')));
     }
   }
 
-  console.log(chalk.gray('  ─────────────────────────────────────────────────────────────'));
+  console.log(renderDivider(75));
   console.log('');
-  console.log(`  ${chalk.bold('Fleet:')} ${chalk.green(String(enabledCount))} enabled / ${chalk.gray(String(agents.length))} total`);
+  console.log(
+    `  ${chalk.bold('Fleet Power:')} ${chalk.bold.green(String(enabledCount))} active / ${chalk.bold.gray(String(agents.length))} total`,
+  );
   console.log('');
 
   // Usage hints
-  console.log(chalk.gray('  Commands:'));
-  console.log(chalk.gray('    maos pool --enable BACKEND_DEV   Enable an agent'));
-  console.log(chalk.gray('    maos pool --disable FRONTEND_DEV Disable an agent'));
-  console.log(chalk.gray('    maos pool --enable all           Enable all agents'));
-  console.log(chalk.gray('    maos pool --disable all          Disable all agents'));
+  console.log(`  ${chalk.bold.hex('#94A3B8')('💡 Control Commands:')}`);
+  console.log(`    ${chalk.cyan('maos pool --enable  BACKEND_DEV')}   Enable a specific agent`);
+  console.log(`    ${chalk.cyan('maos pool --disable FRONTEND_DEV')}  Disable/pause an agent`);
+  console.log(`    ${chalk.cyan('maos pool --enable  all')}           Enable all agents`);
+  console.log(`    ${chalk.cyan('maos pool --disable all')}          Disable all agents`);
   console.log('');
 }

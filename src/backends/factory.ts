@@ -33,16 +33,16 @@ const NO_KEY_PROVIDERS = new Set(['ollama', 'lmstudio']);
  * Default cost per million tokens for known providers.
  */
 const DEFAULT_COSTS: Record<string, number> = {
-  openai: 2.50,
-  freemodel: 0.50,
+  openai: 2.5,
+  freemodel: 0.5,
   deepseek: 0.14,
-  qwen: 0.50,
-  together: 0.50,
+  qwen: 0.5,
+  together: 0.5,
   groq: 0.27,
-  fireworks: 0.20,
+  fireworks: 0.2,
   ollama: 0,
   lmstudio: 0,
-  anthropic: 3.00,
+  anthropic: 3.0,
   gemini: 1.25,
 };
 
@@ -59,7 +59,7 @@ function resolveApiKey(value: string | undefined, providerName: string): string 
     }
     throw new Error(
       `No API key configured for provider "${providerName}". ` +
-      `Set it in maos.config.json or as an environment variable.`
+        `Set it in maos.config.json or as an environment variable.`,
     );
   }
 
@@ -69,8 +69,8 @@ function resolveApiKey(value: string | undefined, providerName: string): string 
     if (!resolved) {
       throw new Error(
         `Environment variable "${envVar}" is not set.\n` +
-        `Set it with: export ${envVar}="your-key-here"\n` +
-        `Or on Windows: $env:${envVar}="your-key-here"`
+          `Set it with: export ${envVar}="your-key-here"\n` +
+          `Or on Windows: $env:${envVar}="your-key-here"`,
       );
     }
     return resolved;
@@ -82,11 +82,7 @@ function resolveApiKey(value: string | undefined, providerName: string): string 
 /**
  * Create an IProvider instance (for API runtimes).
  */
-function createProvider(
-  providerName: string,
-  config: ProviderConfig,
-  model: string,
-): IProvider {
+function createProvider(providerName: string, config: ProviderConfig, model: string): IProvider {
   const name = providerName.toLowerCase();
   const apiKey = resolveApiKey(config.apiKey, name);
   const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
@@ -110,9 +106,16 @@ function createProvider(
     case 'google':
       return new GeminiProvider({ name, apiKey, model });
 
-    default:
+    default: {
+      // Check plugin registry for third-party providers
+      const { getPluginRegistry } = require('./plugin-registry');
+      const registry = getPluginRegistry();
+      if (registry.hasProvider(name)) {
+        return registry.createProvider(name, { apiKey, model, baseURL });
+      }
       // Unknown provider -> try OpenAI-compatible format as fallback
       return new OpenAIProvider({ name, apiKey, model, baseURL });
+    }
   }
 }
 
@@ -145,51 +148,59 @@ export class RuntimeFactory {
         // API and Local both use the same ApiRuntime —
         // local just uses a localhost URL (Ollama/LM Studio)
         const providerName = agentConfig.provider || 'freemodel';
-        const defaultModel = providerName.toLowerCase() === 'ollama' ? 'qwen2.5-coder'
-          : providerName.toLowerCase() === 'openai' ? 'gpt-4o'
-          : providerName.toLowerCase() === 'deepseek' ? 'deepseek-chat'
-          : 'gpt-5.4';
+        const defaultModel =
+          providerName.toLowerCase() === 'ollama'
+            ? 'qwen2.5-coder'
+            : providerName.toLowerCase() === 'openai'
+              ? 'gpt-4o'
+              : providerName.toLowerCase() === 'deepseek'
+                ? 'deepseek-chat'
+                : 'gpt-5.4';
         const model = agentConfig.model || defaultModel;
         const providerConfig = providerConfigs[providerName];
 
         if (!providerConfig) {
           throw new Error(
             `Agent "${agentConfig.id}" references provider "${providerName}" ` +
-            `which is not defined in the providers section of maos.config.json`
+              `which is not defined in the providers section of maos.config.json`,
           );
         }
 
         const provider = createProvider(providerName, providerConfig, model);
-        const costPerMillion = providerConfig.costPerMillionTokens
-          ?? DEFAULT_COSTS[providerName.toLowerCase()]
-          ?? 0.50;
+        const costPerMillion = providerConfig.costPerMillionTokens ?? DEFAULT_COSTS[providerName.toLowerCase()] ?? 0.5;
 
-        return new ApiRuntime({
-          provider,
-          role: agentConfig.role,
-          capabilities: agentConfig.capabilities,
-          maxIterations: agentConfig.maxIterations || 25,
-          costPerMillionTokens: costPerMillion,
-        }, bus);
+        return new ApiRuntime(
+          {
+            provider,
+            role: agentConfig.role,
+            capabilities: agentConfig.capabilities,
+            maxIterations: agentConfig.maxIterations || 25,
+            costPerMillionTokens: costPerMillion,
+          },
+          bus,
+        );
       }
 
       case 'cli': {
         if (!agentConfig.cliCommand) {
           throw new Error(
             `Agent "${agentConfig.id}" has runtime "cli" but no cliCommand specified. ` +
-            `Set cliCommand to: copilot, codex, claude, or a custom CLI.`
+              `Set cliCommand to: copilot, codex, claude, or a custom CLI.`,
           );
         }
 
-        return new CliRuntime({
-          cliCommand: agentConfig.cliCommand,
-          cliArgs: agentConfig.cliArgs || [],
-          authEnv: agentConfig.auth || {},
-          timeoutMs: agentConfig.timeoutMs || 300_000,
-          quiescenceMs: agentConfig.quiescenceMs || 30_000,
-          role: agentConfig.role,
-          capabilities: agentConfig.capabilities,
-        }, bus);
+        return new CliRuntime(
+          {
+            cliCommand: agentConfig.cliCommand,
+            cliArgs: agentConfig.cliArgs || [],
+            authEnv: agentConfig.auth || {},
+            timeoutMs: agentConfig.timeoutMs || 300_000,
+            quiescenceMs: agentConfig.quiescenceMs || 30_000,
+            role: agentConfig.role,
+            capabilities: agentConfig.capabilities,
+          },
+          bus,
+        );
       }
 
       default:
@@ -251,9 +262,7 @@ export class RuntimeFactory {
           provider: agent.cliCommand || 'unknown-cli',
           runtimeType: 'cli',
           status: agent.cliCommand ? 'ok' : 'missing',
-          message: agent.cliCommand
-            ? `CLI runtime: ${agent.cliCommand}`
-            : 'No cliCommand specified for CLI runtime',
+          message: agent.cliCommand ? `CLI runtime: ${agent.cliCommand}` : 'No cliCommand specified for CLI runtime',
         });
         continue;
       }
@@ -339,9 +348,7 @@ export class RuntimeFactory {
         }
 
         // Key looks valid
-        const maskedKey = maskKey(keyValue.startsWith('env:')
-          ? process.env[keyValue.slice(4)]!
-          : keyValue);
+        const maskedKey = maskKey(keyValue.startsWith('env:') ? process.env[keyValue.slice(4)]! : keyValue);
         results.push({
           agentId: agent.id,
           provider: providerName,
@@ -367,11 +374,7 @@ export class RuntimeFactory {
 // ---- Direct Provider Creation ----
 // Used by decomposer/plan.ts which needs raw IProvider.generate() access.
 
-export function createProviderDirect(
-  providerName: string,
-  config: ProviderConfig,
-  model: string,
-): IProvider {
+export function createProviderDirect(providerName: string, config: ProviderConfig, model: string): IProvider {
   return createProvider(providerName, config, model);
 }
 
@@ -388,6 +391,8 @@ export interface CredentialCheckResult {
   runtimeType: string;
   status: 'ok' | 'missing' | 'placeholder';
   message: string;
+  /** Where the credential was loaded from */
+  source?: 'credentials.json' | '.env' | 'environment' | 'fallback';
 }
 
 // ---- Helpers ----

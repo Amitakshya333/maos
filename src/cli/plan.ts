@@ -25,7 +25,11 @@ import { renderPanel, getBrandBadge, renderDivider, icons, padRight } from '../u
  */
 function failAndExit(spinner: Ora | null, message: string, code = 1): never {
   if (spinner) {
-    try { spinner.stop(); } catch { /* already stopped */ }
+    try {
+      spinner.stop();
+    } catch {
+      /* already stopped */
+    }
   }
   console.error(message);
   // Defer exit by one tick to let any pending I/O flush
@@ -59,25 +63,21 @@ function renderSubTask(task: SubTask, index: number, totalTasks: number): void {
   console.log('');
   console.log(
     `  ${chalk.bold.hex('#F1F5F9')(`${index + 1}/${totalTasks}`)}  ${catIcon}  ${chalk.bold.white(task.title)}` +
-    `  ${complexityIcon[task.complexity]} ${complexityColor[task.complexity](task.complexity)}`
+      `  ${complexityIcon[task.complexity]} ${complexityColor[task.complexity](task.complexity)}`,
   );
   console.log(chalk.gray(`     └─ ${task.description.substring(0, 140)}${task.description.length > 140 ? '...' : ''}`));
-  console.log(
-    chalk.gray('        Capabilities: ') +
-    chalk.cyan(task.requiredCapabilities.join(', ') || 'general')
-  );
+  console.log(chalk.gray('        Capabilities: ') + chalk.cyan(task.requiredCapabilities.join(', ') || 'general'));
   if (task.suggestedFiles.length > 0) {
     console.log(
       chalk.gray('        Files:        ') +
-      chalk.hex('#CBD5E1')(task.suggestedFiles.slice(0, 4).join(', ') +
-        (task.suggestedFiles.length > 4 ? ` +${task.suggestedFiles.length - 4} more` : ''))
+        chalk.hex('#CBD5E1')(
+          task.suggestedFiles.slice(0, 4).join(', ') +
+            (task.suggestedFiles.length > 4 ? ` +${task.suggestedFiles.length - 4} more` : ''),
+        ),
     );
   }
   if (task.dependsOn.length > 0) {
-    console.log(
-      chalk.gray('        Depends On:   ') +
-      chalk.bold.yellow(task.dependsOn.join(', '))
-    );
+    console.log(chalk.gray('        Depends On:   ') + chalk.bold.yellow(task.dependsOn.join(', ')));
   }
 }
 
@@ -108,27 +108,29 @@ function renderPlan(result: DecompositionResult): void {
 
   const bannerLines = [
     `${getBrandBadge('DECOMPOSITION')} ${chalk.bold.hex('#F1F5F9')('Build Plan Ready')}`,
-    `${chalk.gray('Goal:')} ${chalk.bold.hex('#A78BFA')(`"${result.goal}"`)}`
+    `${chalk.gray('Goal:')} ${chalk.bold.hex('#A78BFA')(`"${result.goal}"`)}`,
   ];
   console.log(renderPanel(bannerLines, chalk.hex('#A78BFA')));
 
   console.log('');
   console.log(
-    `  ${chalk.bold.hex('#CBD5E1')('Subtasks:')}   ${chalk.bold.green(String(result.tasks.length))} tasks` + ' │ ' +
-    `  ${chalk.bold.hex('#CBD5E1')('Complexity:')} ${complexityColor[result.estimatedComplexity](result.estimatedComplexity)}` + ' │ ' +
-    `  ${chalk.bold.hex('#CBD5E1')('Model:')}      ${chalk.gray(result.model)}`
+    `  ${chalk.bold.hex('#CBD5E1')('Subtasks:')}   ${chalk.bold.green(String(result.tasks.length))} tasks` +
+      ' │ ' +
+      `  ${chalk.bold.hex('#CBD5E1')('Complexity:')} ${complexityColor[result.estimatedComplexity](result.estimatedComplexity)}` +
+      ' │ ' +
+      `  ${chalk.bold.hex('#CBD5E1')('Model:')}      ${chalk.gray(result.model)}`,
   );
   console.log(renderDivider(75));
 
   // Dependency graph summary
-  const independent = result.tasks.filter(t => t.dependsOn.length === 0);
-  const dependent = result.tasks.filter(t => t.dependsOn.length > 0);
+  const independent = result.tasks.filter((t) => t.dependsOn.length === 0);
+  const dependent = result.tasks.filter((t) => t.dependsOn.length > 0);
   console.log('');
   console.log(
     `  ${chalk.bold.hex('#94A3B8')('⚡ Pipeline:')}  ` +
-    chalk.bold.green(`${independent.length} Parallel Initializers`) +
-    chalk.gray(' ➔ ') +
-    chalk.bold.yellow(`${dependent.length} Sequential Chain-links`)
+      chalk.bold.green(`${independent.length} Parallel Initializers`) +
+      chalk.gray(' ➔ ') +
+      chalk.bold.yellow(`${dependent.length} Sequential Chain-links`),
   );
 
   // Render each task
@@ -169,9 +171,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
   try {
     const { resolveCredential } = require('../core/credentials');
     const resolved = resolveCredential(providerName, providerConfig.apiKey);
-    const enrichedConfig = resolved
-      ? { ...providerConfig, apiKey: resolved.key }
-      : providerConfig;
+    const enrichedConfig = resolved ? { ...providerConfig, apiKey: resolved.key } : providerConfig;
     provider = createProviderDirect(providerName, enrichedConfig, plannerAgent.model);
   } catch (err: any) {
     console.log(chalk.red(`❌ Failed to create provider: ${err.message}`));
@@ -198,7 +198,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
     );
     spinner.succeed(
       chalk.green(`Decomposed into ${result.tasks.length} subtasks`) +
-      chalk.gray(` (${result.tokensUsed} tokens, ${(result.latencyMs / 1000).toFixed(1)}s)`)
+        chalk.gray(` (${result.tokensUsed} tokens, ${(result.latencyMs / 1000).toFixed(1)}s)`),
     );
   } catch (err: any) {
     // ── SAFE SHUTDOWN: stop spinner BEFORE exiting to prevent UV_HANDLE_CLOSING assertion ──
@@ -289,10 +289,10 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
       const icon = agent?.role === 'planner' ? '🧠' : agent?.role === 'coder' ? '⚙️' : '🎨';
       console.log(
         chalk.gray('    ') +
-        `${icon} ${chalk.bold(task.title)}` +
-        chalk.gray(' → ') +
-        chalk.cyan(`${decision.agentId}`) +
-        chalk.gray(` (score: ${decision.score.toFixed(2)})`)
+          `${icon} ${chalk.bold(task.title)}` +
+          chalk.gray(' → ') +
+          chalk.cyan(`${decision.agentId}`) +
+          chalk.gray(` (score: ${decision.score.toFixed(2)})`),
       );
     }
   }
@@ -322,19 +322,28 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
   console.log('');
   const createdIds: string[] = [];
 
-  // Build a title → generated-task-ID lookup.
-  // The decomposer returns dependsOn as task TITLES (e.g., "Build Auth API"),
-  // but the dependency gate checks against task IDs (e.g., "AUTO__123456").
-  // We resolve titles to IDs as tasks are created sequentially.
+  // Build a deterministic title -> taskId map FIRST so dependencies can
+  // reference IDs regardless of task creation order.
   const titleToId = new Map<string, string>();
+  for (const task of result.tasks) {
+    const stableTitleSlug = task.title
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .substring(0, 24);
+    const stableId = `AUTO__${Date.now()}_${stableTitleSlug}`;
+    titleToId.set(task.title, stableId);
+  }
 
   for (const task of result.tasks) {
-    // Resolve dependsOn titles → actual task IDs
+    // Resolve dependsOn titles -> actual task IDs; drop dangling/self refs.
     const resolvedDeps = task.dependsOn
-      .map(depTitle => titleToId.get(depTitle) || depTitle)
-      .filter(dep => dep !== task.title); // remove self-references
+      .map((depTitle) => titleToId.get(depTitle))
+      .filter((depId): depId is string => Boolean(depId))
+      .filter((depId) => depId !== titleToId.get(task.title));
 
     const created = createTask({
+      id: titleToId.get(task.title),
       description: `## ${task.title}\n\n${task.description}`,
       capabilities: task.requiredCapabilities,
       complexity: task.complexity,
@@ -342,8 +351,9 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
       dependsOn: resolvedDeps,
     });
     createdIds.push(created.id);
-    titleToId.set(task.title, created.id);
-    console.log(`  ${icons.done} ${chalk.bold.green(`Queued:`)} ${chalk.white(task.title)} ${chalk.gray(`➔ ${created.id}`)}`);
+    console.log(
+      `  ${icons.done} ${chalk.bold.green(`Queued:`)} ${chalk.white(task.title)} ${chalk.gray(`➔ ${created.id}`)}`,
+    );
   }
 
   console.log('');

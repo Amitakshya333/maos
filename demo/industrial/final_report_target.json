@@ -1,0 +1,21 @@
+{
+  "reportId": "MAOS-T07-DEMO-FINAL",
+  "outputPath": "demo/industrial/generated/turbine_t07_safety_report.md",
+  "requiredSections": [
+    "Executive decision",
+    "Evidence inventory and provenance",
+    "Sensor anomalies",
+    "Configured threshold audit",
+    "Maintenance-report correlation",
+    "Recommended actions",
+    "Limitations and disclaimer"
+  ],
+  "requiredFindingFields": ["source", "row", "timestamp", "measurement", "observedValue", "unit", "ruleId", "threshold", "verdict"],
+  "expectedOverallVerdict": "FAIL",
+  "languageRules": [
+    "Call the thresholds demonstration rules, not a certified standard.",
+    "Separate deterministic verdicts from model interpretation.",
+    "Do not claim the turbine is safe to operate.",
+    "Include immediate escalation and controlled shutdown assessment in recommendations."
+  ]
+}

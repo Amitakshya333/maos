@@ -35,6 +35,8 @@ export interface TelemetryRecord {
   error?: string;
   filesChanged: string[];
   summary: string;
+  taskResult?: 'success' | 'partial_success' | 'failed' | 'no_mutation';
+  exitCode?: number;
 }
 
 export interface TelemetrySummary {
@@ -44,18 +46,24 @@ export interface TelemetrySummary {
   totalCostUSD: number;
   avgLatencyMs: number;
   avgIterations: number;
-  byAgent: Record<string, {
-    runs: number;
-    successRate: number;
-    avgTokens: number;
-    avgCost: number;
-    avgLatency: number;
-  }>;
-  byProvider: Record<string, {
-    runs: number;
-    successRate: number;
-    totalCost: number;
-  }>;
+  byAgent: Record<
+    string,
+    {
+      runs: number;
+      successRate: number;
+      avgTokens: number;
+      avgCost: number;
+      avgLatency: number;
+    }
+  >;
+  byProvider: Record<
+    string,
+    {
+      runs: number;
+      successRate: number;
+      totalCost: number;
+    }
+  >;
   topCapabilities: Array<{ capability: string; count: number; successRate: number }>;
 }
 
@@ -79,10 +87,7 @@ function ensureTelemetryDir(projectRoot: string): void {
 /**
  * Record a telemetry event for a completed task.
  */
-export function recordTelemetry(
-  projectRoot: string,
-  record: TelemetryRecord,
-): void {
+export function recordTelemetry(projectRoot: string, record: TelemetryRecord): void {
   try {
     ensureTelemetryDir(projectRoot);
     const filePath = getTelemetryPath(projectRoot);
@@ -101,9 +106,10 @@ export function readTelemetry(projectRoot: string): TelemetryRecord[] {
   const filePath = getTelemetryPath(projectRoot);
   if (!fs.existsSync(filePath)) return [];
 
-  const lines = fs.readFileSync(filePath, 'utf-8')
+  const lines = fs
+    .readFileSync(filePath, 'utf-8')
     .split('\n')
-    .filter(l => l.trim().length > 0);
+    .filter((l) => l.trim().length > 0);
 
   const records: TelemetryRecord[] = [];
   for (const line of lines) {
@@ -136,7 +142,7 @@ export function summarizeTelemetry(projectRoot: string): TelemetrySummary {
     };
   }
 
-  const successes = records.filter(r => r.success).length;
+  const successes = records.filter((r) => r.success).length;
   const totalTokens = records.reduce((sum, r) => sum + r.totalTokens, 0);
   const totalCost = records.reduce((sum, r) => sum + r.costUSD, 0);
   const totalLatency = records.reduce((sum, r) => sum + r.latencyMs, 0);
@@ -151,8 +157,8 @@ export function summarizeTelemetry(projectRoot: string): TelemetrySummary {
     byAgent[r.agentId].runs++;
   }
   for (const agentId of Object.keys(byAgent)) {
-    const agentRecords = records.filter(r => r.agentId === agentId);
-    const agentSuccesses = agentRecords.filter(r => r.success).length;
+    const agentRecords = records.filter((r) => r.agentId === agentId);
+    const agentSuccesses = agentRecords.filter((r) => r.success).length;
     byAgent[agentId].successRate = agentSuccesses / agentRecords.length;
     byAgent[agentId].avgTokens = agentRecords.reduce((s, r) => s + r.totalTokens, 0) / agentRecords.length;
     byAgent[agentId].avgCost = agentRecords.reduce((s, r) => s + r.costUSD, 0) / agentRecords.length;
@@ -169,8 +175,8 @@ export function summarizeTelemetry(projectRoot: string): TelemetrySummary {
     byProvider[r.provider].totalCost += r.costUSD;
   }
   for (const prov of Object.keys(byProvider)) {
-    const provRecords = records.filter(r => r.provider === prov);
-    byProvider[prov].successRate = provRecords.filter(r => r.success).length / provRecords.length;
+    const provRecords = records.filter((r) => r.provider === prov);
+    byProvider[prov].successRate = provRecords.filter((r) => r.success).length / provRecords.length;
   }
 
   // Top capabilities

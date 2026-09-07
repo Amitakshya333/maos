@@ -10,7 +10,7 @@
  * This is a thin adapter.
  */
 
-import { IRuntime, RuntimeTask, RuntimeResult } from './runtime';
+import { IRuntime, RuntimeTask, RuntimeResult, RuntimeCapabilityProfile } from './runtime';
 import { IProvider, ProviderConfig } from './provider';
 import { runAgent, AgentConfig, AgentTask } from '../core/agent-runner';
 import { MessageBus, createEvent } from '../core/message-bus';
@@ -24,6 +24,12 @@ export interface ApiRuntimeConfig {
 
   /** Agent capabilities */
   capabilities: string[];
+
+  /** Optional role-specific instructions appended to the standard MAOS prompt */
+  systemPrompt?: string;
+
+  /** Optional least-privilege tool allowlist */
+  allowedTools?: string[];
 
   /** Max tool-calling iterations */
   maxIterations: number;
@@ -46,13 +52,6 @@ export class ApiRuntime implements IRuntime {
   }
 
   async execute(task: RuntimeTask): Promise<RuntimeResult> {
-    // Emit TASK_STARTED
-    this.bus.emit(createEvent('TASK_STARTED', task.agentId, {
-      taskId: task.id,
-      provider: this.name,
-      model: this.model,
-    }, task.id, 'api'));
-
     // Build agent config (same shape as before)
     const agentConfig: AgentConfig = {
       id: task.agentId,
@@ -60,6 +59,8 @@ export class ApiRuntime implements IRuntime {
       provider: this.name,
       model: this.model,
       capabilities: this.config.capabilities,
+      systemPrompt: this.config.systemPrompt,
+      allowedTools: this.config.allowedTools,
       scope: task.scope,
       maxIterations: this.config.maxIterations,
     };
@@ -79,25 +80,22 @@ export class ApiRuntime implements IRuntime {
         task.projectRoot,
         this.config.costPerMillionTokens,
         (iteration, action) => {
-          // Emit progress events to the bus
-          this.bus.emit(createEvent('TASK_PROGRESS', task.agentId, {
-            iteration,
-            action,
-            provider: this.name,
-          }, task.id, 'api'));
+          // Emit progress events to the bus (these are unique to API runtimes)
+          this.bus.emit(
+            createEvent(
+              'TASK_PROGRESS',
+              task.agentId,
+              {
+                iteration,
+                action,
+                provider: this.name,
+              },
+              task.id,
+              'api',
+            ),
+          );
         },
       );
-
-      // Emit completion event
-      const eventType = result.success ? 'TASK_COMPLETED' : 'TASK_FAILED';
-      this.bus.emit(createEvent(eventType, task.agentId, {
-        summary: result.summary,
-        filesChanged: result.filesChanged,
-        iterations: result.iterations,
-        totalTokens: result.totalTokens,
-        costUSD: result.costUSD,
-        latencyMs: result.latencyMs,
-      }, task.id, 'api'));
 
       // Map AgentRunResult -> RuntimeResult
       return {
@@ -110,13 +108,10 @@ export class ApiRuntime implements IRuntime {
         latencyMs: result.latencyMs,
         runtimeType: 'api',
         error: result.error,
+        taskResult: result.taskResult,
+        exitCode: result.exitCode,
       };
     } catch (err: any) {
-      // Emit failure
-      this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-        error: err.message,
-      }, task.id, 'api'));
-
       return {
         success: false,
         summary: `API runtime error: ${err.message}`,
@@ -127,14 +122,34 @@ export class ApiRuntime implements IRuntime {
         latencyMs: 0,
         runtimeType: 'api',
         error: err.message,
+        taskResult: 'failed',
+        exitCode: 1,
       };
     }
   }
 
-  async dispose(): Promise<void> {
-    this.bus.emit(createEvent('AGENT_DISPOSED', 'api-runtime', {
+  getCapabilityProfile(): RuntimeCapabilityProfile {
+    return {
+      runtimeId: 'api-runtime', // overridden by orchestrator per agent
+      runtimeType: 'api',
       provider: this.name,
-    }));
+      supportsTools: true,
+      supportsCodeMutation: true,
+      supportsLongContext: true, // API models typically handle large contexts
+      supportsStreaming: false, // MAOS uses non-streaming tool-calling
+      supportsParallelism: false, // one task per agent instance
+      estimatedAvgLatencyMs: 60_000, // 60s typical for tool-calling chains
+      estimatedCostPerTask: 0.05, // ~$0.05 rough hint; real values from telemetry
+      concurrencyLimit: 1,
+    };
+  }
+
+  async dispose(): Promise<void> {
+    this.bus.emit(
+      createEvent('AGENT_DISPOSED', 'api-runtime', {
+        provider: this.name,
+      }),
+    );
     // No resources to clean up for API runtimes
   }
 }

@@ -6,6 +6,8 @@ import { saveCheckpoint, deleteCheckpoint, TaskCheckpoint } from './checkpoint';
 import { getMessageBus, createEvent } from './message-bus';
 import { getBrainContext } from './brain';
 import { getMemoryStore } from './context-memory';
+import { ProgressTracker } from './progress-tracker';
+import { compressContext, snapshotFilesystem, getChangedFiles, retryOnTransient } from './context-manager';
 
 /**
  * Agent configuration passed to the runner.
@@ -18,6 +20,8 @@ export interface AgentConfig {
   capabilities: string[];
   scope: string[];
   maxIterations: number;
+  systemPrompt?: string;
+  allowedTools?: string[];
 }
 
 /**
@@ -43,121 +47,14 @@ export interface AgentRunResult {
   costUSD: number;
   latencyMs: number;
   error?: string;
+  taskResult?: 'success' | 'no_mutation' | 'partial_success' | 'failed';
+  exitCode?: number;
 }
 
 // ---- Constants ----
-const CONTEXT_TOKEN_LIMIT = 60_000;  // Compress context when exceeding this
-const NUDGE_AT_PERCENT = 0.80;       // Nudge agent to finish at 80% of iteration budget
-const MAX_BONUS_ITERATIONS = 5;      // Extra iterations granted for productive agents
-
-// ---- SEMANTIC PROGRESS TRACKER ----
-
-/**
- * Tracks whether the agent is making genuine progress vs spinning in place.
- *
- * Progress is detected when the agent:
- *   - Reads a file it has never read before
- *   - Lists a directory it has never listed before
- *   - Runs a search query it has never run before
- *   - Uses a write/exec/commit tool (always productive)
- *   - Calls a diverse mix of tool types
- *
- * Idle is ONLY counted when:
- *   - Repeated identical reads (same path, same content)
- *   - Repeated identical searches (same query)
- *   - No new files/directories discovered
- *   - No tool diversity (same tool called repeatedly)
- *   - No state progression whatsoever
- */
-class ProgressTracker {
-  private seenFiles = new Set<string>();       // Files already read
-  private seenDirs = new Set<string>();        // Dirs already listed
-  private seenSearches = new Set<string>();    // Search queries already run
-  private toolCallsThisIteration = new Set<string>(); // Tool types this iteration
-  private lastIterationTools: string[] = [];   // Tool names from last iteration
-
-  idleCount = 0;
-  private readonly MAX_IDLE = 6;
-
-  /**
-   * Record all tool calls from one iteration and return whether this
-   * iteration was productive (true) or idle (false).
-   */
-  recordIteration(toolCalls: Array<{ name: string; args: Record<string, any> }>): boolean {
-    this.toolCallsThisIteration.clear();
-    let newContextDiscovered = false;
-    let hasMutatingCall = false;
-    const thisIterToolNames: string[] = [];
-
-    for (const { name, args } of toolCalls) {
-      this.toolCallsThisIteration.add(name);
-      thisIterToolNames.push(name);
-
-      switch (name) {
-        case 'read_file': {
-          const p = (args.path || '').toLowerCase().trim();
-          if (p && !this.seenFiles.has(p)) {
-            this.seenFiles.add(p);
-            newContextDiscovered = true; // New file = new context
-          }
-          break;
-        }
-        case 'list_dir': {
-          const d = (args.path || '.').toLowerCase().trim();
-          if (!this.seenDirs.has(d)) {
-            this.seenDirs.add(d);
-            newContextDiscovered = true; // New directory = new context
-          }
-          break;
-        }
-        case 'search_code': {
-          // Normalize query for dedup
-          const q = (args.query || '').toLowerCase().trim().substring(0, 80);
-          if (q && !this.seenSearches.has(q)) {
-            this.seenSearches.add(q);
-            newContextDiscovered = true; // New search = new context
-          }
-          break;
-        }
-        case 'write_file':
-        case 'run_command':
-        case 'git_commit':
-          hasMutatingCall = true; // Always productive
-          newContextDiscovered = true;
-          break;
-      }
-    }
-
-    // Tool diversity: using different tool types from last iteration = exploration
-    const toolDiversitySignal = !this.arraysIdentical(thisIterToolNames, this.lastIterationTools)
-      && thisIterToolNames.length > 0;
-    this.lastIterationTools = thisIterToolNames;
-
-    const productive = hasMutatingCall || newContextDiscovered || toolDiversitySignal;
-
-    if (productive) {
-      this.idleCount = 0;
-    } else {
-      this.idleCount++;
-    }
-
-    return productive;
-  }
-
-  isStuck(): boolean {
-    return this.idleCount >= this.MAX_IDLE;
-  }
-
-  statusLine(): string {
-    return `files_seen=${this.seenFiles.size} dirs_seen=${this.seenDirs.size} searches_seen=${this.seenSearches.size} idle=${this.idleCount}/${this.MAX_IDLE}`;
-  }
-
-  private arraysIdentical(a: string[], b: string[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => v === b[i]);
-  }
-}
-
+const CONTEXT_TOKEN_LIMIT = 60_000; // Compress context when exceeding this
+const NUDGE_AT_PERCENT = 0.8; // Nudge agent to finish at 80% of iteration budget
+const MAX_BONUS_ITERATIONS = 5; // Extra iterations granted for productive agents
 
 function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: string): string {
   // ---- BRAIN INJECTION ----
@@ -169,7 +66,9 @@ function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: str
     if (brainCtx) {
       brainSection = `\n\n${brainCtx}\n`;
     }
-  } catch { /* brain not available — non-fatal */ }
+  } catch {
+    /* brain not available — non-fatal */
+  }
 
   // ---- CONTEXT MEMORY INJECTION ----
   // Inject recent team memories so this agent benefits from other agents' discoveries.
@@ -182,7 +81,9 @@ function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: str
         memorySection = memCtx;
       }
     }
-  } catch { /* memory not available — non-fatal */ }
+  } catch {
+    /* memory not available — non-fatal */
+  }
 
   return `You are ${agent.id}, a ${agent.role} agent working on this project.
 
@@ -220,7 +121,7 @@ ${task.description}
 
 /**
  * Run an agent on a task.
- * 
+ *
  * Agentic loop with:
  * - Sliding context window (prevents token explosion)
  * - Productive iteration detection (extends budget for working agents)
@@ -256,7 +157,6 @@ export async function runAgent(
     }
   };
 
-
   // Build conversation
   const systemPrompt = buildSystemPrompt(agent, task, projectRoot);
   const messages: ChatMessage[] = [
@@ -279,14 +179,18 @@ export async function runAgent(
       // Emitted so the HealthMonitor knows the agent is alive.
       if (iterations % 5 === 0) {
         try {
-          getMessageBus().emit(createEvent(
-            'HEARTBEAT',
-            agent.id,
-            { iteration: iterations, maxIterations: getEffectiveMax(), totalTokens },
-            task.id,
-            'api',
-          ));
-        } catch { /* non-fatal */ }
+          getMessageBus().emit(
+            createEvent(
+              'HEARTBEAT',
+              agent.id,
+              { iteration: iterations, maxIterations: getEffectiveMax(), totalTokens },
+              task.id,
+              'api',
+            ),
+          );
+        } catch {
+          /* non-fatal */
+        }
       }
 
       // ---- CONTEXT COMPRESSION ----
@@ -315,7 +219,10 @@ export async function runAgent(
       );
       totalTokens += response.usage.totalTokens;
 
-      logger.debug(agent.id, `Iteration ${iterations}/${getEffectiveMax()}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms (total: ${totalTokens})`);
+      logger.debug(
+        agent.id,
+        `Iteration ${iterations}/${getEffectiveMax()}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms (total: ${totalTokens})`,
+      );
 
       // Add assistant message
       messages.push({
@@ -331,7 +238,8 @@ export async function runAgent(
           logger.warn(agent.id, 'Model stopped without calling task_complete -- nudging to finalize');
           messages.push({
             role: 'user',
-            content: 'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
+            content:
+              'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
           });
 
           const retryResponse = await retryOnTransient(
@@ -352,17 +260,31 @@ export async function runAgent(
           if (retryResponse.toolCalls.length > 0) {
             for (const tc of retryResponse.toolCalls) {
               let tcArgs: Record<string, any>;
-              try { tcArgs = JSON.parse(tc.function.arguments); } catch { tcArgs = {}; }
-              const { result, isComplete: done } = executeTool(tc.function.name, tcArgs, projectRoot, agent.scope, agent.id, task.id);
-              messages.push({ role: 'tool', content: result, tool_call_id: tc.id });
+              try {
+                tcArgs = JSON.parse(tc.function.arguments);
+              } catch {
+                tcArgs = {};
+              }
+              const { result, isComplete: done } = executeTool(
+                tc.function.name,
+                tcArgs,
+                projectRoot,
+                agent.scope,
+                agent.id,
+                task.id,
+              );
+              messages.push({ role: 'tool', name: tc.function.name, content: result, tool_call_id: tc.id });
               if (done) {
                 logger.success(agent.id, `Task completed (after nudge): ${tcArgs.summary || 'Task completed'}`);
                 deleteCheckpoint(projectRoot, task.id);
                 return {
-                  agentId: agent.id, taskId: task.id, success: true,
+                  agentId: agent.id,
+                  taskId: task.id,
+                  success: true,
                   summary: tcArgs.summary || 'Task completed',
                   filesChanged: tcArgs.files_changed || [],
-                  iterations, totalTokens,
+                  iterations,
+                  totalTokens,
                   costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
                   latencyMs: Date.now() - startTime,
                 };
@@ -401,37 +323,34 @@ export async function runAgent(
           hadMutatingToolCall = true;
           // Emit TASK_PROGRESS so HealthMonitor counts this as an implicit heartbeat
           try {
-            getMessageBus().emit(createEvent(
-              'TASK_PROGRESS',
-              agent.id,
-              {
-                tool: toolName,
-                iteration: iterations,
-                file: args.path || args.command || undefined,
-              },
-              task.id,
-              'api',
-            ));
-          } catch { /* non-fatal */ }
+            getMessageBus().emit(
+              createEvent(
+                'TASK_PROGRESS',
+                agent.id,
+                {
+                  tool: toolName,
+                  iteration: iterations,
+                  file: args.path || args.command || undefined,
+                },
+                task.id,
+                'api',
+              ),
+            );
+          } catch {
+            /* non-fatal */
+          }
         }
 
-        const { result, isComplete: done } = executeTool(
-          toolName,
-          args,
-          projectRoot,
-          agent.scope,
-          agent.id,
-          task.id,
-        );
+        const { result, isComplete: done } = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id);
 
         // Truncate huge tool results to prevent context bloat
-        const truncatedResult = result.length > 8000
-          ? result.substring(0, 8000) + '\n... [truncated, showing first 8000 chars]'
-          : result;
+        const truncatedResult =
+          result.length > 8000 ? result.substring(0, 8000) + '\n... [truncated, showing first 8000 chars]' : result;
 
         // Add tool result to conversation
         messages.push({
           role: 'tool',
+          name: toolName,
           content: truncatedResult,
           tool_call_id: toolCall.id,
         });
@@ -465,9 +384,13 @@ export async function runAgent(
       const filesChanged = currentSnapshot !== lastSnapshot;
 
       // Build tool call list for the tracker
-      const toolCallsForTracker = response.toolCalls.map(tc => {
+      const toolCallsForTracker = response.toolCalls.map((tc) => {
         let args: Record<string, any> = {};
-        try { args = JSON.parse(tc.function.arguments); } catch { /* skip */ }
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          /* skip */
+        }
         return { name: tc.function.name, args };
       });
 
@@ -486,7 +409,10 @@ export async function runAgent(
       } else {
         logger.debug(agent.id, `Idle iteration ${progress.idleCount}/${6}. ${progress.statusLine()}`);
         if (progress.isStuck()) {
-          logger.warn(agent.id, `Circuit breaker: agent truly stuck (no new files, no new searches, no new dirs, repeated calls). Stopping. ${progress.statusLine()}`);
+          logger.warn(
+            agent.id,
+            `Circuit breaker: agent truly stuck (no new files, no new searches, no new dirs, repeated calls). Stopping. ${progress.statusLine()}`,
+          );
           break; // Fall through to partial-success check below
         }
       }
@@ -503,9 +429,13 @@ export async function runAgent(
           progressPct: iterations / getEffectiveMax(),
           totalTokens,
           filesChanged: changedFiles,
-          lastToolCalls: response.toolCalls.map(tc => {
+          lastToolCalls: response.toolCalls.map((tc) => {
             let args: Record<string, any> = {};
-            try { args = JSON.parse(tc.function.arguments); } catch { /* skip */ }
+            try {
+              args = JSON.parse(tc.function.arguments);
+            } catch {
+              /* skip */
+            }
             return { name: tc.function.name, summary: JSON.stringify(args).substring(0, 100) };
           }),
           wasProductive: productive || filesChanged,
@@ -555,7 +485,6 @@ export async function runAgent(
       latencyMs: Date.now() - startTime,
       error: 'MAX_ITERATIONS',
     };
-
   } catch (err: any) {
     // ---- GRACEFUL FAILURE WITH PARTIAL SUCCESS ----
     const crashSnapshot = snapshotFilesystem(projectRoot);
@@ -593,200 +522,4 @@ export async function runAgent(
     // ALWAYS release file locks when the agent finishes (success or failure)
     releaseLocks();
   }
-}
-
-// ---- CONTEXT COMPRESSION ----
-
-/**
- * Sliding context window: when conversation gets too large,
- * compress older messages into a summary, keeping:
- * - System prompt (always)
- * - Last 6 message pairs (recent context)
- * - A compressed summary of everything in between
- */
-function compressContext(messages: ChatMessage[], logger: Logger, agentId: string): void {
-  // Keep at least system + user + 12 recent messages (6 pairs)
-  const KEEP_RECENT = 12;
-  if (messages.length <= KEEP_RECENT + 2) return;
-
-  const systemMsg = messages[0]; // System prompt
-  const recentMessages = messages.slice(-KEEP_RECENT);
-  const middleMessages = messages.slice(1, messages.length - KEEP_RECENT);
-
-  // Build a compressed summary of the middle messages
-  const summaryParts: string[] = [];
-  const filesRead = new Set<string>();
-  const filesWritten = new Set<string>();
-  const commandsRun: string[] = [];
-  let toolCallCount = 0;
-
-  for (const msg of middleMessages) {
-    if (msg.role === 'assistant' && msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
-        toolCallCount++;
-        try {
-          const args = JSON.parse(tc.function.arguments);
-          switch (tc.function.name) {
-            case 'read_file': filesRead.add(args.path); break;
-            case 'write_file': filesWritten.add(args.path); break;
-            case 'run_command': commandsRun.push(args.command?.substring(0, 80)); break;
-            case 'list_dir': filesRead.add(`DIR:${args.path}`); break;
-          }
-        } catch { /* skip */ }
-      }
-    }
-  }
-
-  if (filesRead.size > 0) summaryParts.push(`Files read: ${[...filesRead].join(', ')}`);
-  if (filesWritten.size > 0) summaryParts.push(`Files written: ${[...filesWritten].join(', ')}`);
-  if (commandsRun.length > 0) summaryParts.push(`Commands run: ${commandsRun.slice(-5).join('; ')}`);
-  summaryParts.push(`Total tool calls compressed: ${toolCallCount}`);
-
-  const compressedSummary: ChatMessage = {
-    role: 'user',
-    content: `[CONTEXT COMPRESSED - Previous ${middleMessages.length} messages summarized]\n${summaryParts.join('\n')}\n\nContinue your current task. The recent messages below are the most relevant context.`,
-  };
-
-  // Replace messages array in-place
-  messages.length = 0;
-  messages.push(systemMsg, compressedSummary, ...recentMessages);
-
-  logger.info(agentId, `Context compressed: ${middleMessages.length} messages -> 1 summary. Keeping ${KEEP_RECENT} recent.`);
-}
-
-// ---- FILESYSTEM SNAPSHOT ----
-
-/**
- * Snapshot the filesystem state for stuck detection.
- * Returns a hash based on file count + total modification time.
- */
-function snapshotFilesystem(dir: string): number {
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    let hash = 0;
-    let count = 0;
-
-    function walk(d: string, depth: number) {
-      if (depth > 6) return;
-      try {
-        const entries = fs.readdirSync(d, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-          const full = path.join(d, entry.name);
-          if (entry.isDirectory()) {
-            walk(full, depth + 1);
-          } else if (entry.isFile()) {
-            count++;
-            try {
-              const stat = fs.statSync(full);
-              hash += stat.mtimeMs + stat.size;
-            } catch { /* skip */ }
-          }
-        }
-      } catch { /* skip unreadable dirs */ }
-    }
-
-    walk(dir, 0);
-    return count * 100000 + Math.round(hash % 1_000_000_000);
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Get list of changed files since initial snapshot.
- * Compares modification times to detect files that were created or modified.
- */
-function getChangedFiles(projectRoot: string, initialSnapshotHash: number): string[] {
-  const changed: string[] = [];
-  const fsModule = require('fs');
-  const pathModule = require('path');
-
-  function walk(dir: string, depth: number) {
-    if (depth > 6) return;
-    try {
-      const entries = fsModule.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        const full = pathModule.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(full, depth + 1);
-        } else if (entry.isFile()) {
-          try {
-            const stat = fsModule.statSync(full);
-            // Check if file was modified in the last hour (proxy for "during this run")
-            if (Date.now() - stat.mtimeMs < 60 * 60 * 1000) {
-              changed.push(pathModule.relative(projectRoot, full).replace(/\\/g, '/'));
-            }
-          } catch { /* skip */ }
-        }
-      }
-    } catch { /* skip */ }
-  }
-
-  try {
-    walk(projectRoot, 0);
-  } catch { /* skip */ }
-
-  return changed.slice(0, 50); // Cap at 50 files
-}
-
-// ---- RETRY WITH EXPONENTIAL BACKOFF ----
-
-/**
- * Retry on transient errors with exponential backoff.
- * Handles: 429 rate limits, 500/502/503/504 server errors,
- * connection resets, timeouts, and malformed responses.
- * 
- * Backoff: 3s, 6s, 12s (doubles each attempt)
- */
-async function retryOnTransient<T>(
-  fn: () => Promise<T>,
-  maxRetries: number,
-  logger: Logger,
-  agentId: string,
-): Promise<T> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err: any) {
-      lastError = err;
-      const msg = err.message || '';
-      const isTransient =
-        msg.includes('429') ||
-        msg.includes('rate limit') ||
-        msg.includes('Rate limit') ||
-        msg.includes('500') ||
-        msg.includes('502') ||
-        msg.includes('503') ||
-        msg.includes('504') ||
-        msg.includes('Gateway') ||
-        msg.includes('gateway') ||
-        msg.includes('ECONNRESET') ||
-        msg.includes('ECONNREFUSED') ||
-        msg.includes('ETIMEDOUT') ||
-        msg.includes('EPIPE') ||
-        msg.includes('timed out') ||
-        msg.includes('Request timed out') ||
-        msg.includes('timeout') ||
-        msg.includes('Timeout') ||
-        msg.includes('Empty or malformed response') ||
-        msg.includes('socket hang up') ||
-        msg.includes('network');
-
-      if (!isTransient || attempt === maxRetries) {
-        throw err;
-      }
-
-      // Exponential backoff: 3s, 6s, 12s
-      const delayMs = 3000 * Math.pow(2, attempt);
-      logger.warn(agentId, `Transient error (attempt ${attempt + 1}/${maxRetries + 1}): ${msg.substring(0, 120)}. Retrying in ${delayMs / 1000}s...`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-
-  throw lastError || new Error('Retry failed');
 }

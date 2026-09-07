@@ -31,17 +31,17 @@ import { MessageBus, createEvent } from '../core/message-bus';
 // We make these specific (requiring trailing prompt-like symbols/structure) to avoid false-positives
 // in natural conversation/logs.
 const INTERACTIVE_PATTERNS = [
-  /^\s*>\s*$/m,                            // bare '>' prompt
-  /^\s*\$\s*$/m,                            // bare '$' prompt
-  /^\s*>>>\s*$/m,                           // Python REPL
-  /press\s+enter\s+to/i,                    // press enter to ...
-  /\(y\/n\)\s*$/mi,                         // ends with (y/n)
-  /\[Y\/n\]\s*$/mi,                         // ends with [Y/n]
-  /\bconfirm\b\s*[:?]\s*$/mi,                // confirm prompt (e.g. "confirm:")
-  /\b(?:log\s*in|sign\s*in|username|email)\b\s*[:?]\s*$/mi, // login / username prompt
-  /\bauthenticate\b\s*[:?]\s*$/mi,           // authenticate prompt
-  /\benter\b\s+(?:auth\s+)?token\b\s*[:?]\s*$/mi, // token prompt
-  /\bpassword\b\s*:\s*$/mi,                 // password: prompt
+  /^\s*>\s*$/m, // bare '>' prompt
+  /^\s*\$\s*$/m, // bare '$' prompt
+  /^\s*>>>\s*$/m, // Python REPL
+  /press\s+enter\s+to/i, // press enter to ...
+  /\(y\/n\)\s*$/im, // ends with (y/n)
+  /\[Y\/n\]\s*$/im, // ends with [Y/n]
+  /\bconfirm\b\s*[:?]\s*$/im, // confirm prompt (e.g. "confirm:")
+  /\b(?:log\s*in|sign\s*in|username|email)\b\s*[:?]\s*$/im, // login / username prompt
+  /\bauthenticate\b\s*[:?]\s*$/im, // authenticate prompt
+  /\benter\b\s+(?:auth\s+)?token\b\s*[:?]\s*$/im, // token prompt
+  /\bpassword\b\s*:\s*$/im, // password: prompt
 ];
 
 /** Check if output indicates interactive/REPL mode */
@@ -59,7 +59,7 @@ function detectInteractiveMode(output: string): string | null {
 
 /** Get last N lines of text */
 function lastLines(text: string, n: number): string {
-  const lines = text.split('\n').filter(l => l.trim().length > 0);
+  const lines = text.split('\n').filter((l) => l.trim().length > 0);
   return lines.slice(-n).join('\n');
 }
 
@@ -78,31 +78,40 @@ const CLI_PROFILES: Record<string, CliProfile> = {
   copilot: {
     command: 'copilot',
     buildArgs: (promptFile) => ['-p', fs.readFileSync(promptFile, 'utf-8'), '--yolo', '--no-ask-user'],
-    buildLauncherCommand: (promptFile, cliArgsStr) => `copilot -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --yolo --no-ask-user${cliArgsStr}`,
+    buildLauncherCommand: (promptFile, cliArgsStr) =>
+      `copilot -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --yolo --no-ask-user${cliArgsStr}`,
     authEnvKey: 'COPILOT_HOME',
   },
   codex: {
     command: 'codex',
-    buildArgs: (promptFile) => ['exec', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-bypass-approvals-and-sandbox'],
-    buildLauncherCommand: (promptFile, cliArgsStr) => `codex exec (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-bypass-approvals-and-sandbox${cliArgsStr}`,
+    buildArgs: (promptFile) => [
+      'exec',
+      fs.readFileSync(promptFile, 'utf-8'),
+      '--dangerously-bypass-approvals-and-sandbox',
+    ],
+    buildLauncherCommand: (promptFile, cliArgsStr) =>
+      `codex exec (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-bypass-approvals-and-sandbox${cliArgsStr}`,
     authEnvKey: 'CODEX_HOME',
   },
   opencode: {
     command: 'opencode',
     buildArgs: (promptFile) => ['run', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-skip-permissions'],
-    buildLauncherCommand: (promptFile, cliArgsStr) => `opencode run (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-skip-permissions${cliArgsStr}`,
+    buildLauncherCommand: (promptFile, cliArgsStr) =>
+      `opencode run (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-skip-permissions${cliArgsStr}`,
     authEnvKey: 'OPENCODE_HOME',
   },
   claude: {
     command: 'claude',
     buildArgs: (promptFile) => ['-p', fs.readFileSync(promptFile, 'utf-8'), '--dangerously-skip-permissions'],
-    buildLauncherCommand: (promptFile, cliArgsStr) => `claude -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-skip-permissions${cliArgsStr}`,
+    buildLauncherCommand: (promptFile, cliArgsStr) =>
+      `claude -p (Get-Content -Raw "${promptFile.replace(/\\/g, '\\\\')}") --dangerously-skip-permissions${cliArgsStr}`,
     authEnvKey: 'CLAUDE_CONFIG_DIR',
   },
   antigravity: {
     command: 'antigravity',
     buildArgs: (promptFile) => ['--prompt-file', promptFile],
-    buildLauncherCommand: (promptFile, cliArgsStr) => `antigravity --prompt-file "${promptFile.replace(/\\/g, '\\\\')}"${cliArgsStr}`,
+    buildLauncherCommand: (promptFile, cliArgsStr) =>
+      `antigravity --prompt-file "${promptFile.replace(/\\/g, '\\\\')}"${cliArgsStr}`,
     authEnvKey: undefined,
   },
 };
@@ -145,9 +154,9 @@ export interface CliRuntimeConfig {
  */
 function sanitizeForFilename(id: string): string {
   return id
-    .replace(/[:\\/<>|?*]/g, '_')  // Windows-invalid chars → underscore
-    .replace(/\.{2,}/g, '_')       // double dots → underscore
-    .slice(0, 80);                 // max 80 chars to stay well under path limits
+    .replace(/[:\\/<>|?*]/g, '_') // Windows-invalid chars → underscore
+    .replace(/\.{2,}/g, '_') // double dots → underscore
+    .slice(0, 80); // max 80 chars to stay well under path limits
 }
 
 // ---- CLI Runtime ----
@@ -171,17 +180,21 @@ export class CliRuntime implements IRuntime {
     if (process.platform !== 'win32') {
       throw new Error(
         `CLI runtime '${this.config.cliCommand}' requires Windows (PowerShell + Windows Terminal). ` +
-        `API runtimes (OpenAI, Anthropic, Gemini) work cross-platform. ` +
-        `Set runtime: "api" in your agent config for cross-platform use.`
+          `API runtimes (OpenAI, Anthropic, Gemini) work cross-platform. ` +
+          `Set runtime: "api" in your agent config for cross-platform use.`,
       );
     }
 
     // Validate agent ID, CLI command name, and CLI arguments to prevent command/shell injection attacks
     if (!/^[a-zA-Z0-9_-]+$/.test(task.agentId)) {
-      throw new Error(`Security Violation: Invalid agent ID '${task.agentId}'. Agent IDs must only contain alphanumeric characters, underscores, and dashes.`);
+      throw new Error(
+        `Security Violation: Invalid agent ID '${task.agentId}'. Agent IDs must only contain alphanumeric characters, underscores, and dashes.`,
+      );
     }
     if (!/^[a-zA-Z0-9_-]+$/.test(this.config.cliCommand)) {
-      throw new Error(`Security Violation: Invalid CLI command '${this.config.cliCommand}'. CLI commands must only contain alphanumeric characters, underscores, and dashes.`);
+      throw new Error(
+        `Security Violation: Invalid CLI command '${this.config.cliCommand}'. CLI commands must only contain alphanumeric characters, underscores, and dashes.`,
+      );
     }
     for (const arg of this.config.cliArgs) {
       if (/[\;&\|`\$\(\)]/.test(arg)) {
@@ -208,10 +221,10 @@ export class CliRuntime implements IRuntime {
     // file-lock contention across overlapping executions of the same agent.
     const taskSlug = sanitizeForFilename(task.id);
     const fileBase = `${taskSlug}_${task.agentId}`;
-    const cliLogFile  = path.join(logsDir, `${fileBase}_cli.log`);
-    const stdoutFile  = path.join(logsDir, `${fileBase}_stdout.log`);
-    const stderrFile  = path.join(logsDir, `${fileBase}_stderr.log`);
-    const exitFile    = path.join(logsDir, `${fileBase}_exit.txt`);
+    const cliLogFile = path.join(logsDir, `${fileBase}_cli.log`);
+    const stdoutFile = path.join(logsDir, `${fileBase}_stdout.log`);
+    const stderrFile = path.join(logsDir, `${fileBase}_stderr.log`);
+    const exitFile = path.join(logsDir, `${fileBase}_exit.txt`);
     // Liveness file: launcher writes a timestamp every 5s while alive.
     // If this file goes stale (>15s), the launcher process was killed abruptly.
     const livenessFile = path.join(logsDir, `${fileBase}_liveness.txt`);
@@ -238,7 +251,7 @@ export class CliRuntime implements IRuntime {
     clearFile(exitFile);
     clearFile(livenessFile);
 
-    const delayMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const delayMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     const writeFileWithRetry = async (filePath: string, content: string, retries = 5, delay = 200) => {
       for (let i = 0; i < retries; i++) {
         try {
@@ -262,9 +275,7 @@ export class CliRuntime implements IRuntime {
     // 3. Resolve auth env vars to absolute paths
     const resolvedAuth: Record<string, string> = {};
     for (const [key, val] of Object.entries(this.config.authEnv)) {
-      resolvedAuth[key] = path.isAbsolute(val)
-        ? val
-        : path.resolve(task.projectRoot, val);
+      resolvedAuth[key] = path.isAbsolute(val) ? val : path.resolve(task.projectRoot, val);
       // Ensure auth dir exists
       if (!fs.existsSync(resolvedAuth[key])) {
         fs.mkdirSync(resolvedAuth[key], { recursive: true });
@@ -275,19 +286,31 @@ export class CliRuntime implements IRuntime {
     // Launcher is also task-scoped so a retry never clobbers an active launcher
     // that may still be referenced by a lingering PowerShell process.
     const launcherFile = path.join(launchersDir, `${fileBase}_launcher.ps1`);
-    const launcherContent = this.buildLauncher(task, promptFile, resolvedAuth, stdoutFile, stderrFile, exitFile, livenessFile);
+    const launcherContent = this.buildLauncher(
+      task,
+      promptFile,
+      resolvedAuth,
+      stdoutFile,
+      stderrFile,
+      exitFile,
+      livenessFile,
+    );
     await writeFileWithRetry(launcherFile, launcherContent);
+
+    const keepTerminalOpen = process.env.MAOS_CLI_KEEP_TERMINAL_OPEN === '1';
 
     // 5. Open Windows Terminal tab securely using spawnSync (no shell evaluation)
     try {
       const wtArgs = [
         'new-tab',
-        '--title', task.agentId,
+        '--title',
+        task.agentId,
         '--',
         'pwsh.exe',
         '-NoProfile',
-        '-NoExit',
-        '-File', launcherFile
+        ...(keepTerminalOpen ? ['-NoExit'] : []),
+        '-File',
+        launcherFile,
       ];
       const spawnResult = child_process.spawnSync('wt.exe', wtArgs, {
         cwd: task.projectRoot,
@@ -299,13 +322,30 @@ export class CliRuntime implements IRuntime {
         throw spawnResult.error;
       }
 
-      this.bus.emit(createEvent('TASK_PROGRESS', task.agentId, {
-        action: 'terminal-tab-opened',
-        cli: this.config.cliCommand,
-      }, task.id, 'cli'));
+      this.bus.emit(
+        createEvent(
+          'TASK_PROGRESS',
+          task.agentId,
+          {
+            action: 'terminal-tab-opened',
+            cli: this.config.cliCommand,
+          },
+          task.id,
+          'cli',
+        ),
+      );
     } catch (err: any) {
       // WT not available — fall back to spawning a hidden process
-      return this.executeFallback(task, promptFile, resolvedAuth, beforeSnapshot, startTime, cliLogFile, stdoutFile, stderrFile);
+      return this.executeFallback(
+        task,
+        promptFile,
+        resolvedAuth,
+        beforeSnapshot,
+        startTime,
+        cliLogFile,
+        stdoutFile,
+        stderrFile,
+      );
     }
 
     // 6. Monitor completion via lifecycle hierarchy
@@ -322,10 +362,7 @@ export class CliRuntime implements IRuntime {
     // 7. Archive task logs (non-blocking) so the logs/ dir doesn't fill up.
     // Logs are moved to logs/archive/ and kept for 7 days before deletion.
     setImmediate(() => {
-      this.archiveTaskLogs(
-        [cliLogFile, stdoutFile, stderrFile, exitFile, livenessFile, launcherFile],
-        archiveDir,
-      );
+      this.archiveTaskLogs([cliLogFile, stdoutFile, stderrFile, exitFile, livenessFile, launcherFile], archiveDir);
     });
 
     return result;
@@ -347,10 +384,7 @@ export class CliRuntime implements IRuntime {
   ): Promise<RuntimeResult> {
     const profile = CLI_PROFILES[this.config.cliCommand];
     const command = profile?.command || this.config.cliCommand;
-    const args = [
-      ...(profile?.buildArgs(promptFile) || [promptFile]),
-      ...this.config.cliArgs,
-    ];
+    const args = [...(profile?.buildArgs(promptFile) || [promptFile]), ...this.config.cliArgs];
 
     return new Promise((resolve) => {
       const child = child_process.spawn(command, args, {
@@ -371,15 +405,23 @@ export class CliRuntime implements IRuntime {
       fs.writeFileSync(cliLogFile, logHeader, 'utf-8');
 
       const appendLog = (data: string) => {
-        try { fs.appendFileSync(cliLogFile, data, 'utf-8'); } catch { /* ignore */ }
+        try {
+          fs.appendFileSync(cliLogFile, data, 'utf-8');
+        } catch {
+          /* ignore */
+        }
       };
 
       child.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         output += chunk;
         lastOutputTime = Date.now();
-        try { fs.appendFileSync(stdoutFile, chunk, 'utf-8'); } catch {}
-        try { fs.appendFileSync(cliLogFile, `[stdout] ${chunk}`, 'utf-8'); } catch {}
+        try {
+          fs.appendFileSync(stdoutFile, chunk, 'utf-8');
+        } catch {}
+        try {
+          fs.appendFileSync(cliLogFile, `[stdout] ${chunk}`, 'utf-8');
+        } catch {}
 
         // Check for interactive mode patterns
         if (!interactiveDetected) {
@@ -394,8 +436,12 @@ export class CliRuntime implements IRuntime {
         const chunk = data.toString();
         output += chunk;
         lastOutputTime = Date.now();
-        try { fs.appendFileSync(stderrFile, chunk, 'utf-8'); } catch {}
-        try { fs.appendFileSync(cliLogFile, `[stderr] ${chunk}`, 'utf-8'); } catch {}
+        try {
+          fs.appendFileSync(stderrFile, chunk, 'utf-8');
+        } catch {}
+        try {
+          fs.appendFileSync(cliLogFile, `[stderr] ${chunk}`, 'utf-8');
+        } catch {}
       });
 
       // ---- Interactive Mode Detection (first 15 seconds) ----
@@ -415,11 +461,19 @@ export class CliRuntime implements IRuntime {
           ].join('\n');
           appendLog(`\n[MAOS] INTERACTIVE MODE DETECTED: ${msg}\n`);
 
-          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-            reason: 'interactive-mode',
-            cli: this.config.cliCommand,
-            taskResult: 'failed',
-          }, task.id, 'cli'));
+          this.bus.emit(
+            createEvent(
+              'TASK_FAILED',
+              task.agentId,
+              {
+                reason: 'interactive-mode',
+                cli: this.config.cliCommand,
+                taskResult: 'failed',
+              },
+              task.id,
+              'cli',
+            ),
+          );
 
           resolve({
             success: false,
@@ -455,11 +509,19 @@ export class CliRuntime implements IRuntime {
           ].join('\n');
           appendLog(`\n[MAOS] INTERACTIVE MODE DETECTED: ${msg}\n`);
 
-          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-            reason: 'interactive-mode',
-            pattern: interactivePattern,
-            taskResult: 'failed',
-          }, task.id, 'cli'));
+          this.bus.emit(
+            createEvent(
+              'TASK_FAILED',
+              task.agentId,
+              {
+                reason: 'interactive-mode',
+                pattern: interactivePattern,
+                taskResult: 'failed',
+              },
+              task.id,
+              'cli',
+            ),
+          );
 
           resolve({
             success: false,
@@ -484,12 +546,20 @@ export class CliRuntime implements IRuntime {
         const lastOut = lastLines(output, 20);
         appendLog(`\n[MAOS] TIMEOUT after ${this.config.timeoutMs}ms\n`);
 
-        this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-          reason: 'timeout',
-          timeoutMs: this.config.timeoutMs,
-          lastOutput: lastOut.substring(0, 200),
-          taskResult: 'failed',
-        }, task.id, 'cli'));
+        this.bus.emit(
+          createEvent(
+            'TASK_FAILED',
+            task.agentId,
+            {
+              reason: 'timeout',
+              timeoutMs: this.config.timeoutMs,
+              lastOutput: lastOut.substring(0, 200),
+              taskResult: 'failed',
+            },
+            task.id,
+            'cli',
+          ),
+        );
       }, this.config.timeoutMs);
 
       child.on('exit', (code) => {
@@ -510,12 +580,15 @@ export class CliRuntime implements IRuntime {
           taskResult = 'no_mutation';
         }
 
-        this.bus.emit(createEvent(
-          success ? 'TASK_COMPLETED' : 'TASK_FAILED',
-          task.agentId,
-          { exitCode: code, filesChanged: filesChanged.length, taskResult },
-          task.id, 'cli',
-        ));
+        this.bus.emit(
+          createEvent(
+            success ? 'TASK_COMPLETED' : 'TASK_FAILED',
+            task.agentId,
+            { exitCode: code, filesChanged: filesChanged.length, taskResult },
+            task.id,
+            'cli',
+          ),
+        );
 
         resolve({
           success,
@@ -541,10 +614,18 @@ export class CliRuntime implements IRuntime {
 
         appendLog(`\n[MAOS] Process error: ${err.message}\n`);
 
-        this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-          error: err.message,
-          taskResult: 'failed',
-        }, task.id, 'cli'));
+        this.bus.emit(
+          createEvent(
+            'TASK_FAILED',
+            task.agentId,
+            {
+              error: err.message,
+              taskResult: 'failed',
+            },
+            task.id,
+            'cli',
+          ),
+        );
 
         resolve({
           success: false,
@@ -588,7 +669,7 @@ export class CliRuntime implements IRuntime {
     stdoutFile: string,
     stderrFile: string,
   ): Promise<RuntimeResult> {
-    const pollInterval = 3000;  // Check every 3 seconds
+    const pollInterval = 3000; // Check every 3 seconds
     // Liveness staleness window: 15s = 3× the 5s write cadence in the PS1.
     // After a force-close the file goes stale; we detect it within one poll cycle.
     const livenessStaleMs = 15_000;
@@ -629,25 +710,36 @@ export class CliRuntime implements IRuntime {
                 ].join('\n');
 
                 // Emit RUNTIME_CRASHED so HealthMonitor immediately sets DEAD
-                this.bus.emit(createEvent(
-                  'RUNTIME_CRASHED' as any,
-                  task.agentId,
-                  {
-                    exitType: 'forced_termination',
-                    livenessStaleMs: livenessAge,
-                    filesChangedBeforeCrash: filesChanged.length,
-                    taskId: task.id,
-                  },
-                  task.id, 'cli',
-                ));
+                this.bus.emit(
+                  createEvent(
+                    'RUNTIME_CRASHED' as any,
+                    task.agentId,
+                    {
+                      exitType: 'forced_termination',
+                      livenessStaleMs: livenessAge,
+                      filesChangedBeforeCrash: filesChanged.length,
+                      taskId: task.id,
+                    },
+                    task.id,
+                    'cli',
+                  ),
+                );
 
                 // Also emit TASK_FAILED for queue / telemetry
-                this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-                  reason: 'runtime_crashed',
-                  exitType: 'forced_termination',
-                  filesChanged: filesChanged.length,
-                  taskResult: 'failed',
-                }, task.id, 'cli'));
+                this.bus.emit(
+                  createEvent(
+                    'TASK_FAILED',
+                    task.agentId,
+                    {
+                      reason: 'runtime_crashed',
+                      exitType: 'forced_termination',
+                      filesChanged: filesChanged.length,
+                      taskResult: 'failed',
+                    },
+                    task.id,
+                    'cli',
+                  ),
+                );
 
                 resolve({
                   success: false,
@@ -676,18 +768,29 @@ export class CliRuntime implements IRuntime {
                 `exitType: forced_termination`,
               ].join('\n');
 
-              this.bus.emit(createEvent(
-                'RUNTIME_CRASHED' as any,
-                task.agentId,
-                { exitType: 'forced_termination', livenessDisappeared: true, taskId: task.id },
-                task.id, 'cli',
-              ));
-              this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-                reason: 'runtime_crashed',
-                exitType: 'forced_termination',
-                filesChanged: filesChanged.length,
-                taskResult: 'failed',
-              }, task.id, 'cli'));
+              this.bus.emit(
+                createEvent(
+                  'RUNTIME_CRASHED' as any,
+                  task.agentId,
+                  { exitType: 'forced_termination', livenessDisappeared: true, taskId: task.id },
+                  task.id,
+                  'cli',
+                ),
+              );
+              this.bus.emit(
+                createEvent(
+                  'TASK_FAILED',
+                  task.agentId,
+                  {
+                    reason: 'runtime_crashed',
+                    exitType: 'forced_termination',
+                    filesChanged: filesChanged.length,
+                    taskResult: 'failed',
+                  },
+                  task.id,
+                  'cli',
+                ),
+              );
 
               resolve({
                 success: false,
@@ -704,12 +807,16 @@ export class CliRuntime implements IRuntime {
               });
               return;
             }
-          } catch { /* I/O error reading liveness file — non-fatal, continue */ }
+          } catch {
+            /* I/O error reading liveness file — non-fatal, continue */
+          }
         } else {
           // Within grace period — track if liveness file appears
           try {
             if (fs.existsSync(livenessFile)) livenessEverSeen = true;
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
 
         // ── 1. Check exit file FIRST (launcher completed gracefully) ──────
@@ -756,22 +863,38 @@ export class CliRuntime implements IRuntime {
           }
 
           if (success) {
-            this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
-              method: 'exit-file',
-              filesChanged: filesChanged.length,
-              taskResult,
-              exitCode,
-              exitType: 'graceful_exit',
-            }, task.id, 'cli'));
+            this.bus.emit(
+              createEvent(
+                'TASK_COMPLETED',
+                task.agentId,
+                {
+                  method: 'exit-file',
+                  filesChanged: filesChanged.length,
+                  taskResult,
+                  exitCode,
+                  exitType: 'graceful_exit',
+                },
+                task.id,
+                'cli',
+              ),
+            );
           } else {
-            this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-              method: 'exit-file',
-              error: errorMsg,
-              filesChanged: filesChanged.length,
-              taskResult,
-              exitCode,
-              exitType: 'graceful_exit',  // exited via launcher — graceful (just non-zero)
-            }, task.id, 'cli'));
+            this.bus.emit(
+              createEvent(
+                'TASK_FAILED',
+                task.agentId,
+                {
+                  method: 'exit-file',
+                  error: errorMsg,
+                  filesChanged: filesChanged.length,
+                  taskResult,
+                  exitCode,
+                  exitType: 'graceful_exit', // exited via launcher — graceful (just non-zero)
+                },
+                task.id,
+                'cli',
+              ),
+            );
           }
 
           resolve({
@@ -800,7 +923,9 @@ export class CliRuntime implements IRuntime {
               logFileActive = true;
             }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         // ── 3. Interactive Mode Detection ──────────────────────────────────
         // Only checked here (after exit file) so a completed agent whose
@@ -816,27 +941,45 @@ export class CliRuntime implements IRuntime {
               interactivePattern = match;
             }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         if (interactiveDetected) {
           clearInterval(timer);
           const afterSnapshot = this.snapshotFiles(task.projectRoot, task.scope);
           const filesChanged = this.diffSnapshots(beforeSnapshot, afterSnapshot);
 
-          this.bus.emit(createEvent('AGENT_PHASE', task.agentId, {
-            phase: 'WAITING_FOR_USER_INPUT',
-            reason: 'interactive-mode',
-            cli: this.config.cliCommand,
-          }, task.id, 'cli'));
+          this.bus.emit(
+            createEvent(
+              'AGENT_PHASE',
+              task.agentId,
+              {
+                phase: 'WAITING_FOR_USER_INPUT',
+                reason: 'interactive-mode',
+                cli: this.config.cliCommand,
+              },
+              task.id,
+              'cli',
+            ),
+          );
 
           const lastOut = lastLines(fs.existsSync(stdoutFile) ? fs.readFileSync(stdoutFile, 'utf-8') : '', 5);
           const errorMsg = `INTERACTIVE_MODE_DETECTED: Pattern '${interactivePattern}' found in CLI output. Agent may be stuck.\nLast output:\n${lastOut}`;
 
-          this.bus.emit(createEvent('TASK_FAILED', task.agentId, {
-            reason: 'interactive-mode',
-            pattern: interactivePattern,
-            taskResult: 'failed',
-          }, task.id, 'cli'));
+          this.bus.emit(
+            createEvent(
+              'TASK_FAILED',
+              task.agentId,
+              {
+                reason: 'interactive-mode',
+                pattern: interactivePattern,
+                taskResult: 'failed',
+              },
+              task.id,
+              'cli',
+            ),
+          );
 
           resolve({
             success: false,
@@ -866,11 +1009,19 @@ export class CliRuntime implements IRuntime {
           lastChangeTime = Date.now();
           lastSnapshot = currentSnapshot;
 
-          this.bus.emit(createEvent('TASK_PROGRESS', task.agentId, {
-            filesModified: changed.length,
-            logFileActive,
-            elapsed,
-          }, task.id, 'cli'));
+          this.bus.emit(
+            createEvent(
+              'TASK_PROGRESS',
+              task.agentId,
+              {
+                filesModified: changed.length,
+                logFileActive,
+                elapsed,
+              },
+              task.id,
+              'cli',
+            ),
+          );
         } else {
           quiescentCount++;
 
@@ -889,7 +1040,9 @@ export class CliRuntime implements IRuntime {
                 } else {
                   livenessOk = false;
                 }
-              } catch { /* I/O error — be conservative, allow quiescence */ }
+              } catch {
+                /* I/O error — be conservative, allow quiescence */
+              }
             }
 
             if (!livenessOk) {
@@ -899,13 +1052,21 @@ export class CliRuntime implements IRuntime {
             } else {
               clearInterval(timer);
 
-              this.bus.emit(createEvent('TASK_COMPLETED', task.agentId, {
-                method: 'quiescence',
-                quiescentMs: quiescentCount * pollInterval,
-                filesChanged: totalFilesChanged.length,
-                taskResult: 'success',
-                exitType: 'graceful_exit',
-              }, task.id, 'cli'));
+              this.bus.emit(
+                createEvent(
+                  'TASK_COMPLETED',
+                  task.agentId,
+                  {
+                    method: 'quiescence',
+                    quiescentMs: quiescentCount * pollInterval,
+                    filesChanged: totalFilesChanged.length,
+                    taskResult: 'success',
+                    exitType: 'graceful_exit',
+                  },
+                  task.id,
+                  'cli',
+                ),
+              );
 
               resolve({
                 success: true,
@@ -938,24 +1099,27 @@ export class CliRuntime implements IRuntime {
               const logContent = fs.readFileSync(stdoutFile, 'utf-8');
               lastOutput = lastLines(logContent, 20);
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
 
-          const timeoutDetail = lastOutput
-            ? `\nLast CLI output:\n${lastOutput}`
-            : '\nNo CLI output captured.';
+          const timeoutDetail = lastOutput ? `\nLast CLI output:\n${lastOutput}` : '\nNo CLI output captured.';
 
-          this.bus.emit(createEvent(
-            madeProgress ? 'TASK_COMPLETED' : 'TASK_FAILED',
-            task.agentId,
-            {
-              method: 'timeout',
-              filesChanged: filesChanged.length,
-              lastOutput: lastOutput.substring(0, 200),
-              taskResult,
-              exitType: 'timeout_kill',
-            },
-            task.id, 'cli',
-          ));
+          this.bus.emit(
+            createEvent(
+              madeProgress ? 'TASK_COMPLETED' : 'TASK_FAILED',
+              task.agentId,
+              {
+                method: 'timeout',
+                filesChanged: filesChanged.length,
+                lastOutput: lastOutput.substring(0, 200),
+                taskResult,
+                exitType: 'timeout_kill',
+              },
+              task.id,
+              'cli',
+            ),
+          );
 
           resolve({
             success: madeProgress,
@@ -976,14 +1140,21 @@ export class CliRuntime implements IRuntime {
         }
 
         // Heartbeat
-        this.bus.emit(createEvent('HEARTBEAT', task.agentId, {
-          elapsed,
-          quiescentCount,
-          logFileActive,
-          livenessEverSeen,
-          cli: this.config.cliCommand,
-        }, task.id, 'cli'));
-
+        this.bus.emit(
+          createEvent(
+            'HEARTBEAT',
+            task.agentId,
+            {
+              elapsed,
+              quiescentCount,
+              logFileActive,
+              livenessEverSeen,
+              cli: this.config.cliCommand,
+            },
+            task.id,
+            'cli',
+          ),
+        );
       }, pollInterval);
     });
   }
@@ -994,14 +1165,15 @@ export class CliRuntime implements IRuntime {
   private buildPrompt(task: RuntimeTask): string {
     // CLI-specific rules. Codex 'apply patch' deletes files on Windows
     // instead of modifying them — instruct it to write directly.
-    const cliSpecificRules = this.config.cliCommand === 'codex'
-      ? `
+    const cliSpecificRules =
+      this.config.cliCommand === 'codex'
+        ? `
 ## IMPORTANT: File Writing Rules (codex)
 - NEVER use 'apply patch' — it deletes files on Windows. Always write files in full using the write_file tool.
 - If you need to edit a file, read it first, then write the entire updated content back.
 - Verify each file exists after writing before moving on.
 `
-      : '';
+        : '';
 
     const doneFilePath = task.projectRoot.replace(/\\/g, '/') + '/.maos/agent-done-' + task.agentId;
 
@@ -1048,55 +1220,92 @@ ${this.config.capabilities.join(', ')}
       .join('\n');
 
     // Pre-escape all file paths (needed in launchBlock template strings below)
-    const promptFileEscaped   = promptFile.replace(/\\/g, '\\\\');
+    const promptFileEscaped = promptFile.replace(/\\/g, '\\\\');
     const livenessFileEscaped = livenessFile.replace(/\\/g, '\\\\');
-    const stdoutFileEscaped   = stdoutFile.replace(/\\/g, '\\\\');
-    const stderrFileEscaped   = stderrFile.replace(/\\/g, '\\\\');
-    const exitFileEscaped     = exitFile.replace(/\\/g, '\\\\');
+    const stdoutFileEscaped = stdoutFile.replace(/\\/g, '\\\\');
+    const stderrFileEscaped = stderrFile.replace(/\\/g, '\\\\');
+    const exitFileEscaped = exitFile.replace(/\\/g, '\\\\');
+    const commandEscaped = command.replace(/`/g, '``').replace(/"/g, '`"');
+
+    const toPsStringLiteral = (value: string): string => {
+      const escaped = value.replace(/`/g, '``').replace(/"/g, '`"');
+      return `"${escaped}"`;
+    };
 
     // Build the PowerShell launch block per CLI type.
     // Key insight from --help output:
     //   copilot:   copilot -p "<text>" --yolo --no-ask-user
     //   codex:     codex exec "<text>" --dangerously-bypass-approvals-and-sandbox
     //              (also supports: codex exec - < promptFile for long prompts via stdin)
-    //   opencode:  opencode run [message..] -f <file>
-    //              NO --dangerously-skip-permissions flag — it does not exist.
+    //   opencode:  opencode run [message..] -f <file> --dangerously-skip-permissions
     //   claude:    claude -p "<text>" --dangerously-skip-permissions
     //   antigravity: antigravity --prompt-file "<path>"
     let launchBlock: string;
 
     if (this.config.cliCommand === 'opencode') {
-      // opencode run: pass task via -f (attach file) so we avoid shell quoting limits.
-      // No permission bypass flag needed — opencode runs non-interactively with run subcommand.
-      const userExtraArgs = this.config.cliArgs.map(arg => {
-        const escaped = arg.replace(/`/g, '``').replace(/"/g, '`"');
-        return `"${escaped}"`;
-      }).join(', ');
+      // opencode is typically an npm-installed .cmd wrapper on Windows.
+      // PowerShell splatting into batch wrappers drops quotes for args with spaces,
+      // so we use Start-Process with an explicit ArgumentList array instead.
+      const userExtraArgs = this.config.cliArgs.map(toPsStringLiteral).join(', ');
       const extraArgs = userExtraArgs ? `, ${userExtraArgs}` : '';
       launchBlock = `
-$cliArgs = @("run", "-f", "${promptFileEscaped}"${extraArgs})
+$cliArgs = @("run", "-f", "${promptFileEscaped}", "--dangerously-skip-permissions"${extraArgs})
 & {
-  & "${command}" @cliArgs
-} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+  if ($startProcessFile -ne $resolvedCommand) {
+    & $startProcessFile @startProcessPrefixArgs @cliArgs
+  } else {
+    & $resolvedCommand run -f "${promptFileEscaped}" --dangerously-skip-permissions
+  }
+  $script:LASTEXITCODE = $LASTEXITCODE
+  if (Test-Path "${stdoutFileEscaped}") {
+    $stdoutText = Get-Content -Raw "${stdoutFileEscaped}"
+    if ($stdoutText) { $stdoutText | Out-Host }
+  }
+  if (Test-Path "${stderrFileEscaped}") {
+    $stderrText = Get-Content -Raw "${stderrFileEscaped}"
+    if ($stderrText) { $stderrText | Out-Host }
+  }
+}`.trim();
     } else if (this.config.cliCommand === 'codex') {
-      // codex exec: pass task via stdin (codex exec - < file) to avoid arg-length issues.
-      // The dangerously-bypass-approvals-and-sandbox flag enables non-interactive mode.
-      const userExtraArgs = this.config.cliArgs.map(arg => {
-        const escaped = arg.replace(/`/g, '``').replace(/"/g, '`"');
-        return `"${escaped}"`;
-      }).join(', ');
+      // codex is also typically a .cmd wrapper on Windows.
+      // Avoid splatting and pass prompt via stdin to prevent arg-length issues.
+      const userExtraArgs = this.config.cliArgs.map(toPsStringLiteral).join(', ');
       const extraArgs = userExtraArgs ? `, ${userExtraArgs}` : '';
       launchBlock = `
-$cliArgs = @("exec", "--dangerously-bypass-approvals-and-sandbox"${extraArgs})
+$cliArgs = @("exec", "-", "--dangerously-bypass-approvals-and-sandbox"${extraArgs})
 & {
-  Get-Content -Raw "${promptFileEscaped}" | & "${command}" @cliArgs
-} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+  if ($startProcessFile -ne $resolvedCommand) {
+    Get-Content -Raw "${promptFileEscaped}" | & $startProcessFile @startProcessPrefixArgs @cliArgs
+  } else {
+    Get-Content -Raw "${promptFileEscaped}" | & $resolvedCommand exec - --dangerously-bypass-approvals-and-sandbox
+  }
+  $script:LASTEXITCODE = $LASTEXITCODE
+  if (Test-Path "${stdoutFileEscaped}") {
+    $stdoutText = Get-Content -Raw "${stdoutFileEscaped}"
+    if ($stdoutText) { $stdoutText | Out-Host }
+  }
+  if (Test-Path "${stderrFileEscaped}") {
+    $stderrText = Get-Content -Raw "${stderrFileEscaped}"
+    if ($stderrText) { $stderrText | Out-Host }
+  }
+}`.trim();
     } else if (this.config.cliCommand === 'antigravity') {
+      const userExtraArgs = this.config.cliArgs.map(toPsStringLiteral).join(', ');
+      const extraArgs = userExtraArgs ? `, ${userExtraArgs}` : '';
       launchBlock = `
-$cliArgs = @("--prompt-file", "${promptFileEscaped}")
+$cliArgs = @("--prompt-file", "${promptFileEscaped}"${extraArgs})
 & {
-  & "${command}" @cliArgs
-} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+  & $startProcessFile @startProcessPrefixArgs @cliArgs
+  $script:LASTEXITCODE = $LASTEXITCODE
+  if (Test-Path "${stdoutFileEscaped}") {
+    $stdoutText = Get-Content -Raw "${stdoutFileEscaped}"
+    if ($stdoutText) { $stdoutText | Out-Host }
+  }
+  if (Test-Path "${stderrFileEscaped}") {
+    $stderrText = Get-Content -Raw "${stderrFileEscaped}"
+    if ($stderrText) { $stderrText | Out-Host }
+  }
+}`.trim();
     } else {
       // copilot / claude / default: pass task text as -p argument
       let flagArg: string;
@@ -1111,7 +1320,7 @@ $cliArgs = @("--prompt-file", "${promptFileEscaped}")
         flagArg = '"-p"';
         extraFlagsPs = ['"--yolo"', '"--no-ask-user"'];
       }
-      const userExtraArgs = this.config.cliArgs.map(arg => {
+      const userExtraArgs = this.config.cliArgs.map((arg) => {
         const escaped = arg.replace(/`/g, '``').replace(/"/g, '`"');
         return `"${escaped}"`;
       });
@@ -1120,8 +1329,17 @@ $cliArgs = @("--prompt-file", "${promptFileEscaped}")
 $taskText = Get-Content -Raw "${promptFileEscaped}"
 $cliArgs = @(${allFlagsPs})
 & {
-  & "${command}" @cliArgs
-} 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"`.trim();
+  & $startProcessFile @startProcessPrefixArgs @cliArgs 2> "${stderrFileEscaped}" | Tee-Object -FilePath "${stdoutFileEscaped}"
+  $script:LASTEXITCODE = $LASTEXITCODE
+  if (Test-Path "${stdoutFileEscaped}") {
+    $stdoutText = Get-Content -Raw "${stdoutFileEscaped}"
+    if ($stdoutText) { $stdoutText | Out-Host }
+  }
+  if (Test-Path "${stderrFileEscaped}") {
+    $stderrText = Get-Content -Raw "${stderrFileEscaped}"
+    if ($stderrText) { $stderrText | Out-Host }
+  }
+}`.trim();
     }
 
     return `# Auto-generated MAOS launcher for ${task.agentId} at ${timestamp}
@@ -1135,6 +1353,56 @@ Set-Location "${task.projectRoot.replace(/`/g, '``').replace(/"/g, '`"')}"
 ${authLines}
 $env:FORCE_COLOR = "3"
 
+# Resolve CLI command to a concrete executable path.
+# Start-Process is stricter than PowerShell's call operator and may fail on
+# bare npm shim names unless we explicitly resolve the underlying .cmd/.exe.
+# Prefer .cmd/.exe over .ps1 shims for npm-installed CLIs.
+$resolvedCommand = $null
+$cmdCandidates = @(
+  "${commandEscaped}.cmd",
+  "${commandEscaped}.exe",
+  "${commandEscaped}.bat",
+  "${commandEscaped}",
+  (Join-Path $PWD "${commandEscaped}.cmd"),
+  (Join-Path $PWD "${commandEscaped}.exe"),
+  (Join-Path $PWD "${commandEscaped}.bat")
+)
+foreach ($candidate in $cmdCandidates) {
+  try {
+    $candidateCmd = Get-Command $candidate -ErrorAction Stop
+    $resolvedCommand = $candidateCmd.Source
+    if (-not $resolvedCommand) { $resolvedCommand = $candidateCmd.Path }
+    if ($resolvedCommand) { break }
+  } catch {}
+}
+
+if (-not $resolvedCommand) {
+  Write-Host "  [MAOS] Failed to resolve CLI command: ${commandEscaped}" -ForegroundColor Red
+  127 | Out-File -FilePath "${exitFileEscaped}" -Encoding ASCII
+  exit 127
+}
+
+# If command resolves to a .ps1 shim, run it via pwsh explicitly.
+$startProcessFile = $resolvedCommand
+$startProcessPrefixArgs = @()
+if ($resolvedCommand -match '\.ps1$') {
+  $pwshCmd = $null
+  try {
+    $pwshCmd = Get-Command "pwsh.exe" -ErrorAction Stop
+  } catch {
+    try { $pwshCmd = Get-Command "pwsh" -ErrorAction Stop } catch {}
+  }
+
+  if ($pwshCmd) {
+    $startProcessFile = $pwshCmd.Source
+    if (-not $startProcessFile) { $startProcessFile = $pwshCmd.Path }
+  } else {
+    $startProcessFile = "pwsh.exe"
+  }
+
+  $startProcessPrefixArgs = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $resolvedCommand)
+}
+
 Write-Host ''
 Write-Host '  +==========================================+' -ForegroundColor Cyan
 Write-Host '  |  MAOS AGENT: ${task.agentId.padEnd(28)}|' -ForegroundColor Cyan
@@ -1144,7 +1412,13 @@ Write-Host ''
 Write-Host "  Working Dir : ${task.projectRoot}" -ForegroundColor DarkGray
 Write-Host "  Task ID     : ${task.id}" -ForegroundColor DarkGray
 Write-Host "  Branch      : ${task.branch}" -ForegroundColor DarkGray
-${Object.entries(resolvedAuth).map(([k, v]) => `Write-Host "  ${k}: ${v}" -ForegroundColor DarkGray`).join('\n')}
+Write-Host "  Command     : $resolvedCommand" -ForegroundColor DarkGray
+if ($startProcessFile -ne $resolvedCommand) {
+  Write-Host "  Runner      : $startProcessFile" -ForegroundColor DarkGray
+}
+${Object.entries(resolvedAuth)
+  .map(([k, v]) => `Write-Host "  ${k}: ${v}" -ForegroundColor DarkGray`)
+  .join('\n')}
 Write-Host ''
 
 # ── Display task ──
@@ -1199,8 +1473,6 @@ if ($exitCode -eq 0) {
 `;
   }
 
-
-
   /**
    * Archive completed task log files to logs/archive/.
    * Files older than LOG_RETENTION_DAYS are deleted from the archive.
@@ -1216,7 +1488,9 @@ if ($exitCode -eq 0) {
           const dest = path.join(archiveDir, path.basename(src));
           fs.renameSync(src, dest);
         }
-      } catch { /* non-fatal — leave in place if rename fails (e.g. cross-device) */ }
+      } catch {
+        /* non-fatal — leave in place if rename fails (e.g. cross-device) */
+      }
     }
 
     // Prune archived files older than retention window
@@ -1229,9 +1503,13 @@ if ($exitCode -eq 0) {
           if (now - stat.mtimeMs > cutoffMs) {
             fs.unlinkSync(full);
           }
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   /**
@@ -1253,13 +1531,17 @@ if ($exitCode -eq 0) {
             try {
               const stat = fs.statSync(full);
               snapshot.set(full, stat.mtimeMs);
-            } catch { /* skip */ }
+            } catch {
+              /* skip */
+            }
           }
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
 
-    const cleanScopes = scope.filter(s => s !== '/' && s !== '*' && s !== '**/*');
+    const cleanScopes = scope.filter((s) => s !== '/' && s !== '*' && s !== '**/*');
     if (cleanScopes.length > 0) {
       for (const sc of cleanScopes) {
         const fullScopePath = path.resolve(dir, sc);
@@ -1271,7 +1553,9 @@ if ($exitCode -eq 0) {
             } else if (stat.isFile()) {
               snapshot.set(fullScopePath, stat.mtimeMs);
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
     } else {
@@ -1284,10 +1568,7 @@ if ($exitCode -eq 0) {
   /**
    * Diff two snapshots — return list of new or modified file paths.
    */
-  private diffSnapshots(
-    before: Map<string, number>,
-    after: Map<string, number>,
-  ): string[] {
+  private diffSnapshots(before: Map<string, number>, after: Map<string, number>): string[] {
     const changed: string[] = [];
 
     for (const [filePath, mtime] of after) {
@@ -1302,17 +1583,17 @@ if ($exitCode -eq 0) {
 
   getCapabilityProfile(): RuntimeCapabilityProfile {
     return {
-      runtimeId:              this.name,          // e.g. 'copilot-cli'
-      runtimeType:            'cli',
-      provider:               this.config.cliCommand,
-      supportsTools:          false,  // CLI manages its own tool loop internally
-      supportsCodeMutation:   true,   // Primary purpose of CLI agents
-      supportsLongContext:    true,   // CLI manages own context window
-      supportsStreaming:      false,
-      supportsParallelism:    false,  // one WT tab per agent
-      estimatedAvgLatencyMs:  120_000, // CLIs are typically slower (no streaming, WT launch overhead)
-      estimatedCostPerTask:   0,       // Subscription-based; zero marginal cost
-      concurrencyLimit:       1,
+      runtimeId: this.name, // e.g. 'copilot-cli'
+      runtimeType: 'cli',
+      provider: this.config.cliCommand,
+      supportsTools: false, // CLI manages its own tool loop internally
+      supportsCodeMutation: true, // Primary purpose of CLI agents
+      supportsLongContext: true, // CLI manages own context window
+      supportsStreaming: false,
+      supportsParallelism: false, // one WT tab per agent
+      estimatedAvgLatencyMs: 120_000, // CLIs are typically slower (no streaming, WT launch overhead)
+      estimatedCostPerTask: 0, // Subscription-based; zero marginal cost
+      concurrencyLimit: 1,
     };
   }
 
@@ -1321,8 +1602,10 @@ if ($exitCode -eq 0) {
       this.childProcess.kill('SIGTERM');
       this.childProcess = null;
     }
-    this.bus.emit(createEvent('AGENT_DISPOSED', this.name, {
-      cli: this.config.cliCommand,
-    }));
+    this.bus.emit(
+      createEvent('AGENT_DISPOSED', this.name, {
+        cli: this.config.cliCommand,
+      }),
+    );
   }
 }

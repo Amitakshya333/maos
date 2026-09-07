@@ -69,6 +69,8 @@ export class MemoryStore {
   private entries: MemoryEntry[] = [];
   private filePath: string;
   private sessionId: string;
+  /** Track file mtime for cross-process sync */
+  private lastLoadedMtime: number = 0;
 
   constructor(projectRoot: string) {
     const memDir = getMemoryDir(projectRoot);
@@ -78,6 +80,23 @@ export class MemoryStore {
     this.filePath = path.join(memDir, 'session.jsonl');
     this.sessionId = Date.now().toString(36);
     this.load();
+  }
+
+  /**
+   * Hot-reload entries if another process has written to the file.
+   * Uses mtime comparison — only reloads when file has actually changed.
+   */
+  private syncFromDisk(): void {
+    try {
+      if (!fs.existsSync(this.filePath)) return;
+      const currentMtime = fs.statSync(this.filePath).mtimeMs;
+      if (currentMtime <= this.lastLoadedMtime) return;
+      // File changed externally — reload
+      this.entries = [];
+      this.load();
+    } catch {
+      /* non-fatal */
+    }
   }
 
   // ---- Public API ----
@@ -107,9 +126,10 @@ export class MemoryStore {
    * Get all live (non-expired) entries.
    */
   getLive(): MemoryEntry[] {
+    this.syncFromDisk();
     const now = Date.now();
-    return this.entries.filter(e => {
-      if (e.ttlMs && (now - e.timestamp > e.ttlMs)) return false;
+    return this.entries.filter((e) => {
+      if (e.ttlMs && now - e.timestamp > e.ttlMs) return false;
       return true;
     });
   }
@@ -123,16 +143,14 @@ export class MemoryStore {
     if (live.length === 0) return '';
 
     // Optionally exclude the agent's own entries (avoid echo)
-    const filtered = excludeAgentId
-      ? live.filter(e => e.agentId !== excludeAgentId)
-      : live;
+    const filtered = excludeAgentId ? live.filter((e) => e.agentId !== excludeAgentId) : live;
 
     if (filtered.length === 0) return '';
 
     // Take most recent N
     const recent = filtered.slice(-MAX_PROMPT_ENTRIES);
 
-    const lines = recent.map(e => {
+    const lines = recent.map((e) => {
       const age = this.formatAge(Date.now() - e.timestamp);
       const tagStr = e.tags.length > 0 ? ` | tags: ${e.tags.join(', ')}` : '';
       const confStr = e.confidence < 1.0 ? ` | confidence: ${e.confidence}` : '';
@@ -147,9 +165,7 @@ export class MemoryStore {
    */
   searchByTag(tag: string): MemoryEntry[] {
     const lower = tag.toLowerCase();
-    return this.getLive().filter(e =>
-      e.tags.some(t => t.toLowerCase().includes(lower))
-    );
+    return this.getLive().filter((e) => e.tags.some((t) => t.toLowerCase().includes(lower)));
   }
 
   /**
@@ -157,9 +173,7 @@ export class MemoryStore {
    */
   searchByContent(query: string): MemoryEntry[] {
     const lower = query.toLowerCase();
-    return this.getLive().filter(e =>
-      e.content.toLowerCase().includes(lower)
-    );
+    return this.getLive().filter((e) => e.content.toLowerCase().includes(lower));
   }
 
   /**
@@ -208,7 +222,9 @@ export class MemoryStore {
         const archivePath = this.filePath.replace('.jsonl', `.${Date.now()}.jsonl`);
         fs.renameSync(this.filePath, archivePath);
       }
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
     this.sessionId = Date.now().toString(36);
   }
 
@@ -224,23 +240,33 @@ export class MemoryStore {
   private persist(entry: MemoryEntry): void {
     try {
       fs.appendFileSync(this.filePath, JSON.stringify(entry) + '\n', 'utf-8');
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   private load(): void {
     try {
       if (!fs.existsSync(this.filePath)) return;
 
-      const lines = fs.readFileSync(this.filePath, 'utf-8')
+      const lines = fs
+        .readFileSync(this.filePath, 'utf-8')
         .split('\n')
-        .filter(l => l.trim().length > 0);
+        .filter((l) => l.trim().length > 0);
 
       for (const line of lines) {
         try {
           this.entries.push(JSON.parse(line));
-        } catch { /* skip malformed */ }
+        } catch {
+          /* skip malformed */
+        }
       }
-    } catch { /* non-fatal — start fresh */ }
+
+      // Track mtime for cross-process sync
+      this.lastLoadedMtime = fs.statSync(this.filePath).mtimeMs;
+    } catch {
+      /* non-fatal — start fresh */
+    }
   }
 
   // ---- Helpers ----

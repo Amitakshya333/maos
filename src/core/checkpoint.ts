@@ -102,7 +102,12 @@ function ensureCheckpointDir(projectRoot: string): void {
 export function saveCheckpoint(projectRoot: string, checkpoint: TaskCheckpoint): void {
   ensureCheckpointDir(projectRoot);
   const filePath = getCheckpointPath(projectRoot, checkpoint.taskId);
-  fs.writeFileSync(filePath, JSON.stringify(checkpoint, null, 2), 'utf-8');
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${Date.now()}_${Math.random().toString(36).substring(2, 6)}.tmp`,
+  );
+  fs.writeFileSync(tempPath, JSON.stringify(checkpoint, null, 2), 'utf-8');
+  fs.renameSync(tempPath, filePath);
 }
 
 /**
@@ -137,7 +142,7 @@ export function listCheckpoints(projectRoot: string): TaskCheckpoint[] {
   const dir = getCheckpointDir(projectRoot);
   if (!fs.existsSync(dir)) return [];
 
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
   const checkpoints: TaskCheckpoint[] = [];
 
   for (const file of files) {
@@ -184,7 +189,7 @@ export function recoverOrphanedTasks(projectRoot: string): RecoveryResult {
 
   if (!fs.existsSync(activeDir)) return result;
 
-  const activeFiles = fs.readdirSync(activeDir).filter(f => f.endsWith('.md'));
+  const activeFiles = fs.readdirSync(activeDir).filter((f) => f.endsWith('.md'));
   if (activeFiles.length === 0) return result;
 
   for (const file of activeFiles) {
@@ -219,7 +224,11 @@ export function recoverOrphanedTasks(projectRoot: string): RecoveryResult {
         // Significant progress — mark as done (partial success)
         moveFile(activeFilePath, path.join(doneDir, file));
         appendToFrontmatter(path.join(doneDir, file), 'status', 'done');
-        appendToFrontmatter(path.join(doneDir, file), 'recovery_note', `Recovered from crash at ${checkpoint.progressPct * 100}% progress (${checkpoint.filesChanged.length} files changed)`);
+        appendToFrontmatter(
+          path.join(doneDir, file),
+          'recovery_note',
+          `Recovered from crash at ${checkpoint.progressPct * 100}% progress (${checkpoint.filesChanged.length} files changed)`,
+        );
         deleteCheckpoint(projectRoot, taskId);
         result.markedDone++;
         result.details.push({
@@ -236,7 +245,7 @@ export function recoverOrphanedTasks(projectRoot: string): RecoveryResult {
         appendToFrontmatter(
           path.join(pendingDir, file),
           'retry_context',
-          `Previous attempt reached ${Math.round(checkpoint.progressPct * 100)}% (${checkpoint.iteration}/${checkpoint.maxIterations} iterations). Files changed: [${checkpoint.filesChanged.join(', ')}]. Last actions: [${checkpoint.lastToolCalls.map(t => t.name).join(', ')}]`,
+          `Previous attempt reached ${Math.round(checkpoint.progressPct * 100)}% (${checkpoint.iteration}/${checkpoint.maxIterations} iterations). Files changed: [${checkpoint.filesChanged.join(', ')}]. Last actions: [${checkpoint.lastToolCalls.map((t) => t.name).join(', ')}]`,
         );
 
         // Update checkpoint retry count
@@ -256,7 +265,11 @@ export function recoverOrphanedTasks(projectRoot: string): RecoveryResult {
       moveFile(activeFilePath, path.join(pendingDir, file));
       appendToFrontmatter(path.join(pendingDir, file), 'status', 'pending');
       appendToFrontmatter(path.join(pendingDir, file), 'retry_count', '1');
-      appendToFrontmatter(path.join(pendingDir, file), 'retry_context', 'Crashed before any checkpoint was saved. Clean retry.');
+      appendToFrontmatter(
+        path.join(pendingDir, file),
+        'retry_context',
+        'Crashed before any checkpoint was saved. Clean retry.',
+      );
 
       result.recovered++;
       result.details.push({
@@ -288,9 +301,34 @@ function appendToFrontmatter(filePath: string, key: string, value: string): void
   if (keyRegex.test(content)) {
     // Replace existing key
     content = content.replace(keyRegex, `${key}: ${value}`);
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return;
+  }
+
+  // Insert before closing --- of frontmatter
+  const lines = content.split('\n');
+  let openIndex = -1;
+  let closeIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '---') {
+      if (openIndex === -1) {
+        openIndex = i;
+      } else {
+        closeIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (openIndex !== -1 && closeIndex !== -1) {
+    // Insert key: value right before the closing --- marker
+    lines.splice(closeIndex, 0, `${key}: ${value}`);
+    content = lines.join('\n');
   } else {
-    // Insert before closing --- of frontmatter
-    content = content.replace(/^---\s*$/m, `${key}: ${value}\n---`);
+    // Fallback: prepend a fresh frontmatter block if none is present/valid
+    content = `---\n${key}: ${value}\n---\n` + content;
   }
 
   fs.writeFileSync(filePath, content, 'utf-8');

@@ -37,15 +37,41 @@ export interface BrainData {
 
 // Language detection by extension
 const LANG_MAP: Record<string, string> = {
-  '.ts': 'TypeScript', '.tsx': 'TypeScript/React', '.js': 'JavaScript', '.jsx': 'JavaScript/React',
-  '.py': 'Python', '.rb': 'Ruby', '.go': 'Go', '.rs': 'Rust', '.java': 'Java',
-  '.c': 'C', '.cpp': 'C++', '.cs': 'C#', '.swift': 'Swift', '.kt': 'Kotlin',
-  '.html': 'HTML', '.css': 'CSS', '.scss': 'SCSS', '.less': 'LESS',
-  '.json': 'JSON', '.yaml': 'YAML', '.yml': 'YAML', '.toml': 'TOML',
-  '.md': 'Markdown', '.txt': 'Text', '.sql': 'SQL',
-  '.sh': 'Shell', '.bash': 'Shell', '.zsh': 'Shell', '.ps1': 'PowerShell',
-  '.dockerfile': 'Docker', '.proto': 'Protobuf', '.graphql': 'GraphQL',
-  '.env': 'Environment', '.gitignore': 'Git', '.editorconfig': 'Config',
+  '.ts': 'TypeScript',
+  '.tsx': 'TypeScript/React',
+  '.js': 'JavaScript',
+  '.jsx': 'JavaScript/React',
+  '.py': 'Python',
+  '.rb': 'Ruby',
+  '.go': 'Go',
+  '.rs': 'Rust',
+  '.java': 'Java',
+  '.c': 'C',
+  '.cpp': 'C++',
+  '.cs': 'C#',
+  '.swift': 'Swift',
+  '.kt': 'Kotlin',
+  '.html': 'HTML',
+  '.css': 'CSS',
+  '.scss': 'SCSS',
+  '.less': 'LESS',
+  '.json': 'JSON',
+  '.yaml': 'YAML',
+  '.yml': 'YAML',
+  '.toml': 'TOML',
+  '.md': 'Markdown',
+  '.txt': 'Text',
+  '.sql': 'SQL',
+  '.sh': 'Shell',
+  '.bash': 'Shell',
+  '.zsh': 'Shell',
+  '.ps1': 'PowerShell',
+  '.dockerfile': 'Docker',
+  '.proto': 'Protobuf',
+  '.graphql': 'GraphQL',
+  '.env': 'Environment',
+  '.gitignore': 'Git',
+  '.editorconfig': 'Config',
 };
 
 // Category detection by path patterns
@@ -78,7 +104,7 @@ export function scanProject(projectRoot: string): BrainData {
       encoding: 'utf-8',
       timeout: 10000,
     });
-    trackedFiles = output.split('\n').filter(f => f.trim().length > 0);
+    trackedFiles = output.split('\n').filter((f) => f.trim().length > 0);
   } catch {
     // Fallback: walk directory manually (skip node_modules, .git, etc.)
     trackedFiles = walkDir(projectRoot, projectRoot);
@@ -98,7 +124,9 @@ export function scanProject(projectRoot: string): BrainData {
     let stat: fs.Stats;
     try {
       stat = fs.statSync(absPath);
-    } catch { continue; }
+    } catch {
+      continue;
+    }
 
     if (stat.isDirectory()) continue;
 
@@ -211,20 +239,18 @@ export function saveBrain(projectRoot: string, brain: BrainData): void {
     fs.mkdirSync(brainDir, { recursive: true });
   }
 
-  // Save file map
-  fs.writeFileSync(
-    path.join(brainDir, 'file-map.json'),
-    JSON.stringify(brain, null, 2),
-    'utf-8'
-  );
+  // Save file map atomically
+  const fileMapPath = path.join(brainDir, 'file-map.json');
+  const fileMapTmp = `${fileMapPath}.tmp.${Date.now()}`;
+  fs.writeFileSync(fileMapTmp, JSON.stringify(brain, null, 2), 'utf-8');
+  fs.renameSync(fileMapTmp, fileMapPath);
 
-  // Save architecture markdown
+  // Save architecture markdown atomically
+  const archPath = path.join(brainDir, 'architecture.md');
+  const archTmp = `${archPath}.tmp.${Date.now()}`;
   const architectureMd = generateArchitectureMd(brain);
-  fs.writeFileSync(
-    path.join(brainDir, 'architecture.md'),
-    architectureMd,
-    'utf-8'
-  );
+  fs.writeFileSync(archTmp, architectureMd, 'utf-8');
+  fs.renameSync(archTmp, archPath);
 }
 
 /**
@@ -268,7 +294,7 @@ export function getBrainContext(projectRoot: string): string | null {
   lines.push('Structure:');
   const topDirs = Object.keys(brain.structure)
     .sort()
-    .filter(d => d.split('/').length <= 3) // Only show top 3 levels
+    .filter((d) => d.split('/').length <= 3) // Only show top 3 levels
     .slice(0, 15);
   for (const dir of topDirs) {
     lines.push(`  ${dir}/ (${brain.structure[dir].length} files)`);
@@ -306,7 +332,9 @@ function walkDir(dir: string, root: string, maxDepth = 5, depth = 0): string[] {
         results.push(relPath);
       }
     }
-  } catch { /* skip unreadable dirs */ }
+  } catch {
+    /* skip unreadable dirs */
+  }
 
   return results;
 }

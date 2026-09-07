@@ -1,21 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
-import {
-  getConfigPath,
-  getStatusDir,
-  getPoolPath,
-  getLogsDir,
-  ensureMaosDirectories,
-} from '../utils/paths';
-import {
-  createTask,
-  getPendingTasks,
-  moveToActive,
-  moveToDone,
-  getQueueCounts,
-  TaskFile,
-} from './queue';
+import { getConfigPath, getStatusDir, getPoolPath, getLogsDir, ensureMaosDirectories } from '../utils/paths';
+import { createTask, getPendingTasks, moveToActive, moveToDone, getQueueCounts, TaskFile } from './queue';
 import { runAgent, AgentConfig, AgentTask, AgentRunResult } from './agent-runner';
 import { RuntimeFactory } from '../backends/factory';
 import { IRuntime, AgentRuntimeConfig } from '../backends/runtime';
@@ -43,12 +30,14 @@ interface MaosConfig {
   projectName: string;
   routingMode: string;
   providers: Record<string, ProviderConfig & { costPerMillionTokens?: number }>;
-  agents: Array<AgentRuntimeConfig & {
-    provider: string;
-    model: string;
-    maxIterations: number;
-    costTier: string;
-  }>;
+  agents: Array<
+    AgentRuntimeConfig & {
+      provider: string;
+      model: string;
+      maxIterations: number;
+      costTier: string;
+    }
+  >;
   routing: {
     strategy: string;
     costWeight: number;
@@ -84,12 +73,7 @@ export interface OrchestratorOptions {
 
 // ─── Status File I/O ──────────────────────────────────────────
 
-function writeAgentStatus(
-  agentId: string,
-  status: AgentStatus,
-  detail: string,
-  cwd?: string,
-): void {
+function writeAgentStatus(agentId: string, status: AgentStatus, detail: string, cwd?: string): void {
   const statusDir = getStatusDir(cwd);
   if (!fs.existsSync(statusDir)) fs.mkdirSync(statusDir, { recursive: true });
   const statusFile = path.join(statusDir, `${agentId}.status`);
@@ -138,7 +122,7 @@ function buildAgentProfiles(
   statsStore?: RuntimeStatsStore,
   healthMonitor?: HealthMonitor,
 ): AgentProfile[] {
-  return config.agents.map(a => ({
+  return config.agents.map((a) => ({
     id: a.id,
     role: a.role,
     provider: a.provider,
@@ -150,8 +134,8 @@ function buildAgentProfiles(
     enabled: pool[a.id] !== false,
     // Runtime-aware enrichment (optional — safely absent if not yet initialized)
     runtimeStats: statsStore?.getStats(a.id),
-    healthState:  healthMonitor?.getAgentHealth(a.id)?.baseState,
-    activeTasks:  activeAgents.has(a.id) ? 1 : 0,
+    healthState: healthMonitor?.getAgentHealth(a.id)?.baseState,
+    activeTasks: activeAgents.has(a.id) ? 1 : 0,
   }));
 }
 
@@ -180,9 +164,7 @@ function buildTaskRequirements(task: TaskFile): TaskRequirements {
  *   5. Updates status files for the dashboard
  *   6. Tracks cost + token telemetry
  */
-export async function startOrchestrator(
-  options: OrchestratorOptions = {},
-): Promise<void> {
+export async function startOrchestrator(options: OrchestratorOptions = {}): Promise<void> {
   const cwd = options.cwd || process.cwd();
   const pollInterval = options.pollIntervalMs || 3000;
   const logger = createLogger(cwd);
@@ -195,7 +177,10 @@ export async function startOrchestrator(
   // Requeue recoverable tasks, mark partial successes as done.
   const recovery = recoverOrphanedTasks(cwd);
   if (recovery.recovered > 0 || recovery.markedDone > 0) {
-    logger.info('RECOVERY', `Recovered ${recovery.recovered} tasks (requeued), ${recovery.markedDone} tasks (marked done)`);
+    logger.info(
+      'RECOVERY',
+      `Recovered ${recovery.recovered} tasks (requeued), ${recovery.markedDone} tasks (marked done)`,
+    );
     for (const d of recovery.details) {
       logger.info('RECOVERY', `  ${d.taskId}: ${d.action} — ${d.reason}`);
     }
@@ -204,7 +189,7 @@ export async function startOrchestrator(
   // Load config
   const config = loadConfig(cwd);
   logger.info('ORCHESTRATOR', `Project: ${config.projectName}`);
-  logger.info('ORCHESTRATOR', `Agents: ${config.agents.map(a => a.id).join(', ')}`);
+  logger.info('ORCHESTRATOR', `Agents: ${config.agents.map((a) => a.id).join(', ')}`);
   logger.info('ORCHESTRATOR', `Poll interval: ${pollInterval}ms`);
 
   // Initialize message bus
@@ -213,6 +198,10 @@ export async function startOrchestrator(
   // Wire event store — ALL bus events now persisted to .maos/events/events.jsonl
   const eventStore = wireEventStore(bus, cwd);
   logger.info('ORCHESTRATOR', `Event store active → .maos/events/events.jsonl`);
+
+  // Initialize persistent file lock engine
+  const { getFileLockRegistry } = require('./scope-guard');
+  getFileLockRegistry().init(cwd);
 
   // Log all bus events for debugging
   bus.onAll((event) => {
@@ -252,12 +241,14 @@ export async function startOrchestrator(
     // Auto-launch configure if running interactively
     if (process.stdout.isTTY) {
       const inquirer = require('inquirer');
-      const { configureNow } = await inquirer.prompt([{
-        type: 'confirm',
-        name: 'configureNow',
-        message: 'Configure API keys now?',
-        default: true,
-      }]);
+      const { configureNow } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'configureNow',
+          message: 'Configure API keys now?',
+          default: true,
+        },
+      ]);
 
       if (configureNow) {
         const { runConfigure } = require('../cli/configure');
@@ -283,20 +274,20 @@ export async function startOrchestrator(
         console.log('');
         throw new Error(
           `Cannot start: ${badList.length} agent(s) have credential issues. ` +
-          `Run "maos configure" or use "start --force" for reduced fleet.`
+            `Run "maos configure" or use "start --force" for reduced fleet.`,
         );
       }
     } else {
       // Non-interactive (CI/scripts) — just fail with message
       throw new Error(
         `Cannot start: ${badList.length} agent(s) have credential issues. ` +
-        `Run "maos configure" to fix, or use --force flag.`
+          `Run "maos configure" to fix, or use --force flag.`,
       );
     }
   } else if (badAgentIds.size > 0 && options.force) {
-    logger.warn('ORCHESTRATOR',
-      `--force: ${badAgentIds.size} agent(s) have credential issues, ` +
-      `starting with reduced fleet`
+    logger.warn(
+      'ORCHESTRATOR',
+      `--force: ${badAgentIds.size} agent(s) have credential issues, ` + `starting with reduced fleet`,
     );
   }
 
@@ -315,10 +306,7 @@ export async function startOrchestrator(
     const resolved = resolveCredential(providerName, pc.apiKey, cwd);
     if (resolved) {
       enrichedProviders[providerName] = { ...pc, apiKey: resolved.key };
-      logger.info('CREDENTIALS',
-        `${providerName}: credential source = ${resolved.source} ` +
-        `(key: ${resolved.key.substring(0, 4)}...${resolved.key.slice(-4)})`
-      );
+      logger.info('CREDENTIALS', `${providerName}: credential source = ${resolved.source} (key configured)`);
     } else {
       enrichedProviders[providerName] = pc; // fallthrough — factory will throw
     }
@@ -328,9 +316,7 @@ export async function startOrchestrator(
   for (const agent of config.agents) {
     // Skip agents with bad credentials
     if (badAgentIds.has(agent.id)) {
-      logger.warn('ORCHESTRATOR',
-        `${agent.id} is unavailable — no valid API key configured. Run: maos configure`
-      );
+      logger.warn('ORCHESTRATOR', `${agent.id} is unavailable — no valid API key configured. Run: maos configure`);
       continue;
     }
 
@@ -354,25 +340,33 @@ export async function startOrchestrator(
   if (runtimeMap.size === 0) {
     throw new Error(
       'No runtimes could be initialized.\n\n' +
-      '  This usually means no valid API keys are configured.\n' +
-      '  Run: maos configure\n'
+        '  This usually means no valid API keys are configured.\n' +
+        '  Run: maos configure\n',
     );
   }
 
   // Create the router (with telemetry feedback for adaptive scoring)
   const router = createRouter(config.routing, cwd);
   const routerInfo = router.feedback ? 'adaptive (telemetry loaded)' : 'static';
-  logger.info('ORCHESTRATOR', 'Routing strategy: ' + (config.routing.strategy || 'capability_score') + ' [' + routerInfo + ']');
+  logger.info(
+    'ORCHESTRATOR',
+    'Routing strategy: ' + (config.routing.strategy || 'capability_score') + ' [' + routerInfo + ']',
+  );
 
   // ---- HEALTH MONITOR ----
   const healthStateFile = path.join(cwd, '.maos', 'health-state.json');
-  const healthMonitor = createHealthMonitor(bus, {}, (alert) => {
-    if (alert.state === 'DEAD') {
-      logger.error('HEALTH', alert.message);
-    } else {
-      logger.warn('HEALTH', alert.message);
-    }
-  }, healthStateFile);
+  const healthMonitor = createHealthMonitor(
+    bus,
+    {},
+    (alert) => {
+      if (alert.state === 'DEAD') {
+        logger.error('HEALTH', alert.message);
+      } else {
+        logger.warn('HEALTH', alert.message);
+      }
+    },
+    healthStateFile,
+  );
 
   // ---- RUNTIME STATS STORE ----
   // Bootstrapped from telemetry history on startup. Receives live updates
@@ -397,6 +391,25 @@ export async function startOrchestrator(
     totalTokensUsed: 0,
     totalCostUSD: 0,
   };
+
+  // ── GRACEFUL SHUTDOWN ──
+  // Catch SIGINT (Ctrl+C) and SIGTERM to flush state before exit.
+  let shuttingDown = false;
+  const gracefulShutdown = (signal: string) => {
+    if (shuttingDown) return; // Prevent double-shutdown
+    shuttingDown = true;
+    logger.info('ORCHESTRATOR', `Received ${signal} — shutting down gracefully...`);
+    state.running = false;
+    // Dispose message bus to flush pending events
+    try {
+      bus.dispose();
+    } catch {
+      /* best effort */
+    }
+    logger.info('ORCHESTRATOR', 'Shutdown complete. Active tasks will resume on next start.');
+  };
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
   // Keep track of tasks currently being finalized to prevent race conditions / double cleanup
   const finalizedTasks = new Set<string>();
@@ -433,7 +446,7 @@ export async function startOrchestrator(
 
   // ---- v0.3: SUPERVISOR ----
   // Autonomous project manager: velocity tracking, stall detection, completion aggregation.
-  const hasPlannerAgent = config.agents.some(a => a.role === 'planner');
+  const hasPlannerAgent = config.agents.some((a) => a.role === 'planner');
   const supervisor = new Supervisor(bus, coordinator.getInbox(), cwd, logger);
   if (hasPlannerAgent) {
     logger.info('ORCHESTRATOR', `Supervisor active (planner agent detected)`);
@@ -447,11 +460,7 @@ export async function startOrchestrator(
   // Whether the runtime uses API tool-calling, a CLI subprocess,
   // or a local model is completely transparent.
 
-  async function dispatchTask(
-    task: TaskFile,
-    agentDef: typeof config.agents[0],
-    runtime: IRuntime,
-  ): Promise<void> {
+  async function dispatchTask(task: TaskFile, agentDef: (typeof config.agents)[0], runtime: IRuntime): Promise<void> {
     // Move task to active
     const activeTask = moveToActive(task, cwd);
     // Generate a unique attempt ID for THIS dispatch (not just task ID).
@@ -465,20 +474,42 @@ export async function startOrchestrator(
     // Prepare git branch for this agent's work
     const branchName = prepareAgentBranch(agentDef.id, task.id, 'main', cwd);
 
+    // Attempt to create an isolated worktree for this agent
+    let agentCwd = cwd;
+    try {
+      const { isWorktreeSupported, ensureWorktree } = require('../integrations/worktree');
+      if (isWorktreeSupported(cwd) && state.activeAgents.size > 1) {
+        const wt = ensureWorktree(agentDef.id, branchName, cwd);
+        agentCwd = wt.worktreePath;
+        logger.info('ORCHESTRATOR', `Worktree created for ${agentDef.id} at ${agentCwd}`);
+      }
+    } catch {
+      /* worktrees optional — fall back to shared directory */
+    }
+
     // Update status
     const runtimeType = agentDef.runtime || 'api';
     writeAgentStatus(agentDef.id, 'BUSY', task.id, cwd);
-    logger.info('ORCHESTRATOR',
+    logger.info(
+      'ORCHESTRATOR',
       `Dispatched ${task.id} → ${agentDef.id} ` +
-      `(${runtime.name}/${runtime.model}) ` +
-      `[runtime: ${runtimeType}, branch: ${branchName}]`
+        `(${runtime.name}/${runtime.model}) ` +
+        `[runtime: ${runtimeType}, branch: ${branchName}]`,
     );
     // Emit TASK_STARTED for HealthMonitor + dashboard
-    bus.emit(createEvent('TASK_STARTED', agentDef.id, {
-      model: runtime.model,
-      runtimeType,
-      branch: branchName,
-    }, task.id, runtimeType as any));
+    bus.emit(
+      createEvent(
+        'TASK_STARTED',
+        agentDef.id,
+        {
+          model: runtime.model,
+          runtimeType,
+          branch: branchName,
+        },
+        task.id,
+        runtimeType as any,
+      ),
+    );
     options.onStatusUpdate?.(state);
 
     try {
@@ -491,14 +522,17 @@ export async function startOrchestrator(
         id: task.id,
         description: task.description,
         branch: branchName,
-        projectRoot: cwd,
+        projectRoot: agentCwd,
         scope: agentDef.scope,
         agentId: agentDef.id,
       });
 
       // Check if already finalized to prevent race conditions / double cleanup
       if (finalizedTasks.has(attemptId)) {
-        logger.warn('ORCHESTRATOR', `[FINALIZATION GUARD] Blocked duplicate finalization for ${task.id} (attempt: ${attemptId}, path: success)`);
+        logger.warn(
+          'ORCHESTRATOR',
+          `[FINALIZATION GUARD] Blocked duplicate finalization for ${task.id} (attempt: ${attemptId}, path: success)`,
+        );
         return;
       }
       finalizedTasks.add(attemptId);
@@ -528,9 +562,10 @@ export async function startOrchestrator(
         // still a SUCCESS, not a retry candidate. The agent simply decided
         // nothing needed to change (e.g. the work was already done).
         if (result.taskResult === 'no_mutation') {
-          logger.warn('ORCHESTRATOR',
+          logger.warn(
+            'ORCHESTRATOR',
             `${agentDef.id} completed ${task.id} with NO file changes (exit code 0). ` +
-            `Task is considered done — the agent determined no mutations were needed.`
+              `Task is considered done — the agent determined no mutations were needed.`,
           );
         }
 
@@ -553,14 +588,15 @@ export async function startOrchestrator(
 
         const costStr = result.costUSD > 0 ? `$${result.costUSD.toFixed(4)}` : 'subscription';
         const tokenStr = result.totalTokens > 0 ? `${result.totalTokens} tokens` : 'N/A';
-        logger.success('ORCHESTRATOR',
+        logger.success(
+          'ORCHESTRATOR',
           `${agentDef.id} completed ${task.id} [${runtimeType}] — ` +
-          `${result.iterations} iters, ${tokenStr}, ${costStr}, ` +
-          `${(result.latencyMs / 1000).toFixed(1)}s, ` +
-          `${result.filesChanged.length} files`
+            `${result.iterations} iters, ${tokenStr}, ${costStr}, ` +
+            `${(result.latencyMs / 1000).toFixed(1)}s, ` +
+            `${result.filesChanged.length} files`,
         );
 
-      // ─── Update RuntimeStatsStore after success ───────────────────
+        // ─── Update RuntimeStatsStore after success ───────────────────
         statsStore.updateAfterTask(agentDef.id, result, false);
 
         // Record telemetry
@@ -587,15 +623,23 @@ export async function startOrchestrator(
         });
 
         // Emit TASK_COMPLETED for HealthMonitor + event store
-        bus.emit(createEvent('TASK_COMPLETED', agentDef.id, {
-          iterations: result.iterations,
-          filesChanged: result.filesChanged.length,
-          costUSD: result.costUSD,
-          latencyMs: result.latencyMs,
-          taskResult: result.taskResult,
-          // v0.3: pass objectiveId so coordinator can track completion
-          objectiveId: task.objectiveId || undefined,
-        }, task.id, runtimeType as any));
+        bus.emit(
+          createEvent(
+            'TASK_COMPLETED',
+            agentDef.id,
+            {
+              iterations: result.iterations,
+              filesChanged: result.filesChanged.length,
+              costUSD: result.costUSD,
+              latencyMs: result.latencyMs,
+              taskResult: result.taskResult,
+              // v0.3: pass objectiveId so coordinator can track completion
+              objectiveId: task.objectiveId || undefined,
+            },
+            task.id,
+            runtimeType as any,
+          ),
+        );
 
         // ── v0.3: OBJECTIVE-AWARE COMPLETION ──
         if (task.objectiveId && task.type === 'subtask') {
@@ -604,7 +648,7 @@ export async function startOrchestrator(
 
         // ── v0.3: REVIEW DISPATCH ──
         if (task.type === 'subtask' && task.reviewRequired) {
-          const reviewerAgent = config.agents.find(a => a.role === 'reviewer');
+          const reviewerAgent = config.agents.find((a) => a.role === 'reviewer');
           if (reviewerAgent) {
             createTask({
               type: 'review',
@@ -628,13 +672,21 @@ export async function startOrchestrator(
         statsStore.updateAfterTask(agentDef.id, result, false);
 
         // Emit TASK_FAILED for HealthMonitor + event store
-        bus.emit(createEvent('TASK_FAILED', agentDef.id, {
-          error: (result.error || '').substring(0, 200),
-          iterations: result.iterations,
-          taskResult: result.taskResult,
-          // v0.3: pass objectiveId for coordinator replanning
-          objectiveId: task.objectiveId || undefined,
-        }, task.id, runtimeType as any));
+        bus.emit(
+          createEvent(
+            'TASK_FAILED',
+            agentDef.id,
+            {
+              error: (result.error || '').substring(0, 200),
+              iterations: result.iterations,
+              taskResult: result.taskResult,
+              // v0.3: pass objectiveId for coordinator replanning
+              objectiveId: task.objectiveId || undefined,
+            },
+            task.id,
+            runtimeType as any,
+          ),
+        );
 
         // ---- RETRY QUEUE ----
         // Instead of permanently failing, try to enqueue for retry with backoff.
@@ -653,9 +705,10 @@ export async function startOrchestrator(
         );
         if (retryRecord) {
           const delaySecs = Math.round(retryRecord.retryDelayMs / 1000);
-          logger.warn('ORCHESTRATOR',
+          logger.warn(
+            'ORCHESTRATOR',
             `${task.id} queued for retry #${retryRecord.attemptNumber} ` +
-            `(${retryRecord.lastErrorType}) in ${delaySecs}s`
+              `(${retryRecord.lastErrorType}) in ${delaySecs}s`,
           );
         } else {
           logger.error('ORCHESTRATOR', `${task.id} dead-lettered — max retries exceeded or not retryable`);
@@ -664,11 +717,19 @@ export async function startOrchestrator(
           // When a subtask is permanently dead-lettered, emit a secondary
           // event so the coordinator can trigger replanning.
           if (task.objectiveId && task.type === 'subtask') {
-            bus.emit(createEvent('TASK_FAILED', agentDef.id, {
-              error: (result.error || '').substring(0, 200),
-              objectiveId: task.objectiveId,
-              deadLettered: true,
-            }, task.id, runtimeType as any));
+            bus.emit(
+              createEvent(
+                'TASK_FAILED',
+                agentDef.id,
+                {
+                  error: (result.error || '').substring(0, 200),
+                  objectiveId: task.objectiveId,
+                  deadLettered: true,
+                },
+                task.id,
+                runtimeType as any,
+              ),
+            );
           }
         }
 
@@ -677,7 +738,10 @@ export async function startOrchestrator(
           try {
             fs.unlinkSync(activeTask.filePath);
           } catch (err: any) {
-            logger.error('ORCHESTRATOR', `Failed to delete active task file for failed task ${task.id}: ${err.message}`);
+            logger.error(
+              'ORCHESTRATOR',
+              `Failed to delete active task file for failed task ${task.id}: ${err.message}`,
+            );
           }
         }
 
@@ -707,7 +771,10 @@ export async function startOrchestrator(
       }
     } catch (err: any) {
       if (finalizedTasks.has(attemptId)) {
-        logger.warn('ORCHESTRATOR', `[FINALIZATION GUARD] Blocked duplicate finalization for ${task.id} (attempt: ${attemptId}, path: crash)`);
+        logger.warn(
+          'ORCHESTRATOR',
+          `[FINALIZATION GUARD] Blocked duplicate finalization for ${task.id} (attempt: ${attemptId}, path: crash)`,
+        );
         return;
       }
       finalizedTasks.add(attemptId);
@@ -717,11 +784,19 @@ export async function startOrchestrator(
       logger.error('ORCHESTRATOR', `${agentDef.id} crashed on ${task.id}: ${err.message}`);
 
       // Emit TASK_FAILED for HealthMonitor + event store
-      bus.emit(createEvent('TASK_FAILED', agentDef.id, {
-        error: err.message,
-        iterations: 0,
-        taskResult: 'failed',
-      }, task.id, runtimeType as any));
+      bus.emit(
+        createEvent(
+          'TASK_FAILED',
+          agentDef.id,
+          {
+            error: err.message,
+            iterations: 0,
+            taskResult: 'failed',
+          },
+          task.id,
+          runtimeType as any,
+        ),
+      );
 
       // Safely read content from active file before any moves/deletes
       let taskContent = '';
@@ -739,26 +814,33 @@ export async function startOrchestrator(
       }
 
       // Update stats — mark as crash
-      statsStore.updateAfterTask(agentDef.id, {
-        success: false,
-        summary: err.message,
-        filesChanged: [],
-        iterations: 0,
-        totalTokens: 0,
-        costUSD: 0,
-        latencyMs: Date.now() - (state.activeAgents.get(agentDef.id)?.startedAt ?? Date.now()),
-        runtimeType: (agentDef.runtime || 'api') as any,
-        error: err.message,
-        taskResult: 'failed',
-        exitCode: -1,
-      }, true);
+      statsStore.updateAfterTask(
+        agentDef.id,
+        {
+          success: false,
+          summary: err.message,
+          filesChanged: [],
+          iterations: 0,
+          totalTokens: 0,
+          costUSD: 0,
+          latencyMs: Date.now() - (state.activeAgents.get(agentDef.id)?.startedAt ?? Date.now()),
+          runtimeType: (agentDef.runtime || 'api') as any,
+          error: err.message,
+          taskResult: 'failed',
+          exitCode: -1,
+        },
+        true,
+      );
 
       // Clean up the active task file
       if (fs.existsSync(activeTask.filePath)) {
         try {
           fs.unlinkSync(activeTask.filePath);
         } catch (unlinkErr: any) {
-          logger.error('ORCHESTRATOR', `Failed to delete active task file for crashed task ${task.id}: ${unlinkErr.message}`);
+          logger.error(
+            'ORCHESTRATOR',
+            `Failed to delete active task file for crashed task ${task.id}: ${unlinkErr.message}`,
+          );
         }
       }
     } finally {
@@ -847,7 +929,7 @@ export async function startOrchestrator(
 
             // Determine retry blacklist (prefer alternate runtime for crashes / repeated failures)
             const retryStatus = getRetryQueueStatus(cwd);
-            const retryRecord = retryStatus.find(r => r.taskId === task.id);
+            const retryRecord = retryStatus.find((r) => r.taskId === task.id);
             const blacklist = retryRecord?.preferAlternateRuntime ? [retryRecord.agentId] : [];
 
             // Use the Router for intelligent task assignment
@@ -862,11 +944,12 @@ export async function startOrchestrator(
               if (!fallbackDecision) {
                 continue; // Truly no agent available
               }
-              logger.warn('SCHEDULER',
+              logger.warn(
+                'SCHEDULER',
                 `No alternate runtime for ${task.id} — falling back to original agent ` +
-                `(blacklist: [${blacklist.join(', ')}])`
+                  `(blacklist: [${blacklist.join(', ')}])`,
               );
-              const fbAgent = config.agents.find(a => a.id === fallbackDecision.agentId);
+              const fbAgent = config.agents.find((a) => a.id === fallbackDecision.agentId);
               const fbRuntime = fbAgent ? runtimeMap.get(fbAgent.id) : undefined;
               if (!fbAgent || !fbRuntime) continue;
               // ── PRE-MARK agent as busy BEFORE fire-and-forget dispatch ──
@@ -876,13 +959,13 @@ export async function startOrchestrator(
                 taskId: task.id,
                 startedAt: Date.now(),
               });
-              dispatchTask(task, fbAgent, fbRuntime).catch(err => {
+              dispatchTask(task, fbAgent, fbRuntime).catch((err) => {
                 logger.error('ORCHESTRATOR', `Unhandled dispatch error: ${err.message}`);
               });
               continue;
             }
 
-            const agentDef = config.agents.find(a => a.id === decision.agentId);
+            const agentDef = config.agents.find((a) => a.id === decision.agentId);
             if (!agentDef) continue;
 
             const runtime = runtimeMap.get(agentDef.id);
@@ -901,12 +984,12 @@ export async function startOrchestrator(
               `role:+${bd.roleBonus.toFixed(2)} ` +
               `cost:-${bd.costPenalty.toFixed(3)} ` +
               `cplx:+${bd.complexityBonus.toFixed(2)}`;
-            if (bd.healthBonus !== 0)      routeLog += ` hlth:${bd.healthBonus > 0 ? '+' : ''}${bd.healthBonus.toFixed(2)}`;
-            if (bd.crashPenalty > 0.001)   routeLog += ` crash:-${bd.crashPenalty.toFixed(3)}`;
-            if (bd.cooldownPenalty > 0)    routeLog += ` cool:-${bd.cooldownPenalty.toFixed(2)}`;
-            if (bd.loadPenalty > 0.001)    routeLog += ` load:-${bd.loadPenalty.toFixed(3)}`;
+            if (bd.healthBonus !== 0) routeLog += ` hlth:${bd.healthBonus > 0 ? '+' : ''}${bd.healthBonus.toFixed(2)}`;
+            if (bd.crashPenalty > 0.001) routeLog += ` crash:-${bd.crashPenalty.toFixed(3)}`;
+            if (bd.cooldownPenalty > 0) routeLog += ` cool:-${bd.cooldownPenalty.toFixed(2)}`;
+            if (bd.loadPenalty > 0.001) routeLog += ` load:-${bd.loadPenalty.toFixed(3)}`;
             if (bd.mutationPenalty > 0.01) routeLog += ` mut:-${bd.mutationPenalty.toFixed(3)}`;
-            if (blacklist.length > 0)      routeLog += ` [rerouted from: ${blacklist.join(', ')}]`;
+            if (blacklist.length > 0) routeLog += ` [rerouted from: ${blacklist.join(', ')}]`;
             logger.info('SCHEDULER', routeLog);
 
             // ── PRE-MARK agent as busy BEFORE fire-and-forget dispatch ──
@@ -918,7 +1001,7 @@ export async function startOrchestrator(
             });
 
             // Dispatch in its own async context (fire-and-forget)
-            dispatchTask(task, agentDef, runtime).catch(err => {
+            dispatchTask(task, agentDef, runtime).catch((err) => {
               logger.error('ORCHESTRATOR', `Unhandled dispatch error: ${err.message}`);
             });
           }
@@ -939,9 +1022,10 @@ export async function startOrchestrator(
     if (!state.running) return;
     state.running = false;
     logger.info('ORCHESTRATOR', '⏹️ Shutting down...');
-    logger.info('ORCHESTRATOR',
+    logger.info(
+      'ORCHESTRATOR',
       `Session summary: ${state.completedTasks} completed, ${state.failedTasks} failed, ` +
-      `${state.totalTokensUsed} tokens, $${state.totalCostUSD.toFixed(4)}`
+        `${state.totalTokensUsed} tokens, $${state.totalCostUSD.toFixed(4)}`,
     );
 
     // Dispose all runtimes (kill CLI processes, close connections)

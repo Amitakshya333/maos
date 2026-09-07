@@ -14,16 +14,35 @@
 // ---- Event Types ----
 
 export type EventType =
-  | 'TASK_STARTED'     // Agent began working on a task
-  | 'TASK_PROGRESS'    // Agent made measurable progress (file written, tool called)
-  | 'TASK_COMPLETED'   // Agent finished successfully
-  | 'TASK_FAILED'      // Agent encountered a fatal error
-  | 'HEARTBEAT'        // Agent is alive and working (periodic)
-  | 'AGENT_READY'      // Agent is idle and available for work
-  | 'AGENT_DISPOSED'   // Agent runtime was cleaned up
+  | 'TASK_STARTED' // Agent began working on a task
+  | 'TASK_PROGRESS' // Agent made measurable progress (file written, tool called)
+  | 'TASK_COMPLETED' // Agent finished successfully
+  | 'TASK_FAILED' // Agent encountered a fatal error
+  | 'RUNTIME_CRASHED' // Agent process died abruptly (WT tab killed, SIGKILL, OOM, etc.)
+  | 'HEARTBEAT' // Agent is alive and working (periodic, now independent of execution loop)
+  | 'AGENT_READY' // Agent is idle and available for work
+  | 'AGENT_DISPOSED' // Agent runtime was cleaned up
   | 'CONTEXT_COMPRESSED' // API runtime compressed its context window
-  | 'BUDGET_WARNING'   // Agent nearing iteration/timeout limit
-  | 'HEALTH_ALERT';    // Health monitor detected a dead/degraded agent
+  | 'BUDGET_WARNING' // Agent nearing iteration/timeout limit
+  | 'HEALTH_ALERT' // Health monitor detected a dead/degraded agent
+  | 'AGENT_PHASE' // Agent execution phase changed (THINKING/WAITING_ON_PROVIDER/EXECUTING_TOOL/RETRYING)
+  | 'PROVIDER_WAITING' // Agent is currently blocked on a provider call (long-inference signal)
+  | 'PROVIDER_FAILING' // Provider repeatedly failing — circuit breaker warning before task abort
+  // ── v0.3 Objective Lifecycle ──────────────────────────────────
+  | 'OBJECTIVE_CREATED' // New objective entered the system
+  | 'OBJECTIVE_PLAN_READY' // ARCHITECT finished decomposing → subtasks queued
+  | 'OBJECTIVE_REPLANNING' // Subtask failed → ARCHITECT redesigning approach
+  | 'OBJECTIVE_COMPLETED' // All subtasks done → objective finished
+  | 'OBJECTIVE_FAILED' // Unrecoverable failure → objective abandoned
+  // ── v0.3 Coordination Protocol ────────────────────────────────
+  | 'COORD_REQUEST' // Agent requests info from the team
+  | 'COORD_RESPONSE' // Agent responds to a team request
+  // ── v0.3 Review Pipeline ──────────────────────────────────────
+  | 'REVIEW_STARTED' // Reviewer began reviewing a subtask
+  | 'REVIEW_APPROVED' // Reviewer approved the subtask
+  | 'REVIEW_CHANGES_REQUIRED' // Reviewer found issues → fix task created
+  // ── v0.3 Supervisor ──────────────────────────────────────────
+  | 'SUPERVISOR_NUDGE'; // Supervisor nudged a stalled agent
 
 // ---- Event Payload ----
 
@@ -126,11 +145,7 @@ export class MessageBus {
    * Wait for a specific event (Promise-based).
    * Useful for "wait until agent X finishes".
    */
-  waitFor(
-    type: EventType,
-    filter?: (e: BusEvent) => boolean,
-    timeoutMs?: number,
-  ): Promise<BusEvent> {
+  waitFor(type: EventType, filter?: (e: BusEvent) => boolean, timeoutMs?: number): Promise<BusEvent> {
     return new Promise((resolve, reject) => {
       let timer: NodeJS.Timeout | null = null;
 
@@ -164,9 +179,7 @@ export class MessageBus {
    * Get events for a specific agent.
    */
   getAgentEvents(agentId: string, count: number = 20): BusEvent[] {
-    return this.eventLog
-      .filter(e => e.agentId === agentId)
-      .slice(-count);
+    return this.eventLog.filter((e) => e.agentId === agentId).slice(-count);
   }
 
   /**

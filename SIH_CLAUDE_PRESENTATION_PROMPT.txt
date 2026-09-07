@@ -1,0 +1,263 @@
+You are an elite hackathon presentation designer and technical storyteller. Edit the attached official file `SIH2025-IDEA-Presentation-Format.pptx`; do not create a presentation from scratch.
+
+MISSION
+Create the strongest possible Smart India Hackathon 2025 idea deck for MAOS Industrial. The submission must contain exactly SIX slides including the title slide. The source file contains a seventh slide named “IMPORTANT INSTRUCTIONS”; treat it only as authoring guidance and DELETE it from the final deck.
+
+NON-NEGOTIABLE TEMPLATE RULES
+1. Preserve the official SIH template, slide size, theme, background, master/layout hierarchy, title positions, footer, slide numbers, SIH branding, fonts, and required headings.
+2. Duplicate/edit the six official submission slides in place. Do not replace them with a newly designed deck and do not change the required idea-detail headings/pointers.
+3. Do not add slides. Do not hide required content in an appendix. Final slide count: 6.
+4. Keep the deck editable, then export a final PDF because the SIH portal accepts PDF.
+5. Delete all template prompt text after replacing it. Delete slide 7.
+6. Never invent a Problem Statement ID, Team ID, team name, certification, benchmark, customer, deployment, partnership, or result. Keep unresolved official fields in [SQUARE BRACKETS] for the team to fill.
+7. Use concise points, diagrams, infographics, icons, evidence labels, and a few high-value metrics. Avoid long paragraphs and dense dashboard/card-grid styling.
+8. Maintain readable typography at presentation scale. Shorten text before shrinking it. No clipped text, overlaps, tiny citations, or title wrapping.
+9. Use a restrained industrial visual language inside the existing template: navy/charcoal, safety orange, cyan/teal accents, white space, thin technical lines, turbine/sensor/evidence motifs. Do not recolor or remove official SIH branding.
+10. Use authentic project screenshots supplied from the repository where suitable. Do not generate fake UI, fake industrial evidence, fake logos, or fake performance charts.
+
+COMMUNICATION JOB
+By the end, SIH evaluators should believe that MAOS Industrial is a feasible, differentiated and socially valuable sovereign-AI solution because it keeps sensitive plant evidence on-premise, coordinates specialized local agents, and makes safety verdicts reproducible through deterministic code rather than unsupported LLM judgment.
+
+CORE PRODUCT FACTS
+- Product: MAOS Industrial, an optional solution pack on top of MAOS Core (Multi-Agent Orchestrator System).
+- One-line proposition: Private plant data in; traceable, deterministic safety action out—without cloud calls.
+- Primary user: industrial safety, maintenance and operations engineers who cannot upload plant logs or maintenance records to cloud AI services.
+- Demonstration job: ingest a 500-row turbine sensor CSV plus a maintenance report; identify four known abnormal events; evaluate readings against explicit JSON thresholds; produce a cited compliance report and recommendations.
+- Four-agent workflow: INGEST → ANALYST → AUDITOR → SYNTHESIZER.
+- Model role: local Qwen 2.5 3B coordinates, extracts and explains.
+- Deterministic role: code parses evidence and calculates PASS/WARNING/FAIL from configured thresholds. The LLM must not invent safety limits.
+- Offline design: local OpenAI-compatible endpoint, cached model, offline flags, no required cloud API key, no remote font/CDN dependency.
+- Evidence controls: project-root path validation, allowlisted evidence formats, bounded output, timeout for Python execution, structured JSON tool results.
+- Demo evidence: 500 timestamped readings and four documented events, with checked-in ground truth and corroborating maintenance evidence.
+- Honest limitations: demonstration ruleset, not a certified industrial standard; text-based PDFs only; demo-grade constrained Python execution; no live PLC/SCADA integration yet; CPU inference may use a pre-verified fallback report for a sub-three-minute demo.
+- Platform story: Industrial is additive. MAOS Core remains a general orchestrator usable for software, research and operations workflows.
+
+OVERALL NARRATIVE
+Slide 1 establishes the promise.
+Slide 2 makes the problem and solution instantly understandable.
+Slide 3 proves the technical architecture and trustworthy decision boundary.
+Slide 4 proves the idea can be built, deployed and responsibly operated.
+Slide 5 quantifies stakeholder value and scale potential.
+Slide 6 proves research discipline and ends with a decisive pilot proposition, not a generic thank-you.
+
+SLIDE 1 — TITLE PAGE
+Keep this slide minimal and premium. Use the existing official title-page layout.
+
+Fill fields exactly as follows:
+- Main title: MAOS INDUSTRIAL
+- Subtitle/tagline: Sovereign Multi-Agent AI for Traceable Industrial Safety
+- Problem Statement ID: [INSERT OFFICIAL PS ID]
+- Problem Statement Title: [INSERT EXACT OFFICIAL PS TITLE]
+- Theme: [INSERT OFFICIAL THEME]
+- PS Category: Software
+- Team ID: [INSERT TEAM ID]
+- Team Name: [INSERT REGISTERED TEAM NAME]
+
+Add only one compact value line if the layout supports it without crowding:
+“Private plant data in → deterministic safety action out → zero cloud dependency”
+
+Visual direction: use one strong, authentic or abstract industrial visual—turbine silhouette, sensor waveform and local-network motif—integrated into the template. No feature list on the cover.
+
+SLIDE 2 — IDEA TITLE / PROPOSED SOLUTION
+Required takeaway title: “MAOS turns confidential plant evidence into auditable safety action—entirely on-premise.”
+
+Use a left-to-right visual story rather than paragraphs.
+
+Problem block, maximum three points:
+- Sensitive turbine logs and maintenance records often cannot leave the plant network.
+- Generic cloud copilots create privacy, traceability and hallucinated-threshold risks.
+- Engineers manually correlate sensor anomalies, safety rules and maintenance evidence under time pressure.
+
+Solution block:
+- MAOS Industrial activates a four-agent local workflow: ingest, analyze, audit and synthesize.
+- A cached local model coordinates reasoning; deterministic tools own parsing, threshold arithmetic and verdicts.
+- Every finding retains provenance: timestamp/row, observed value, configured limit, deviation, verdict and recommendation.
+
+Innovation/uniqueness strip:
+- Sovereign by design: no required cloud calls or API keys.
+- “LLM explains; code decides” separates probabilistic reasoning from safety-critical calculations.
+- Optional vertical pack: reusable MAOS Core plus industry-specific agents, tools and policy.
+
+Hero proof metric ribbon, using only verified prototype facts:
+“500 readings • 4 documented events • 4 specialized agents • 1 traceable report”
+
+Suggested visual: Evidence files on the left, local MAOS engine at center, auditable report on the right. Show an air-gap/local shield around the center. Avoid generic robot imagery.
+
+SLIDE 3 — TECHNICAL APPROACH
+Required takeaway title: “A local agent pipeline combines flexible reasoning with deterministic safety controls.”
+
+Place a clean architecture diagram as the dominant visual. Recreate the following Mermaid logic as polished native PowerPoint shapes/connectors so it remains editable. Connectors must sit behind nodes, never cross labels, and use consistent direction and arrow semantics.
+
+```mermaid
+flowchart LR
+    U[Safety / Maintenance Engineer] --> UI[Offline MAOS Dashboard & CLI]
+    UI --> O[MAOS Core Orchestrator]
+    O --> I[INGEST Agent\nPreserve provenance]
+    I --> A[ANALYST Agent\nDetect anomalies]
+    A --> D[ AUDITOR Agent\nApply explicit rules ]
+    D --> S[SYNTHESIZER Agent\nBuild evidence report]
+
+    F[(CSV • TXT • JSON • text PDF)] --> I
+    R[(Safety thresholds.json)] --> C[Deterministic Tool Layer]
+    I --> C
+    A --> C
+    D --> C
+    C -->|PASS / WARNING / FAIL\nthreshold + deviation| D
+    S --> P[Traceable report\nEvidence • risk • action]
+
+    L[Local Qwen 2.5 3B\nCached • OpenAI-compatible] -. coordinates & explains .-> O
+    O --> E[(Local event store, queue,\ntelemetry & health state)]
+
+    subgraph B[ON-PREMISE / AIR-GAPPED BOUNDARY]
+      UI
+      O
+      I
+      A
+      D
+      S
+      C
+      L
+      E
+    end
+```
+
+If Mermaid syntax cannot be rendered directly, follow its topology exactly. Visually emphasize the trust boundary:
+- Teal/dashed connections = model coordination/explanation.
+- Orange/solid connections = deterministic evidence and safety decisions.
+- A prominent note beside AUDITOR: “The model never invents the threshold.”
+
+Add a compact technology rail, not a large table:
+- TypeScript + Node.js orchestration
+- Local OpenAI-compatible Transformers endpoint
+- Qwen 2.5 3B Instruct (cached/offline)
+- Deterministic `ingest_document`, `execute_python`, `check_compliance`
+- JSONL/file-based queue, events, telemetry and health state
+- Offline dashboard; Git/project-root and secret-leak safeguards
+
+Add a small implementation flow beneath the diagram:
+1. Activate Industrial profile
+2. Submit evidence
+3. Route agents by role
+4. Compute verdicts
+5. Generate cited report
+
+SLIDE 4 — FEASIBILITY AND VIABILITY
+Required takeaway title: “The prototype is buildable now, with clear controls for the remaining deployment risks.”
+
+Use one balanced feasibility-versus-risk composition, not paragraphs.
+
+Feasibility proof:
+- Existing npm-installable MAOS Core and optional Industrial profile.
+- Four local agents and three deterministic industrial tools implemented.
+- Checked-in 500-row dataset, maintenance report, thresholds and expected findings.
+- Offline endpoint and cache-only runtime; generic MAOS behavior remains intact.
+- TypeScript build and focused industrial verification completed.
+
+Deployment pathway, shown as a concise progression:
+Prototype → plant-network pilot → read-only historian/CMMS connectors → governed multi-asset rollout
+
+Risk-and-mitigation matrix (keep each cell brief):
+- Slow CPU inference → quantized/GPU runtime, smaller model, pre-warmed service; verified fallback report for demo.
+- False or unsupported verdicts → deterministic thresholds, ground-truth regression tests, mandatory evidence fields, human approval.
+- Unsafe file/code execution → project-root validation, allowlists, timeouts, bounded output; container isolation in production.
+- Standards variation → plant-owned versioned rulesets; never claim certification without validation.
+- Legacy integration complexity → phased read-only adapters before any control-system write access.
+
+Add a readiness callout:
+“Pilot-ready scope: one asset class, offline workstation, read-only evidence, engineer-in-the-loop.”
+
+Include limitations honestly in a small footer: demo ruleset; text PDFs; no live PLC/SCADA control; constrained execution is not a hardened sandbox.
+
+SLIDE 5 — IMPACT AND BENEFITS
+Required takeaway title: “MAOS strengthens safety decisions while preserving data sovereignty and engineering accountability.”
+
+Organize around three stakeholder outcomes with a central causal chain; avoid unsupported ROI percentages.
+
+Operations & safety:
+- Faster correlation of sensor events with maintenance evidence.
+- Consistent PASS/WARNING/FAIL calculation from explicit plant rules.
+- Actionable report with evidence, risk and recommendations.
+
+Organization & economy:
+- Sensitive evidence remains on premises.
+- Local/open models reduce vendor lock-in and cloud dependence.
+- Reusable MAOS Core lowers the cost of adding future workflows and asset types.
+
+Governance & environment:
+- Provenance and event history improve auditability.
+- Engineer-in-the-loop and visible rules support accountability.
+- Earlier anomaly triage can reduce avoidable downtime, secondary damage and waste; phrase this as potential, not measured impact.
+
+Use a clearly labeled “Prototype evidence” band:
+- 500 sensor readings processed
+- 4 known events represented in checked-in ground truth
+- 4-role evidence pipeline
+- Offline configuration with zero required cloud endpoint
+
+Use a “Scale path” visual:
+Single turbine → multiple assets → plant-wide workflows → cross-sector sovereign agent packs
+
+Target sectors can be shown as small icons/labels: manufacturing, power, oil & gas, rail, mining, utilities. Do not claim deployments in these sectors.
+
+Close the slide with one strong line:
+“The scalable asset is not one report—it is a governed pattern for private, auditable agentic operations.”
+
+SLIDE 6 — RESEARCH AND REFERENCES
+Required takeaway title: “The design is grounded in sovereign-AI practice, deterministic safety logic and reproducible prototype evidence.”
+
+This slide must satisfy the required references pointer while still closing the pitch strongly. Use a two-column structure: evidence/references on the left, validation and pilot ask on the right.
+
+Project evidence to cite with repository paths or working URLs:
+- MAOS repository README and architecture documentation.
+- `docs/MAOS_INDUSTRIAL_BUILD_PLAN.md` — requirements, decisions, acceptance gates and verified checklist.
+- `demo/industrial/turbine_vibration_log.csv` — 500-row deterministic sample.
+- `demo/industrial/expected_findings.json` — documented anomaly ground truth.
+- `demo/industrial/safety_thresholds.json` — demonstration threshold rules.
+- `demo/industrial/maintenance_report.txt` — corroborating evidence.
+- `demo/industrial/generated/turbine_t07_safety_report.md` — verified fallback output.
+- `scripts/verify-industrial-tools.js` and `demo/industrial/RUNBOOK.md` — verification and reproducibility.
+- MAOS npm package: https://www.npmjs.com/package/maosorch
+- Project website: https://maos.web.app/
+
+External technical references (verify URLs and dates before finalizing):
+- NIST AI Risk Management Framework: https://www.nist.gov/itl/ai-risk-management-framework
+- NIST SP 800-82 Rev. 3, Guide to Operational Technology Security: https://csrc.nist.gov/pubs/sp/800/82/r3/final
+- Hugging Face Transformers offline mode documentation: https://huggingface.co/docs/transformers/installation#offline-mode
+- Qwen2.5 model documentation/model card used by the prototype: insert the exact verified Hugging Face URL.
+
+Validation ladder:
+1. Reproduce known anomalies against checked-in ground truth.
+2. Run with network disabled and confirm only local endpoints.
+3. Review every verdict with an industrial engineer.
+4. Pilot read-only on one asset before broader rollout.
+
+Final pilot proposition, visually prominent:
+“Next step: validate MAOS Industrial on one real, de-identified asset dataset with plant-owned thresholds and engineer sign-off.”
+
+Do not end with “Thank You.” End with the pilot proposition and a compact QR/link area for repository/demo only if an authentic destination is provided.
+
+COPY AND EVIDENCE RULES
+- Write for SIH evaluators, not for the presentation creator.
+- Use assertive but defensible language: “designed,” “implemented,” “verified in prototype,” and “potential.”
+- Do not say “certified compliance,” “production-grade sandbox,” “real-time PLC integration,” “proven cost reduction,” or “100% accurate.”
+- Distinguish verified prototype evidence from projected benefits through labels and wording.
+- Keep technical acronyms expanded on first use.
+- Put concise source URLs or numbered references on slide 6 and add source notes for every external claim/image if the authoring tool supports notes.
+
+DESIGN AND QA CHECKLIST
+- Exactly six visible slides; official instruction slide removed.
+- All six required official sections remain recognizable.
+- No invented official/team fields; unresolved fields remain bracketed.
+- Titles are takeaway statements and remain one line where possible.
+- Diagram is readable at full-slide view, with an obvious on-premise boundary and deterministic decision path.
+- No paragraphs longer than three lines; body copy is edited down before font reduction.
+- No overlapping objects, clipped text, orphan bullets, broken arrows or default placeholders.
+- Slide numbers and team footer are consistent; replace “Your Team Name” with [INSERT REGISTERED TEAM NAME].
+- Authentic icons/screenshots only; consistent visual style and image crops.
+- Export both editable PPTX and submission-ready PDF; inspect all six slides after export.
+
+DELIVERABLES
+1. Edited official-template PPTX.
+2. Six-page PDF for SIH upload.
+3. A short list of unresolved placeholders that the team must fill before submission.
+4. A one-line confirmation that slide 7 was deleted and the final deck has exactly six slides.

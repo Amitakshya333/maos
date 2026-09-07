@@ -1,0 +1,16 @@
+# Source code (shipped via dist/ only)
+src/
+# Test files
+test-project/
+test-sdk.ts
+# Runtime data
+.maos/
+# Secrets
+.env
+.env.example
+# Logs
+*.log
+# Git
+.git/
+# Extra docs (not needed in package)
+PITCH_DECK.md

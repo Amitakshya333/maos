@@ -48,6 +48,19 @@ Modern AI coding assistants are powerful but **single-threaded**. You can only u
 
 ---
 
+## 🏭 MAOS Industrial — Sovereign Solution Pack
+
+MAOS Industrial is an **optional vertical profile** on top of MAOS Core. It coordinates locally hosted open-weight models and deterministic industrial tools to analyze confidential plant documents and sensor data — entirely offline, with zero cloud dependency.
+
+- **Sovereign**: Runs on cached Qwen 2.5 3B Instruct via a local OpenAI-compatible endpoint — no API keys, no cloud calls
+- **Specialized agents**: INGEST → ANALYST → AUDITOR → SYNTHESIZER pipeline for industrial evidence
+- **Deterministic safety**: `check_compliance` evaluates measurements against configured thresholds (PASS/WARNING/FAIL) — the model coordinates, code decides
+- **Evidence-first**: Traceable reports citing timestamps, row numbers, thresholds, deviations, and corroborating maintenance evidence
+
+MAOS Core remains a general-purpose orchestrator. Enable Industrial by activating `profiles/industrial/maos.config.json`.
+
+---
+
 ## 🚀 Quick Start
 
 ### Install
