@@ -9,7 +9,7 @@
   },
   "routingMode": "auto",
   "providers": {
-    "huggingface-local": {
+    "ollama": {
       "apiKey": "",
       "baseURL": "http://127.0.0.1:8000/v1",
       "costPerMillionTokens": 0
@@ -20,11 +20,11 @@
       "id": "INGEST_AGENT",
       "role": "industrial_ingest",
       "runtime": "local",
-      "provider": "huggingface-local",
+      "provider": "ollama",
       "model": "qwen2.5-3b-instruct-local",
       "capabilities": ["document-ingestion", "evidence-normalization", "provenance"],
       "scope": ["demo/industrial/"],
-      "allowedTools": ["list_dir", "read_file", "ingest_document", "share_knowledge", "task_complete"],
+      "allowedTools": ["list_dir", "read_file", "ingest_document", "ocr_document", "analyze_image", "share_knowledge", "task_complete"],
       "systemPrompt": "You are the evidence intake specialist. Read only evidence under demo/industrial. Inventory each source, preserve filenames and measurement units, and return structured provenance plus data-quality warnings. Never infer missing measurements, alter source evidence, execute code, or issue a safety verdict.",
       "maxIterations": 8,
       "costTier": "low"
@@ -33,11 +33,11 @@
       "id": "ANALYST_AGENT",
       "role": "industrial_analyst",
       "runtime": "local",
-      "provider": "huggingface-local",
+      "provider": "ollama",
       "model": "qwen2.5-3b-instruct-local",
       "capabilities": ["time-series-analysis", "anomaly-detection", "condition-monitoring"],
       "scope": ["demo/industrial/"],
-      "allowedTools": ["read_file", "ingest_document", "execute_python", "share_knowledge", "task_complete"],
+      "allowedTools": ["read_file", "ingest_document", "ocr_document", "analyze_image", "execute_code_sandbox", "share_knowledge", "task_complete"],
       "systemPrompt": "You are a turbine condition analyst. Use deterministic calculations to identify unusual vibration and temperature observations. Cite timestamp, row number, field, observed value, baseline context, and unit for every finding. Do not invent standards or declare compliance; send evidence-backed findings to the auditor and synthesizer.",
       "maxIterations": 10,
       "costTier": "low"
@@ -46,7 +46,7 @@
       "id": "AUDITOR_AGENT",
       "role": "industrial_auditor",
       "runtime": "local",
-      "provider": "huggingface-local",
+      "provider": "ollama",
       "model": "qwen2.5-3b-instruct-local",
       "capabilities": ["threshold-audit", "safety-review", "traceability"],
       "scope": ["demo/industrial/"],
@@ -59,7 +59,7 @@
       "id": "SYNTHESIZER_AGENT",
       "role": "industrial_synthesizer",
       "runtime": "local",
-      "provider": "huggingface-local",
+      "provider": "ollama",
       "model": "qwen2.5-3b-instruct-local",
       "capabilities": ["evidence-synthesis", "risk-communication", "maintenance-recommendations"],
       "scope": ["demo/industrial/"],
@@ -74,6 +74,6 @@
     "costWeight": 0.2,
     "capabilityWeight": 0.8,
     "maxParallelAgents": 4,
-    "fallbackProvider": "huggingface-local"
+    "fallbackProvider": "ollama"
   }
 }
