@@ -8,6 +8,10 @@ const EXPECTED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 const EXPECTED_REVISION = 'fa979fdf926cbd99430f16e4321689952542a641';
 const MANIFEST_PATH = path.join(REPOSITORY_ROOT, 'embedding-snapshot-manifest.json');
 
+// Retry settings for transient HTTP errors (429, 5xx)
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 2000;
+
 function isWithin(candidate, root) {
   const relative = path.relative(root, candidate);
   return relative === '' || (
@@ -30,6 +34,77 @@ async function readIfValid(filePath, entry) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch a URL with automatic retry for transient errors (429, 502, 503, 504).
+ * Returns the Response object. Non-retryable failures are returned as-is.
+ */
+async function fetchWithRetry(url, opts = {}) {
+  let lastResponse = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, opts);
+      if (response.status === 429 || response.status >= 500) {
+        lastResponse = response;
+        if (attempt < MAX_RETRIES) {
+          const delayMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+          console.log(`  ⏳ HTTP ${response.status} for ${url} — retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await sleep(delayMs);
+          continue;
+        }
+        // exhausted retries, return the last response
+        return response;
+      }
+      return response;
+    } catch (err) {
+      lastResponse = null;
+      if (attempt < MAX_RETRIES) {
+        const delayMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+        console.log(`  ⏳ Network error for ${url}: ${err.message} — retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await sleep(delayMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  // Should not reach here, but just in case
+  if (lastResponse) return lastResponse;
+  throw new Error(`fetchWithRetry exhausted all attempts for ${url}`);
+}
+
+async function tryDownload(url, entry, destination) {
+  const response = await fetchWithRetry(url, {
+    redirect: 'follow',
+    headers: { 'User-Agent': 'node-fetch/maos-ci' },
+  });
+
+  if (response.status === 404) {
+    return { ok: false, reason: '404' };
+  }
+
+  if (!response.ok) {
+    return { ok: false, reason: `HTTP ${response.status}` };
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const actualHash = sha256(bytes);
+  if (bytes.length !== entry.size || actualHash !== entry.sha256.toLowerCase()) {
+    return {
+      ok: false,
+      reason: `hash/size mismatch (got ${bytes.length}b/${actualHash.slice(0, 12)}…, expected ${entry.size}b/${entry.sha256.slice(0, 12)}…)`,
+    };
+  }
+
+  await mkdir(path.dirname(destination), { recursive: true });
+  const temporary = `${destination}.${process.pid}.tmp`;
+  await writeFile(temporary, bytes, { flag: 'w' });
+  await rename(temporary, destination);
+  return { ok: true };
+}
+
 async function main() {
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
   if (
@@ -49,6 +124,15 @@ async function main() {
   }
 
   const modelPath = EXPECTED_MODEL.split('/').map(encodeURIComponent).join('/');
+
+  // Candidate revisions to try, in priority order
+  const candidateRevisions = [
+    EXPECTED_REVISION,
+    'c9745ed1d9f207416be6d2e6f8de32d1f16199bf',
+    'fa97f6e7cb1a59073dff9e6b13e2715cf7475ac9',
+    'main',
+  ];
+
   for (const entry of manifest.files) {
     if (
       typeof entry.path !== 'string' ||
@@ -65,62 +149,49 @@ async function main() {
       throw new Error(`Embedding snapshot file path escapes the pinned snapshot: ${entry.path}`);
     }
     if (await readIfValid(destination, entry)) {
+      console.log(`✓ ${entry.path} — already present and verified.`);
       continue;
     }
 
-    const candidateRevisions = [
-      EXPECTED_REVISION,
-      'c9745ed1d9f207416be6d2e6f8de32d1f16199bf',
-      'fa97f6e7cb1a59073dff9e6b13e2715cf7475ac9',
-      'main',
-    ];
+    const encodedFilePath = entry.path
+      .split(/[\\/]/)
+      .map(encodeURIComponent)
+      .join('/');
+
+    // Build URL candidates: /resolve/<rev>/path for each revision
+    const urlCandidates = candidateRevisions.map(
+      (rev) => ({
+        label: `resolve/${rev}`,
+        url: `https://huggingface.co/${modelPath}/resolve/${rev}/${encodedFilePath}`,
+      })
+    );
+
+    // Also try the raw download endpoint as a last resort
+    urlCandidates.push({
+      label: 'raw/main',
+      url: `https://huggingface.co/${modelPath}/raw/main/${encodedFilePath}`,
+    });
 
     let restored = false;
-    let lastError = null;
+    const failures = [];
 
-    for (const rev of candidateRevisions) {
-      const url = `https://huggingface.co/${modelPath}/resolve/${rev}/${entry.path
-        .split(/[\\/]/)
-        .map(encodeURIComponent)
-        .join('/')}`;
-
+    for (const { label, url } of urlCandidates) {
       try {
-        const response = await fetch(url, {
-          redirect: 'follow',
-          headers: { 'User-Agent': 'node-fetch/maos-ci' },
-        });
-
-        if (response.status === 404) {
-          continue;
+        const result = await tryDownload(url, entry, destination);
+        if (result.ok) {
+          console.log(`✓ ${entry.path} — restored from ${label}`);
+          restored = true;
+          break;
         }
-
-        if (!response.ok) {
-          lastError = new Error(`HTTP ${response.status} from revision ${rev}`);
-          continue;
-        }
-
-        const bytes = Buffer.from(await response.arrayBuffer());
-        const actualHash = sha256(bytes);
-        if (bytes.length !== entry.size || actualHash !== entry.sha256.toLowerCase()) {
-          lastError = new Error(`Pinned embedding file failed size/hash verification from revision ${rev}`);
-          continue;
-        }
-
-        await mkdir(path.dirname(destination), { recursive: true });
-        const temporary = `${destination}.${process.pid}.tmp`;
-        await writeFile(temporary, bytes, { flag: 'w' });
-        await rename(temporary, destination);
-        console.log(`Restored and verified ${entry.path} (from upstream revision ${rev})`);
-        restored = true;
-        break;
+        failures.push(`${label}: ${result.reason}`);
       } catch (err) {
-        lastError = err;
+        failures.push(`${label}: ${err.message}`);
       }
     }
 
     if (!restored) {
       throw new Error(
-        `Could not restore ${entry.path}: ${lastError ? lastError.message : 'all upstream candidate revisions failed'}.`
+        `Could not restore ${entry.path} from any upstream source.\n  Attempted:\n    ${failures.join('\n    ')}`
       );
     }
   }
@@ -132,27 +203,27 @@ async function main() {
     size: 190,
     sha256: '4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23',
   };
-  if (!(await readIfValid(poolingDestination, poolingEntry))) {
+  if (await readIfValid(poolingDestination, poolingEntry)) {
+    console.log(`✓ 1_Pooling/config.json — already present and verified.`);
+  } else {
+    let poolingRestored = false;
     for (const rev of ['c9745ed1d9f207416be6d2e6f8de32d1f16199bf', 'main']) {
       const url = `https://huggingface.co/${modelPath}/resolve/${rev}/1_Pooling/config.json`;
       try {
-        const response = await fetch(url, {
-          redirect: 'follow',
-          headers: { 'User-Agent': 'node-fetch/maos-ci' },
-        });
-        if (!response.ok) continue;
-        const bytes = Buffer.from(await response.arrayBuffer());
-        if (bytes.length === poolingEntry.size && sha256(bytes) === poolingEntry.sha256) {
-          await mkdir(path.dirname(poolingDestination), { recursive: true });
-          await writeFile(poolingDestination, bytes, { flag: 'w' });
-          console.log(`Restored and verified 1_Pooling/config.json (from upstream revision ${rev})`);
+        const result = await tryDownload(url, poolingEntry, poolingDestination);
+        if (result.ok) {
+          console.log(`✓ 1_Pooling/config.json — restored from ${rev}`);
+          poolingRestored = true;
           break;
         }
       } catch {}
     }
+    if (!poolingRestored) {
+      console.warn('⚠ Could not restore 1_Pooling/config.json — non-fatal, may not be needed.');
+    }
   }
 
-  console.log(`Verified ${manifest.files.length} files for ${EXPECTED_MODEL}@${EXPECTED_REVISION}.`);
+  console.log(`\n✅ Verified ${manifest.files.length} files for ${EXPECTED_MODEL}@${EXPECTED_REVISION}.`);
 }
 
 main().catch((error) => {
