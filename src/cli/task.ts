@@ -1,6 +1,5 @@
 import chalk from 'chalk';
-import { createTask } from '../core/queue';
-import { isMaosInitialized } from '../utils/paths';
+import { createServiceContainer } from '../service';
 
 export interface TaskOptions {
   agent?: string;
@@ -11,8 +10,10 @@ export interface TaskOptions {
 }
 
 export function runTask(description: string, options: TaskOptions): void {
+  const services = createServiceContainer(process.cwd());
+
   // Check initialization
-  if (!isMaosInitialized()) {
+  if (!services.project.isInitialized()) {
     console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
     console.log(chalk.gray('Run: maos init'));
     process.exit(1);
@@ -26,7 +27,7 @@ export function runTask(description: string, options: TaskOptions): void {
   const complexity = (options.complexity || 'medium') as 'low' | 'medium' | 'high';
 
   try {
-    const task = createTask({
+    const task = services.task.createTask({
       agent: options.agent,
       branch: options.branch,
       description,

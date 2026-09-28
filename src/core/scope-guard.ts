@@ -483,6 +483,34 @@ export { getFileLockRegistry as getFileOwnershipEngine };
 // ---- Combined Guard Function ----
 
 /**
+ * Resolve the existing ancestor of a prospective write and verify that its
+ * real path remains inside the project root. Lexical checks alone are not
+ * sufficient because Windows junctions and symlinks are followed by writes.
+ */
+export function assertRealWritePathContained(filePath: string, projectRoot: string): string {
+  const root = fs.realpathSync(path.resolve(projectRoot));
+  const candidate = path.resolve(projectRoot, filePath);
+  const lexicalRelative = path.relative(path.resolve(projectRoot), candidate);
+  if (!lexicalRelative || lexicalRelative.startsWith('..') || path.isAbsolute(lexicalRelative)) {
+    throw new Error('Path must remain inside the project root');
+  }
+
+  let existing = candidate;
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) throw new Error('Unable to resolve write parent');
+    existing = parent;
+  }
+
+  const realExisting = fs.realpathSync(existing);
+  const realRelative = path.relative(root, realExisting);
+  if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) {
+    throw new Error('Resolved write path escapes the project root');
+  }
+  return candidate;
+}
+
+/**
  * Full scope + ownership check for a write_file call.
  * Returns null if allowed, ScopeViolation if blocked.
  */
@@ -503,7 +531,20 @@ export function guardWriteFile(
     };
   }
 
-  // 2. File ownership check (replaces simple lock)
+  // 2. Validate existing parent realpaths before claiming the write. This
+  // rejects junction/symlink escapes, including targets that do not exist yet.
+  try {
+    assertRealWritePathContained(filePath, projectRoot);
+  } catch (err: any) {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: err.message,
+    };
+  }
+
+  // 3. File ownership check (replaces simple lock)
   const engine = getFileLockRegistry();
   const conflict = engine.claimWrite(filePath, agentId, taskId);
   if (conflict) {

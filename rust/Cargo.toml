@@ -1,0 +1,30 @@
+# MAOS Industrial Engine — Cargo Workspace
+#
+# Layout:
+#   rust/Cargo.toml              (this file — workspace root)
+#   rust/crates/maos-industrial-engine/   (the engine crate)
+#   rust/test.txt                (PROTECTED — do NOT modify)
+#
+# Build: cargo build --release --locked
+# Test:  cargo test --locked
+# Fmt:   cargo fmt --all --check
+# Lint:  cargo clippy --all-targets --all-features -- -D warnings
+
+[workspace]
+resolver = "2"
+members = ["crates/maos-industrial-engine"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95.0"
+license = "MIT"
+authors = ["Amitakshya Sutar"]
+repository = "https://github.com/Amitakshya333/maos"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

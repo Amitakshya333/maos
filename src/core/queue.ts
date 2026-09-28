@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getPendingDir, getActiveDir, getDoneDir } from '../utils/paths';
+import type { ExtendedTaskRequirements, TaskModality } from '../domain/schemas';
 
 // ─── Task Types ───────────────────────────────────────────────
 // task       = standalone task (backward compat, default)
@@ -18,7 +19,7 @@ export interface TaskFile {
   complexity: 'low' | 'medium' | 'high';
   category: string;
   dependsOn: string[];
-  status: 'pending' | 'active' | 'done' | 'failed';
+  status: 'pending' | 'active' | 'done' | 'failed' | 'interrupted';
   createdAt: string;
   filePath: string;
 
@@ -36,6 +37,9 @@ export interface TaskFile {
   fixAttempts: number;
   /** For review tasks: the ID of the task being reviewed */
   parentTaskId: string;
+
+  // ── F7-01 Extended Task Requirements ─────────────────────────────
+  requirements?: ExtendedTaskRequirements;
 }
 
 /**
@@ -61,6 +65,58 @@ function buildTaskContent(task: Omit<TaskFile, 'filePath' | 'status'>): string {
   if (task.reviewRequired) v03Lines.push(`review_required: true`);
   if (task.fixAttempts > 0) v03Lines.push(`fix_attempts: ${task.fixAttempts}`);
   if (task.parentTaskId) v03Lines.push(`parent_task_id: ${task.parentTaskId}`);
+
+  // Build optional F7-01 extended requirement lines
+  if (task.requirements) {
+    const req = task.requirements;
+    if (req.modalities && req.modalities.length > 0) {
+      v03Lines.push(`modalities: [${req.modalities.join(', ')}]`);
+    }
+    if (req.primaryModality) {
+      v03Lines.push(`primary_modality: ${req.primaryModality}`);
+    }
+    if (req.model) {
+      if (req.model.minContextTokens) v03Lines.push(`min_context_tokens: ${req.model.minContextTokens}`);
+      if (req.model.modelFamily) v03Lines.push(`model_family: ${req.model.modelFamily}`);
+      if (req.model.architecture) v03Lines.push(`model_architecture: ${req.model.architecture}`);
+      if (req.model.requiredRevision) v03Lines.push(`required_revision: ${req.model.requiredRevision}`);
+      if (req.model.parameterTier) v03Lines.push(`parameter_tier: ${req.model.parameterTier}`);
+      if (req.model.devicePreference) v03Lines.push(`device_preference: ${req.model.devicePreference}`);
+      if (req.model.quantization) v03Lines.push(`quantization: ${req.model.quantization}`);
+    }
+    if (req.tools) {
+      if (req.tools.requiredTools && req.tools.requiredTools.length > 0) {
+        v03Lines.push(`required_tools: [${req.tools.requiredTools.join(', ')}]`);
+      }
+      if (req.tools.optionalTools && req.tools.optionalTools.length > 0) {
+        v03Lines.push(`optional_tools: [${req.tools.optionalTools.join(', ')}]`);
+      }
+      if (req.tools.forbiddenTools && req.tools.forbiddenTools.length > 0) {
+        v03Lines.push(`forbidden_tools: [${req.tools.forbiddenTools.join(', ')}]`);
+      }
+    }
+    if (req.input) {
+      if (req.input.requiredArtifactTypes && req.input.requiredArtifactTypes.length > 0) {
+        v03Lines.push(`input_artifacts: [${req.input.requiredArtifactTypes.join(', ')}]`);
+      }
+      if (req.input.requiredMimeTypes && req.input.requiredMimeTypes.length > 0) {
+        v03Lines.push(`input_mime_types: [${req.input.requiredMimeTypes.join(', ')}]`);
+      }
+      if (req.input.schemaId) v03Lines.push(`input_schema_id: ${req.input.schemaId}`);
+      if (req.input.maxInputSizeBytes) v03Lines.push(`max_input_size_bytes: ${req.input.maxInputSizeBytes}`);
+    }
+    if (req.output) {
+      if (req.output.expectedArtifactTypes && req.output.expectedArtifactTypes.length > 0) {
+        v03Lines.push(`output_artifacts: [${req.output.expectedArtifactTypes.join(', ')}]`);
+      }
+      if (req.output.outputSchemaId) v03Lines.push(`output_schema_id: ${req.output.outputSchemaId}`);
+      if (req.output.enforceFormat !== undefined) v03Lines.push(`enforce_output_format: ${req.output.enforceFormat}`);
+    }
+    if (req.allowDegradation !== undefined) {
+      v03Lines.push(`allow_degradation: ${req.allowDegradation}`);
+    }
+  }
+
   const v03Block = v03Lines.length > 0 ? v03Lines.join('\n') + '\n' : '';
 
   return `---
@@ -116,6 +172,122 @@ function parseTaskFile(filePath: string): TaskFile | null {
         .filter(Boolean);
     };
 
+    // Extended requirements parsing
+    const rawModalities = getArray('modalities') as TaskModality[];
+    const primaryModality = (get('primary_modality') as TaskModality) || undefined;
+    const minContextTokensStr = get('min_context_tokens');
+    const minContextTokens = minContextTokensStr ? parseInt(minContextTokensStr, 10) : undefined;
+    const modelFamily = get('model_family') || undefined;
+    const architecture = get('model_architecture') || undefined;
+    const requiredRevision = get('required_revision') || undefined;
+    const parameterTier = (get('parameter_tier') as any) || undefined;
+    const devicePreference = (get('device_preference') as any) || undefined;
+    const quantization = (get('quantization') as any) || undefined;
+
+    const requiredTools = getArray('required_tools');
+    const optionalTools = getArray('optional_tools');
+    const forbiddenTools = getArray('forbidden_tools');
+
+    const inputArtifacts = getArray('input_artifacts');
+    const inputMimeTypes = getArray('input_mime_types');
+    const inputSchemaId = get('input_schema_id') || undefined;
+    const maxInputSizeStr = get('max_input_size_bytes');
+    const maxInputSizeBytes = maxInputSizeStr ? parseInt(maxInputSizeStr, 10) : undefined;
+
+    const outputArtifacts = getArray('output_artifacts');
+    const outputSchemaId = get('output_schema_id') || undefined;
+    const enforceOutputFormatStr = get('enforce_output_format');
+    const enforceFormat = enforceOutputFormatStr ? enforceOutputFormatStr === 'true' : undefined;
+
+    const allowDegradationStr = get('allow_degradation');
+    const allowDegradation = allowDegradationStr ? allowDegradationStr === 'true' : undefined;
+
+    let requirements: ExtendedTaskRequirements | undefined = undefined;
+    const hasExtended =
+      rawModalities.length > 0 ||
+      primaryModality !== undefined ||
+      minContextTokens !== undefined ||
+      modelFamily !== undefined ||
+      architecture !== undefined ||
+      requiredRevision !== undefined ||
+      parameterTier !== undefined ||
+      devicePreference !== undefined ||
+      quantization !== undefined ||
+      requiredTools.length > 0 ||
+      optionalTools.length > 0 ||
+      forbiddenTools.length > 0 ||
+      inputArtifacts.length > 0 ||
+      inputMimeTypes.length > 0 ||
+      inputSchemaId !== undefined ||
+      maxInputSizeBytes !== undefined ||
+      outputArtifacts.length > 0 ||
+      outputSchemaId !== undefined ||
+      enforceFormat !== undefined ||
+      allowDegradation !== undefined;
+
+    if (hasExtended) {
+      const hasModel =
+        minContextTokens !== undefined ||
+        modelFamily !== undefined ||
+        architecture !== undefined ||
+        requiredRevision !== undefined ||
+        parameterTier !== undefined ||
+        devicePreference !== undefined ||
+        quantization !== undefined;
+
+      const hasTools =
+        requiredTools.length > 0 || optionalTools.length > 0 || forbiddenTools.length > 0;
+
+      const hasInput =
+        inputArtifacts.length > 0 ||
+        inputMimeTypes.length > 0 ||
+        inputSchemaId !== undefined ||
+        maxInputSizeBytes !== undefined;
+
+      const hasOutput =
+        outputArtifacts.length > 0 || outputSchemaId !== undefined || enforceFormat !== undefined;
+
+      requirements = {
+        schemaVersion: 1,
+        modalities: rawModalities.length > 0 ? rawModalities : ['text'],
+        primaryModality,
+        model: hasModel
+          ? {
+              minContextTokens,
+              modelFamily,
+              architecture,
+              requiredRevision,
+              parameterTier,
+              devicePreference,
+              quantization,
+            }
+          : undefined,
+        tools: hasTools
+          ? {
+              requiredTools,
+              optionalTools: optionalTools.length > 0 ? optionalTools : undefined,
+              forbiddenTools: forbiddenTools.length > 0 ? forbiddenTools : undefined,
+            }
+          : undefined,
+        input: hasInput
+          ? {
+              requiredArtifactTypes: inputArtifacts.length > 0 ? inputArtifacts : undefined,
+              requiredMimeTypes: inputMimeTypes.length > 0 ? inputMimeTypes : undefined,
+              schemaId: inputSchemaId,
+              maxInputSizeBytes,
+            }
+          : undefined,
+        output: hasOutput
+          ? {
+              expectedArtifactTypes: outputArtifacts.length > 0 ? outputArtifacts : undefined,
+              outputSchemaId,
+              enforceFormat,
+            }
+          : undefined,
+        allowDegradation: allowDegradation ?? false,
+      };
+    }
+
     return {
       id: get('id'),
       agent: get('agent'),
@@ -135,6 +307,7 @@ function parseTaskFile(filePath: string): TaskFile | null {
       reviewRequired: get('review_required') === 'true',
       fixAttempts: parseInt(get('fix_attempts') || '0', 10) || 0,
       parentTaskId: get('parent_task_id') || '',
+      requirements,
     };
   } catch {
     return null;
@@ -163,6 +336,8 @@ export function createTask(opts: {
   reviewRequired?: boolean;
   fixAttempts?: number;
   parentTaskId?: string;
+  // F7-01 extended requirements
+  requirements?: ExtendedTaskRequirements;
 }): TaskFile {
   const agent = opts.agent || 'AUTO';
   const taskType = opts.type || 'task';
@@ -198,6 +373,7 @@ export function createTask(opts: {
     reviewRequired: opts.reviewRequired ?? false,
     fixAttempts: opts.fixAttempts ?? 0,
     parentTaskId: opts.parentTaskId || '',
+    requirements: opts.requirements,
   };
 
   const content = buildTaskContent(task);

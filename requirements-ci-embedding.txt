@@ -1,0 +1,5 @@
+# CPU-only inference dependencies for the real, pinned embedding-model tests.
+# The model weights are restored separately and checked against their manifest.
+torch==2.11.0
+transformers==5.15.1
+numpy==2.5.2

@@ -1,0 +1,30 @@
+# Offline Cargo Configuration
+#
+# For air-gapped / sovereign builds:
+#
+# 1. On a network-connected machine, run:
+#    cargo vendor > rust/.cargo/vendor-config.toml
+#
+# 2. Copy the entire `rust/vendor/` directory to the target machine.
+#
+# 3. Create or merge `rust/.cargo/config.toml` with:
+#    [source.crates-io]
+#    replace-with = "vendored-sources"
+#
+#    [source.vendored-sources]
+#    directory = "vendor"
+#
+# 4. Build with:
+#    cargo build --release --locked
+#
+# The --locked flag ensures Cargo.lock is used exactly, no resolution changes.
+
+[build]
+# Incremental builds for dev, LTO for release (set in workspace Cargo.toml)
+incremental = true
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

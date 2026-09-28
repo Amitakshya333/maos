@@ -1,5 +1,5 @@
-import { IProvider, ChatMessage } from '../backends/provider';
-import { AGENT_TOOLS, executeTool } from '../integrations/tools';
+import { IProvider, ChatMessage, ToolDef } from '../backends/provider';
+import { AGENT_TOOLS, executeTool, getToolsForAgent } from '../integrations/tools';
 import { Logger, createLogger } from '../utils/logger';
 import { getFileLockRegistry } from './scope-guard';
 import { saveCheckpoint, deleteCheckpoint, TaskCheckpoint } from './checkpoint';
@@ -56,6 +56,10 @@ const CONTEXT_TOKEN_LIMIT = 60_000; // Compress context when exceeding this
 const NUDGE_AT_PERCENT = 0.8; // Nudge agent to finish at 80% of iteration budget
 const MAX_BONUS_ITERATIONS = 5; // Extra iterations granted for productive agents
 
+function filterTools(allTools: ToolDef[], allowedTools?: string[], agentId?: string): ToolDef[] {
+  return getToolsForAgent(allowedTools, agentId);
+}
+
 function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: string): string {
   // ---- BRAIN INJECTION ----
   // If brain has been initialized, inject compact project context.
@@ -85,6 +89,11 @@ function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: str
     /* memory not available — non-fatal */
   }
 
+  let agentSpecificSection = '';
+  if (agent.systemPrompt) {
+    agentSpecificSection = `\n## Agent-Specific Instructions\n${agent.systemPrompt}\n`;
+  }
+
   return `You are ${agent.id}, a ${agent.role} agent working on this project.
 
 ## Your Identity
@@ -98,7 +107,7 @@ You may ONLY modify files in: [${agent.scope.join(', ')}]
 You are on git branch: ${task.branch}
 Project root: ${projectRoot}
 DO NOT touch files outside your scope. The system will reject out-of-scope writes.
-${brainSection}${memorySection}
+${brainSection}${memorySection}${agentSpecificSection}
 ## Your Task
 ${task.description}
 
@@ -212,7 +221,7 @@ export async function runAgent(
 
       // Call the model (with retry for transient errors including 504)
       const response = await retryOnTransient(
-        () => provider.generate(messages, AGENT_TOOLS),
+        () => provider.generate(messages, filterTools(AGENT_TOOLS, agent.allowedTools, agent.id)),
         3, // 3 retries for 504/timeout resilience
         logger,
         agent.id,
@@ -243,7 +252,7 @@ export async function runAgent(
           });
 
           const retryResponse = await retryOnTransient(
-            () => provider.generate(messages, AGENT_TOOLS),
+            () => provider.generate(messages, filterTools(AGENT_TOOLS, agent.allowedTools, agent.id)),
             1,
             logger,
             agent.id,
@@ -272,6 +281,7 @@ export async function runAgent(
                 agent.scope,
                 agent.id,
                 task.id,
+                agent.allowedTools,
               );
               messages.push({ role: 'tool', name: tc.function.name, content: result, tool_call_id: tc.id });
               if (done) {
@@ -341,7 +351,7 @@ export async function runAgent(
           }
         }
 
-        const { result, isComplete: done } = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id);
+        const { result, isComplete: done } = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id, agent.allowedTools);
 
         // Truncate huge tool results to prevent context bloat
         const truncatedResult =

@@ -24,6 +24,32 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python for offline embedding tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-ci-embedding.txt
+
+      - name: Install CPU embedding runtime
+        run: python -m pip install --disable-pip-version-check --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-ci-embedding.txt
+
+      - name: Cache pinned embedding snapshot
+        uses: actions/cache@v4
+        with:
+          path: offline-stores/model-snapshot
+          key: embedding-snapshot-${{ hashFiles('embedding-snapshot-manifest.json') }}
+
+      - name: Restore and verify pinned embedding snapshot
+        run: node scripts/restore-ci-embedding-snapshot.mjs
+
+      - name: Build Rust engine for this runner
+        working-directory: rust
+        run: cargo build --release --locked --offline
+
       - name: Install dependencies
         run: npm ci
 
@@ -32,3 +58,7 @@ jobs:
 
       - name: Run Unit Tests
         run: npm test
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          HF_DATASETS_OFFLINE: '1'

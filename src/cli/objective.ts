@@ -2,6 +2,7 @@
  * MAOS CLI — Objective Command
  *
  * Manages high-level objectives that get decomposed by ARCHITECT agents.
+ * Refactored to use WorkflowService and TaskService via createServiceContainer.
  *
  * Usage:
  *   objective "Build a REST API"     → Create a new objective
@@ -10,14 +11,8 @@
  */
 
 import chalk from 'chalk';
-import {
-  createObjective,
-  loadAllObjectives,
-  loadObjective,
-  getObjectiveProgress,
-  ObjectiveState,
-} from '../core/objective-store';
-import { createTask } from '../core/queue';
+import { createServiceContainer } from '../service';
+import type { WorkflowStage } from '../domain/schemas';
 
 // ── Status Colors ─────────────────────────────────────────────
 
@@ -40,10 +35,16 @@ function statusColor(status: string): string {
   }
 }
 
+function getObjectiveProgress(obj: WorkflowStage): number {
+  if (obj.childTaskIds.length === 0) return 0;
+  return Math.round((obj.completedChildIds.length / obj.childTaskIds.length) * 100);
+}
+
 // ── Subcommands ───────────────────────────────────────────────
 
 function listObjectives(): void {
-  const objectives = loadAllObjectives();
+  const services = createServiceContainer(process.cwd());
+  const objectives = services.workflow.listObjectives();
   if (objectives.length === 0) {
     console.log(chalk.gray('  No objectives found.'));
     console.log(chalk.gray('  Create one with: objective "Build a REST API"'));
@@ -70,10 +71,11 @@ function listObjectives(): void {
 }
 
 function showObjectiveStatus(id: string): void {
-  const obj = loadObjective(id);
+  const services = createServiceContainer(process.cwd());
+  const obj = services.workflow.getObjective(id);
   if (!obj) {
     // Try partial match
-    const all = loadAllObjectives();
+    const all = services.workflow.listObjectives();
     const match = all.find((o) => o.id.startsWith(id));
     if (!match) {
       console.log(chalk.red(`  Objective not found: ${id}`));
@@ -85,7 +87,7 @@ function showObjectiveStatus(id: string): void {
   showObjectiveDetail(obj);
 }
 
-function showObjectiveDetail(obj: ObjectiveState): void {
+function showObjectiveDetail(obj: WorkflowStage): void {
   const progress = getObjectiveProgress(obj);
 
   console.log(chalk.bold(`  Objective: ${obj.id}`));
@@ -134,11 +136,12 @@ function showObjectiveDetail(obj: ObjectiveState): void {
 }
 
 function createNewObjective(goal: string): void {
+  const cwd = process.cwd();
+  const services = createServiceContainer(cwd);
+
   // ── Pre-flight: verify ARCHITECT agent can actually process this ──
   try {
-    const fs = require('fs');
-    const { getConfigPath } = require('../utils/paths');
-    const config = JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8'));
+    const config = services.project.loadConfig();
     const { getAllCredentialStatuses } = require('../core/credentials');
 
     // Check that a planner agent exists
@@ -164,7 +167,7 @@ function createNewObjective(goal: string): void {
   }
 
   // Create the objective task (this goes to pending/ for ARCHITECT)
-  const task = createTask({
+  const task = services.task.createTask({
     type: 'objective',
     description: `## Objective: ${goal}\n\nDecompose this objective into concrete subtasks.\nFor each subtask, call task_complete with a structured plan.\n\n### Goal\n${goal}\n\n### Instructions\n1. Analyze the goal and identify all required work.\n2. Create subtasks using share_knowledge with type DECISION.\n3. Each subtask should be independently executable by a single agent.\n4. Specify dependencies between subtasks where needed.\n5. Call task_complete with the complete plan.`,
     capabilities: ['planning', 'decomposition', 'architecture'],
@@ -172,8 +175,8 @@ function createNewObjective(goal: string): void {
     category: 'planning',
   });
 
-  // Create the objective state
-  const obj = createObjective({
+  // Create the objective state via WorkflowService
+  const obj = services.workflow.createObjective({
     id: task.id,
     goal,
     plannerAgentId: 'AUTO',

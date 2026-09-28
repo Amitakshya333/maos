@@ -1,40 +1,24 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import chalk from 'chalk';
-import { isMaosInitialized, getConfigPath, getStatusDir, getPoolPath } from '../utils/paths';
-import { getQueueCounts, getPendingTasks, getActiveTasks } from '../core/queue';
+import { createServiceContainer } from '../service';
 import { renderPanel, getBrandBadge, renderDivider, icons, padRight } from '../utils/ui';
 
 export function runStatus(): void {
-  if (!isMaosInitialized()) {
+  const cwd = process.cwd();
+  const services = createServiceContainer(cwd);
+
+  if (!services.project.isInitialized()) {
     console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
     console.log(chalk.gray('Run: maos init'));
     process.exit(1);
   }
 
-  // Load config
-  const config = JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8'));
-  const agents = config.agents || [];
-
-  // Load pool state
-  let pool: Record<string, boolean> = {};
-  const poolPath = getPoolPath();
-  if (fs.existsSync(poolPath)) {
-    pool = JSON.parse(fs.readFileSync(poolPath, 'utf-8'));
-  }
-
-  // Load agent statuses
-  const statusDir = getStatusDir();
-  const getAgentStatus = (agentId: string): string => {
-    const statusFile = path.join(statusDir, `${agentId}.status`);
-    if (fs.existsSync(statusFile)) {
-      return fs.readFileSync(statusFile, 'utf-8').trim();
-    }
-    return 'IDLE';
-  };
+  // Load config & agents
+  const agents = services.project.getAgents();
+  const poolAgents = services.health.getAgentPool(agents);
+  const poolMap = new Map(poolAgents.map((a) => [a.agentId, a]));
 
   // Queue counts
-  const counts = getQueueCounts();
+  const counts = services.task.getQueueCounts();
 
   // Banner
   const bannerLines = [
@@ -58,8 +42,9 @@ export function runStatus(): void {
   console.log(renderDivider(75));
 
   for (const agent of agents) {
-    const enabled = pool[agent.id] !== false;
-    const status = getAgentStatus(agent.id);
+    const poolInfo = poolMap.get(agent.id);
+    const enabled = poolInfo?.enabled !== false;
+    const status = poolInfo ? (poolInfo.detail ? `${poolInfo.status}: ${poolInfo.detail}` : poolInfo.status) : 'IDLE';
 
     const statusColor =
       status === 'IDLE'
@@ -113,7 +98,7 @@ export function runStatus(): void {
 
   // Show pending tasks if any
   if (counts.pending > 0) {
-    const pending = getPendingTasks();
+    const pending = services.task.listTasks({ status: 'pending' });
     console.log(`  ${chalk.bold.yellow('⏳ Pending Queue Details')}`);
     for (const task of pending) {
       console.log(
@@ -127,7 +112,7 @@ export function runStatus(): void {
 
   // Show active tasks if any
   if (counts.active > 0) {
-    const active = getActiveTasks();
+    const active = services.task.listTasks({ status: 'active' });
     console.log(`  ${chalk.bold.cyan('⚡ Active Operations')}`);
     for (const task of active) {
       console.log(

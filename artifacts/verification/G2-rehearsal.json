@@ -1,0 +1,372 @@
+{
+  "passed": true,
+  "machineIdentity": {
+    "hostname": "HIDEZX",
+    "username": "AMITAKSHYA SUTAR",
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "architecture": "x64",
+    "nodeVersion": "v24.11.0",
+    "cpuCount": "16",
+    "totalMemoryBytes": "16849264640"
+  },
+  "networkIsolated": true,
+  "emptyDeveloperCaches": true,
+  "bundleVerified": true,
+  "storesVerified": true,
+  "servicesStarted": true,
+  "healthPassed": true,
+  "smokePassed": true,
+  "lifecyclePassed": true,
+  "idempotencyPassed": true,
+  "negativeTestsPassed": true,
+  "zeroOrphans": true,
+  "failures": [],
+  "rawOutputs": {
+    "machineIdentity": {
+      "hostname": "HIDEZX",
+      "username": "AMITAKSHYA SUTAR",
+      "platform": "win32",
+      "osRelease": "10.0.26200",
+      "architecture": "x64",
+      "nodeVersion": "v24.11.0",
+      "cpuCount": "16",
+      "totalMemoryBytes": "16849264640"
+    },
+    "networkIsolation": {
+      "step": 1,
+      "name": "Network isolation",
+      "passed": true,
+      "detail": "Network isolated",
+      "durationMs": 3016,
+      "checks": [
+        {
+          "label": "DNS resolution blocked",
+          "passed": true,
+          "detail": "External DNS unreachable (good)"
+        },
+        {
+          "label": "TCP outbound blocked",
+          "passed": true,
+          "detail": "External TCP unreachable (good)"
+        }
+      ]
+    },
+    "developerCaches": {
+      "emptyDeveloperCaches": true,
+      "npmGlobalCacheExists": false
+    },
+    "bundleVerification": {
+      "valid": true,
+      "missingFiles": [],
+      "tamperedFiles": [],
+      "debugBinaries": [],
+      "missingStores": [],
+      "unlistedExecutables": [],
+      "manifestCheck": true,
+      "failures": [],
+      "details": {
+        "totalEntries": 1774,
+        "totalSize": 9031294112,
+        "entriesHash": "bbe8cab44043767f7280bd7fd1f20d9ff3fb7a40d87bfdae064ceebb9f085856",
+        "verificationDetails": "All entries verified"
+      }
+    },
+    "offlineStores": {
+      "ready": true,
+      "stores": [
+        {
+          "store": "npm",
+          "present": true,
+          "valid": true,
+          "detail": "npm-cache-manifest.json and package-lock.json present",
+          "path": "C:\\maos\\npm-cache-manifest.json"
+        },
+        {
+          "store": "rust-vendor",
+          "present": true,
+          "valid": true,
+          "detail": "Cargo.lock + vendor/ (1337 files) + .cargo/config.toml present",
+          "path": "C:\\maos\\rust\\vendor",
+          "entryCount": 1337
+        },
+        {
+          "store": "python-wheels",
+          "present": true,
+          "valid": true,
+          "detail": "44 wheel files (2689.7 MB); all 42 locked distributions present",
+          "path": "C:\\maos\\offline-stores\\python-wheels",
+          "entryCount": 44,
+          "totalSizeBytes": 2820360543
+        },
+        {
+          "store": "tesseract",
+          "present": true,
+          "valid": true,
+          "detail": "1 files in tesseract store",
+          "path": "C:\\maos\\offline-stores\\tesseract",
+          "entryCount": 1
+        },
+        {
+          "store": "sandbox-image",
+          "present": true,
+          "valid": true,
+          "detail": "1 image tarball(s) in store",
+          "path": "C:\\maos\\offline-stores\\sandbox-image",
+          "entryCount": 1
+        },
+        {
+          "store": "model-snapshot",
+          "present": true,
+          "valid": true,
+          "detail": "Qwen/Qwen2.5-3B-Instruct @ aa8e72537993… — 9 files (5.8 GB)",
+          "path": "C:\\maos\\offline-stores\\model-snapshot\\models--Qwen--Qwen2.5-3B-Instruct\\snapshots\\aa8e72537993ba99e69dfaafa59ed015b17504d1",
+          "entryCount": 9,
+          "totalSizeBytes": 6183451098
+        }
+      ],
+      "missingStores": [],
+      "invalidStores": [],
+      "summary": "All offline stores ready"
+    },
+    "lifecycleInstall": {
+      "command": "install",
+      "exitCode": 0,
+      "success": true,
+      "idempotentSkip": true,
+      "message": "Already installed with same dependencies — skipped",
+      "detail": {
+        "installHash": "1d0f71a7ee11169f"
+      },
+      "timestamp": "2026-09-16T19:51:34.649Z",
+      "durationMs": 2
+    },
+    "lifecycleStart": {
+      "command": "start",
+      "exitCode": 0,
+      "success": true,
+      "idempotentSkip": false,
+      "message": "Started 2 services",
+      "detail": {
+        "ownedServices": [
+          {
+            "id": "rust-engine",
+            "pid": 15744,
+            "port": 0,
+            "hash": "fcd74107134cb930"
+          },
+          {
+            "id": "text-model",
+            "pid": 11476,
+            "port": 8190,
+            "hash": "1e8bdff6c251d323"
+          }
+        ]
+      },
+      "timestamp": "2026-09-16T19:51:34.668Z",
+      "durationMs": 17
+    },
+    "lifecycleHealth": {
+      "command": "health",
+      "exitCode": 0,
+      "success": true,
+      "idempotentSkip": false,
+      "message": "All services healthy",
+      "detail": {
+        "healthChecks": [
+          {
+            "id": "rust-engine",
+            "alive": true,
+            "identityOk": true
+          },
+          {
+            "id": "text-model",
+            "alive": true,
+            "identityOk": true
+          }
+        ],
+        "phase": "running"
+      },
+      "timestamp": "2026-09-16T19:51:34.672Z",
+      "durationMs": 3
+    },
+    "modelSnapshotHashes": {
+      "valid": true,
+      "mismatched": [],
+      "checked": 9
+    },
+    "smokeResults": {
+      "healthResp": {
+        "operation": "health",
+        "version": "1.0",
+        "data": {
+          "engine": "maos-industrial-engine",
+          "protocol_version": "1.0",
+          "rust_version": "1.95.0",
+          "status": "ok",
+          "unsafe_code": false,
+          "version": "0.1.0"
+        }
+      },
+      "evalResp": {
+        "operation": "evaluate",
+        "version": "1.0",
+        "data": {
+          "findings": [
+            {
+              "deviation": -21.5,
+              "metric": "temperature_c",
+              "observed_numeric": 68.5,
+              "recommendation": "No action required.",
+              "rule_id": "TEST-SMOKE/temperature_c",
+              "status": "PASS",
+              "threshold": {
+                "critical": 90,
+                "warning": 75
+              },
+              "unit": "celsius",
+              "value": "68.5"
+            },
+            {
+              "deviation": -2.8999999999999995,
+              "metric": "vibration_rms",
+              "observed_numeric": 4.2,
+              "recommendation": "No action required.",
+              "rule_id": "TEST-SMOKE/vibration_rms",
+              "status": "PASS",
+              "threshold": {
+                "critical": 7.1,
+                "warning": 4.5
+              },
+              "unit": "mm/s",
+              "value": "4.2"
+            }
+          ],
+          "ok": true,
+          "ruleset_id": "TEST-SMOKE",
+          "status": "PASS"
+        }
+      },
+      "textCompletion": {
+        "passed": true,
+        "protocol": "openai-compatible-http",
+        "endpoint": "http://127.0.0.1:8190",
+        "modelId": "qwen2.5-3b-instruct-local",
+        "revision": "aa8e72537993ba99e69dfaafa59ed015b17504d1",
+        "health": {
+          "status": 200,
+          "model": "qwen2.5-3b-instruct-local",
+          "revision": "aa8e72537993ba99e69dfaafa59ed015b17504d1",
+          "latencyMs": 31
+        },
+        "models": {
+          "status": 200,
+          "modelId": "qwen2.5-3b-instruct-local",
+          "latencyMs": 4
+        },
+        "completion": {
+          "status": 200,
+          "latencyMs": 1208,
+          "responseHash": "291f6694d373c8404b91e0cb62c14c7e07a74c8e3188a39e4e01c54ecb6510d4",
+          "contentExact": true
+        },
+        "detail": "HTTP completion passed for qwen2.5-3b-instruct-local @ aa8e72537993ba99e69dfaafa59ed015b17504d1 (1208 ms)"
+      }
+    },
+    "lifecycleStatus": {
+      "command": "status",
+      "exitCode": 0,
+      "success": true,
+      "idempotentSkip": false,
+      "message": "Phase: running",
+      "detail": {
+        "phase": "running",
+        "ownedServices": [
+          {
+            "id": "rust-engine",
+            "pid": 15744,
+            "port": 0
+          },
+          {
+            "id": "text-model",
+            "pid": 11476,
+            "port": 8190
+          }
+        ],
+        "pids": {
+          "rust-engine": 15744,
+          "text-model": 11476
+        },
+        "version": "0.3.0",
+        "lastCommand": "start",
+        "lastCommandTimestamp": "2026-09-16T19:51:34.667Z"
+      },
+      "timestamp": "2026-09-16T19:51:54.171Z",
+      "durationMs": 3
+    },
+    "doubleStart": {
+      "command": "start",
+      "exitCode": 1,
+      "success": true,
+      "idempotentSkip": true,
+      "message": "Services already running — skipped",
+      "detail": {
+        "ownedServices": [
+          {
+            "id": "rust-engine",
+            "pid": 15744,
+            "port": 0
+          },
+          {
+            "id": "text-model",
+            "pid": 11476,
+            "port": 8190
+          }
+        ]
+      },
+      "timestamp": "2026-09-16T19:51:54.174Z",
+      "durationMs": 3
+    },
+    "lifecycleStop": {
+      "command": "stop",
+      "exitCode": 0,
+      "success": true,
+      "idempotentSkip": false,
+      "message": "Stopped 2 services",
+      "detail": {
+        "stopResults": [
+          {
+            "id": "rust-engine",
+            "stopped": true,
+            "detail": "PID 15744 terminated"
+          },
+          {
+            "id": "text-model",
+            "stopped": true,
+            "detail": "PID 11476 terminated"
+          }
+        ]
+      },
+      "timestamp": "2026-09-16T19:51:54.537Z",
+      "durationMs": 361
+    },
+    "doubleStop": {
+      "command": "stop",
+      "exitCode": 2,
+      "success": true,
+      "idempotentSkip": true,
+      "message": "Services already stopped — skipped",
+      "timestamp": "2026-09-16T19:51:54.539Z",
+      "durationMs": 1
+    },
+    "negativeTests": {
+      "failedOnMissingModel": true,
+      "missingFileExitCode": 10,
+      "rehearsalFailures": [
+        "Text completion"
+      ]
+    }
+  },
+  "reportPath": "C:\\maos\\artifacts\\verification\\G2-rehearsal.json",
+  "timestamp": "2026-09-16T19:51:13.627Z"
+}

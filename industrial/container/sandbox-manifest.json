@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "imageName": "maos-sandbox-runner",
+  "tag": "0.3.0-industrial",
+  "imageDigest": "sha256:ceba1e7f48ac10413f0a75f53c062b917b10c6ba0457f1f67e4e30fe33a61f76",
+  "architecture": "linux/amd64",
+  "baseImage": "python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317",
+  "pythonVersion": "3.11.9",
+  "user": {
+    "name": "sandboxuser",
+    "uid": 10001,
+    "gid": 10001,
+    "isRoot": false,
+    "homeDir": "/home/sandboxuser"
+  },
+  "network": "none",
+  "capabilities": {
+    "dropAll": true,
+    "noNewPrivileges": true,
+    "readOnlyRootfs": true
+  },
+  "limits": {
+    "maxMemoryMb": 1024,
+    "maxCpuCores": 2,
+    "maxExecutionTimeMs": 30000,
+    "maxOutputBytes": 50000,
+    "maxProcesses": 32
+  },
+  "approvedPackages": [
+    {
+      "name": "numpy",
+      "version": "1.26.4",
+      "importName": "numpy",
+      "sha256": "9a933f7fae4465df9d43521fd94a8daaa42f61e88849b2ff92e10695033c467a",
+      "required": true
+    },
+    {
+      "name": "pandas",
+      "version": "2.2.2",
+      "importName": "pandas",
+      "sha256": "98d8ee34661848bc02f232f6236b28ceb20531c94b7fa71c36ae7abf9ba77b0b",
+      "required": true
+    },
+    {
+      "name": "scipy",
+      "version": "1.13.0",
+      "importName": "scipy",
+      "sha256": "a38b1d9bfcf18635bc58e19e0fa95669b7fef8daef1cf3d81b7e436798a729e2",
+      "required": true
+    },
+    {
+      "name": "sympy",
+      "version": "1.12.1",
+      "importName": "sympy",
+      "sha256": "f5fbe5a764d2627a85817c80d463b2ad4bbcc7c7d42cfb8c56e08dd1ea9ccfa2",
+      "required": true
+    },
+    {
+      "name": "matplotlib",
+      "version": "3.8.4",
+      "importName": "matplotlib",
+      "sha256": "e39c4a8618e7e1f400780be9fcffc2668582f3ef841cf775d71c82ec4fa6bf94",
+      "required": true
+    },
+    {
+      "name": "pytest",
+      "version": "8.2.0",
+      "importName": "pytest",
+      "sha256": "72aa8f041ff9d249d375bc8eeff6a5cbff2b1a039d91f4b87da485121b8fbf27",
+      "required": false
+    }
+  ],
+  "forbiddenPackages": [
+    "socket",
+    "http",
+    "urllib",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "ftplib",
+    "poplib",
+    "imaplib",
+    "smtplib",
+    "telnetlib",
+    "webbrowser",
+    "pip",
+    "setuptools",
+    "ensurepip",
+    "distutils",
+    "ctypes",
+    "posix",
+    "winreg",
+    "msvcrt"
+  ],
+  "forbiddenRuntimeCommands": [
+    "pip",
+    "pip3",
+    "conda",
+    "apt",
+    "apt-get",
+    "apk",
+    "yum",
+    "dnf",
+    "pacman",
+    "curl",
+    "wget",
+    "nc",
+    "ncat",
+    "netcat",
+    "bash",
+    "sh",
+    "powershell",
+    "cmd",
+    "ssh",
+    "scp"
+  ],
+  "offlineStoreRelativePath": "offline-stores/sandbox-image/image.tar",
+  "createdAt": "2026-09-21T18:00:00.000Z",
+  "manifestHash": "0aedbeb924aa33689ef79517598c8dd47949905065cb6dcb732768248ffd8a9c"
+}

@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "packId": "MAOS-INDUSTRIAL-PUBLIC-DEMO-PACK-V1",
+  "packVersion": "1.0.0",
+  "generatedAt": "2026-09-24T18:00:00.000Z",
+  "title": "MAOS Industrial Public Demonstration Pack",
+  "description": "Frozen, licensed, non-proprietary synthetic benchmark dataset and operating procedures for autonomous industrial safety audits across scenarios D1 through D7.",
+  "license": "CC0-1.0 Universal",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "clearancePolicy": {
+    "noProprietaryOrConfidentialData": true,
+    "noMrplDataPresent": true,
+    "regulatoryDisclaimerMandatory": true,
+    "disclaimer": "Hackathon demonstration rules only; not a certified standard or operating authorization.",
+    "negativeReviewSummary": "Verified that all assets are synthetic demonstration fixtures or public domain CC0 benchmarks. No confidential refinery, plant, or proprietary organizational data exists."
+  },
+  "assets": [
+    {
+      "id": "ASSET-01-TELEMETRY-CSV",
+      "filename": "turbine_vibration_log.csv",
+      "relativePath": "demo/industrial/turbine_vibration_log.csv",
+      "category": "telemetry",
+      "mimeType": "text/csv",
+      "sha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+      "byteSize": 25575,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D1",
+        "D2",
+        "D3",
+        "D5",
+        "D6",
+        "D7"
+      ],
+      "description": "500-row steam turbine telemetry log with vibration RMS and bearing temperature"
+    },
+    {
+      "id": "ASSET-02-SCANNED-INSPECTION-PDF",
+      "filename": "turbine_inspection_scan.pdf",
+      "relativePath": "demo/industrial/turbine_inspection_scan.pdf",
+      "category": "scan",
+      "mimeType": "application/pdf",
+      "sha256": "fcb75e928d0ada2ce7cbf187d3ec880c821d89b99563a06d86bb36f70211b9bd",
+      "byteSize": 534,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D2",
+        "D4",
+        "D7"
+      ],
+      "description": "Clean printed inspection scan sheet with clear typography for OCR verification"
+    },
+    {
+      "id": "ASSET-03-SOP-MARKDOWN",
+      "filename": "sop_turbine_vibration_monitoring.md",
+      "relativePath": "demo/industrial/sop_turbine_vibration_monitoring.md",
+      "category": "sop",
+      "mimeType": "text/markdown",
+      "sha256": "0c0e533878ffd4fb3d762305ecccf8d1029ff7b1b523c261bbd6bfaf21eb6eed",
+      "byteSize": 4268,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D2",
+        "D7"
+      ],
+      "description": "Standard operating procedure for turbine vibration and bearing temperature safety audit"
+    },
+    {
+      "id": "ASSET-04-MAINTENANCE-REPORT-TXT",
+      "filename": "maintenance_report.txt",
+      "relativePath": "demo/industrial/maintenance_report.txt",
+      "category": "report",
+      "mimeType": "text/plain",
+      "sha256": "7ed8e5b9f2a9fb74e212f70c2e78768b1850d7815d7c633a8af381f61bb08503",
+      "byteSize": 1023,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D2",
+        "D6",
+        "D7"
+      ],
+      "description": "Field visual inspection report recording qualitative observations and auditory signs"
+    },
+    {
+      "id": "ASSET-05-EXPECTED-FINDINGS-JSON",
+      "filename": "expected_findings.json",
+      "relativePath": "demo/industrial/expected_findings.json",
+      "category": "ground_truth",
+      "mimeType": "application/json",
+      "sha256": "119616933de4323b7fcdbd8a6fe03c248c9d506fda49cdde88e7770038f03e82",
+      "byteSize": 1031,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D1",
+        "D2",
+        "D6",
+        "D7"
+      ],
+      "description": "Row-level ground truth anomalies and corroborating qualitative observations"
+    },
+    {
+      "id": "ASSET-06-SAFETY-THRESHOLDS-JSON",
+      "filename": "safety_thresholds.json",
+      "relativePath": "demo/industrial/safety_thresholds.json",
+      "category": "ground_truth",
+      "mimeType": "application/json",
+      "sha256": "e860af9eec46875c13d4ef120197f4950b2ac9f0aa9c25a3d9c52b598ce1a33d",
+      "byteSize": 877,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D1",
+        "D2",
+        "D3",
+        "D5",
+        "D7"
+      ],
+      "description": "Evaluation ruleset thresholds for vibration and temperature warning/critical levels"
+    },
+    {
+      "id": "ASSET-07-GROUND-TRUTH-JSON",
+      "filename": "ground_truth.json",
+      "relativePath": "demo/industrial/ground_truth.json",
+      "category": "ground_truth",
+      "mimeType": "application/json",
+      "sha256": "895cdb86d7ae487a0bb0f0fda7a5286699455be050a90d800a6845929aba4786",
+      "byteSize": 4126,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7"
+      ],
+      "description": "Unified comprehensive ground truth spanning telemetry, documents, images, and deliverables"
+    },
+    {
+      "id": "ASSET-08-IMAGE-PID-DRAWING",
+      "filename": "images/pid_drawing.png",
+      "relativePath": "demo/industrial/images/pid_drawing.png",
+      "category": "image",
+      "mimeType": "image/png",
+      "sha256": "b2b9f63e3baa99a098b19f5c95560b1e4ead30e6f31cb8cf06aee5bba2f35865",
+      "byteSize": 1311,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D4"
+      ],
+      "description": "Synthetic P&ID piping and instrumentation engineering diagram"
+    },
+    {
+      "id": "ASSET-09-IMAGE-PRESSURE-GAUGE",
+      "filename": "images/pressure_gauge.png",
+      "relativePath": "demo/industrial/images/pressure_gauge.png",
+      "category": "image",
+      "mimeType": "image/png",
+      "sha256": "413d582d9c30ddf2fd4ff1cc4fd9f2fd42b172f3a88121b5cc46a19aad8343df",
+      "byteSize": 909,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D4"
+      ],
+      "description": "Synthetic analog pressure gauge dial photograph"
+    },
+    {
+      "id": "ASSET-10-IMAGE-TURBINE-NAMEPLATE",
+      "filename": "images/turbine_nameplate.png",
+      "relativePath": "demo/industrial/images/turbine_nameplate.png",
+      "category": "image",
+      "mimeType": "image/png",
+      "sha256": "7f4350a4dc04af0a46ccee396fea3b9bdffd83ade95a49d76bb2a154a5be2bfb",
+      "byteSize": 899,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D4"
+      ],
+      "description": "Synthetic industrial electric machinery nameplate image"
+    },
+    {
+      "id": "ASSET-11-RUNBOOK-MD",
+      "filename": "RUNBOOK.md",
+      "relativePath": "demo/industrial/RUNBOOK.md",
+      "category": "runbook",
+      "mimeType": "text/markdown",
+      "sha256": "57d50213302f6991a9f3cab6cdb645888e40e6409b196f9fc3d8f5d0e3903426",
+      "byteSize": 12215,
+      "license": "MIT",
+      "demoScenarios": [
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7"
+      ],
+      "description": "Step-by-step operator guide for offline preflight and demonstration execution"
+    },
+    {
+      "id": "ASSET-12-PRESENTATION-SCRIPT-MD",
+      "filename": "PRESENTATION_SCRIPT.md",
+      "relativePath": "demo/industrial/PRESENTATION_SCRIPT.md",
+      "category": "runbook",
+      "mimeType": "text/markdown",
+      "sha256": "f9dccb9656915cde85ded7feb900095df36179dc43553c0d9d447c299b74333c",
+      "byteSize": 6374,
+      "license": "MIT",
+      "demoScenarios": [
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7"
+      ],
+      "description": "Timed 3-minute presentation narration and judge-facing demonstration script"
+    }
+  ]
+}

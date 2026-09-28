@@ -1,0 +1,146 @@
+{
+  "task": "F8-05",
+  "description": "Sovereign RMS Coding Demo inside Isolated Container Sandbox",
+  "timestamp": "2026-09-26T20:25:53.719Z",
+  "status": "PASS",
+  "calculationScript": {
+    "path": "fixtures/f8-05/rms-calculation.py",
+    "sha256": "9b2d8bc024459825976e0fb096b807d2fb878e2063f0975d78275a9ee006cd67",
+    "language": "python",
+    "interpreter": "python 3.12 (in-container) / python 3.14 (host fallback)",
+    "dependencies": [
+      "numpy",
+      "csv",
+      "json",
+      "sys"
+    ]
+  },
+  "verificationScript": {
+    "path": "fixtures/f8-05/rms-verification-test.py",
+    "sha256": "5607623a8cee5d708913f7d5940d15d7254114c7aac45889dc1c21bc0394f659",
+    "framework": "pytest",
+    "dependencies": [
+      "pytest",
+      "subprocess",
+      "json",
+      "math",
+      "os"
+    ]
+  },
+  "inputData": {
+    "file": "demo/industrial/turbine_vibration_log.csv",
+    "sha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+    "rowCount": 500,
+    "sourceCsvUnchanged": true,
+    "stagingArea": "sandbox input area (isolated workspace)"
+  },
+  "groundTruth": {
+    "frozenSource": "fixtures/f8-05/ground-truth.json",
+    "rmsValue": 2.6371099711616126,
+    "rmsValueRounded6": 2.63711,
+    "warningThreshold": 4.5,
+    "criticalThreshold": 7.1,
+    "warningCount": 2,
+    "criticalCount": 1,
+    "warningRows": [
+      [
+        121,
+        5.2
+      ],
+      [
+        367,
+        8.3
+      ]
+    ],
+    "criticalRows": [
+      [
+        367,
+        8.3
+      ]
+    ]
+  },
+  "executionResult": {
+    "tool": "execute_code_sandbox",
+    "ok": true,
+    "exitCode": 0,
+    "stdout": "{\"rms_value\": 2.6371099711616126, \"warning_count\": 2, \"critical_count\": 1, \"row_count\": 500, \"warning_rows\": [[121, 5.2], [367, 8.3]], \"critical_rows\": [[367, 8.3]]}",
+    "stderr": "",
+    "parsed": {
+      "rms_value": 2.6371099711616126,
+      "warning_count": 2,
+      "critical_count": 1,
+      "row_count": 500,
+      "warning_rows": [
+        [
+          121,
+          5.2
+        ],
+        [
+          367,
+          8.3
+        ]
+      ],
+      "critical_rows": [
+        [
+          367,
+          8.3
+        ]
+      ]
+    },
+    "calculatedRms": 2.6371099711616126,
+    "calculatedRmsRounded": 2.63711,
+    "warningCount": 2,
+    "criticalCount": 1,
+    "rowCount": 500,
+    "groundTruthDelta": 0,
+    "matchesGroundTruth": true
+  },
+  "securityAndIsolation": {
+    "callerAuthority": {
+      "authorizedRoles": [
+        "code_agent",
+        "CODE_AGENT",
+        "coder_agent",
+        "analyst_agent"
+      ],
+      "unauthorizedAgentsRejected": true,
+      "enforcedBy": "executeCodeSandboxTool & SandboxRunnerService"
+    },
+    "networkIsolation": {
+      "networkAccess": "none",
+      "flag": "--network none",
+      "enforcedBy": "buildDockerRunArgs & ContainerRunner",
+      "staticInspectionBlocksNetwork": true
+    },
+    "filesystemIsolation": {
+      "readOnlyRootFs": true,
+      "flag": "--read-only",
+      "dropCapabilities": "ALL",
+      "noNewPrivileges": true,
+      "runAsUser": "10001:10001"
+    },
+    "sourceDataProtection": {
+      "sourceCsvUnchanged": true,
+      "sourceCsvSha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6"
+    },
+    "failureRejection": {
+      "nonzeroExitProducesFailure": true,
+      "mutatedDataRejectionVerified": true,
+      "noPlaceholderSuccessState": true
+    }
+  },
+  "cryptographicHashes": {
+    "inputHash": "447ecbf15ebc1a9fbc996b6d46bd987606d6893c75c33af01593873fd0222c8b",
+    "outputHash": "b0fa2a81eed3e81d54cb5847e9188feabed04c078dcc2ed69496d044443de888",
+    "csvSha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+    "scriptSha256": "9b2d8bc024459825976e0fb096b807d2fb878e2063f0975d78275a9ee006cd67",
+    "testSha256": "5607623a8cee5d708913f7d5940d15d7254114c7aac45889dc1c21bc0394f659"
+  },
+  "testVerification": {
+    "testFile": "tests/industrial/f8-05-sovereign-coding-demo.test.ts",
+    "testCount": 25,
+    "testsPassed": 25,
+    "testsFailed": 0,
+    "allPassed": true
+  }
+}

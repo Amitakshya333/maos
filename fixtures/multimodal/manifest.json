@@ -1,0 +1,398 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "1.0.0",
+  "description": "Frozen, licensed, non-proprietary multimodal benchmark dataset covering 18 fixture classes",
+  "generatedAt": "2026-09-18T00:00:00.000Z",
+  "fixtures": [
+    {
+      "id": "FX-01-CLEAN-SCAN",
+      "fixtureClass": "clean_printed_scan",
+      "description": "Clean high-contrast printed inspection scan sheet with clear typography",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "01_clean_scan.pdf",
+      "relativePath": "fixtures/multimodal/files/01_clean_scan.pdf",
+      "mimeType": "application/pdf",
+      "expectedSha256": "fcb75e928d0ada2ce7cbf187d3ec880c821d89b99563a06d86bb36f70211b9bd",
+      "byteSize": 534,
+      "dimensions": {
+        "width": 612,
+        "height": 792,
+        "pageCount": 1
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": true,
+        "isSafetyCritical": true
+      }
+    },
+    {
+      "id": "FX-02-MULTIPAGE",
+      "fixtureClass": "multipage_report",
+      "description": "Multi-page formal engineering inspection report (3 pages)",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "02_multipage_report.pdf",
+      "relativePath": "fixtures/multimodal/files/02_multipage_report.pdf",
+      "mimeType": "application/pdf",
+      "expectedSha256": "af781a549a8bfd011e4f7330d03e2e2bd9c7957afc3c59dbc23e7af48dcc0659",
+      "byteSize": 921,
+      "dimensions": {
+        "width": 612,
+        "height": 792,
+        "pageCount": 3
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": true,
+        "isSafetyCritical": true
+      }
+    },
+    {
+      "id": "FX-03-ROTATED",
+      "fixtureClass": "rotated_text",
+      "description": "Scan with 90-degree rotated orientation requiring orientation adjustment",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "03_rotated_scan.png",
+      "relativePath": "fixtures/multimodal/files/03_rotated_scan.png",
+      "mimeType": "image/png",
+      "expectedSha256": "2b3499405e69974c2ec06e01f2ff2505f02609052a39eae40fdd4a03135a1cd8",
+      "byteSize": 1184,
+      "dimensions": {
+        "width": 300,
+        "height": 400
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": false,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-04-NOISY-BLURRED",
+      "fixtureClass": "noisy_blurred_scan",
+      "description": "Low-quality noisy or blurred document scan with degraded resolution",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "04_noisy_blurred.png",
+      "relativePath": "fixtures/multimodal/files/04_noisy_blurred.png",
+      "mimeType": "image/png",
+      "expectedSha256": "c0aafa02a328302ca5b0bfe8a7245e39cac39cb1697977a3eeb4aa99ebd1b048",
+      "byteSize": 634,
+      "dimensions": {
+        "width": 300,
+        "height": 200
+      },
+      "expectedBehavior": {
+        "expectedClassification": "CONFIDENCE_DISAGREEMENT",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-05-NAMEPLATE",
+      "fixtureClass": "equipment_nameplate",
+      "description": "Industrial electric motor nameplate photo (model, voltage, rpm)",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "05_nameplate.png",
+      "relativePath": "fixtures/multimodal/files/05_nameplate.png",
+      "mimeType": "image/png",
+      "expectedSha256": "7f4350a4dc04af0a46ccee396fea3b9bdffd83ade95a49d76bb2a154a5be2bfb",
+      "byteSize": 899,
+      "dimensions": {
+        "width": 400,
+        "height": 250
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": false,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-06-GAUGE-MEASURE",
+      "fixtureClass": "gauge_measurement",
+      "description": "Calibrated analog dial gauge displaying hydraulic pressure reading",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "06_pressure_gauge.png",
+      "relativePath": "fixtures/multimodal/files/06_pressure_gauge.png",
+      "mimeType": "image/png",
+      "expectedSha256": "413d582d9c30ddf2fd4ff1cc4fd9f2fd42b172f3a88121b5cc46a19aad8343df",
+      "byteSize": 909,
+      "dimensions": {
+        "width": 300,
+        "height": 300
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": true,
+        "isSafetyCritical": true
+      }
+    },
+    {
+      "id": "FX-07-DRAWING-PID",
+      "fixtureClass": "sample_drawing_pid",
+      "description": "Piping and Instrumentation Diagram (P&ID) with valves and pipe tags",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "07_pid_drawing.png",
+      "relativePath": "fixtures/multimodal/files/07_pid_drawing.png",
+      "mimeType": "image/png",
+      "expectedSha256": "b2b9f63e3baa99a098b19f5c95560b1e4ead30e6f31cb8cf06aee5bba2f35865",
+      "byteSize": 1311,
+      "dimensions": {
+        "width": 500,
+        "height": 350
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-08-AGREE",
+      "fixtureClass": "ocr_vision_agreement",
+      "description": "Unambiguous non-safety-critical barcode label with perfect agreement",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "08_agreement.png",
+      "relativePath": "fixtures/multimodal/files/08_agreement.png",
+      "mimeType": "image/png",
+      "expectedSha256": "d99506c82fe74d6b443e60c4b8ce2ce800281a919d20d4b34884815d4a7d8ec9",
+      "byteSize": 346,
+      "dimensions": {
+        "width": 250,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "AGREE",
+        "requiresReview": false,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-09-NUMERIC-CONFLICT",
+      "fixtureClass": "ocr_vision_numeric_conflict",
+      "description": "Disputed numeric reading: OCR and VLM report differing numbers",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "09_numeric_conflict.png",
+      "relativePath": "fixtures/multimodal/files/09_numeric_conflict.png",
+      "mimeType": "image/png",
+      "expectedSha256": "d64e21d73fc749940d9e82b2c2cc9b009148ca8a071efc37c2884bec1af598df",
+      "byteSize": 347,
+      "dimensions": {
+        "width": 250,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "CONFLICTING_VALUE",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-10-UNIT-CONFLICT",
+      "fixtureClass": "ocr_vision_unit_conflict",
+      "description": "Disputed unit measurement: OCR reports bar, VLM reports psi",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "10_unit_conflict.png",
+      "relativePath": "fixtures/multimodal/files/10_unit_conflict.png",
+      "mimeType": "image/png",
+      "expectedSha256": "b8602748feac7d4ff0710ab44f28ebc18ee2b641f652f9e227c9791350e54bf4",
+      "byteSize": 347,
+      "dimensions": {
+        "width": 250,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "CONFLICTING_UNIT",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-11-LOW-CONF-OCR",
+      "fixtureClass": "low_confidence_ocr",
+      "description": "Faint degraded dot-matrix printout producing low OCR confidence",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "11_low_conf_ocr.png",
+      "relativePath": "fixtures/multimodal/files/11_low_conf_ocr.png",
+      "mimeType": "image/png",
+      "expectedSha256": "45c59e0bbe5a98c6a41a3be82e3afc50db1088d8cb5eca915a87778146a4c80a",
+      "byteSize": 336,
+      "dimensions": {
+        "width": 200,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "CONFIDENCE_DISAGREEMENT",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-12-LOW-CONF-VISION",
+      "fixtureClass": "low_confidence_vision",
+      "description": "Severely underexposed or shadowed photograph yielding low VLM confidence",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "12_low_conf_vision.png",
+      "relativePath": "fixtures/multimodal/files/12_low_conf_vision.png",
+      "mimeType": "image/png",
+      "expectedSha256": "d1ab6937b635e02f98c4a0e871b4bef903200a5a7eca36d13e86d88c85acef6e",
+      "byteSize": 336,
+      "dimensions": {
+        "width": 200,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "CONFIDENCE_DISAGREEMENT",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-13-HANDWRITING",
+      "fixtureClass": "unsupported_handwriting",
+      "description": "Handwritten cursive maintenance signature and field notes",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "13_handwriting.png",
+      "relativePath": "fixtures/multimodal/files/13_handwriting.png",
+      "mimeType": "image/png",
+      "expectedSha256": "7fc4cf981ef520ab0ebb498f00b608d521368613a09c99b878dd7a71ee1512a2",
+      "byteSize": 496,
+      "dimensions": {
+        "width": 300,
+        "height": 150
+      },
+      "expectedBehavior": {
+        "expectedClassification": "UNSUPPORTED",
+        "requiresReview": true,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-14-MALFORMED",
+      "fixtureClass": "malformed_input",
+      "description": "Corrupted truncated PDF file missing xref and trailer markers",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "14_malformed.pdf",
+      "relativePath": "fixtures/multimodal/files/14_malformed.pdf",
+      "mimeType": "application/pdf",
+      "expectedSha256": "1c6e5885d1260ae570e2ed65fc103e382ec6f06b1cacd2d7404265336c0d96c5",
+      "byteSize": 78,
+      "dimensions": {
+        "width": 0,
+        "height": 0
+      },
+      "expectedBehavior": {
+        "expectedClassification": "REJECTED",
+        "requiresReview": true,
+        "isSafetyCritical": false,
+        "shouldFailSafely": true,
+        "expectedErrorCode": "CORRUPT_INPUT"
+      }
+    },
+    {
+      "id": "FX-15-OVERSIZED-BOMB",
+      "fixtureClass": "oversized_bomb_input",
+      "description": "Decompression bomb PDF with high compression ratio exceeding bounds",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "15_bomb.pdf",
+      "relativePath": "fixtures/multimodal/files/15_bomb.pdf",
+      "mimeType": "application/pdf",
+      "expectedSha256": "52c38486fa3317e4fc3b544541baa32c5f4c35249cd2bf0835190907a5a552f9",
+      "byteSize": 10569,
+      "dimensions": {
+        "width": 612,
+        "height": 792,
+        "pageCount": 1
+      },
+      "expectedBehavior": {
+        "expectedClassification": "REJECTED",
+        "requiresReview": true,
+        "isSafetyCritical": false,
+        "shouldFailSafely": true,
+        "expectedErrorCode": "DECOMPRESSION_BOMB_DETECTED"
+      }
+    },
+    {
+      "id": "FX-16-EMPTY",
+      "fixtureClass": "empty_input",
+      "description": "Completely blank single-page PDF with zero printable glyphs",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "16_empty_page.pdf",
+      "relativePath": "fixtures/multimodal/files/16_empty_page.pdf",
+      "mimeType": "application/pdf",
+      "expectedSha256": "629fe87d27a618ac3b8dd4eea9bf5fa5d22dd1c7ff4114618c28f1fa28528ae0",
+      "byteSize": 491,
+      "dimensions": {
+        "width": 612,
+        "height": 792,
+        "pageCount": 1
+      },
+      "expectedBehavior": {
+        "expectedClassification": "EMPTY",
+        "requiresReview": false,
+        "isSafetyCritical": false
+      }
+    },
+    {
+      "id": "FX-17-CROSS-PROJECT",
+      "fixtureClass": "cross_project_attempt",
+      "description": "Document belonging to a distinct foreign project ID",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "17_cross_project.png",
+      "relativePath": "fixtures/multimodal/files/17_cross_project.png",
+      "mimeType": "image/png",
+      "expectedSha256": "57607abd8ee8b1fa49efd4602a768047d9abb7fe443b981cfdcb770b9f7b72b7",
+      "byteSize": 336,
+      "dimensions": {
+        "width": 200,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "REJECTED",
+        "requiresReview": true,
+        "isSafetyCritical": false,
+        "shouldFailSafely": true,
+        "expectedErrorCode": "CROSS_PROJECT_FORBIDDEN"
+      }
+    },
+    {
+      "id": "FX-18-TAMPERED",
+      "fixtureClass": "tampered_source_artifact",
+      "description": "Artifact modified post-registration whose hash does not match computed value",
+      "license": "CC0-1.0",
+      "source": "MAOS synthetic industrial benchmark generator (non-proprietary)",
+      "filename": "18_tampered.png",
+      "relativePath": "fixtures/multimodal/files/18_tampered.png",
+      "mimeType": "image/png",
+      "expectedSha256": "867c7c926de7200f426eafe1d5d1d7d40b9834b8deb84f8e407ab82a81c38d0d",
+      "byteSize": 335,
+      "dimensions": {
+        "width": 200,
+        "height": 100
+      },
+      "expectedBehavior": {
+        "expectedClassification": "REJECTED",
+        "requiresReview": true,
+        "isSafetyCritical": false,
+        "shouldFailSafely": true,
+        "expectedErrorCode": "HASH_MISMATCH"
+      }
+    }
+  ]
+}

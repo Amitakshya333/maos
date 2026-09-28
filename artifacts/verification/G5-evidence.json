@@ -1,0 +1,150 @@
+{
+  "gate": "G5",
+  "title": "Knowledge Grounding Readiness Verification",
+  "status": "PASS",
+  "timestamp": "2026-09-26T21:38:00.000Z",
+  "model": {
+    "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+    "modelName": "all-minilm-l6-v2-local",
+    "revision": "fa979fdf926cbd99430f16e4321689952542a641",
+    "dimension": 384,
+    "architecture": "BertModel",
+    "device": "cpu",
+    "quantization": "float32",
+    "license": "Apache-2.0",
+    "snapshotRelativePath": "models--sentence-transformers--all-MiniLM-L6-v2/snapshots/fa979fdf926cbd99430f16e4321689952542a641"
+  },
+  "manifestFiles": [
+    {
+      "path": "config.json",
+      "size": 612,
+      "sha256": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 350,
+      "sha256": "acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 466247,
+      "sha256": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037"
+    },
+    {
+      "path": "vocab.txt",
+      "size": 231508,
+      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "size": 112,
+      "sha256": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3"
+    },
+    {
+      "path": "modules.json",
+      "size": 349,
+      "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf"
+    },
+    {
+      "path": "model.safetensors",
+      "size": 90868376,
+      "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db"
+    }
+  ],
+  "offlineVerification": {
+    "networkAccess": "none (air-gapped)",
+    "runtimeDownloadsProhibited": true,
+    "localFilesOnlyEnforced": true,
+    "failClosedOnMissingWeights": true,
+    "snapshotValidation": "PASS (zero errors)",
+    "pathConfinement": "PASS",
+    "symlinkEscapeProtection": "PASS"
+  },
+  "benchmarkAndRetrieval": {
+    "frozenQueriesCount": 24,
+    "queryClassesCount": 13,
+    "rankingDeterminism": 1.0,
+    "avgRecallAt1": 0.7083,
+    "noAnswerAccuracy": 1.0,
+    "falsePositiveRate": 0.0,
+    "promptInjectionContained": true,
+    "quarantineExclusionRate": 1.0,
+    "crossProjectIsolation": "PASS (0% leakage)",
+    "negativeGuardrailsPassed": 9,
+    "negativeGuardrailsTotal": 9
+  },
+  "demoCorpusValidation": {
+    "corpusPath": "demo/industrial",
+    "documentsIngested": 2,
+    "sourceFiles": [
+      "demo/industrial/sop_turbine_vibration_monitoring.md",
+      "demo/industrial/maintenance_report.txt"
+    ],
+    "vectorIndexGenerated": true,
+    "embeddingDimension": 384,
+    "realInferenceExecuted": true,
+    "answerableQueryScore": 0.7141,
+    "outOfDomainQueryHandled": true,
+    "outOfDomainReason": "BELOW_CONFIDENCE_THRESHOLD"
+  },
+  "privacyAndAudit": {
+    "auditTrailIntact": true,
+    "eventTypesLogged": [
+      "EMBEDDING_GENERATED",
+      "KB_SEARCH_EXECUTED"
+    ],
+    "rawQueryLogged": false,
+    "rawTextSnippetLogged": false,
+    "queryHashAlgorithm": "SHA-256",
+    "provenanceCoupled": true
+  },
+  "testSuites": [
+    {
+      "file": "tests/industrial/g5-real-offline-embedding.test.ts",
+      "passed": 15,
+      "total": 15,
+      "status": "PASS"
+    },
+    {
+      "file": "tests/industrial/g5-knowledge-grounding-gate.test.ts",
+      "passed": 9,
+      "total": 9,
+      "status": "PASS"
+    },
+    {
+      "file": "tests/industrial/f5-06-kb-retrieval-benchmark.test.ts",
+      "passed": 35,
+      "total": 35,
+      "status": "PASS"
+    },
+    {
+      "file": "tests/f5-03-kb-embedding.test.ts",
+      "passed": 34,
+      "total": 34,
+      "status": "PASS"
+    },
+    {
+      "file": "tests/f5-04-kb-vector-index.test.ts",
+      "passed": 30,
+      "total": 30,
+      "status": "PASS"
+    },
+    {
+      "file": "tests/f5-05-kb-search.test.ts",
+      "passed": 44,
+      "total": 44,
+      "status": "PASS"
+    },
+    {
+      "file": "tests/industrial/f5-07-kb-cli.test.ts",
+      "passed": 28,
+      "total": 28,
+      "status": "PASS"
+    }
+  ],
+  "canaryFile": {
+    "path": "rust/test.txt",
+    "sha256": "1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435",
+    "status": "VERIFIED_INTACT"
+  }
+}

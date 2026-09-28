@@ -44,3 +44,16 @@ test_transcript.txt
 __pycache__/
 *.pyc
 
+# Local industrial runtime state and downloaded offline assets are machine-specific.
+# Snapshot weights and wheels are supplied through the signed release bundle,
+# not committed to the source repository.
+.maos/**
+!.maos/maos.config.json
+!.maos/pool.json
+offline-stores/
+artifacts/
+!artifacts/verification/
+!artifacts/verification/**
+evidence/
+rust/target/
+rust/test.txt

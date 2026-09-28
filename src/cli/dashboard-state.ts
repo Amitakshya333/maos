@@ -2,11 +2,10 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getStatusDir, getLogsDir } from '../utils/paths';
-import { getQueueCounts, getPendingTasks, getActiveTasks, getDoneTasks } from '../core/queue';
+import { createServiceContainer } from '../service';
 import { readTelemetry, summarizeTelemetry } from '../core/telemetry';
 import { loadBrain } from '../core/brain';
-import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
-import { EventStore } from '../core/event-store';
+import { storeTelemetryAnalysis } from '../industrial/telemetry-analysis';
 
 const INDUSTRIAL_EVIDENCE_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.pdf']);
 const INDUSTRIAL_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -52,10 +51,11 @@ function getCachedConfig(cwd: string): any {
 }
 
 export function getDashboardState(cwd: string) {
-  const counts = getQueueCounts(cwd);
-  const pending = getPendingTasks(cwd);
-  const active = getActiveTasks(cwd);
-  const done = getDoneTasks(cwd);
+  const services = createServiceContainer(cwd);
+  const counts = services.task.getQueueCounts();
+  const pending = services.task.listTasks({ status: 'pending' });
+  const active = services.task.listTasks({ status: 'active' });
+  const done = services.task.listTasks({ status: 'done' });
 
   const statusDir = getStatusDir(cwd);
   const agents: Record<string, { status: string; detail: string }> = {};
@@ -74,9 +74,9 @@ export function getDashboardState(cwd: string) {
 
   const telemetry = summarizeTelemetry(cwd);
   const telemetryRecords = readTelemetry(cwd);
-  const retryQueue = getRetryQueueStatus(cwd);
-  const deadLetterQueue = getDeadLetterQueue(cwd);
-  const eventStats = new EventStore(cwd).stats();
+  const retryQueue = services.health.getRetryQueueStatus();
+  const deadLetterQueue = services.health.getDeadLetterQueue();
+  const eventStats = services.event.getStats();
 
   return {
     timestamp: new Date().toISOString(),
@@ -284,6 +284,79 @@ export async function handleEvidenceUpload(
       return;
     }
     sendJson(res, 400, { error: 'Could not accept evidence payload.' });
+  }
+}
+
+export async function handleTelemetryAnalysis(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cwd: string,
+): Promise<void> {
+  const remoteAddress = req.socket.remoteAddress || '';
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remoteAddress)) {
+    sendJson(res, 403, { error: 'Telemetry intake is available only from this machine.' });
+    return;
+  }
+  const industrial = getIndustrialPresentation(getCachedConfig(cwd));
+  if (!industrial.enabled || !industrial.evidence.enabled) {
+    sendJson(res, 404, { error: 'Industrial evidence intake is not enabled.' });
+    return;
+  }
+  if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
+    sendJson(res, 415, { error: 'Expected application/json.' });
+    return;
+  }
+
+  const maxBodyBytes = Math.ceil((INDUSTRIAL_EVIDENCE_MAX_BYTES * 4) / 3) + 8192;
+  const chunks: Buffer[] = [];
+  let bodyBytes = 0;
+  try {
+    for await (const chunk of req) {
+      const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bodyBytes += part.length;
+      if (bodyBytes > maxBodyBytes) throw new Error('PAYLOAD_TOO_LARGE');
+      chunks.push(part);
+    }
+
+    const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    let filename: string;
+    let csvBuffer: Buffer;
+    let kind: 'device-upload' | 'bundled-synthetic-sample';
+    if (payload?.useBundledSample === true) {
+      filename = 'turbine_vibration_log.csv';
+      csvBuffer = fs.readFileSync(path.join(cwd, 'demo', 'industrial', filename));
+      kind = 'bundled-synthetic-sample';
+    } else {
+      filename = typeof payload?.name === 'string' ? path.basename(payload.name) : '';
+      const extension = path.extname(filename).toLowerCase();
+      if (!filename || extension !== '.csv') {
+        sendJson(res, 400, { error: 'Choose a CSV file for telemetry analysis.' });
+        return;
+      }
+      if (typeof payload?.contentBase64 !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(payload.contentBase64)) {
+        sendJson(res, 400, { error: 'CSV contents are not valid base64.' });
+        return;
+      }
+      csvBuffer = Buffer.from(payload.contentBase64, 'base64');
+      kind = 'device-upload';
+    }
+
+    const stored = storeTelemetryAnalysis(cwd, filename, csvBuffer, kind);
+    sendJson(res, 201, {
+      data: {
+        ...stored.receipt,
+        receiptPath: stored.receiptPath,
+        receiptSha256: stored.receiptSha256,
+      },
+    });
+  } catch (error: any) {
+    if (error?.message === 'PAYLOAD_TOO_LARGE') {
+      sendJson(res, 413, { error: 'CSV exceeds the 5 MB size limit.' });
+      return;
+    }
+    const message = error instanceof Error ? error.message : 'Could not analyze telemetry CSV.';
+    const status = message.includes('ENOENT') ? 404 : 422;
+    sendJson(res, status, { error: message });
   }
 }
 

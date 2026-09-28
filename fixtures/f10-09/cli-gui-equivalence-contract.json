@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "description": "F10-09: CLI / GUI Equivalence Fixture Definition Contract for MAOS Industrial",
+  "architecturalInvariant": "The GUI never invokes CLI commands. CLI and GUI are adapters over the same application services and therefore share DAG, tool, provenance, sandbox, approval, interruption, and output semantics.",
+  "operations": [
+    {
+      "operation": "task_execution",
+      "domain": "task",
+      "cliEntrypoint": "maos industrial run / executeJudgedRun",
+      "guiRoute": "POST /api/v1/tasks/:id/execute",
+      "applicationService": "TaskService.executeTask / Orchestrator",
+      "equivalentContract": "TaskRecord / TaskResult",
+      "negativeConstraints": [
+        "No GUI shell-out (no child_process in GUI)",
+        "Zero mock bypass of ServiceContainer",
+        "Deterministic input/output hash equivalence"
+      ]
+    },
+    {
+      "operation": "workflow_dag",
+      "domain": "workflow",
+      "cliEntrypoint": "maos industrial run (stages: INGEST -> ANALYZE -> APPROVAL -> SYNTHESIZE)",
+      "guiRoute": "POST /api/v1/workflows/run / GET /api/v1/cockpit/:runId/projection",
+      "applicationService": "WorkflowService / CockpitService.projectWorkflowState",
+      "equivalentContract": "WorkflowProjection / WorkflowRunProjection",
+      "negativeConstraints": [
+        "Identical stage definitions: INGEST, ANALYZE, APPROVAL, SYNTHESIZE",
+        "Identical stage transition states (pending -> in_progress -> completed | blocked)",
+        "Zero divergent client-specific state logic"
+      ]
+    },
+    {
+      "operation": "approval_governance",
+      "domain": "approval",
+      "cliEntrypoint": "ApprovalService.decideApproval / maos industrial run --auto-approve -y",
+      "guiRoute": "POST /api/v1/approvals/:id/decide",
+      "applicationService": "ApprovalService.decideApproval",
+      "equivalentContract": "ApprovalRecord",
+      "negativeConstraints": [
+        "Identical actor role validation (AUTHORIZED_HUMAN_ROLES: lead, engineer, reviewer, admin)",
+        "Fail-closed rejection on unapproved gate",
+        "Identical audit provenance linking"
+      ]
+    },
+    {
+      "operation": "artifact_finalization",
+      "domain": "artifact",
+      "cliEntrypoint": "ArtifactService.finalizeArtifact / DocxGeneratorService.generateDocx",
+      "guiRoute": "POST /api/v1/artifacts / GET /api/v1/artifacts/:id",
+      "applicationService": "ArtifactService.finalizeArtifact",
+      "equivalentContract": "Artifact metadata record + OOXML binary",
+      "negativeConstraints": [
+        "Authoritative Rust-backed SHA-256 hash equivalence",
+        "Strict path traversal rejection across both interfaces",
+        "Strict disallowed extension rejection (.exe, .bat, etc.)"
+      ]
+    },
+    {
+      "operation": "lifecycle_stop",
+      "domain": "cockpit",
+      "cliEntrypoint": "maos industrial stop (--force -y)",
+      "guiRoute": "POST /api/v1/cockpit/:runId/stop / POST /api/v1/cockpit/stop",
+      "applicationService": "CockpitService.executeRunStop / ApprovalService.executeForceStop",
+      "equivalentContract": "StopResult / ForceStopResult",
+      "negativeConstraints": [
+        "Force stop strictly requires explicit confirmation across both adapters",
+        "In-flight tasks transitioned to INTERRUPTED state",
+        "Temporary artifacts cleaned atomically with audit logging"
+      ]
+    }
+  ]
+}

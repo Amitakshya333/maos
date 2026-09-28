@@ -18,9 +18,30 @@ import { runBrain } from './brain';
 import { runRepl } from './repl';
 import { runDashboard } from './dashboard';
 import { runDoctor } from './doctor';
-import { EventStore } from '../core/event-store';
-import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
-import { MemoryStore } from '../core/context-memory';
+import {
+  bundlePrepare,
+  bundleVerify,
+  runRehearsalWorkflow,
+  verifyRehearsalEvidence,
+} from '../industrial/bundle-cli';
+import {
+  runKbBuild,
+  runKbStatus,
+  runKbVerify,
+  runKbClear,
+} from '../industrial/kb-cli';
+import {
+  runIndustrialPreflight,
+  runIndustrialBoundary,
+  runIndustrialStart,
+  runIndustrialDemo,
+  runIndustrialVerify,
+  runIndustrialStop,
+  runIndustrialReset,
+  runIndustrialRun,
+  runIndustrialOpen,
+} from '../industrial/industrial-cli';
+import { createServiceContainer } from '../service';
 
 const VERSION = '0.3.0';
 
@@ -228,6 +249,14 @@ program
     }
   });
 
+// ─── maos repl ───────────────────────────────────────────────
+program
+  .command('repl')
+  .description('Launch the interactive MAOS REPL')
+  .action(() => {
+    runRepl();
+  });
+
 // ─── maos replay ─────────────────────────────────────────────
 program
   .command('replay [taskId]')
@@ -245,10 +274,10 @@ program
       process.exit(1);
     }
 
-    const store = new EventStore(cwd);
+    const services = createServiceContainer(cwd);
 
     if (opts.stats) {
-      const s = store.stats();
+      const s = services.event.getStats();
       console.log(chalk.bold.cyan('\n📊 Event Store Statistics'));
       console.log(chalk.gray('─'.repeat(40)));
       console.log(`  Total events   : ${chalk.white(s.totalEvents)}`);
@@ -264,7 +293,7 @@ program
 
     if (taskId) {
       // Full task replay
-      const timeline = store.getTaskTimeline(taskId);
+      const timeline = services.event.getTaskTimelineSummary(taskId);
       if (timeline.length === 0) {
         console.log(chalk.yellow(`\n⚠️  No events found for task: ${taskId}`));
         return;
@@ -297,7 +326,7 @@ program
     } else {
       // Show recent events
       const limit = parseInt(opts.limit, 10) || 50;
-      const events = store.query({
+      const events = services.event.query({
         agentId: opts.agent,
         type: opts.type,
         limit,
@@ -328,8 +357,9 @@ program
   .description('Show retry queue and dead-letter queue status')
   .action(() => {
     const cwd = process.cwd();
-    const retrying = getRetryQueueStatus(cwd);
-    const dead = getDeadLetterQueue(cwd);
+    const services = createServiceContainer(cwd);
+    const retrying = services.health.getRetryQueueStatus();
+    const dead = services.health.getDeadLetterQueue();
 
     console.log(chalk.bold.cyan('\n🔄 Retry Queue'));
     if (retrying.length === 0) {
@@ -377,16 +407,16 @@ program
       process.exit(1);
     }
 
-    const store = new MemoryStore(cwd);
+    const services = createServiceContainer(cwd);
 
     if (opts.clear) {
-      store.clear();
+      services.memory.clear();
       console.log(chalk.green('\u2705 Memory cleared (previous session archived).'));
       return;
     }
 
     if (opts.stats) {
-      const s = store.getStats();
+      const s = services.memory.getStats();
       console.log(chalk.bold.cyan('\n\uD83E\uDDE0 Context Memory Statistics'));
       console.log(chalk.gray('\u2500'.repeat(40)));
       console.log('  Total entries  : ' + chalk.white(s.total));
@@ -404,7 +434,7 @@ program
     }
 
     if (opts.search) {
-      const results = store.searchByContent(opts.search);
+      const results = services.memory.search(opts.search);
       if (results.length === 0) {
         console.log(chalk.yellow('\n\u26A0\uFE0F  No memories match: "' + opts.search + '"'));
         return;
@@ -415,7 +445,7 @@ program
     }
 
     if (opts.tag) {
-      const results = store.searchByTag(opts.tag);
+      const results = services.memory.searchByTag(opts.tag);
       if (results.length === 0) {
         console.log(chalk.yellow('\n\u26A0\uFE0F  No memories tagged: "' + opts.tag + '"'));
         return;
@@ -426,7 +456,7 @@ program
     }
 
     // Default: --list
-    const live = store.getLive();
+    const live = services.memory.getLive();
     if (live.length === 0) {
       console.log(chalk.yellow('\n\u26A0\uFE0F  No memories in current session.'));
       console.log(chalk.gray('  Memories are created by agents using the share_knowledge tool.'));
@@ -472,50 +502,396 @@ program
   .command('clean')
   .description('Clear queue and reset agent statuses')
   .action(() => {
-    const maosDir = path.join(process.cwd(), '.maos');
+    const cwd = process.cwd();
+    const maosDir = path.join(cwd, '.maos');
     if (!fs.existsSync(maosDir)) {
       console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
       process.exit(1);
     }
 
-    // Clear queue directories (including retry + failed)
-    const queueDirs = ['pending', 'active', 'done', 'retry', 'failed'];
-    let cleared = 0;
-    for (const dir of queueDirs) {
-      const dirPath = path.join(maosDir, 'queue', dir);
-      if (fs.existsSync(dirPath)) {
-        const files = fs.readdirSync(dirPath);
-        for (const file of files) {
-          fs.unlinkSync(path.join(dirPath, file));
-          cleared++;
-        }
+    const services = createServiceContainer(cwd);
+    const result = services.task.clean();
+    console.log(chalk.green(`✅ Cleaned: ${result.tasksRemoved} tasks removed, statuses reset, logs cleared.`));
+  });
+
+// ─── maos industrial ──────────────────────────────────────────
+const industrial = program
+  .command('industrial')
+  .description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification');
+
+const bundleCmd = industrial
+  .command('bundle')
+  .description('Manage offline bundle packaging and verification');
+
+bundleCmd
+  .command('prepare')
+  .description('Prepare offline release bundle (builds release binary, locked checks, stores, manifest, archive)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-o, --output-dir <path>', 'Output directory for release archive', 'dist/release')
+  .option('--skip-tests', 'Skip tests during preparation')
+  .option('--model-cache-dir <path>', 'Path to local HuggingFace cache directory for models')
+  .action(async (opts) => {
+    console.log(chalk.bold.blue('\n📦 MAOS Industrial — Bundle Preparation\n'));
+    console.log(chalk.gray(`Project Root: ${opts.projectRoot}`));
+    console.log(chalk.gray(`Output Dir:   ${opts.outputDir}\n`));
+
+    const result = await bundlePrepare({
+      projectRoot: opts.projectRoot,
+      outputDir: opts.outputDir,
+      skipTests: opts.skipTests,
+      modelCacheDir: opts.modelCacheDir,
+    });
+
+    if (result.success) {
+      console.log(chalk.green(`\n✅ Bundle preparation completed in ${result.durationMs}ms`));
+      console.log(chalk.white(`Entries:      ${result.manifest.totalEntries} files (${(result.manifest.totalSize / 1024 / 1024).toFixed(2)} MB)`));
+      console.log(chalk.white(`Entries Hash: ${result.manifest.buildIdentity.entriesHash}`));
+      if (result.archivePath) {
+        console.log(chalk.white(`Archive:      ${result.archivePath}`));
+        if (result.archiveHash) console.log(chalk.white(`Archive Hash: ${result.archiveHash}`));
+      }
+      process.exit(0);
+    } else {
+      console.error(chalk.red(`\n❌ Bundle preparation failed with ${result.failures.length} errors:`));
+      for (const f of result.failures) {
+        console.error(chalk.red(`  - ${f}`));
+      }
+      process.exit(1);
+    }
+  });
+
+bundleCmd
+  .command('verify')
+  .description('Verify offline release bundle integrity, stores, binaries, and manifests')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-m, --manifest <path>', 'Path to bundle-manifest.json')
+  .option('--check-unlisted', 'Check for unlisted executables in the bundle')
+  .action((opts) => {
+    console.log(chalk.bold.blue('\n🔍 MAOS Industrial — Bundle Verification\n'));
+    console.log(chalk.gray(`Project Root: ${opts.projectRoot}\n`));
+
+    const result = bundleVerify({
+      projectRoot: opts.projectRoot,
+      manifestPath: opts.manifest,
+      checkUnlisted: opts.checkUnlisted,
+    });
+
+    if (result.valid) {
+      console.log(chalk.green('✅ Bundle verification passed: all files, stores, binaries, and manifests are intact.'));
+      process.exit(0);
+    } else {
+      console.error(chalk.red(`❌ Bundle verification failed (${result.failures.length} errors):`));
+      for (const f of result.failures) {
+        console.error(chalk.red(`  - ${f}`));
+      }
+      process.exit(1);
+    }
+  });
+
+industrial
+  .command('rehearsal')
+  .description('Run clean disconnected VM rehearsal workflow')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--allow-network', 'Allow network access (simulation only - not clean rehearsal)')
+  .option('-r, --report-path <path>', 'Path for rehearsal evidence report')
+  .action(async (opts) => {
+    console.log(chalk.bold.blue('\n🧪 MAOS Industrial — Clean Disconnected Rehearsal\n'));
+    console.log(chalk.gray(`Project Root: ${opts.projectRoot}`));
+    console.log(chalk.gray(`Network:      ${opts.allowNetwork ? 'ALLOWED (Simulation mode)' : 'STRICT DISCONNECTED'}\n`));
+
+    const result = await runRehearsalWorkflow({
+      projectRoot: opts.projectRoot,
+      allowNetwork: opts.allowNetwork,
+      reportPath: opts.reportPath,
+    });
+
+    console.log(chalk.white(`Report written to: ${result.reportPath}`));
+
+    if (result.passed) {
+      console.log(chalk.green('\n✅ Clean rehearsal passed all stages!'));
+      process.exit(0);
+    } else {
+      console.error(chalk.yellow(`\n⚠️ Rehearsal completed with ${result.failures.length} blockers/failures:`));
+      for (const f of result.failures) {
+        console.error(chalk.yellow(`  - ${f}`));
+      }
+      console.log(chalk.gray('\nGate G2 remains [!] until clean disconnected rehearsal passes on a clean VM.'));
+      process.exit(1);
+    }
+  });
+
+const evidenceCmd = industrial
+  .command('evidence')
+  .description('Manage and verify rehearsal evidence');
+
+evidenceCmd
+  .command('verify')
+  .description('Verify rehearsal evidence against Gate G2 criteria')
+  .option('-e, --evidence-file <path>', 'Path to rehearsal evidence file', 'artifacts/verification/G2-rehearsal.json')
+  .action((opts) => {
+    console.log(chalk.bold.blue('\n📋 MAOS Industrial — Evidence Verification\n'));
+    console.log(chalk.gray(`Evidence File: ${opts.evidenceFile}\n`));
+
+    const result = verifyRehearsalEvidence(opts.evidenceFile);
+
+    if (result.verifiedItems.length > 0) {
+      console.log(chalk.green('Verified Criteria:'));
+      for (const v of result.verifiedItems) {
+        console.log(chalk.green(`  ✓ ${v}`));
       }
     }
 
-    // Clear checkpoints
-    const checkpointDir = path.join(maosDir, 'checkpoints');
-    if (fs.existsSync(checkpointDir)) {
-      for (const file of fs.readdirSync(checkpointDir)) {
-        fs.unlinkSync(path.join(checkpointDir, file));
+    if (!result.g2Ready) {
+      console.log(chalk.red(`\nRemaining G2 Blockers (${result.blockers.length}):`));
+      for (const b of result.blockers) {
+        console.log(chalk.red(`  ✗ ${b}`));
       }
+      console.log(chalk.yellow(`\nStatus: ${result.summary}`));
+      process.exit(1);
+    } else {
+      console.log(chalk.bold.green(`\nStatus: ${result.summary}`));
+      process.exit(0);
     }
+  });
 
-    // Clear status files
-    const statusDir = path.join(maosDir, 'status');
-    if (fs.existsSync(statusDir)) {
-      const files = fs.readdirSync(statusDir).filter((f) => f.endsWith('.status'));
-      for (const file of files) {
-        fs.unlinkSync(path.join(statusDir, file));
-      }
-    }
+const kbCmd = industrial
+  .command('kb')
+  .description('Manage project local knowledge base (build, status, verify, clear)');
 
-    // Clear logs
-    const logFile = path.join(maosDir, 'logs', 'orchestrator.log');
-    if (fs.existsSync(logFile)) {
-      fs.writeFileSync(logFile, '', 'utf-8');
-    }
+kbCmd
+  .command('build')
+  .description('Build or rebuild local knowledge base vector index')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-f, --force', 'Force re-ingestion and index rebuilding even if hashes match')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runKbBuild({
+      projectRoot: opts.projectRoot,
+      force: opts.force,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
 
-    console.log(chalk.green(`✅ Cleaned: ${cleared} tasks removed, statuses reset, logs cleared.`));
+kbCmd
+  .command('status')
+  .description('Inspect knowledge base policy, ingestion, model, and index status')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runKbStatus({
+      projectRoot: opts.projectRoot,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+kbCmd
+  .command('verify')
+  .description('Verify integrity of knowledge base policy, manifests, chunks, model, and index')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runKbVerify({
+      projectRoot: opts.projectRoot,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+kbCmd
+  .command('clear')
+  .description('Safely clear generated knowledge base index and chunks (requires --yes)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-y, --yes', 'Confirm destructive deletion of generated KB artifacts')
+  .option('--dry-run', 'Preview files that would be removed without deleting them')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runKbClear({
+      projectRoot: opts.projectRoot,
+      yes: opts.yes,
+      dryRun: opts.dryRun,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial boundary ───────────────────────────────
+industrial
+  .command('boundary <action>')
+  .description('Manage the process-scoped sovereignty boundary (enable | status | disable)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--project-id <id>', 'Project identifier', 'default')
+  .option('-y, --yes', 'Confirm the boundary state change')
+  .option('--sampling-interval-ms <ms>', 'Passive observation sampling interval in milliseconds', (v: string) => parseInt(v, 10))
+  .option('--monitor-pid <pid...>', 'Additional PID(s) to attribute to the boundary (e.g. an externally launched model server)', (v: string) => parseInt(v, 10))
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (action, opts) => {
+    const result = await runIndustrialBoundary({
+      projectRoot: opts.projectRoot,
+      action,
+      projectId: opts.projectId,
+      yes: opts.yes,
+      samplingIntervalMs: opts.samplingIntervalMs,
+      monitorPids: opts.monitorPid,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial preflight ──────────────────────────────
+industrial
+  .command('preflight')
+  .description('Run industrial preflight and boundary verification')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--stage <stage>', 'Specific stage to run')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runIndustrialPreflight({
+      projectRoot: opts.projectRoot,
+      stage: opts.stage,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial start ──────────────────────────────────
+industrial
+  .command('start')
+  .description('Start the industrial project service host')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--port <number>', 'Port to bind (default: 0 for ephemeral)', (v: string) => parseInt(v, 10))
+  .option('--host <host>', 'Host to bind (default: 127.0.0.1)', '127.0.0.1')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runIndustrialStart({
+      projectRoot: opts.projectRoot,
+      port: opts.port,
+      host: opts.host,
+      json: opts.json,
+    });
+    // Keep the HTTP server's event loop alive after startup. Calling
+    // process.exit() here terminates the listener immediately, despite the
+    // successful "service started" message.
+    process.exitCode = result.exitCode;
+  });
+
+// ─── maos industrial demo ───────────────────────────────────
+industrial
+  .command('demo')
+  .description('Run sovereign industrial coding demo (e.g. RMS calculation)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-d, --demo <name>', 'Demo name to run (default: rms)', 'rms')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runIndustrialDemo({
+      projectRoot: opts.projectRoot,
+      demo: opts.demo,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial verify ─────────────────────────────────
+industrial
+  .command('verify [target]')
+  .description('Verify industrial state: audit, boundary, service, or telemetry analysis')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--run-id <runId>', 'Verify one completed judged run and its report/export hashes')
+  .option('--analysis-id <analysisId>', 'Replay one local telemetry analysis against its source CSV')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (target, opts) => {
+    const result = await runIndustrialVerify({
+      target: target || 'audit',
+      runId: opts.runId,
+      analysisId: opts.analysisId,
+      projectRoot: opts.projectRoot,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial stop ───────────────────────────────────
+industrial
+  .command('stop')
+  .description('Stop the running industrial service (graceful or force with --yes)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-m, --mode <mode>', 'Stop mode: after-current-tasks or force', 'after-current-tasks')
+  .option('-y, --yes', 'Confirm force stop (required for --mode force)')
+  .option('--reason <reason>', 'Reason for stopping service')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runIndustrialStop({
+      projectRoot: opts.projectRoot,
+      mode: opts.mode,
+      yes: opts.yes,
+      reason: opts.reason,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial reset ───────────────────────────────────
+industrial
+  .command('reset')
+  .description('Deterministically reset confirmed generated test state (dry-run and allowlist)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('--allowlist <categories>', 'Comma-separated categories to reset (queue, output, index, sandbox, conversation, all)', 'all')
+  .option('--run-id <runId>', 'Filter reset to a specific run ID')
+  .option('--dry-run', 'Preview files that would be removed without deleting anything')
+  .option('-y, --yes', 'Confirm live deletion of generated test state')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runIndustrialReset({
+      projectRoot: opts.projectRoot,
+      allowlist: opts.allowlist,
+      runId: opts.runId,
+      dryRun: opts.dryRun,
+      yes: opts.yes,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial run ─────────────────────────────────────
+industrial
+  .command('run')
+  .description('One-command judged run (preflight → policy → services → DAG → approvals → verify → audit export)')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-d, --demo <name>', 'Demo name to run (default: safety-audit)', 'safety-audit')
+  .option('--auto-approve', 'Automatically approve safety verdict with explicit confirmation')
+  .option('-y, --yes', 'Confirm automatic approval and execution')
+  .option('--enforce-firewall', 'Enforce active host firewall boundary during preflight')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts) => {
+    const result = await runIndustrialRun({
+      projectRoot: opts.projectRoot,
+      demo: opts.demo,
+      autoApprove: opts.autoApprove,
+      yes: opts.yes,
+      enforceFirewall: opts.enforceFirewall,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
+  });
+
+// ─── maos industrial open ────────────────────────────────────
+industrial
+  .command('open <target>')
+  .description('Open a validated local deliverable (.docx, .xlsx, .pptx, .pdf) in desktop office application')
+  .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+  .option('-l, --launcher <launcher>', 'Launcher preference (auto, office, libreoffice, system)', 'auto')
+  .option('--dry-run', 'Validate target and print launch command without opening window')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (target, opts) => {
+    const result = await runIndustrialOpen({
+      projectRoot: opts.projectRoot,
+      target,
+      launcher: opts.launcher,
+      dryRun: opts.dryRun,
+      json: opts.json,
+    });
+    process.exit(result.exitCode);
   });
 
 // Default action: launch interactive REPL when no subcommand is provided

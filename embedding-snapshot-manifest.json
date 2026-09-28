@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "modelName": "all-minilm-l6-v2-local",
+  "revision": "fa979fdf926cbd99430f16e4321689952542a641",
+  "dimension": 384,
+  "license": "Apache-2.0",
+  "architecture": "BertModel",
+  "device": "cpu",
+  "quantization": "float32",
+  "maxInputTokens": 256,
+  "maxInputChars": 2048,
+  "snapshotRelativePath": "models--sentence-transformers--all-MiniLM-L6-v2/snapshots/fa979fdf926cbd99430f16e4321689952542a641",
+  "files": [
+    { "path": "config.json", "size": 612, "sha256": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41" },
+    { "path": "tokenizer_config.json", "size": 350, "sha256": "acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b" },
+    { "path": "tokenizer.json", "size": 466247, "sha256": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037" },
+    { "path": "vocab.txt", "size": 231508, "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3" },
+    { "path": "special_tokens_map.json", "size": 112, "sha256": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3" },
+    { "path": "modules.json", "size": 349, "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf" },
+    { "path": "model.safetensors", "size": 90868376, "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db" }
+  ],
+  "budgets": {
+    "maxHostMemoryMb": 2048,
+    "maxBatchSize": 32,
+    "maxTotalBatchBytes": 65536,
+    "inferenceTimeoutMs": 60000
+  }
+}

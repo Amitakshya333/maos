@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "packId": "MAOS-INDUSTRIAL-PUBLIC-DEMO-PACK-V1",
+  "title": "Comprehensive Ground Truth for Industrial Public Demo Pack",
+  "description": "Pre-computed ground truth metrics, anomalies, thresholds, and multimodal extraction targets for MAOS Industrial demonstration scenarios D1 through D7.",
+  "disclaimer": "Hackathon demonstration rules only; not a certified standard or operating authorization.",
+  "telemetry": {
+    "filename": "turbine_vibration_log.csv",
+    "sha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+    "rowCount": 500,
+    "durationMinutes": 125,
+    "samplingIntervalSeconds": 15,
+    "overallRmsVibration": 2.6371099711616126,
+    "overallRmsVibrationRounded": 2.63711,
+    "vibrationThresholds": {
+      "warning": 4.5,
+      "critical": 7.1,
+      "unit": "mm/s RMS"
+    },
+    "temperatureThresholds": {
+      "warning": 85.0,
+      "critical": 95.0,
+      "unit": "deg C"
+    },
+    "anomalies": [
+      {
+        "row": 121,
+        "timestamp": "2026-08-22T09:30:00+05:30",
+        "field": "vibration_rms_mm_s",
+        "value": 5.2,
+        "threshold": 4.5,
+        "verdict": "WARNING",
+        "corroboration": "Intermittent metallic sound near drive-end bearing housing"
+      },
+      {
+        "row": 238,
+        "timestamp": "2026-08-22T09:59:15+05:30",
+        "field": "bearing_temperature_c",
+        "value": 88.4,
+        "threshold": 85.0,
+        "verdict": "WARNING",
+        "corroboration": "Drive-end bearing housing warmer than non-drive-end housing"
+      },
+      {
+        "row": 367,
+        "timestamp": "2026-08-22T10:31:30+05:30",
+        "field": "vibration_rms_mm_s",
+        "value": 8.3,
+        "threshold": 7.1,
+        "verdict": "FAIL",
+        "corroboration": "Dark lubricant residue below drive-end seal"
+      },
+      {
+        "row": 442,
+        "timestamp": "2026-08-22T10:50:15+05:30",
+        "field": "bearing_temperature_c",
+        "value": 97.2,
+        "threshold": 95.0,
+        "verdict": "FAIL",
+        "corroboration": "Two short vibration alarms reported during preceding shift"
+      }
+    ],
+    "expectedSummary": {
+      "totalWarnings": 2,
+      "totalCriticals": 2,
+      "overallVerdict": "FAIL"
+    }
+  },
+  "documents": {
+    "maintenanceReport": {
+      "filename": "maintenance_report.txt",
+      "sha256": "7ed8e5b9f2a9fb74e212f70c2e78768b1850d7815d7c633a8af381f61bb08503",
+      "reportId": "MR-T07-2026-0822",
+      "assetId": "Steam Turbine T-07",
+      "observationCount": 5
+    },
+    "scannedInspection": {
+      "filename": "turbine_inspection_scan.pdf",
+      "sha256": "fcb75e928d0ada2ce7cbf187d3ec880c821d89b99563a06d86bb36f70211b9bd",
+      "pageCount": 1,
+      "expectedClassification": "AGREE",
+      "expectedMinConfidence": 0.85
+    },
+    "standardOperatingProcedure": {
+      "filename": "sop_turbine_vibration_monitoring.md",
+      "sha256": "0c0e533878ffd4fb3d762305ecccf8d1029ff7b1b523c261bbd6bfaf21eb6eed",
+      "sopId": "SOP-TURBINE-VIB-DEMO-V1",
+      "license": "CC0-1.0"
+    }
+  },
+  "multimodal": {
+    "images": [
+      {
+        "filename": "images/turbine_nameplate.png",
+        "sha256": "7f4350a4dc04af0a46ccee396fea3b9bdffd83ade95a49d76bb2a154a5be2bfb",
+        "category": "equipment_nameplate",
+        "targetFields": { "model": "T-07", "speedRpm": 3000 }
+      },
+      {
+        "filename": "images/pressure_gauge.png",
+        "sha256": "413d582d9c30ddf2fd4ff1cc4fd9f2fd42b172f3a88121b5cc46a19aad8343df",
+        "category": "pressure_gauge",
+        "targetFields": { "dialType": "analog", "unit": "bar" }
+      },
+      {
+        "filename": "images/pid_drawing.png",
+        "sha256": "b2b9f63e3baa99a098b19f5c95560b1e4ead30e6f31cb8cf06aee5bba2f35865",
+        "category": "pid_drawing",
+        "targetFields": { "drawingType": "piping_and_instrumentation" }
+      }
+    ]
+  },
+  "deliverables": {
+    "approvalNote": {
+      "format": "docx",
+      "expectedVerdict": "FAIL",
+      "requiredCitations": [
+        "turbine_vibration_log.csv",
+        "maintenance_report.txt",
+        "safety_thresholds.json"
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# MAOS Industrial — Pinned Sandbox Container Requirements (F8-01)
+# Pinned exact versions for air-gapped deterministic computation
+# Generated for Python 3.11.9-slim-bookworm
+
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.13.0
+sympy==1.12.1
+matplotlib==3.8.4
+pytest==8.2.0

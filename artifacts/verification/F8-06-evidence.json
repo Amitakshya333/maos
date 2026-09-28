@@ -1,0 +1,137 @@
+{
+  "task": "F8-06",
+  "title": "Formal Reproducible RMS Calculation Trace Evidence",
+  "timestamp": "2026-09-26T20:49:40.929Z",
+  "status": "PASS",
+  "deterministicTrace": {
+    "traceId": "F8-06-RMS-turbine-vibration",
+    "traceHash": "c60689d778db972a892c0a3b04addf108f32279220b1ffe57ffdf973159b0d8d",
+    "title": "Turbine Vibration RMS Calculation Trace",
+    "calculationType": "RMS",
+    "formula": "RMS = sqrt((x₁² + x₂² + ... + xₙ²) / n)",
+    "formulaLatex": "\\text{RMS} = \\sqrt{\\frac{1}{n}\\sum_{i=1}^n x_i^2}",
+    "inputProvenance": {
+      "sourceFile": "demo/industrial/turbine_vibration_log.csv",
+      "sourceFileHash": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+      "actualDiskHash": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+      "sourceFileHashMatches": true,
+      "inputRows": 500,
+      "selectedColumn": "vibration_rms_mm_s",
+      "units": "mm/s",
+      "executionTimestamp": "2026-09-23T19:33:32.629Z",
+      "agentId": "analyst_agent",
+      "sandboxContainerIdentity": "maos-sandbox-runner:0.3.0-industrial"
+    },
+    "intermediates": {
+      "sampleCount": 500,
+      "sumOfSquares": 3477.1744999999996,
+      "sumOfSquaresUnit": "(mm/s)²",
+      "meanSquare": 6.954349,
+      "meanSquareUnit": "(mm/s)²",
+      "unroundedResult": 2.637109971161612,
+      "roundingPolicy": "round_half_up",
+      "roundingDecimals": 5,
+      "roundedResult": 2.63711,
+      "finalUnit": "mm/s"
+    },
+    "thresholdEvaluation": {
+      "warningThreshold": 4.5,
+      "criticalThreshold": 7.1,
+      "unit": "mm/s",
+      "warningRowIds": [
+        121,
+        367
+      ],
+      "criticalRowIds": [
+        367
+      ],
+      "overallStatus": "CRITICAL"
+    },
+    "groundTruthComparison": {
+      "expectedRmsRaw": 2.6371099711616126,
+      "expectedRmsRounded": 2.63711,
+      "calculatedRmsRaw": 2.637109971161612,
+      "calculatedRmsRounded": 2.63711,
+      "rawDelta": 4.440892098500626e-16,
+      "deltaWithinTolerance": true,
+      "warningRowsMatch": true,
+      "criticalRowsMatch": true
+    },
+    "citations": [
+      {
+        "citationId": "ISO-10816-3",
+        "documentTitle": "Mechanical vibration — Evaluation of machine vibration by measurements on non-rotating parts — Part 3: Industrial machines",
+        "sectionOrPage": "Section 4.2: Vibration Velocity RMS Evaluation Zones",
+        "notes": "Prescribes 4.5 mm/s warning threshold (Zone C) and 7.1 mm/s critical limit (Zone D)."
+      }
+    ]
+  },
+  "authoritativeRustVerification": {
+    "engine": "rust_engine (maos-engine.exe)",
+    "verified": true,
+    "reproducedRmsRaw": 2.637109971161612,
+    "reproducedRmsRounded": 2.63711,
+    "reproducedSumSquares": 3477.1744999999996,
+    "reproducedMeanSquare": 6.954349,
+    "reproducedWarningRows": [
+      121,
+      367
+    ],
+    "reproducedCriticalRows": [
+      367
+    ],
+    "durationMs": 25,
+    "details": {
+      "critical_rows": [
+        367
+      ],
+      "formula": "RMS = sqrt((x₁² + x₂² + ... + xₙ²) / n)",
+      "mean_square": 6.954349,
+      "rounded_rms": 2.63711,
+      "sample_count": 500,
+      "source_hash": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+      "sum_squares": 3477.1744999999996,
+      "unit": "mm/s",
+      "unrounded_rms": 2.637109971161612,
+      "verified": true,
+      "warning_rows": [
+        121,
+        367
+      ],
+      "durationMs": 25
+    }
+  },
+  "failClosedRejectionsVerified": {
+    "missingUnitsRejected": true,
+    "missingSourceHashRejected": true,
+    "missingFormulaRejected": true,
+    "ambiguousRoundingRejected": true,
+    "numericOverflowRejected": true,
+    "unverifiedCalculationOutputRejected": true,
+    "nonReproducibleResultsRejected": true,
+    "sourceCsvTamperingRejected": true,
+    "missingCitationsRejected": true
+  },
+  "immutabilityAudit": {
+    "sourceCsvIntact": true,
+    "sourceCsvSha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+    "canaryFileIntact": true,
+    "canarySha256": "1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435"
+  },
+  "testResults": {
+    "calculationTraceSuite": {
+      "file": "tests/industrial/f8-06-calculation-trace.test.ts",
+      "totalTests": 17,
+      "passed": 17,
+      "failed": 0,
+      "allPassed": true
+    },
+    "rustEngineSuite": {
+      "file": "tests/r1-rust-engine.test.ts",
+      "totalTests": 22,
+      "passed": 22,
+      "failed": 0,
+      "allPassed": true
+    }
+  }
+}

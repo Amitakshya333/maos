@@ -2,10 +2,9 @@ import * as fs from 'fs';
 import chalk from 'chalk';
 import ora, { Ora } from 'ora';
 import inquirer from 'inquirer';
-import { isMaosInitialized, getConfigPath } from '../utils/paths';
+import { createServiceContainer } from '../service';
 import { createProviderDirect } from '../backends/factory';
 import { decompose, SubTask, DecompositionResult, DecomposerError } from '../core/decomposer';
-import { createTask } from '../core/queue';
 import { createRouter } from '../core/router';
 import { renderPanel, getBrandBadge, renderDivider, icons, padRight } from '../utils/ui';
 
@@ -145,20 +144,23 @@ function renderPlan(result: DecompositionResult): void {
 // ─── Main Plan Command ────────────────────────────────────────
 
 export async function runPlan(goal: string, options: PlanOptions): Promise<void> {
+  const cwd = process.cwd();
+  const services = createServiceContainer(cwd);
+
   // Pre-flight checks
-  if (!isMaosInitialized()) {
+  if (!services.project.isInitialized()) {
     console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
     console.log(chalk.gray('Run: maos init'));
     process.exit(1);
   }
 
   // Load config
-  const config = JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8'));
+  const config = services.project.loadConfig();
 
   // Pick the provider — use the first planner/architect agent, or fallback to first agent
   const plannerAgent = config.agents.find((a: any) => a.role === 'planner') || config.agents[0];
-  const providerName = options.provider || plannerAgent.provider;
-  const providerConfig = config.providers[providerName];
+  const providerName = options.provider || plannerAgent?.provider || '';
+  const providerConfig = providerName ? config.providers[providerName] : undefined;
 
   if (!providerConfig) {
     console.log(chalk.red(`❌ Provider "${providerName}" not found in config.`));
@@ -172,7 +174,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
     const { resolveCredential } = require('../core/credentials');
     const resolved = resolveCredential(providerName, providerConfig.apiKey);
     const enrichedConfig = resolved ? { ...providerConfig, apiKey: resolved.key } : providerConfig;
-    provider = createProviderDirect(providerName, enrichedConfig, plannerAgent.model);
+    provider = createProviderDirect(providerName, enrichedConfig, plannerAgent?.model || '');
   } catch (err: any) {
     console.log(chalk.red(`❌ Failed to create provider: ${err.message}`));
     process.exit(1);
@@ -342,10 +344,9 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
       .filter((depId): depId is string => Boolean(depId))
       .filter((depId) => depId !== titleToId.get(task.title));
 
-    const created = createTask({
-      id: titleToId.get(task.title),
+    const created = services.task.createTask({
       description: `## ${task.title}\n\n${task.description}`,
-      capabilities: task.requiredCapabilities,
+      capabilities: [...task.requiredCapabilities],
       complexity: task.complexity,
       category: task.category,
       dependsOn: resolvedDeps,

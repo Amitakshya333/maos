@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "1.0.0-industrial",
+  "frozenAt": "2026-09-25T00:00:00.000Z",
+  "freezeDigest": "209a4d88e566c8a862586d4e432698a51d894cd1d339bc834af1cae60568d9a0",
+  "canarySha256": "1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435",
+  "assets": [
+    {
+      "relativePath": "package.json",
+      "sha256": "75cab034f971d61bf9eb34b67dbc373e37dc76ddd0d90be787cb3918d4bc8cdf",
+      "byteSize": 2538,
+      "category": "config",
+      "required": true
+    },
+    {
+      "relativePath": "profiles/industrial/maos.config.json",
+      "sha256": "968a3328d47ee4f3d5fc54058a8b80e81160ad5f7796ca1bb7387244605d5db4",
+      "byteSize": 3963,
+      "category": "config",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/turbine_vibration_log.csv",
+      "sha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+      "byteSize": 25575,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/DEMO_PACK_PROVENANCE.json",
+      "sha256": "2d8e3ccf77181511fe5d2b2cd6e20e61ae6d03e3777f535afb17365c6785b981",
+      "byteSize": 7579,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/ground_truth.json",
+      "sha256": "895cdb86d7ae487a0bb0f0fda7a5286699455be050a90d800a6845929aba4786",
+      "byteSize": 4126,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/sop_turbine_vibration_monitoring.md",
+      "sha256": "0c0e533878ffd4fb3d762305ecccf8d1029ff7b1b523c261bbd6bfaf21eb6eed",
+      "byteSize": 4268,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/turbine_inspection_scan.pdf",
+      "sha256": "fcb75e928d0ada2ce7cbf187d3ec880c821d89b99563a06d86bb36f70211b9bd",
+      "byteSize": 534,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/PRESENTATION_SCRIPT.md",
+      "sha256": "f9dccb9656915cde85ded7feb900095df36179dc43553c0d9d447c299b74333c",
+      "byteSize": 6374,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/RUNBOOK.md",
+      "sha256": "57d50213302f6991a9f3cab6cdb645888e40e6409b196f9fc3d8f5d0e3903426",
+      "byteSize": 12215,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/images/pid_drawing.png",
+      "sha256": "b2b9f63e3baa99a098b19f5c95560b1e4ead30e6f31cb8cf06aee5bba2f35865",
+      "byteSize": 1311,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/images/pressure_gauge.png",
+      "sha256": "413d582d9c30ddf2fd4ff1cc4fd9f2fd42b172f3a88121b5cc46a19aad8343df",
+      "byteSize": 909,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "demo/industrial/images/turbine_nameplate.png",
+      "sha256": "7f4350a4dc04af0a46ccee396fea3b9bdffd83ade95a49d76bb2a154a5be2bfb",
+      "byteSize": 899,
+      "category": "demo",
+      "required": true
+    },
+    {
+      "relativePath": "industrial/release-sbom.json",
+      "sha256": "452cce0054ee309b85f1835fee1c6156acced4e6cadfaf492c93a166c199152c",
+      "byteSize": 10336,
+      "category": "config",
+      "required": true
+    },
+    {
+      "relativePath": "embedding-snapshot-manifest.json",
+      "sha256": "fb6886ca7523ed8e2ac7d1786e0a84c1e08aa649ba6e78f0cae28a4e2135a3e4",
+      "byteSize": 1531,
+      "category": "config",
+      "required": true
+    },
+    {
+      "relativePath": "rust/target/release/maos-engine.exe",
+      "sha256": "b62c128a0101558662c8972df1e867b8f5c5537e7d84003ba6e804fc4efcc605",
+      "byteSize": 472064,
+      "category": "engine",
+      "required": true
+    }
+  ],
+  "fallbackScreens": [
+    {
+      "screenId": "SCREEN-01-PID",
+      "title": "Piping and Instrumentation Diagram",
+      "relativePath": "demo/industrial/images/pid_drawing.png",
+      "sha256": "b2b9f63e3baa99a098b19f5c95560b1e4ead30e6f31cb8cf06aee5bba2f35865"
+    },
+    {
+      "screenId": "SCREEN-02-GAUGE",
+      "title": "Pressure Gauge Inspection Calibration",
+      "relativePath": "demo/industrial/images/pressure_gauge.png",
+      "sha256": "413d582d9c30ddf2fd4ff1cc4fd9f2fd42b172f3a88121b5cc46a19aad8343df"
+    },
+    {
+      "screenId": "SCREEN-03-NAMEPLATE",
+      "title": "Turbine Generator Nameplate Specification",
+      "relativePath": "demo/industrial/images/turbine_nameplate.png",
+      "sha256": "7f4350a4dc04af0a46ccee396fea3b9bdffd83ade95a49d76bb2a154a5be2bfb"
+    }
+  ],
+  "recordingLedger": {
+    "plan": "15-minute judged novice journey D1-D7",
+    "scriptPath": "demo/industrial/PRESENTATION_SCRIPT.md",
+    "runbookPath": "demo/industrial/RUNBOOK.md",
+    "stepsCovered": [
+      "D1_PREFLIGHT",
+      "D2_AGENTIC_DOCS",
+      "D3_RMS_CALCULATION",
+      "D4_MULTIMODAL_EVIDENCE",
+      "D5_OFFICE_DELIVERABLES",
+      "D6_SOVEREIGNTY_BUNDLE",
+      "D7_JUDGED_RUN"
+    ]
+  }
+}

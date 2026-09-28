@@ -80,12 +80,68 @@ function resolveApiKey(value: string | undefined, providerName: string): string 
 }
 
 /**
+ * Validate that a baseURL is loopback-only (127.0.0.1, localhost, ::1).
+ * Used by sovereign-local profiles to enforce the endpoint policy.
+ */
+function isLoopbackURL(baseURL: string): boolean {
+  try {
+    const hostname = new URL(baseURL).hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Enforce that a provider endpoint is loopback-only.
+ * Throws if the endpoint resolves to a non-loopback address.
+ */
+function enforceLoopbackOnly(providerName: string, baseURL: string | undefined): void {
+  if (!baseURL) {
+    // No explicit URL — known cloud providers are blocked
+    const cloudProviders = ['openai', 'anthropic', 'gemini', 'google', 'deepseek', 'together', 'groq', 'fireworks', 'freemodel'];
+    if (cloudProviders.includes(providerName.toLowerCase())) {
+      throw new Error(
+        `Provider "${providerName}" defaults to a cloud endpoint. ` +
+        `In sovereign-local mode, all endpoints must be loopback (127.0.0.1). ` +
+        `Set baseURL to a local server or use ollama/lmstudio.`
+      );
+    }
+    return; // ollama/lmstudio without explicit URL default to localhost
+  }
+  if (!isLoopbackURL(baseURL)) {
+    throw new Error(
+      `Provider "${providerName}" has non-loopback baseURL "${baseURL}". ` +
+      `In sovereign-local mode, all endpoints must be loopback (127.0.0.1, localhost, ::1).`
+    );
+  }
+}
+
+/**
  * Create an IProvider instance (for API runtimes).
  */
-function createProvider(providerName: string, config: ProviderConfig, model: string): IProvider {
+function createProvider(
+  providerName: string,
+  config: ProviderConfig,
+  model: string,
+  sovereignLocal?: boolean,
+  localRuntime = false,
+): IProvider {
   const name = providerName.toLowerCase();
-  const apiKey = resolveApiKey(config.apiKey, name);
   const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
+  // Local runtimes are loopback services, even when the provider has a custom
+  // name (for example huggingface-local). They must not require a cloud key.
+  // The loopback check also keeps doctor/provider-direct probes consistent with
+  // RuntimeFactory-created local agents.
+  const isLoopbackProvider = Boolean(baseURL && isLoopbackURL(baseURL));
+  const apiKey = (localRuntime || isLoopbackProvider || NO_KEY_PROVIDERS.has(name)) && (!config.apiKey || config.apiKey === '')
+    ? 'not-needed'
+    : resolveApiKey(config.apiKey, name);
+
+  // F1-07: Enforce loopback-only in sovereign-local mode
+  if (sovereignLocal) {
+    enforceLoopbackOnly(name, baseURL);
+  }
 
   switch (name) {
     case 'openai':
@@ -134,11 +190,13 @@ function createProvider(providerName: string, config: ProviderConfig, model: str
 export class RuntimeFactory {
   /**
    * Create a runtime instance for an agent.
+   * @param sovereignLocal - If true, enforce loopback-only endpoints (F1-07)
    */
   static create(
     agentConfig: AgentRuntimeConfig,
     providerConfigs: Record<string, ProviderConfig & { costPerMillionTokens?: number }>,
     bus: MessageBus,
+    sovereignLocal?: boolean,
   ): IRuntime {
     const runtimeType = agentConfig.runtime || 'api';
 
@@ -166,7 +224,13 @@ export class RuntimeFactory {
           );
         }
 
-        const provider = createProvider(providerName, providerConfig, model);
+        const provider = createProvider(
+          providerName,
+          providerConfig,
+          model,
+          sovereignLocal || runtimeType === 'local',
+          runtimeType === 'local',
+        );
         const costPerMillion = providerConfig.costPerMillionTokens ?? DEFAULT_COSTS[providerName.toLowerCase()] ?? 0.5;
 
         return new ApiRuntime(
@@ -174,6 +238,8 @@ export class RuntimeFactory {
             provider,
             role: agentConfig.role,
             capabilities: agentConfig.capabilities,
+            systemPrompt: agentConfig.systemPrompt,
+            allowedTools: agentConfig.allowedTools,
             maxIterations: agentConfig.maxIterations || 25,
             costPerMillionTokens: costPerMillion,
           },
@@ -282,8 +348,10 @@ export class RuntimeFactory {
         continue;
       }
 
-      // Skip key check for local providers
-      if (NO_KEY_PROVIDERS.has(providerName.toLowerCase())) {
+      // Local runtimes use loopback services and never require a cloud key.
+      // Keep the provider-name check for backwards-compatible keyless providers
+      // used by API-configured agents as well.
+      if (runtimeType === 'local' || NO_KEY_PROVIDERS.has(providerName.toLowerCase())) {
         results.push({
           agentId: agent.id,
           provider: providerName,

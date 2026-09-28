@@ -21,6 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getMaosRoot } from '../utils/paths';
 import { BusEvent, MessageBus } from './message-bus';
+import type { SequencedEvent } from '../domain/schemas';
 
 // ---- Config ----
 
@@ -94,6 +95,126 @@ export class EventStore {
       this._statsCacheSeq = this.seq;
     } catch {
       // Event persistence failure is non-fatal
+    }
+  }
+
+  /**
+   * Persist a SequencedEvent with strict monotonic sequence numbering.
+   */
+  writeSequenced(event: {
+    eventId?: string;
+    eventType: string;
+    projectId: string;
+    runId?: string;
+    taskId?: string;
+    sequence?: number;
+    occurredAt?: string;
+    correlationId: string;
+    payload: unknown;
+  }): SequencedEvent {
+    if (this.shouldRotate()) {
+      this.rotate();
+      this._cachedByType = {};
+      this._cachedCount = 0;
+      this._cachedOldestTs = null;
+      this._cachedNewestTs = null;
+    }
+
+    this.seq++;
+    this.writeSeq(this.seq);
+    const assignedSeq = event.sequence !== undefined ? event.sequence : this.seq;
+    const occurredAt = event.occurredAt || new Date().toISOString();
+    const eventId = event.eventId || `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    const persisted: SequencedEvent = {
+      schemaVersion: 1,
+      eventId,
+      eventType: event.eventType,
+      projectId: event.projectId,
+      runId: event.runId,
+      taskId: event.taskId,
+      sequence: assignedSeq,
+      occurredAt,
+      correlationId: event.correlationId,
+      payload: event.payload,
+    };
+
+    fs.appendFileSync(this.eventFile, JSON.stringify(persisted) + '\n', 'utf-8');
+
+    this._cachedByType[event.eventType] = (this._cachedByType[event.eventType] ?? 0) + 1;
+    this._cachedCount++;
+    this._statsCacheSeq = this.seq;
+
+    return persisted;
+  }
+
+  /**
+   * Query sequenced events starting strictly after fromSeq.
+   */
+  querySequenced(opts: {
+    fromSeq?: number;
+    limit?: number;
+    projectId?: string;
+    runId?: string;
+  } = {}): SequencedEvent[] {
+    if (!fs.existsSync(this.eventFile)) return [];
+    const limit = opts.limit ?? 200;
+    const results: SequencedEvent[] = [];
+
+    try {
+      const content = fs.readFileSync(this.eventFile, 'utf-8');
+      const lines = content.split('\n');
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const raw = JSON.parse(line);
+          const seq = raw.sequence !== undefined ? raw.sequence : raw.seq;
+          if (seq === undefined) continue;
+
+          if (opts.fromSeq !== undefined && seq <= opts.fromSeq) continue;
+          if (opts.projectId && raw.projectId && raw.projectId !== opts.projectId) continue;
+          if (opts.runId && raw.runId && raw.runId !== opts.runId) continue;
+
+          const seqEvt: SequencedEvent = {
+            schemaVersion: 1,
+            eventId: raw.eventId || `evt_${seq}_${raw.persistedAt || Date.now()}`,
+            eventType: raw.eventType || raw.type || 'UNKNOWN',
+            projectId: raw.projectId || opts.projectId || 'default',
+            runId: raw.runId,
+            taskId: raw.taskId,
+            sequence: seq,
+            occurredAt: raw.occurredAt || (raw.timestamp ? new Date(raw.timestamp).toISOString() : new Date().toISOString()),
+            correlationId: raw.correlationId || `corr_${seq}`,
+            payload: raw.payload !== undefined ? raw.payload : (raw.data || {}),
+          };
+
+          results.push(seqEvt);
+          if (results.length >= limit) break;
+        } catch {}
+      }
+    } catch {}
+
+    return results;
+  }
+
+  /**
+   * Get the oldest and latest sequence numbers currently retained in storage.
+   */
+  getSequenceBounds(): { oldest: number; latest: number } {
+    const latest = this.seq;
+    if (!fs.existsSync(this.eventFile)) {
+      return { oldest: 0, latest: 0 };
+    }
+    try {
+      const content = fs.readFileSync(this.eventFile, 'utf-8');
+      const lines = content.split('\n').filter((l) => l.trim());
+      if (lines.length === 0) return { oldest: 0, latest: 0 };
+      const first = JSON.parse(lines[0]);
+      const oldest = first.sequence !== undefined ? first.sequence : (first.seq ?? 0);
+      return { oldest, latest };
+    } catch {
+      return { oldest: 0, latest };
     }
   }
 

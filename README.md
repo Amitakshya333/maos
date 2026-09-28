@@ -52,12 +52,52 @@ Modern AI coding assistants are powerful but **single-threaded**. You can only u
 
 MAOS Industrial is an **optional vertical profile** on top of MAOS Core. It coordinates locally hosted open-weight models and deterministic industrial tools to analyze confidential plant documents and sensor data — entirely offline, with zero cloud dependency.
 
-- **Sovereign**: Runs on cached Qwen 2.5 3B Instruct via a local OpenAI-compatible endpoint — no API keys, no cloud calls
-- **Specialized agents**: INGEST → ANALYST → AUDITOR → SYNTHESIZER pipeline for industrial evidence
-- **Deterministic safety**: `check_compliance` evaluates measurements against configured thresholds (PASS/WARNING/FAIL) — the model coordinates, code decides
-- **Evidence-first**: Traceable reports citing timestamps, row numbers, thresholds, deviations, and corroborating maintenance evidence
+- **100% Air-Gapped / Sovereign:** Binds strictly to loopback `127.0.0.1` — no external API keys, telemetry leaks, or cloud WAN calls.
+- **Deterministic Rust Core:** Backed by `bin/maos-industrial-engine.exe` (`#![forbid(unsafe_code)]`) for streaming sensor CSV parsing, decimal math, canonical SHA-256 calculation, and tamper-evident audit chaining.
+- **Specialized 4-Stage DAG Pipeline:** `INGEST → ANALYZE → APPROVAL → SYNTHESIZE` with fail-closed human-in-the-loop governance.
+- **Verifiable Deliverables:** Generates validated OOXML Word (`.docx`), Excel (`.xlsx`), and PDF reports citing exact sensor rows, deviations, units, and corroborating maintenance evidence.
+- **Safe Office Integration:** Inspect deliverables in native desktop office software (Microsoft Office / LibreOffice) via sanitized, injection-proof launch delegation.
 
-MAOS Core remains a general-purpose orchestrator. Enable Industrial by activating `profiles/industrial/maos.config.json`.
+### Industrial CLI Commands Reference
+
+All industrial operations are exposed under the unified `maos industrial` namespace:
+
+| Command | Description | Key Flags / Examples |
+|---|---|---|
+| `maos industrial preflight` | Verifies host firewall isolation, project initialization, and engine diagnostics | `--json`, `-p, --project-root <path>` |
+| `maos industrial start` | Launches long-running project service on local loopback | `--port 3847`, `--profile industrial` |
+| `maos industrial run` | Executes one-command 6-stage judged workflow with audit export | `--auto-approve -y`, `--enforce-firewall` |
+| `maos industrial demo` | Runs sovereign RMS coding demo inside isolated sandbox | `--demo rms`, `--json` |
+| `maos industrial verify` | Cryptographically verifies audit chain or boundary status | `--target audit`, `--target boundary` |
+| `maos industrial kb` | Manages offline industrial knowledge base corpus and vector index | `status`, `build`, `search <query>`, `verify` |
+| `maos industrial open` | Safely validates and opens local deliverable in native desktop Office | `<target>`, `--dry-run`, `-l libreoffice` |
+| `maos industrial reset` | Deterministically cleans test queue, indices, sandbox mounts, and run outputs | `--dry-run`, `-y, --yes`, `-c all` |
+| `maos industrial stop` | Gracefully or forcefully terminates running industrial service | `--force -y` (marks tasks `INTERRUPTED`) |
+
+### Architectural Limits & Operating Boundaries
+
+1. **Single-Project Boundary (MVP):** One project service per canonical project root. Multi-project concurrent leasing is a post-MVP roadmap item.
+2. **Local Persistence:** Local audit chains (`.maos/audit/`) and deliverables persist on disk for regulatory compliance (no "zero-data-left" claim). Use `maos industrial reset -y` to clear evaluation state.
+3. **Active Authoritative Rust:** Rust binary is active and authoritative in the MVP for all sensor arithmetic and hash chains (no deferred Rust).
+4. **Browser Cockpit Interface:** React Single Page Application (SPA) connecting over local REST/WebSocket (no Tauri desktop wrapper claim).
+5. **Office Viewer Delegation:** Deliverables are opened in installed local desktop applications; no embedded office editor is claimed.
+
+See [Operator Runbook](demo/industrial/RUNBOOK.md) and [Presentation Script](demo/industrial/PRESENTATION_SCRIPT.md) for full instructions.
+
+#### Start the local Industrial chat and GUI
+
+Chat uses two local processes. In one PowerShell window, start the pinned model
+server and leave it running:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-industrial-model-server.ps1
+```
+
+In a second window, start the dashboard with `npm start`, then open
+`http://127.0.0.1:3847/#/chat`. The model snapshot and pinned Python runtime
+must already be installed in the local cache; the launcher does not download
+them. If the GUI says the model server is unavailable, first check
+`http://127.0.0.1:8000/health`.
 
 ---
 
@@ -96,6 +136,9 @@ maos start
 
 # 6. Watch the fleet in your browser
 maos dashboard
+
+# npm users: `npm start` launches the same dashboard
+# Use `npm run repl` (or `maos repl`) for the interactive CLI shell
 ```
 
 ---

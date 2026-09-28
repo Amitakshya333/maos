@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "description": "Pre-computed ground truth for F8-05 RMS coding demo",
+  "csv_file": "turbine_vibration_log.csv",
+  "csv_sha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+  "rms_value": 2.6371099711616126,
+  "rms_value_rounded_6": 2.63711,
+  "row_count": 500,
+  "warning_threshold": 4.5,
+  "critical_threshold": 7.1,
+  "warning_count": 2,
+  "critical_count": 1,
+  "warning_rows": [[121, 5.2], [367, 8.3]],
+  "critical_rows": [[367, 8.3]]
+}

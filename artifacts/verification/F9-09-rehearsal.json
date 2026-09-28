@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "rehearsalId": "f9-09-rehearsal-1790591088881",
+  "projectId": "proj_f909_industrial_rehearsal",
+  "status": "PASSED",
+  "timestamp": "2026-09-28T10:24:48.881Z",
+  "measurementInterval": {
+    "startedAt": "2026-09-28T10:24:46.134Z",
+    "completedAt": "2026-09-28T10:24:48.881Z",
+    "durationMs": 2747
+  },
+  "firewall": {
+    "statusBefore": "INACTIVE",
+    "statusDuring": "ACTIVE",
+    "statusAfter": "INACTIVE",
+    "appliedPlanHash": "92e14ee52401e7bd89053dd1c5e2d3d684ef0c01dd864247d7015315b545b1ca",
+    "restorationStatus": "RESTORED"
+  },
+  "endpointAllowlist": {
+    "policyHash": "337d36007a96dcd913fe3a95451a95b6e08c091d85e7f77db22d7d77235d4a31",
+    "enforcementMode": "STRICT",
+    "allowedEndpoints": [
+      "tcp://127.0.0.1:8000 (Local LLM model endpoint)",
+      "tcp://127.0.0.1:11434 (Local Ollama endpoint)",
+      "tcp://127.0.0.1:3847 (Local MAOS backend REST)",
+      "npipe:////./pipe/docker_engine (Docker named pipe)"
+    ]
+  },
+  "networkMonitor": {
+    "sessionId": "rehearsal_session_1790591086362",
+    "observationTraceHash": "c0259fcefb8f02dc36749aa1f88931704a6e2ae428db02896d7f9aafb8ca98e3",
+    "allObservedLoopback": true,
+    "violationsCount": 0,
+    "nonLoopbackObserved": false
+  },
+  "serviceIdentity": {
+    "mappingHash": "7b90d2998049c65fa04ea9ed018b238f70c2afdd046bb9bcda0a5e31e72e76a3",
+    "services": [
+      {
+        "serviceName": "industrial-llama-server",
+        "pid": 4100,
+        "port": 8000,
+        "modelId": "llama3:8b",
+        "revision": "sha256:model-snapshot-1234",
+        "trustStatus": "TRUSTED"
+      }
+    ]
+  },
+  "stages": {
+    "D1_model_endpoint_identity": {
+      "status": "COMPLETED",
+      "modelId": "llama3:8b",
+      "revision": "sha256:model-snapshot-1234",
+      "endpoint": "http://127.0.0.1:8000",
+      "trustStatus": "TRUSTED",
+      "pid": 4100
+    },
+    "D2_document_ocr_retrieval": {
+      "status": "COMPLETED",
+      "documentId": "47a0c4d6d00547e132ea4b6ee870dfdd",
+      "sourceHash": "940d4c3645c5dfba200ec8e80276e265b1ec9682077569338950f2674b9bcc63",
+      "indexedChunks": 1,
+      "topCitationSnippet": "ISO-10816-3 INDUSTRIAL TURBINE VIBRATION SPECIFICATION\nEvaluation zones for Group 1 industrial machines with rigid support foundations:\nZone A/B: Vibration RMS <= 4.5 mm/s. Permissible for unrestricted long-term operation.\nZone C: Vibration RMS between 4.5 mm/s and 7.1 mm/s. Machine is considered restricted; remedial action required.\nZone D: Vibration RMS > 7.1 mm/s. Critical danger limit. Vibration values are of sufficient severity to cause damage; immediate trip required."
+    },
+    "D3_rms_calculation_trace": {
+      "status": "COMPLETED",
+      "csvFile": "demo/industrial/turbine_vibration_log.csv",
+      "csvSha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+      "rmsValue": 2.637109971161612,
+      "roundedRms": 2.63711,
+      "warningCount": 2,
+      "criticalCount": 1,
+      "overallStatus": "CRITICAL",
+      "calculationTraceHash": "8f1b483856cfa23760e4ac895c54a70567be18a9e7b851985294ce943c6ad7e5",
+      "rustVerified": true
+    },
+    "D4_multimodal_evidence": {
+      "status": "COMPLETED",
+      "conflictType": "CONFLICTING_VALUE",
+      "severity": "critical",
+      "safetyCriticalReviewRequired": true,
+      "humanReviewStatus": "APPROVED_WITH_CRITICAL_DISCLOSURE",
+      "reviewerId": "human-chief-engineer"
+    },
+    "D5_office_artifacts": {
+      "status": "COMPLETED",
+      "docxSha256": "8d9deb9c6d88341ef4523c7ba4d56a8a5b752b296d848d8e680ee35e2988ea25",
+      "xlsxSha256": "8c4348d5e8f9ef7814a18771625caaddff73218abf81656fce812a9d849767a8",
+      "pptxSha256": "fa6dfd3f78272d8d2981bfa4810fe20d597dff851a0396cf0389876439feeaf1",
+      "visualReviewsApproved": true,
+      "zeroSecurityViolations": true
+    },
+    "D6_sovereignty_bundle": {
+      "status": "COMPLETED",
+      "bundleId": "sovereignty_bundle_proj_f909_industrial_rehearsal_1790591088514_7a73a956",
+      "canonicalBundleHash": "3efd17c17f1f9647f9691e338c9c2ba591bcb91cda29fd7f8670c72bd219fb83",
+      "zipSha256": "10cb4e762d164c2251f5dee785bd3596907c919f3da1db8196886c6e4458fed7",
+      "operatorSignOff": "SIGNED_OFF",
+      "offlineVerificationPassed": true
+    }
+  },
+  "epistemicHonesty": {
+    "measuredClaim": "No non-loopback application connections were observed within the defined monitored boundary during the verified interval.",
+    "prohibitedClaimsRejected": true,
+    "disclosedExcludedBoundaries": [
+      "Host OS kernel network stack and packet filtering internals",
+      "Hardware firmware and physical BMC/NIC subsystems",
+      "Offline disk storage controllers and local filesystem drivers"
+    ]
+  },
+  "cleanup": {
+    "orphanContainers": 0,
+    "orphanModelLeases": 0,
+    "danglingTimers": 0,
+    "orphanTempFiles": 0,
+    "residualLocks": 0
+  },
+  "canaryVerification": {
+    "filePath": "rust/test.txt",
+    "expectedSha256": "1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435",
+    "actualSha256": "1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435",
+    "verified": true
+  }
+}

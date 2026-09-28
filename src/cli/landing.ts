@@ -42,7 +42,7 @@ export function getLandingHTML(): string {
     overflow-x: hidden;
   }
 
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  /* F1-09: Remote font import removed. Uses system font stack. */
 
   /* ─── Navigation ─── */
   .navbar {

@@ -1,9 +1,6 @@
 import chalk from 'chalk';
-import { isMaosInitialized, getConfigPath } from '../utils/paths';
-import { startOrchestrator } from '../core/orchestrator';
-import { getQueueCounts } from '../core/queue';
+import { createServiceContainer } from '../service';
 import { renderPanel, getBrandBadge, renderDivider, icons } from '../utils/ui';
-import * as fs from 'fs';
 
 export interface StartOptions {
   provider?: string;
@@ -11,16 +8,19 @@ export interface StartOptions {
 }
 
 export async function runStart(options: StartOptions): Promise<void> {
+  const cwd = process.cwd();
+  const services = createServiceContainer(cwd);
+
   // Pre-flight checks
-  if (!isMaosInitialized()) {
+  if (!services.project.isInitialized()) {
     console.log(chalk.red('❌ MAOS is not initialized in this directory.'));
     console.log(chalk.gray('Run: maos init'));
     process.exit(1);
   }
 
   // Load config for display
-  const config = JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8'));
-  const counts = getQueueCounts();
+  const config = services.project.loadConfig();
+  const counts = services.task.getQueueCounts();
 
   // Print gorgeous banner
   const bannerLines = [
@@ -70,16 +70,16 @@ export async function runStart(options: StartOptions): Promise<void> {
   console.log(renderDivider(65));
   console.log('');
 
-  // Start the orchestrator
+  // Start the orchestrator via service
   try {
-    await startOrchestrator({
+    await services.orchestration.start({
       providerOverride: options.provider,
       force: options.force,
       pollIntervalMs: 3000,
-      cwd: process.cwd(),
+      cwd,
       onStatusUpdate: (state) => {
         const active = state.activeAgents.size;
-        const agents = Array.from(state.activeAgents.entries())
+        const agents = Array.from((state.activeAgents as Map<string, any>).entries())
           .map(([id, info]) => `${id}:${info.taskId}`)
           .join(', ');
 

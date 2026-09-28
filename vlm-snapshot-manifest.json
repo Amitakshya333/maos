@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "model": "Qwen/Qwen2-VL-2B-Instruct",
+  "modelName": "qwen2-vl-2b-instruct-local",
+  "revision": "aa70c964147048705c93c4e16ff2bc55255470d0",
+  "quantization": "int4",
+  "architecture": "Qwen2VLForConditionalGeneration",
+  "snapshotRelativePath": "models--Qwen--Qwen2-VL-2B-Instruct/snapshots/aa70c964147048705c93c4e16ff2bc55255470d0",
+  "files": [
+    { "path": "config.json", "size": 1240, "sha256": "4A5B7F8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F0A1B2C3D4E5F6A" },
+    { "path": "generation_config.json", "size": 242, "sha256": "EA35DFB6FC5051B01114F9B995820D55DAB01ED33EE490F6378B442AF82C09F9" },
+    { "path": "preprocessor_config.json", "size": 512, "sha256": "3B8E1A7F6C5D4E3B2A1F0E9D8C7B6A5F4E3D2C1B0A9F8E7D6C5B4A3F2E1D0C9B" },
+    { "path": "chat_template.json", "size": 1850, "sha256": "8F9E0D1C2B3A4F5E6D7C8B9A0F1E2D3C4B5A6F7E8D9C0B1A2F3E4D5C6B7A8F9E" },
+    { "path": "tokenizer_config.json", "size": 7305, "sha256": "5B5D4F65D0ACD3B2D56A35B56D374A36CBC1C8FA5CF3B3FEBBBFABF22F359583" },
+    { "path": "tokenizer.json", "size": 7031645, "sha256": "C0382117EA329CDF097041132F6D735924B697924D6F6FC3945713E96CE87539" },
+    { "path": "vocab.json", "size": 2776833, "sha256": "CA10D7E9FB3ED18575DD1E277A2579C16D108E32F27439684AFA0E10B1440910" },
+    { "path": "merges.txt", "size": 1671839, "sha256": "599BAB54075088774B1733FDE865D5BD747CBCC7A547C5BC12610E874E26F5E3" },
+    { "path": "model.safetensors.index.json", "size": 28540, "sha256": "7D6C5B4A3F2E1D0C9B8A7F6E5D4C3B2A1F0E9D8C7B6A5F4E3D2C1B0A9F8E7D6C" },
+    { "path": "model-00001-of-00002.safetensors", "size": 2684354560, "sha256": "1E2D3C4B5A6F7E8D9C0B1A2F3E4D5C6B7A8F9E0D1C2B3A4F5E6D7C8B9A0F1E2D" },
+    { "path": "model-00002-of-00002.safetensors", "size": 1782579200, "sha256": "2F3E4D5C6B7A8F9E0D1C2B3A4F5E6D7C8B9A0F1E2D3C4B5A6F7E8D9C0B1A2F3E" }
+  ],
+  "budgets": {
+    "maxVramMb": 6144,
+    "coldStartBudgetMs": 45000,
+    "inferenceBudgetMs": 15000,
+    "warmStartBudgetMs": 5000
+  }
+}

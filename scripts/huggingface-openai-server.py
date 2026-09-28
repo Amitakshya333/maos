@@ -1,9 +1,9 @@
 """Pinned, cache-only OpenAI-compatible runtime for the MAOS Industrial slice.
 
 The command line is intentionally narrow because this file is part of the
-release bundle.  It accepts the paths needed by Arioth to locate the user's
-already-downloaded model snapshot, but it never discovers a different model,
-contacts a registry, or binds outside the MAOS loopback endpoint.
+release bundle. It accepts a path to the pinned, hash-verified model snapshot,
+never discovers a different model, contacts a registry, or binds outside the
+MAOS loopback endpoint.
 """
 
 from __future__ import annotations
@@ -18,6 +18,11 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+try:
+    from starlette.requests import Request
+except ImportError:
+    Request = Any  # type: ignore
 
 MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
 MODEL_REVISION = "aa8e72537993ba99e69dfaafa59ed015b17504d1"
@@ -45,11 +50,6 @@ def dependency_error() -> None:
         fail("missing pinned local Python dependencies: " + ", ".join(missing))
 
 
-def expected_cache_root() -> Path:
-    hf_home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
-    return hf_home / "hub" / "models--Qwen--Qwen2.5-3B-Instruct" / "snapshots"
-
-
 def validate_snapshot_path(raw_path: str) -> Path:
     if not isinstance(raw_path, str) or not raw_path.strip():
         fail("--model-path is required")
@@ -58,11 +58,10 @@ def validate_snapshot_path(raw_path: str) -> Path:
         fail("--model-path must be an absolute path without traversal")
     try:
         snapshot = candidate.resolve(strict=True)
-        root = expected_cache_root().resolve(strict=True)
     except OSError as exc:
         fail(f"model snapshot cannot be resolved: {exc}")
-    if snapshot.parent != root or snapshot.name != MODEL_REVISION:
-        fail(f"model snapshot must be the pinned revision {MODEL_REVISION} under the Hugging Face cache")
+    if not snapshot.is_dir() or snapshot.name != MODEL_REVISION:
+        fail(f"model snapshot must be the pinned revision directory {MODEL_REVISION}")
     return snapshot
 
 
@@ -107,8 +106,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--device", choices=("auto", "cuda", "cpu"), required=True)
     args = parser.parse_args()
-    if args.host != HOST or args.port != PORT:
-        fail(f"runtime is pinned to {HOST}:{PORT}")
+    if args.host != HOST:
+        fail(f"runtime is pinned to loopback host {HOST}")
+    if args.port <= 0 or args.port > 65535:
+        fail("--port must be between 1 and 65535")
     return args
 
 
@@ -132,11 +133,20 @@ def build_app(snapshot: Path, device_name: str) -> Any:
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "model": MODEL_NAME, "device": device, "offline": True}
+        return {
+            "status": "ok", "model": MODEL_NAME, "revision": MODEL_REVISION,
+            "device": device, "offline": True,
+        }
 
     @app.get("/v1/models")
     def list_models() -> dict[str, Any]:
-        return {"object": "list", "data": [{"id": MODEL_NAME, "object": "model", "owned_by": "local"}]}
+        return {
+            "object": "list",
+            "data": [{
+                "id": MODEL_NAME, "revision": MODEL_REVISION,
+                "object": "model", "owned_by": "local",
+            }],
+        }
 
     @app.post("/v1/chat/completions")
     async def chat(request: Request) -> dict[str, Any]:
@@ -218,7 +228,7 @@ def main() -> None:
     verify_snapshot(snapshot)
     import uvicorn
     app = build_app(snapshot, args.device)
-    uvicorn.run(app, host=HOST, port=PORT, access_log=False)
+    uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 
 
 if __name__ == "__main__":

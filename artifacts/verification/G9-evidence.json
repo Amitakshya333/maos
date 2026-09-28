@@ -1,0 +1,750 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "sovereignty_bundle_gate_g9_formal_release",
+  "projectId": "proj_industrial_sih26117",
+  "projectRoot": "C:\\maos\\.maos\\gate-g9-eval-1790591107285",
+  "projectRootHash": "8cd08599c01ae695e6dde3d35e1605dc92afa2e9825dbd236f1255cc825a1835",
+  "createdAt": "2026-09-28T10:25:09.569Z",
+  "status": "SIGNED_OFF",
+  "hashes": {
+    "boundaryHash": "06314c61ca27aaa83f781b92df2ff4398cdfeebe3e1cf12817ffdc19f2f7cf62",
+    "endpointPolicyHash": "ea84892046cc67542a10620ac891e4e4e9dee66106dab5766e0076c91011cae8",
+    "firewallPlanHash": "6e11f31d73c6da22988892ef1ebdc8440a6459ed649f0fecb47c826ef88d1774",
+    "networkTraceHash": "0de53283c5b5ffd3818e9a7749d754e485caef70c564e892e4922c2e3cdfe606",
+    "serviceMappingHash": "b331e718f941335b43ec4fa25169f4c9e62f6caf050ddb75b9423c356ab0eb8c",
+    "calculationTraceHash": "4947733acb53b70fda1f116855c9bf655ba1aee0c8240c30e01939d3a2ec892d",
+    "auditChainHeadHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "rustVerifierExecutableHash": "b62c128a0101558662c8972df1e867b8f5c5537e7d84003ba6e804fc4efcc605",
+    "sandboxImageDigest": "sha256:ceba1e7f48ac10413f0a75f53c062b917b10c6ba0457f1f67e4e30fe33a61f76",
+    "projectRootHash": "8cd08599c01ae695e6dde3d35e1605dc92afa2e9825dbd236f1255cc825a1835"
+  },
+  "evidence": {
+    "boundary": {
+      "schemaVersion": 1,
+      "boundaryId": "boundary_proj_industrial_sih26117_1790591107330",
+      "projectId": "proj_industrial_sih26117",
+      "profileMode": "industrial",
+      "monitoredProcesses": [
+        {
+          "processId": "proc_backend",
+          "name": "maos_backend",
+          "category": "backend",
+          "executablePath": "dist/cli/index.js",
+          "isolated": true,
+          "description": "MAOS core orchestration and REST server process bound strictly to loopback."
+        },
+        {
+          "processId": "proc_gui",
+          "name": "gui_dashboard",
+          "category": "frontend",
+          "executablePath": "dist/gui/index.html",
+          "isolated": true,
+          "description": "Local browser dashboard communicating exclusively via 127.0.0.1 loopback REST/WS."
+        },
+        {
+          "processId": "proc_agents",
+          "name": "agent_runtimes",
+          "category": "runtime",
+          "executablePath": "dist/core/agent-runner.js",
+          "isolated": true,
+          "description": "Autonomous agent runtime workers operating under strict capability routing."
+        },
+        {
+          "processId": "proc_model",
+          "name": "model_server_and_leases",
+          "category": "model",
+          "executablePath": "ollama / local-model-runner",
+          "isolated": true,
+          "description": "Local loopback model inference server and cryptographic residency lease manager."
+        },
+        {
+          "processId": "proc_sandbox",
+          "name": "docker_sandbox_containers",
+          "category": "sandbox",
+          "executablePath": "maos-sandbox-runner:0.3.0-industrial",
+          "isolated": true,
+          "description": "Hardened Docker container instances with --network none, read-only rootfs, and dropped caps."
+        },
+        {
+          "processId": "proc_services",
+          "name": "project_services",
+          "category": "service",
+          "executablePath": "dist/service/index.js",
+          "isolated": true,
+          "description": "Internal project services (audit, task, verifier, trace, idempotency)."
+        },
+        {
+          "processId": "proc_launcher",
+          "name": "cli_launcher_processes",
+          "category": "launcher",
+          "executablePath": "node dist/cli/index.js",
+          "isolated": true,
+          "description": "Command line interface launcher and local process coordinator."
+        }
+      ],
+      "approvedEndpoints": [
+        {
+          "endpointId": "ep_loopback_ipv4",
+          "protocol": "tcp",
+          "hostPattern": "127.0.0.1",
+          "portRange": "1024-65535",
+          "isLoopbackOnly": true,
+          "description": "Standard local loopback IPv4 interface for intra-process and model server calls."
+        },
+        {
+          "endpointId": "ep_loopback_ipv6",
+          "protocol": "tcp",
+          "hostPattern": "::1",
+          "portRange": "1024-65535",
+          "isLoopbackOnly": true,
+          "description": "Standard local loopback IPv6 interface."
+        },
+        {
+          "endpointId": "ep_loopback_pipe",
+          "protocol": "npipe",
+          "hostPattern": "npipe:////./pipe/",
+          "isLoopbackOnly": true,
+          "description": "Windows named pipe interface for local container runtime and IPC."
+        }
+      ],
+      "excludedInfrastructure": [
+        {
+          "exclusionId": "exc_os_kernel",
+          "category": "operating_system",
+          "name": "Operating System Kernel & Host Stack",
+          "description": "Windows host kernel, TCP/IP stack, and non-attributed OS network drivers.",
+          "disclaimer": "MAOS does not monitor or guarantee offline state for kernel-level OS operations."
+        },
+        {
+          "exclusionId": "exc_hypervisor",
+          "category": "host_hypervisor",
+          "name": "Virtualization & Hypervisor Bridges",
+          "description": "WSL2 virtual network switch, Hyper-V, and Docker Desktop internal VM networks.",
+          "disclaimer": "Hypervisor virtual adapters operate outside the application measurement boundary."
+        },
+        {
+          "exclusionId": "exc_dma_hardware",
+          "category": "hardware_dma",
+          "name": "Hardware DMA & Physical Interfaces",
+          "description": "Direct Memory Access controllers, PCIe buses, BIOS/UEFI firmware, physical taps.",
+          "disclaimer": "Physical hardware exfiltration vectors are beyond software measurement boundaries."
+        },
+        {
+          "exclusionId": "exc_bg_services",
+          "category": "background_system_services",
+          "name": "Workstation Background Services",
+          "description": "Windows Update, telemetry, Defender definitions, mDNS/LLMNR discovery, time sync.",
+          "disclaimer": "OS background services communicate independently and are outside the MAOS boundary."
+        },
+        {
+          "exclusionId": "exc_user_procs",
+          "category": "unmonitored_user_processes",
+          "name": "Concurrent Workstation Processes",
+          "description": "Third-party user applications, web browsers, background utilities on the host.",
+          "disclaimer": "MAOS only measures designated processes inside its defined sovereignty boundary."
+        }
+      ],
+      "measurementInterval": {
+        "intervalId": "interval_boundary_proj_industrial_sih26117_1790591107330",
+        "startCondition": "PROJECT_SESSION_INITIALIZED",
+        "endCondition": "PROJECT_SESSION_CLOSED",
+        "startedAt": "2026-09-28T10:25:07.330Z",
+        "isActive": true
+      },
+      "capturedIdentity": {
+        "capturedProcessFields": [
+          "pid",
+          "processName",
+          "executablePath",
+          "executableHash",
+          "commandLineHash"
+        ],
+        "capturedConnectionFields": [
+          "protocol",
+          "localAddress",
+          "localPort",
+          "remoteAddress",
+          "remotePort",
+          "processId",
+          "timestamp"
+        ],
+        "capturedAuditFields": [
+          "eventId",
+          "sequence",
+          "category",
+          "source",
+          "timestamp",
+          "projectId",
+          "hash"
+        ]
+      },
+      "observationLimitations": [
+        "Application-level monitoring attributes connections only to designated processes within the monitored boundary.",
+        "Raw network adapter telemetry outside process-attributed sockets cannot be bound to specific MAOS operations.",
+        "Host operating-system services (e.g. Windows Update, mDNS, telemetry) operate outside the MAOS boundary and are not measured.",
+        "Virtualization hypervisors and container bridges (e.g. WSL2, Docker Desktop vswitch) maintain independent virtual network stacks.",
+        "Physical hardware taps, bus sniffing, and Direct Memory Access (DMA) devices are outside observation capabilities."
+      ],
+      "redactedAuditFields": [
+        "authorization",
+        "sessionToken",
+        "apiKey",
+        "token",
+        "secret",
+        "password",
+        "promptProse",
+        "promptText",
+        "rawContent",
+        "credential"
+      ],
+      "approvedClaims": [
+        "No non-loopback application connections were observed within the defined monitored boundary during the verified interval."
+      ],
+      "createdAt": "2026-09-28T10:25:07.330Z",
+      "boundaryHash": "06314c61ca27aaa83f781b92df2ff4398cdfeebe3e1cf12817ffdc19f2f7cf62"
+    },
+    "endpointPolicy": {
+      "schemaVersion": 1,
+      "policyId": "ep_policy_proj_industrial_sih26117_1790591107514",
+      "projectId": "proj_industrial_sih26117",
+      "profileMode": "industrial",
+      "declaredEndpoints": [
+        {
+          "endpointId": "ep_backend_rest",
+          "protocol": "tcp",
+          "direction": "bind",
+          "host": "127.0.0.1",
+          "port": 3847,
+          "serviceId": "maos_backend",
+          "processCategory": "backend",
+          "isLoopbackOnly": true,
+          "description": "MAOS core orchestration and REST server loopback listener."
+        },
+        {
+          "endpointId": "ep_backend_rest_client",
+          "protocol": "tcp",
+          "direction": "connect",
+          "host": "127.0.0.1",
+          "port": 3847,
+          "serviceId": "gui_dashboard",
+          "processCategory": "frontend",
+          "isLoopbackOnly": true,
+          "description": "Local GUI and internal client connection to MAOS backend."
+        },
+        {
+          "endpointId": "ep_model_server",
+          "protocol": "tcp",
+          "direction": "connect",
+          "host": "127.0.0.1",
+          "port": 8000,
+          "serviceId": "local_model_server",
+          "processCategory": "model",
+          "isLoopbackOnly": true,
+          "description": "Loopback OpenAI-compatible local model inference server."
+        },
+        {
+          "endpointId": "ep_ollama_server",
+          "protocol": "tcp",
+          "direction": "connect",
+          "host": "127.0.0.1",
+          "port": 11434,
+          "serviceId": "ollama_model_server",
+          "processCategory": "model",
+          "isLoopbackOnly": true,
+          "description": "Loopback Ollama inference server for industrial fallback."
+        },
+        {
+          "endpointId": "ep_backend_ipv6",
+          "protocol": "tcp",
+          "direction": "bind",
+          "host": "::1",
+          "port": 3847,
+          "serviceId": "maos_backend",
+          "processCategory": "backend",
+          "isLoopbackOnly": true,
+          "description": "IPv6 local loopback listener for modern loopback binding."
+        },
+        {
+          "endpointId": "ep_docker_pipe",
+          "protocol": "pipe",
+          "direction": "connect",
+          "host": "npipe:////./pipe/docker_engine",
+          "pipeName": "docker_engine",
+          "serviceId": "sandbox_runner",
+          "processCategory": "sandbox",
+          "isLoopbackOnly": true,
+          "description": "Hardened Windows named pipe for local Docker container runner execution."
+        },
+        {
+          "endpointId": "ep_model_server_bind",
+          "protocol": "tcp",
+          "direction": "bind",
+          "host": "127.0.0.1",
+          "port": 8000,
+          "serviceId": "local_model_server",
+          "processCategory": "model",
+          "isLoopbackOnly": true,
+          "description": "Local model server loopback listener."
+        }
+      ],
+      "allowedNamedPipes": [
+        "docker_engine",
+        "dockerDesktopPluginEngine",
+        "maos_ipc_default",
+        "maos-engine-pipe"
+      ],
+      "allowEphemeralPorts": true,
+      "ephemeralPortRange": {
+        "min": 49152,
+        "max": 65535
+      },
+      "enforceLoopbackStrict": true,
+      "disallowDnsResolution": true,
+      "createdAt": "2026-09-28T10:25:07.514Z",
+      "policyHash": "ea84892046cc67542a10620ac891e4e4e9dee66106dab5766e0076c91011cae8"
+    },
+    "firewallPlan": {
+      "schemaVersion": 1,
+      "planId": "fw_plan_proj_industrial_sih26117_1790591109362",
+      "policyId": "ep_policy_proj_industrial_sih26117_1790591107514",
+      "policyHash": "ea84892046cc67542a10620ac891e4e4e9dee66106dab5766e0076c91011cae8",
+      "platform": "mock",
+      "rules": [
+        {
+          "ruleId": "maos_fw_default_inbound_block",
+          "name": "MAOS Industrial — Default Inbound Block",
+          "direction": "inbound",
+          "action": "block",
+          "protocol": "any",
+          "localAddresses": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "remoteAddresses": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "description": "Block all incoming connections from non-loopback network adapters."
+        },
+        {
+          "ruleId": "maos_fw_default_outbound_block",
+          "name": "MAOS Industrial — Default Outbound Block",
+          "direction": "outbound",
+          "action": "block",
+          "protocol": "any",
+          "localAddresses": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "remoteAddresses": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "description": "Block all outgoing connections to external LAN and public Internet."
+        },
+        {
+          "ruleId": "maos_fw_loopback_inbound_allow",
+          "name": "MAOS Industrial — Loopback Inbound Allow",
+          "direction": "inbound",
+          "action": "allow",
+          "protocol": "any",
+          "localAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "remoteAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "description": "Allow incoming loopback traffic on local loopback adapter."
+        },
+        {
+          "ruleId": "maos_fw_loopback_outbound_allow",
+          "name": "MAOS Industrial — Loopback Outbound Allow",
+          "direction": "outbound",
+          "action": "allow",
+          "protocol": "any",
+          "localAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "remoteAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "description": "Allow outgoing loopback traffic to local loopback adapter."
+        },
+        {
+          "ruleId": "maos_fw_declared_bind_ports_allow",
+          "name": "MAOS Industrial — Declared Listen Ports Allow",
+          "direction": "inbound",
+          "action": "allow",
+          "protocol": "tcp",
+          "localAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "remoteAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "localPorts": [
+            3847,
+            8000
+          ],
+          "description": "Allow loopback listeners on declared service ports: [3847, 8000]."
+        },
+        {
+          "ruleId": "maos_fw_declared_connect_ports_allow",
+          "name": "MAOS Industrial — Declared Target Ports Allow",
+          "direction": "outbound",
+          "action": "allow",
+          "protocol": "tcp",
+          "localAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "remoteAddresses": [
+            "127.0.0.1",
+            "::1"
+          ],
+          "remotePorts": [
+            3847,
+            8000,
+            11434
+          ],
+          "description": "Allow loopback connections to declared service ports: [3847, 8000, 11434]."
+        },
+        {
+          "ruleId": "maos_fw_dns_outbound_block",
+          "name": "MAOS Industrial — DNS Outbound Block",
+          "direction": "outbound",
+          "action": "block",
+          "protocol": "any",
+          "localAddresses": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "remoteAddresses": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "remotePorts": [
+            53,
+            5353
+          ],
+          "description": "Strictly block all external DNS and mDNS resolution requests."
+        }
+      ],
+      "defaultInboundAction": "block",
+      "defaultOutboundAction": "block",
+      "createdAt": "2026-09-28T10:25:09.362Z",
+      "planHash": "6e11f31d73c6da22988892ef1ebdc8440a6459ed649f0fecb47c826ef88d1774"
+    },
+    "networkTrace": {
+      "schemaVersion": 1,
+      "traceId": "trace_proj_industrial_sih26117_g9",
+      "sessionId": "session_g9_1790591109487",
+      "projectId": "proj_industrial_sih26117",
+      "startedAt": "2026-09-28T10:25:07.297Z",
+      "stoppedAt": "2026-09-28T10:25:09.487Z",
+      "policyHash": "ea84892046cc67542a10620ac891e4e4e9dee66106dab5766e0076c91011cae8",
+      "boundaryHash": "06314c61ca27aaa83f781b92df2ff4398cdfeebe3e1cf12817ffdc19f2f7cf62",
+      "summary": {
+        "allObservedLoopback": true,
+        "totalSocketsObserved": 1,
+        "totalSamples": 5,
+        "trackedProcessSocketsCount": 1,
+        "untrackedProcessSocketsCount": 0,
+        "violationsCount": 0,
+        "violationTypes": [],
+        "monitoredPids": [
+          4100
+        ]
+      },
+      "samples": [],
+      "violations": [],
+      "observationLimitations": [
+        "Application-level monitoring attributes connections only to designated processes within the monitored boundary.",
+        "Raw network adapter telemetry outside process-attributed sockets cannot be bound to specific MAOS operations.",
+        "Host operating-system services (e.g. Windows Update, mDNS, telemetry) operate outside the MAOS boundary and are not measured.",
+        "Virtualization hypervisors and container bridges (e.g. WSL2, Docker Desktop vswitch) maintain independent virtual network stacks.",
+        "Physical hardware taps, bus sniffing, and Direct Memory Access (DMA) devices are outside observation capabilities."
+      ],
+      "claims": [
+        "No non-loopback application connections were observed within the defined monitored boundary during the verified interval."
+      ],
+      "traceHash": "0de53283c5b5ffd3818e9a7749d754e485caef70c564e892e4922c2e3cdfe606"
+    },
+    "serviceMapping": {
+      "schemaVersion": 1,
+      "mappingId": "mapping_proj_industrial_sih26117_1790591109568",
+      "projectId": "proj_industrial_sih26117",
+      "projectRoot": "C:\\maos\\.maos\\gate-g9-eval-1790591107285",
+      "boundaryHash": "06314c61ca27aaa83f781b92df2ff4398cdfeebe3e1cf12817ffdc19f2f7cf62",
+      "endpointPolicyHash": "ea84892046cc67542a10620ac891e4e4e9dee66106dab5766e0076c91011cae8",
+      "processes": [
+        {
+          "processId": 4100,
+          "approvedDescendantPids": [],
+          "processName": "llama-server",
+          "executablePath": "/opt/models/llama-runner",
+          "executableHash": "e9e5d788d7c533ef40178152d90c95f2e9b8f1710f5e7fb1ec845dedf88ec45d",
+          "projectId": "proj_industrial_sih26117",
+          "projectRoot": "C:\\maos\\.maos\\gate-g9-eval-1790591107285",
+          "projectRootHash": "b913449ccb538ea949833ba413fda34b0b46e3a35954fa4a267d20d3b4880803",
+          "serviceIdentity": "industrial-llama-server",
+          "runtimeManifest": {
+            "runtimeType": "node",
+            "version": "v24.11.0"
+          },
+          "modelIdentity": {
+            "modelId": "llama3:8b",
+            "modelRevision": "sha256:model-snapshot-1234",
+            "registeredAt": "2026-09-28T10:25:07.297Z"
+          },
+          "activeModelLeases": [],
+          "registeredAt": "2026-09-28T10:25:08.244Z",
+          "lastVerifiedAt": "2026-09-28T10:25:08.244Z",
+          "status": "trusted"
+        },
+        {
+          "processId": 4200,
+          "approvedDescendantPids": [],
+          "processName": "test-drift-runner",
+          "executablePath": "/opt/models/test-runner",
+          "executableHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "projectId": "proj_industrial_sih26117",
+          "projectRoot": "C:\\maos\\.maos\\gate-g9-eval-1790591107285",
+          "projectRootHash": "b913449ccb538ea949833ba413fda34b0b46e3a35954fa4a267d20d3b4880803",
+          "serviceIdentity": "test-drift-service",
+          "runtimeManifest": {
+            "runtimeType": "node",
+            "version": "v24.11.0"
+          },
+          "activeModelLeases": [],
+          "registeredAt": "2026-09-28T10:25:08.832Z",
+          "lastVerifiedAt": "2026-09-28T10:25:08.832Z",
+          "status": "trusted"
+        }
+      ],
+      "endpointBindings": [
+        {
+          "bindingId": "bind_1790591108383_x86br",
+          "protocol": "tcp",
+          "direction": "bind",
+          "localAddress": "127.0.0.1",
+          "localPort": 8000,
+          "owningPid": 4100,
+          "serviceIdentity": "industrial-llama-server",
+          "boundAt": "2026-09-28T10:25:08.383Z",
+          "status": "active",
+          "lastVerifiedAt": "2026-09-28T10:25:08.383Z"
+        }
+      ],
+      "createdAt": "2026-09-28T10:25:09.568Z",
+      "lastVerifiedAt": "2026-09-28T10:25:09.568Z",
+      "mappingHash": "b331e718f941335b43ec4fa25169f4c9e62f6caf050ddb75b9423c356ab0eb8c"
+    },
+    "calculationTrace": {
+      "schemaVersion": 1,
+      "traceId": "trace-rms-g9-formal",
+      "title": "Gate G9 Turbine Vibration RMS Calculation Trace",
+      "calculationType": "RMS",
+      "formula": "RMS = sqrt((x₁² + x₂² + ... + xₙ²) / n)",
+      "formulaLatex": "\\text{RMS} = \\sqrt{\\frac{1}{n}\\sum_{i=1}^n x_i^2}",
+      "provenance": {
+        "sourceFile": "../../demo/industrial/turbine_vibration_log.csv",
+        "sourceFileHash": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+        "rowCount": 500,
+        "measurementField": "vibration_rms_mm_s",
+        "unit": "mm/s",
+        "generatedAt": "2026-09-28T10:25:09.366Z",
+        "agentId": "analyst_agent",
+        "projectId": "proj_industrial_sih26117",
+        "containerIdentity": "maos-sandbox-runner:0.3.0-industrial"
+      },
+      "intermediates": {
+        "sampleCount": 500,
+        "sumOfSquares": 3477.1744999999996,
+        "sumOfSquaresUnit": "(mm/s)²",
+        "meanSquare": 6.954349,
+        "meanSquareUnit": "(mm/s)²",
+        "unroundedResult": 2.637109971161612,
+        "roundingPolicy": "round_half_up",
+        "roundingDecimals": 5,
+        "roundedResult": 2.63711,
+        "finalUnit": "mm/s"
+      },
+      "thresholdEvaluation": {
+        "warningThreshold": 4.5,
+        "criticalThreshold": 7.1,
+        "unit": "mm/s",
+        "warningRowIds": [
+          121,
+          367
+        ],
+        "criticalRowIds": [
+          367
+        ],
+        "overallStatus": "CRITICAL"
+      },
+      "citations": [
+        {
+          "citationId": "ISO-10816-3",
+          "documentTitle": "Mechanical vibration — Evaluation of machine vibration by measurements on non-rotating parts — Part 3: Industrial machines",
+          "sectionOrPage": "Section 4.2: Vibration Velocity RMS Evaluation Zones",
+          "notes": "Prescribes 4.5 mm/s warning threshold (Zone C) and 7.1 mm/s critical limit (Zone D)."
+        }
+      ],
+      "traceHash": "4947733acb53b70fda1f116855c9bf655ba1aee0c8240c30e01939d3a2ec892d",
+      "verification": {
+        "verified": true,
+        "engine": "rust_engine",
+        "verifiedAt": "2026-09-28T10:25:09.487Z",
+        "details": {
+          "critical_rows": [
+            367
+          ],
+          "formula": "RMS = sqrt((x₁² + x₂² + ... + xₙ²) / n)",
+          "mean_square": 6.954349,
+          "rounded_rms": 2.63711,
+          "sample_count": 500,
+          "source_hash": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+          "sum_squares": 3477.1744999999996,
+          "unit": "mm/s",
+          "unrounded_rms": 2.637109971161612,
+          "verified": true,
+          "warning_rows": [
+            121,
+            367
+          ],
+          "durationMs": 31
+        }
+      }
+    },
+    "auditTrail": {
+      "recordsCount": 3,
+      "latestHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "chainVerified": true,
+      "records": [
+        {
+          "schemaVersion": 1,
+          "sequence": 0,
+          "previous_hash": "",
+          "timestamp": "2026-09-28T10:25:07.297Z",
+          "source": "gate-g9",
+          "category": "system",
+          "data": {
+            "event": "GATE_G9_INITIALIZED"
+          },
+          "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "schemaVersion": 1,
+          "sequence": 1,
+          "previous_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "timestamp": "2026-09-28T10:25:09.568Z",
+          "source": "gate-g9",
+          "category": "boundary",
+          "data": {
+            "event": "BOUNDARY_FROZEN"
+          },
+          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ]
+    },
+    "rustVerifier": {
+      "executablePath": "C:\\maos\\rust\\target\\release\\maos-engine.exe",
+      "executableHash": "b62c128a0101558662c8972df1e867b8f5c5537e7d84003ba6e804fc4efcc605",
+      "engineVersion": "0.3.0-industrial",
+      "verified": true
+    },
+    "modelIdentity": {
+      "modelId": "llama3:8b",
+      "revision": "sha256:model-snapshot-1234",
+      "weightsHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "manifestHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "contextLength": 8192,
+      "device": "cpu"
+    },
+    "sandboxManifest": {
+      "imageDigest": "sha256:ceba1e7f48ac10413f0a75f53c062b917b10c6ba0457f1f67e4e30fe33a61f76",
+      "verified": true,
+      "architecture": "x86_64"
+    }
+  },
+  "excludedBoundaries": [
+    {
+      "exclusionId": "exc_os_kernel",
+      "category": "operating_system",
+      "name": "Operating System Kernel & Host Stack",
+      "description": "Windows host kernel, TCP/IP stack, and non-attributed OS network drivers.",
+      "disclaimer": "MAOS does not monitor or guarantee offline state for kernel-level OS operations."
+    },
+    {
+      "exclusionId": "exc_hypervisor",
+      "category": "host_hypervisor",
+      "name": "Virtualization & Hypervisor Bridges",
+      "description": "WSL2 virtual network switch, Hyper-V, and Docker Desktop internal VM networks.",
+      "disclaimer": "Hypervisor virtual adapters operate outside the application measurement boundary."
+    },
+    {
+      "exclusionId": "exc_dma_hardware",
+      "category": "hardware_dma",
+      "name": "Hardware DMA & Physical Interfaces",
+      "description": "Direct Memory Access controllers, PCIe buses, BIOS/UEFI firmware, physical taps.",
+      "disclaimer": "Physical hardware exfiltration vectors are beyond software measurement boundaries."
+    },
+    {
+      "exclusionId": "exc_bg_services",
+      "category": "background_system_services",
+      "name": "Workstation Background Services",
+      "description": "Windows Update, telemetry, Defender definitions, mDNS/LLMNR discovery, time sync.",
+      "disclaimer": "OS background services communicate independently and are outside the MAOS boundary."
+    },
+    {
+      "exclusionId": "exc_user_procs",
+      "category": "unmonitored_user_processes",
+      "name": "Concurrent Workstation Processes",
+      "description": "Third-party user applications, web browsers, background utilities on the host.",
+      "disclaimer": "MAOS only measures designated processes inside its defined sovereignty boundary."
+    }
+  ],
+  "verificationReportRefs": [
+    "F8-01",
+    "F8-02",
+    "F8-03",
+    "F8-04",
+    "F8-05",
+    "F8-06",
+    "F9-01",
+    "F9-02",
+    "F9-03",
+    "F9-04",
+    "F9-05",
+    "F9-06"
+  ],
+  "claims": [
+    "No non-loopback application connections were observed within the defined monitored boundary during the verified interval."
+  ],
+  "observationLimitations": [
+    "Application-level monitoring attributes connections only to designated processes within the monitored boundary.",
+    "Raw network adapter telemetry outside process-attributed sockets cannot be bound to specific MAOS operations.",
+    "Host operating-system services (e.g. Windows Update, mDNS, telemetry) operate outside the MAOS boundary and are not measured.",
+    "Virtualization hypervisors and container bridges (e.g. WSL2, Docker Desktop vswitch) maintain independent virtual network stacks.",
+    "Physical hardware taps, bus sniffing, and Direct Memory Access (DMA) devices are outside observation capabilities."
+  ],
+  "measurementInterval": {
+    "startedAt": "2026-09-28T10:25:07.330Z",
+    "endedAt": "2026-09-28T10:25:09.569Z"
+  },
+  "signoff": {
+    "operatorId": "op_chief_sovereignty_officer",
+    "role": "Chief Sovereignty Verification Officer",
+    "signedAt": "2026-09-28T10:25:09.570Z",
+    "notes": "Gate G9 Formal Sovereignty & Prevention Acceptance Release.",
+    "signature": "3fe7696c283682180b4b6b6db95d1c679a086e847e041ca67a2130f721d95432"
+  },
+  "bundleHash": "bfdabcec4adcd33915650b7cf9fe005e14a8de7c1d652fbb933f3be04bafb50c"
+}

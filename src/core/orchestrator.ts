@@ -23,6 +23,15 @@ import { getDispatchableTasks, buildDoneIdSet } from './dependency-gate';
 import { createCoordinator, Coordinator } from './coordinator';
 import { Supervisor } from './supervisor';
 import { createObjective, loadObjective, recordPlanCompletion } from './objective-store';
+import type { InferenceResult } from '../domain/inference';
+import type { WorkflowPlan, WorkflowPlanStep, WorkflowPlanningOutcome } from '../domain/workflow-plan';
+import { WorkflowPlanner } from '../industrial/workflow-planner';
+import type { ToolExecutionPlan, PreExecutionEvaluationOutcome } from '../domain/tool-plan';
+import {
+  ToolApprovalPlanner,
+  ToolContractCreationOptions,
+  ToolPreExecutionContext,
+} from '../industrial/tool-approval-planner';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -30,6 +39,10 @@ interface MaosConfig {
   projectName: string;
   routingMode: string;
   providers: Record<string, ProviderConfig & { costPerMillionTokens?: number }>;
+  profile?: {
+    mode?: string;
+    zeroCloud?: boolean;
+  };
   agents: Array<
     AgentRuntimeConfig & {
       provider: string;
@@ -142,13 +155,59 @@ function buildAgentProfiles(
 /**
  * Build TaskRequirements from a TaskFile.
  */
-function buildTaskRequirements(task: TaskFile): TaskRequirements {
+export function buildTaskRequirements(task: TaskFile): TaskRequirements {
   return {
     capabilities: task.capabilities,
     complexity: task.complexity,
     category: task.category,
     targetAgent: task.agent,
+    extended: task.requirements,
   };
+}
+
+/**
+ * Plan a typed deterministic workflow for a queued task (F7-03).
+ */
+export function planTaskWorkflow(
+  task: TaskFile,
+  inference: InferenceResult,
+  agents: AgentProfile[],
+  projectId: string,
+  runId: string,
+): WorkflowPlanningOutcome {
+  const planner = new WorkflowPlanner();
+  const taskReqs = buildTaskRequirements(task);
+  return planner.plan({
+    projectId,
+    taskId: task.id,
+    runId,
+    inference,
+    taskRequirements: taskReqs,
+    availableAgents: agents,
+  });
+}
+
+/**
+ * Plan a deterministic ToolExecutionPlan for a step in a WorkflowPlan (F7-04).
+ */
+export function planStepToolExecution(
+  step: WorkflowPlanStep,
+  plan: WorkflowPlan,
+  options?: ToolContractCreationOptions,
+): ToolExecutionPlan {
+  const planner = new ToolApprovalPlanner();
+  return planner.createExecutionContract(step, plan, options);
+}
+
+/**
+ * Enforce pre-execution security and approval gates for a ToolExecutionPlan (F7-04).
+ */
+export function verifyStepToolPreExecution(
+  contract: ToolExecutionPlan,
+  context: ToolPreExecutionContext,
+): PreExecutionEvaluationOutcome {
+  const planner = new ToolApprovalPlanner();
+  return planner.evaluatePreExecution(contract, context);
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────
@@ -328,7 +387,8 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
 
     try {
       // Use enrichedProviders so credential-store keys are used for runtime execution
-      const runtime = RuntimeFactory.create(agentConfig, enrichedProviders, bus);
+      const sovereignLocal = config.profile?.mode === 'sovereign-local' || config.profile?.zeroCloud === true;
+      const runtime = RuntimeFactory.create(agentConfig, enrichedProviders, bus, sovereignLocal);
       runtimeMap.set(agent.id, runtime);
       const runtimeType = agent.runtime || 'api';
       logger.info('ORCHESTRATOR', `Runtime: ${agent.id} → ${runtimeType} (${runtime.name}/${runtime.model})`);

@@ -25,6 +25,9 @@ import * as path from 'path';
 import { readTelemetry, TelemetryRecord } from './telemetry';
 import { RuntimeStats } from './runtime-stats';
 import { AgentHealthBase } from './health-monitor';
+import type { ExtendedTaskRequirements, TaskModality } from '../domain/schemas';
+import type { InferenceResult } from '../domain/inference';
+import type { WorkflowPlan, WorkflowPlanStep } from '../domain/workflow-plan';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -37,6 +40,8 @@ export interface TaskRequirements {
   category: string;
   /** Specific agent requested (empty or 'AUTO' = let router decide) */
   targetAgent: string;
+  /** Extended requirements (F7-01) */
+  extended?: ExtendedTaskRequirements;
 }
 
 export interface AgentProfile {
@@ -57,6 +62,12 @@ export interface AgentProfile {
   healthState?: AgentHealthBase;
   /** How many tasks this agent is currently running (for load penalty) */
   activeTasks?: number;
+  /** Supported modalities (optional, default: ['text']) */
+  modalities?: TaskModality[];
+  /** Allowed tool names (optional) */
+  allowedTools?: string[];
+  /** Context window capacity in tokens (optional, default: 8192) */
+  contextWindow?: number;
 }
 
 export interface RoutingConfig {
@@ -208,6 +219,82 @@ export class Router {
    * @param blacklist      Agent IDs to exclude from routing (used for retry rerouting)
    *
    * Returns null if no agent is available.
+  /**
+   * Evaluates hard eligibility for a task against an agent profile.
+   *
+   * Negative requirement (F7-01):
+   * Unknown required capability or unsupported modality/tool MUST NOT degrade to text-only.
+   * When allowDegradation is false, any missing requirement marks the agent strictly ineligible.
+   */
+  public isAgentEligible(task: TaskRequirements, agent: AgentProfile): { eligible: boolean; reason?: string } {
+    if (!task.extended || task.extended.allowDegradation === true) {
+      return { eligible: true };
+    }
+    const ext = task.extended;
+
+    // 1. Modalities
+    if (ext.modalities && ext.modalities.length > 0) {
+      const agentModalities = new Set<string>(agent.modalities || ['text']);
+      for (const cap of agent.capabilities) {
+        const lower = cap.toLowerCase();
+        if (lower === 'vision' || lower === 'vlm') agentModalities.add('vision');
+        if (lower === 'code' || lower === 'coding' || lower === 'typescript' || lower === 'python') agentModalities.add('code');
+        if (lower === 'multimodal') agentModalities.add('multimodal');
+        if (lower === 'embedding') agentModalities.add('embedding');
+        if (lower === 'audio') agentModalities.add('audio');
+      }
+      for (const reqMod of ext.modalities) {
+        if (!agentModalities.has(reqMod)) {
+          return { eligible: false, reason: `Missing required modality '${reqMod}'` };
+        }
+      }
+    }
+
+    // 2. Tools
+    if (ext.tools?.requiredTools && ext.tools.requiredTools.length > 0) {
+      const agentTools = new Set<string>([
+        ...(agent.allowedTools || []).map(t => t.toLowerCase()),
+        ...agent.capabilities.map(c => c.toLowerCase()),
+      ]);
+      for (const reqTool of ext.tools.requiredTools) {
+        if (!agentTools.has(reqTool.toLowerCase())) {
+          return { eligible: false, reason: `Missing required tool '${reqTool}'` };
+        }
+      }
+    }
+
+    // 3. Model Context Window
+    if (ext.model?.minContextTokens && ext.model.minContextTokens > 0) {
+      const agentContext = agent.contextWindow || 8192;
+      if (agentContext < ext.model.minContextTokens) {
+        return {
+          eligible: false,
+          reason: `Context window ${agentContext} < required minContextTokens ${ext.model.minContextTokens}`,
+        };
+      }
+    }
+
+    // 4. Required capabilities (non-degradable)
+    if (task.capabilities.length > 0) {
+      const agentCaps = new Set(agent.capabilities.map(c => c.toLowerCase()));
+      for (const cap of task.capabilities) {
+        if (!agentCaps.has(cap.toLowerCase())) {
+          return { eligible: false, reason: `Missing required capability '${cap}'` };
+        }
+      }
+    }
+
+    return { eligible: true };
+  }
+
+  /**
+   * Route a task to the best available agent.
+   *
+   * @param task           Task requirements
+   * @param agents         All known agent profiles (idle + busy + enabled/disabled)
+   * @param blacklist      Agent IDs to exclude from routing (used for retry rerouting)
+   *
+   * Returns null if no agent is available.
    * Returns a RoutingDecision with full score breakdown for logging/analytics.
    */
   route(
@@ -221,6 +308,10 @@ export class Router {
         a => a.id === task.targetAgent && a.idle && a.enabled && !blacklist.includes(a.id),
       );
       if (target) {
+        const eligibility = this.isAgentEligible(task, target);
+        if (!eligibility.eligible) {
+          return null; // Target agent is ineligible under hard requirements
+        }
         return {
           agentId: target.id,
           score: 100,
@@ -246,8 +337,11 @@ export class Router {
       }
     }
 
-    // Filter to available agents (exclude blacklist)
-    const available = agents.filter(a => a.idle && a.enabled && !blacklist.includes(a.id));
+    // Filter to available agents (exclude blacklist and filter by eligibility if non-degradation enforced)
+    let available = agents.filter(a => a.idle && a.enabled && !blacklist.includes(a.id));
+    if (task.extended && task.extended.allowDegradation === false) {
+      available = available.filter(a => this.isAgentEligible(task, a).eligible);
+    }
     if (available.length === 0) return null;
 
     // Apply routing strategy
@@ -263,6 +357,68 @@ export class Router {
       default:
         return this.scoreBasedRouting(task, available);
     }
+  }
+
+  /**
+   * Route directly from a deterministic InferenceResult (F7-02).
+   * Fails closed (returns null) if inference status is not 'MATCHED'
+   * or if no candidate satisfies non-degradation requirements.
+   *
+   * @param inference  Deterministic inference result
+   * @param agents     Available agent profiles
+   * @param blacklist  Agent IDs to exclude
+   */
+  public routeInference(
+    inference: InferenceResult,
+    agents: AgentProfile[],
+    blacklist: string[] = [],
+  ): RoutingDecision | null {
+    if (inference.status !== 'MATCHED') {
+      return null;
+    }
+
+    const taskReq: TaskRequirements = {
+      capabilities: inference.requirements?.tools?.requiredTools
+        ? [...inference.requirements.tools.requiredTools]
+        : [],
+      complexity: 'medium',
+      category: inference.inferredIntent,
+      targetAgent: inference.selectedAgent || 'AUTO',
+      extended: inference.requirements ?? undefined,
+    };
+
+    return this.route(taskReq, agents, blacklist);
+  }
+
+  /**
+   * Resolves the most suitable agent for an individual workflow plan step (F7-03).
+   * Enforces step tool requirements, modality constraints, and hard non-degradation.
+   */
+  public resolvePlanStepAgent(
+    step: WorkflowPlanStep,
+    requirements: ExtendedTaskRequirements,
+    agents: AgentProfile[],
+    blacklist: string[] = [],
+  ): RoutingDecision | null {
+    const taskReq: TaskRequirements = {
+      capabilities: [...step.requiredTools],
+      complexity: 'medium',
+      category: step.stepType.toLowerCase(),
+      targetAgent: step.assignedAgentId || 'AUTO',
+      extended: {
+        schemaVersion: 1,
+        modalities: requirements.modalities,
+        primaryModality: requirements.primaryModality,
+        model: step.requiredModel || requirements.model,
+        tools: {
+          requiredTools: [...step.requiredTools],
+          forbiddenTools: requirements.tools?.forbiddenTools,
+        },
+        allowDegradation: requirements.allowDegradation ?? false,
+      },
+    };
+
+    return this.route(taskReq, agents, blacklist);
   }
 
   /**
@@ -285,12 +441,16 @@ export class Router {
   private scoreBasedRouting(
     task: TaskRequirements,
     agents: AgentProfile[],
-  ): RoutingDecision {
+  ): RoutingDecision | null {
     const scored = agents.map(agent => this.scoreAgent(task, agent));
     scored.sort((a, b) => b.score - a.score);
 
-    // Record that this agent was dispatched (for future recency penalty)
     const winner = scored[0];
+    if (!winner || (task.extended && task.extended.allowDegradation === false && winner.score <= 0)) {
+      return null;
+    }
+
+    // Record that this agent was dispatched (for future recency penalty)
     this.dispatchCounter++;
     this.dispatchHistory.set(winner.agentId, this.dispatchCounter);
     this.saveDispatchHistory();
@@ -345,7 +505,7 @@ export class Router {
   private cheapestFirstRouting(
     task: TaskRequirements,
     agents: AgentProfile[],
-  ): RoutingDecision {
+  ): RoutingDecision | null {
     const capable = agents.filter(a => {
       if (task.capabilities.length === 0) return true;
       const overlap = task.capabilities.filter(c => a.capabilities.includes(c));
@@ -355,10 +515,16 @@ export class Router {
     const pool = capable.length > 0 ? [...capable] : [...agents];
     pool.sort((a, b) => (COST_TIERS[a.costTier] || 5) - (COST_TIERS[b.costTier] || 5));
 
+    if (pool.length === 0) return null;
+    const winner = pool[0];
+    if (task.extended && task.extended.allowDegradation === false && !this.isAgentEligible(task, winner).eligible) {
+      return null;
+    }
+
     return {
-      agentId: pool[0].id,
+      agentId: winner.id,
       score: 60,
-      reasoning: [`Cheapest capable agent: ${pool[0].provider}/${pool[0].model} (${pool[0].costTier})`],
+      reasoning: [`Cheapest capable agent: ${winner.provider}/${winner.model} (${winner.costTier})`],
       breakdown: {
         capabilityScore: 0.5,
         roleBonus:       0,
@@ -376,14 +542,20 @@ export class Router {
   private bestModelRouting(
     task: TaskRequirements,
     agents: AgentProfile[],
-  ): RoutingDecision {
+  ): RoutingDecision | null {
     const sorted = [...agents];
     sorted.sort((a, b) => (COST_TIERS[b.costTier] || 5) - (COST_TIERS[a.costTier] || 5));
 
+    if (sorted.length === 0) return null;
+    const winner = sorted[0];
+    if (task.extended && task.extended.allowDegradation === false && !this.isAgentEligible(task, winner).eligible) {
+      return null;
+    }
+
     return {
-      agentId: sorted[0].id,
+      agentId: winner.id,
       score: 70,
-      reasoning: [`Best model available: ${sorted[0].provider}/${sorted[0].model} (${sorted[0].costTier})`],
+      reasoning: [`Best model available: ${winner.provider}/${winner.model} (${winner.costTier})`],
       breakdown: {
         capabilityScore: 0.7,
         roleBonus:       0,
@@ -406,6 +578,28 @@ export class Router {
   ): RoutingDecision {
     const reasoning: string[] = [];
     const W = this.weights;  // Alias — all weight lookups go through W
+
+    // ── 0. Hard Eligibility & Non-Degradation Gate (F7-01) ────────
+    const eligibility = this.isAgentEligible(task, agent);
+    if (!eligibility.eligible) {
+      reasoning.push(`Ineligible (strict non-degradation): ${eligibility.reason}`);
+      return {
+        agentId: agent.id,
+        score: 0,
+        reasoning,
+        breakdown: {
+          capabilityScore: 0,
+          roleBonus:       0,
+          costPenalty:     0,
+          complexityBonus: 0,
+          healthBonus:     0,
+          crashPenalty:    0,
+          cooldownPenalty: 0,
+          loadPenalty:     0,
+          mutationPenalty: 0,
+        },
+      };
+    }
 
     // ── 1. Capability match (0.0 → 1.0) ──────────────────────────
     let capabilityScore: number;
@@ -600,7 +794,7 @@ export function createRouter(routingConfig: {
   strategy?: string;
   costWeight?: number;
   capabilityWeight?: number;
-}, projectRoot?: string, scoringWeights?: Partial<ScoringWeights>): Router {
+} = {}, projectRoot?: string, scoringWeights?: Partial<ScoringWeights>): Router {
   return new Router({
     strategy: (routingConfig.strategy || 'capability_score') as RoutingConfig['strategy'],
     costWeight: routingConfig.costWeight ?? 0.3,

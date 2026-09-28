@@ -1,10 +1,82 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { execSync, execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { ToolDef } from '../backends/provider';
-import { guardWriteFile, validateCommand, getFileLockRegistry, ScopeViolation } from '../core/scope-guard';
+import { guardWriteFile, validateCommand, getFileLockRegistry, ScopeViolation, assertRealWritePathContained, isPathInScope as checkPathInScope } from '../core/scope-guard';
 import { getMemoryStore, MemoryType } from '../core/context-memory';
+import {
+  OcrDocumentInput,
+  OcrDocumentToolResult,
+  OcrPageToolResult,
+  OcrOptions,
+  OcrDocumentResult,
+  OcrError,
+  OCR_BOUNDS,
+  DEFAULT_CONFIDENCE_THRESHOLDS,
+  validateOcrDocumentInput,
+} from '../domain/ocr';
+import {
+  AnalyzeImageInput,
+  AnalyzeImageResult,
+  ImageObservation,
+  VlmError,
+  VLM_ERROR_CODES,
+  VISION_BOUNDS,
+  PINNED_VLM_CONFIG,
+  validateAnalyzeImageInput,
+} from '../domain/vision';
+import {
+  KbSearchInput,
+  KbSearchResult,
+  KbSearchAnswerResult,
+  KbSearchNoAnswerResult,
+  KbSearchCitation,
+  KbSearchError,
+  KbSearchErrorCode,
+  KB_SEARCH_BOUNDS,
+  validateKbSearchInput,
+} from '../domain/kb-search';
+import {
+  DocxGenerationError,
+  DocxGenerationErrorCode,
+  GenerateDocxToolInput,
+  GenerateDocxToolResult,
+  XlsxGenerationError,
+  XlsxGenerationErrorCode,
+  GenerateXlsxToolInput,
+  GenerateXlsxToolResult,
+  PptxGenerationError,
+  PptxGenerationErrorCode,
+  GeneratePptxToolInput,
+  GeneratePptxToolResult,
+} from '../domain/office-artifact';
+import type { ToolExecutionPlan, PreExecutionEvaluationOutcome } from '../domain/tool-plan';
+import {
+  ToolApprovalPlanner,
+  ToolPreExecutionContext,
+} from '../industrial/tool-approval-planner';
+import {
+  createServiceContainer,
+  ServiceContainer,
+  OcrService,
+  VisionService,
+  AuditService,
+  DurableIdempotencyStore,
+  KbSearchService,
+  DocxGeneratorService,
+  XlsxGeneratorService,
+  PptxGeneratorService,
+  SandboxRunnerService,
+} from '../service';
+import {
+  AUTHORIZED_CODE_SANDBOX_AGENTS,
+  CONTAINER_RUNNER_ERROR_CODES,
+  ContainerRunnerError,
+  SandboxExecutionRequest,
+  SandboxExecutionResult,
+} from '../domain/sandbox-run';
 
 /**
  * MAOS Agent Tool Definitions
@@ -16,6 +88,341 @@ import { getMemoryStore, MemoryType } from '../core/context-memory';
 // ─── Tool Definitions (sent to the model) ─────────────────────
 
 export const AGENT_TOOLS: ToolDef[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'ocr_document',
+      description:
+        'Extract printed text with bounding boxes, confidence, and provenance from a project-local PDF document.',
+      parameters: {
+        type: 'object',
+        properties: {
+          schemaVersion: {
+            type: 'number',
+            description: 'Schema version for ocr_document input (must be 1)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Active project identifier',
+          },
+          sourcePath: {
+            type: 'string',
+            description: 'Relative project path to the PDF document (e.g., "evidence/scan.pdf")',
+          },
+          sourceArtifactId: {
+            type: 'string',
+            description: 'Optional source artifact identifier if document was already ingested',
+          },
+          language: {
+            type: 'string',
+            description: 'OCR language code (default "en")',
+          },
+          pageRange: {
+            type: 'object',
+            properties: {
+              start: { type: 'number', description: 'Starting page number (1-indexed, inclusive)' },
+              end: { type: 'number', description: 'Ending page number (1-indexed, inclusive)' },
+            },
+            description: 'Optional bounded page range to extract',
+          },
+          confidenceMode: {
+            type: 'string',
+            enum: ['standard', 'strict'],
+            description: 'Confidence evaluation mode ("standard" or "strict")',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Unique request ID for durable idempotency claim',
+          },
+          expectedSourceHash: {
+            type: 'string',
+            description: 'Optional 64-character SHA-256 hex hash of the source PDF',
+          },
+        },
+        required: ['schemaVersion', 'projectId', 'sourcePath', 'requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'analyze_image',
+      description:
+        'Analyze an image (PNG, JPEG, WEBP, BMP) using the pinned Vision-Language Model to extract structured visual observations (measurements, label readings, drawing observations).',
+      parameters: {
+        type: 'object',
+        properties: {
+          schemaVersion: {
+            type: 'number',
+            description: 'Schema version for analyze_image input (must be 1)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Active project identifier',
+          },
+          sourcePath: {
+            type: 'string',
+            description:
+              'Relative project path to the image file (e.g., "evidence/inspection.png"). Mutually exclusive with sourceArtifactId.',
+          },
+          sourceArtifactId: {
+            type: 'string',
+            description:
+              'Artifact ID of the image in the Safe Artifact Store. Mutually exclusive with sourcePath.',
+          },
+          imageHash: {
+            type: 'string',
+            description: 'Optional expected 64-character SHA-256 hex hash of the source image',
+          },
+          prompt: {
+            type: 'string',
+            description:
+              'Observation prompt or question for the Vision-Language Model (max 4096 chars)',
+          },
+          taskType: {
+            type: 'string',
+            enum: ['measurement', 'label-reading', 'drawing-observation', 'general-observation'],
+            description: 'Industrial task type for vision analysis',
+          },
+          maxOutputTokens: {
+            type: 'number',
+            description: 'Maximum tokens for model output (1 to 2048)',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Unique request ID for durable idempotency claim',
+          },
+          expectedModelId: {
+            type: 'string',
+            description: 'Optional expected model ID (defaults to pinned VLM)',
+          },
+          expectedModelRevision: {
+            type: 'string',
+            description: 'Optional expected model revision (defaults to pinned revision)',
+          },
+          allowCpuFallback: {
+            type: 'boolean',
+            description: 'Allow fallback to CPU if GPU memory budget is unavailable',
+          },
+        },
+        required: [
+          'schemaVersion',
+          'projectId',
+          'prompt',
+          'taskType',
+          'maxOutputTokens',
+          'requestId',
+        ],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_knowledge_base',
+      description:
+        'Search the project-local knowledge base vector index using semantic similarity. Returns deterministic, citation-preserving passages with provenance.',
+      parameters: {
+        type: 'object',
+        properties: {
+          schemaVersion: {
+            type: 'number',
+            description: 'Schema version for search_knowledge_base input (must be 1)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Active project identifier',
+          },
+          query: {
+            type: 'string',
+            description: 'Natural language or keyword search query text (max 2048 characters)',
+          },
+          topK: {
+            type: 'number',
+            description: 'Maximum number of citations to return (1 to 50, default 5)',
+          },
+          minScore: {
+            type: 'number',
+            description: 'Minimum cosine similarity score threshold (0.0 to 1.0, default 0.0)',
+          },
+          filter: {
+            type: 'object',
+            properties: {
+              sourcePaths: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Filter citations to specific relative source paths',
+              },
+              documentIds: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Filter citations to specific document IDs',
+              },
+              mimeTypes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Filter citations to specific MIME types (e.g., "application/pdf", "text/plain")',
+              },
+              pageNumbers: {
+                type: 'array',
+                items: { type: 'number' },
+                description: 'Filter citations to specific page numbers',
+              },
+              sectionHeadings: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Filter citations to specific section headings',
+              },
+            },
+            description: 'Optional metadata filters',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Unique request ID for durable idempotency claim',
+          },
+        },
+        required: ['schemaVersion', 'projectId', 'query', 'requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_docx',
+      description:
+        'Generate an air-gapped, verifiable DOCX approval note from validated OfficeDocxInput.',
+      parameters: {
+        type: 'object',
+        properties: {
+          schemaVersion: {
+            type: 'number',
+            description: 'Schema version for generate_docx input (must be 1)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Active project identifier',
+          },
+          input: {
+            type: 'object',
+            description: 'Validated OfficeDocxInput contract payload',
+          },
+          outputPath: {
+            type: 'string',
+            description: 'Relative project path for the generated .docx file (e.g., "artifacts/approval_note.docx")',
+          },
+          templatePath: {
+            type: 'string',
+            description: 'Optional relative project path to an approved offline DOCX/DOTX template',
+          },
+          allowOverwrite: {
+            type: 'boolean',
+            description: 'Whether to allow overwriting an existing output (requires valid approval)',
+          },
+          approvalId: {
+            type: 'string',
+            description: 'Approval ID authorizing document generation or overwrite',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Unique request ID for durable idempotency claim',
+          },
+        },
+        required: ['schemaVersion', 'projectId', 'input', 'outputPath', 'requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_xlsx',
+      description:
+        'Generate an air-gapped, verifiable XLSX workbook deliverable from validated OfficeXlsxInput.',
+      parameters: {
+        type: 'object',
+        properties: {
+          schemaVersion: {
+            type: 'number',
+            description: 'Schema version for generate_xlsx input (must be 1)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Active project identifier',
+          },
+          input: {
+            type: 'object',
+            description: 'Validated OfficeXlsxInput contract payload',
+          },
+          outputPath: {
+            type: 'string',
+            description: 'Relative project path for the generated .xlsx file (e.g., "artifacts/verification_workbook.xlsx")',
+          },
+          templatePath: {
+            type: 'string',
+            description: 'Optional relative project path to an approved offline XLSX/XLTX template',
+          },
+          allowOverwrite: {
+            type: 'boolean',
+            description: 'Whether to allow overwriting an existing output (requires valid approval)',
+          },
+          approvalId: {
+            type: 'string',
+            description: 'Approval ID authorizing document generation or overwrite',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Unique request ID for durable idempotency claim',
+          },
+        },
+        required: ['schemaVersion', 'projectId', 'input', 'outputPath', 'requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_pptx',
+      description:
+        'Generate an air-gapped, verifiable PPTX presentation deliverable from validated OfficePptxInput.',
+      parameters: {
+        type: 'object',
+        properties: {
+          schemaVersion: {
+            type: 'number',
+            description: 'Schema version for generate_pptx input (must be 1)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Active project identifier',
+          },
+          input: {
+            type: 'object',
+            description: 'Validated OfficePptxInput contract payload',
+          },
+          outputPath: {
+            type: 'string',
+            description: 'Relative project path for the generated .pptx file (e.g., "artifacts/safety_deck.pptx")',
+          },
+          templatePath: {
+            type: 'string',
+            description: 'Optional relative project path to an approved offline PPTX/POTX template',
+          },
+          allowOverwrite: {
+            type: 'boolean',
+            description: 'Whether to allow overwriting an existing output (requires valid approval)',
+          },
+          approvalId: {
+            type: 'string',
+            description: 'Approval ID authorizing document generation or overwrite',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Unique request ID for durable idempotency claim',
+          },
+        },
+        required: ['schemaVersion', 'projectId', 'input', 'outputPath', 'requestId'],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -39,6 +446,53 @@ export const AGENT_TOOLS: ToolDef[] = [
         properties: {
           script: { type: 'string', description: 'Python source code to execute' },
           args: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['script'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'execute_code_sandbox',
+      description:
+        'Run Python source code strictly inside the isolated, pinned, offline sandbox container. Output is bounded and execution times out after 30 seconds.',
+      parameters: {
+        type: 'object',
+        properties: {
+          script: {
+            type: 'string',
+            description: 'Python source code to execute inside the sandbox container',
+          },
+          args: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional command-line arguments to pass to the script',
+          },
+          files: {
+            type: 'object',
+            description: 'Optional map of relative filenames to file contents staged in the container workspace',
+          },
+          timeoutMs: {
+            type: 'number',
+            description: 'Execution timeout in milliseconds (max 30000)',
+          },
+          maxOutputBytes: {
+            type: 'number',
+            description: 'Maximum stdout/stderr bytes before truncation (max 50000)',
+          },
+          projectId: {
+            type: 'string',
+            description: 'Optional active project identifier',
+          },
+          requestId: {
+            type: 'string',
+            description: 'Optional unique request ID for durable idempotency claim',
+          },
+          approvalId: {
+            type: 'string',
+            description: 'Optional approval ID authorizing execution',
+          },
         },
         required: ['script'],
       },
@@ -299,8 +753,7 @@ export const AGENT_TOOLS: ToolDef[] = [
  * Kept for backward compat but the real logic is in scope-guard.
  */
 function isPathInScope(filePath: string, scope: string[], projectRoot: string): boolean {
-  const { isPathInScope: check } = require('../core/scope-guard');
-  return check(filePath, scope, projectRoot);
+  return checkPathInScope(filePath, scope, projectRoot);
 }
 
 const TOOL_OUTPUT_LIMIT = 200_000;
@@ -407,7 +860,48 @@ function ingestDocument(projectRoot: string, args: Record<string, any>): unknown
   throw new Error(`Unsupported document type '${ext || 'unknown'}'. Use TXT, CSV, JSON, or PDF.`);
 }
 
+function isIndustrialProfileEnvironment(projectRoot: string, profileMode?: string): boolean {
+  if (profileMode) {
+    const lower = profileMode.toLowerCase();
+    if (lower.includes('industrial') || lower.includes('sovereign')) return true;
+    if (lower.includes('cloud') || lower.includes('dev')) return false;
+  }
+  if (process.env.MAOS_PROFILE === 'industrial' || process.env.NODE_ENV === 'industrial') {
+    return true;
+  }
+  try {
+    const configPath = path.join(projectRoot, 'profiles', 'industrial', 'maos.config.json');
+    if (fs.existsSync(configPath)) return true;
+    const rootConfig = path.join(projectRoot, '.maos', 'maos.config.json');
+    if (fs.existsSync(rootConfig)) {
+      const parsed = JSON.parse(fs.readFileSync(rootConfig, 'utf8'));
+      if (parsed.profile?.id === 'industrial' || parsed.profile?.mode === 'sovereign-local') {
+        return true;
+      }
+    }
+  } catch {}
+  return true; // Fail-closed to industrial by default
+}
+
 function executePython(projectRoot: string, args: Record<string, any>): unknown {
+  const isIndustrial = isIndustrialProfileEnvironment(projectRoot, args?.profileMode);
+
+  if (
+    isIndustrial ||
+    args?.executorType === 'host' ||
+    !args?.profileMode ||
+    String(args?.profileMode).includes('tampered')
+  ) {
+    if (isIndustrial || !args?.profileMode || String(args?.profileMode).includes('tampered') || args?.executorType === 'host') {
+      return {
+        ok: false,
+        error: 'HOST_EXECUTOR_FORBIDDEN_IN_INDUSTRIAL',
+        message:
+          "Host executor ('execute_python') is strictly forbidden in Industrial mode. All code tasks must run inside the container sandbox.",
+      };
+    }
+  }
+
   if (typeof args.script !== 'string' || !args.script.trim()) throw new Error('script is required');
   const sandboxRoot = path.join(projectRoot, '.maos', 'industrial-sandbox');
   fs.mkdirSync(sandboxRoot, { recursive: true });
@@ -446,9 +940,12 @@ function executePython(projectRoot: string, args: Record<string, any>): unknown 
 function checkCompliance(projectRoot: string, args: Record<string, any>): unknown {
   const measurements = args.measurements && typeof args.measurements === 'object' ? args.measurements : {};
   let thresholds: Record<string, any> = args.thresholds || {};
+  let rulesetId: string | null = null;
   if (args.thresholds_path) {
     const p = projectFile(projectRoot, args.thresholds_path);
-    thresholds = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    rulesetId = raw.rulesetId || null;
+    thresholds = raw.thresholds && typeof raw.thresholds === 'object' ? raw.thresholds : raw;
   }
   if (thresholds.thresholds && typeof thresholds.thresholds === 'object') thresholds = thresholds.thresholds;
   const findings = Object.entries(measurements).map(([metric, value]) => {
@@ -456,9 +953,12 @@ function checkCompliance(projectRoot: string, args: Record<string, any>): unknow
     const numeric = Number(value);
     if (!rule || !Number.isFinite(numeric))
       return {
+        ruleId: rulesetId ? `${rulesetId}/${metric}` : metric,
         metric,
-        value,
-        status: 'WARNING',
+        value: String(value),
+        observedNumeric: numeric,
+        unit: null,
+        status: 'WARNING' as const,
         threshold: null,
         deviation: null,
         recommendation: 'Provide a numeric value and configured threshold.',
@@ -483,19 +983,21 @@ function checkCompliance(projectRoot: string, args: Record<string, any>): unknow
       limit = minimumWarning;
     } else limit = critical ?? warning ?? minimumCritical ?? minimumWarning;
     const deviation = typeof limit === 'number' ? numeric - limit : null;
+    // Use per-status recommendations from threshold config (recommendations.WARNING / recommendations.FAIL)
+    const recommendations = rule.recommendations || {};
+    const fallbackRec = rule.recommendation || (status === 'WARNING'
+      ? 'Inspect trend and schedule maintenance.'
+      : 'Stop or isolate equipment and investigate immediately.');
     return {
+      ruleId: rulesetId ? `${rulesetId}/${metric}` : metric,
       metric,
-      value: numeric,
+      value: String(value),
+      observedNumeric: numeric,
       unit: rule.unit || null,
       status,
       threshold: { warning: rule.warning ?? null, critical: rule.critical ?? null },
       deviation,
-      recommendation:
-        status === 'PASS'
-          ? 'No action required.'
-          : status === 'WARNING'
-            ? rule.recommendation || 'Inspect trend and schedule maintenance.'
-            : rule.recommendation || 'Stop or isolate equipment and investigate immediately.',
+      recommendation: status === 'PASS' ? 'No action required.' : (recommendations[status] || fallbackRec),
     };
   });
   const status = findings.some((f) => f.status === 'FAIL')
@@ -503,7 +1005,1198 @@ function checkCompliance(projectRoot: string, args: Record<string, any>): unknow
     : findings.some((f) => f.status === 'WARNING')
       ? 'WARNING'
       : 'PASS';
-  return { ok: true, status, findings };
+  return { ok: true, rulesetId, status, findings };
+}
+
+export const AUTHORIZED_OCR_AGENTS = [
+  'ingest_agent',
+  'analyst_agent',
+  'auditor_agent',
+  'inspector',
+  'analyst',
+  'architect',
+  'lead-inspector',
+  'auditor',
+  'test-agent',
+  'verification',
+];
+
+export const AUTHORIZED_ANALYZE_IMAGE_AGENTS = [
+  'ingest_agent',
+  'analyst_agent',
+  'auditor_agent',
+  'inspector',
+  'analyst',
+  'architect',
+  'lead-inspector',
+  'auditor',
+  'test-agent',
+  'verification',
+  'admin',
+];
+
+export const AUTHORIZED_SEARCH_KB_AGENTS = [
+  'retrieval_agent',
+  'ingest_agent',
+  'analyst_agent',
+  'auditor_agent',
+  'inspector',
+  'analyst',
+  'architect',
+  'lead-inspector',
+  'auditor',
+  'test-agent',
+  'verification',
+  'admin',
+];
+
+export const AUTHORIZED_GENERATE_DOCX_AGENTS = [
+  'report_agent',
+  'doc_agent',
+  'supervisor_agent',
+  'lead-inspector',
+  'auditor',
+  'test-agent',
+  'verification',
+  'admin',
+];
+
+export const AUTHORIZED_GENERATE_XLSX_AGENTS = [
+  'report_agent',
+  'doc_agent',
+  'supervisor_agent',
+  'lead-inspector',
+  'auditor',
+  'test-agent',
+  'verification',
+  'admin',
+];
+
+export const AUTHORIZED_GENERATE_PPTX_AGENTS = [
+  'report_agent',
+  'doc_agent',
+  'supervisor_agent',
+  'lead-inspector',
+  'auditor',
+  'test-agent',
+  'verification',
+  'admin',
+];
+
+export function getToolsForAgent(
+  allowedToolsOrAgentId?: string[] | string,
+  agentIdOrAllowedTools?: string | string[],
+  profileMode?: string,
+): ToolDef[] {
+  let effectiveAllowed: string[] | undefined;
+  let effectiveAgentId: string | undefined;
+
+  if (typeof allowedToolsOrAgentId === 'string') {
+    effectiveAgentId = allowedToolsOrAgentId;
+    if (Array.isArray(agentIdOrAllowedTools)) {
+      effectiveAllowed = agentIdOrAllowedTools;
+    }
+  } else if (Array.isArray(allowedToolsOrAgentId)) {
+    effectiveAllowed = allowedToolsOrAgentId;
+    if (typeof agentIdOrAllowedTools === 'string') {
+      effectiveAgentId = agentIdOrAllowedTools;
+    }
+  } else {
+    if (typeof agentIdOrAllowedTools === 'string') {
+      effectiveAgentId = agentIdOrAllowedTools;
+    } else if (Array.isArray(agentIdOrAllowedTools)) {
+      effectiveAllowed = agentIdOrAllowedTools;
+    }
+  }
+
+  const isIndustrial =
+    profileMode?.toLowerCase().includes('industrial') ||
+    profileMode?.toLowerCase().includes('sovereign') ||
+    process.env.MAOS_PROFILE === 'industrial';
+
+  let baseTools = AGENT_TOOLS;
+  if (isIndustrial) {
+    baseTools = baseTools.filter((t) => t.function.name !== 'execute_python');
+  }
+
+  if (effectiveAllowed && effectiveAllowed.length > 0) {
+    if (isIndustrial) {
+      effectiveAllowed = effectiveAllowed.filter((toolName) => toolName !== 'execute_python');
+    }
+    return baseTools.filter((t) => effectiveAllowed!.includes(t.function.name));
+  }
+  const agentLower = (effectiveAgentId || '').toLowerCase();
+  const isOcrAuthorized = AUTHORIZED_OCR_AGENTS.includes(agentLower);
+  const isAnalyzeImageAuthorized = AUTHORIZED_ANALYZE_IMAGE_AGENTS.includes(agentLower);
+  const isSearchKbAuthorized = AUTHORIZED_SEARCH_KB_AGENTS.includes(agentLower);
+  const isGenerateDocxAuthorized = AUTHORIZED_GENERATE_DOCX_AGENTS.includes(agentLower);
+  const isGenerateXlsxAuthorized = AUTHORIZED_GENERATE_XLSX_AGENTS.includes(agentLower);
+  const isGeneratePptxAuthorized = AUTHORIZED_GENERATE_PPTX_AGENTS.includes(agentLower);
+  const isCodeSandboxAuthorized = AUTHORIZED_CODE_SANDBOX_AGENTS.some((a) => a.toLowerCase() === agentLower);
+  return baseTools.filter((t) => {
+    if (t.function.name === 'ocr_document') {
+      return Boolean(isOcrAuthorized);
+    }
+    if (t.function.name === 'analyze_image') {
+      return Boolean(isAnalyzeImageAuthorized);
+    }
+    if (t.function.name === 'search_knowledge_base') {
+      return Boolean(isSearchKbAuthorized);
+    }
+    if (t.function.name === 'generate_docx') {
+      return Boolean(isGenerateDocxAuthorized);
+    }
+    if (t.function.name === 'generate_xlsx') {
+      return Boolean(isGenerateXlsxAuthorized);
+    }
+    if (t.function.name === 'generate_pptx') {
+      return Boolean(isGeneratePptxAuthorized);
+    }
+    if (t.function.name === 'execute_code_sandbox') {
+      return Boolean(isCodeSandboxAuthorized);
+    }
+    return true;
+  });
+}
+
+export interface OcrToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export function executeOcrDocumentTool(
+  input: unknown,
+  context: OcrToolExecutionContext,
+  services?: {
+    ocr?: OcrService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): OcrDocumentToolResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('ocr_document')) ||
+    AUTHORIZED_OCR_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('ocr_document')) {
+    throw new OcrError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'ocr_document'. Allowed tools: ${context.allowedTools.join(', ')}`,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new OcrError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke ocr_document.`,
+    );
+  }
+
+  // 2. Validate typed input
+  const validatedInput = validateOcrDocumentInput(input);
+
+  // 3. Project-root and scope confinement
+  if (context.scope && context.scope.length > 0 && !isPathInScope(validatedInput.sourcePath, context.scope, context.projectRoot)) {
+    throw new OcrError(
+      'TRAVERSAL_REJECTED',
+      `File '${validatedInput.sourcePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+    );
+  }
+
+  let resolvedPath: string;
+  try {
+    resolvedPath = projectFile(context.projectRoot, validatedInput.sourcePath);
+  } catch (err: any) {
+    throw new OcrError('TRAVERSAL_REJECTED', err.message);
+  }
+
+  if (!fs.existsSync(resolvedPath)) {
+    throw new OcrError('NOT_FOUND', `PDF file not found: '${validatedInput.sourcePath}'`);
+  }
+  const stat = fs.statSync(resolvedPath);
+  if (!stat.isFile()) {
+    throw new OcrError('NOT_FOUND', `Path is not a regular file: '${validatedInput.sourcePath}'`);
+  }
+  if (stat.size > OCR_BOUNDS.maxSourceBytes) {
+    throw new OcrError(
+      'BYTE_LIMIT_EXCEEDED',
+      `PDF size (${stat.size} bytes) exceeds limit of ${OCR_BOUNDS.maxSourceBytes} bytes`,
+    );
+  }
+  if (stat.size === 0) {
+    throw new OcrError('MALFORMED_INPUT', 'PDF file is empty (0 bytes)');
+  }
+
+  // Validate MIME magic bytes (%PDF-)
+  const fd = fs.openSync(resolvedPath, 'r');
+  const headerBuf = Buffer.alloc(Math.min(1024, stat.size));
+  try {
+    fs.readSync(fd, headerBuf, 0, headerBuf.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (!headerBuf.toString('latin1').includes('%PDF-')) {
+    throw new OcrError('INVALID_IMAGE_FORMAT', 'File lacks valid %PDF- magic signature in header');
+  }
+
+  // 4. Durable Idempotency Claim
+  const idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
+  const requestHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(validatedInput))
+    .digest('hex');
+
+  const claimOutcome = idempotencyStore.claim({
+    key: validatedInput.requestId,
+    requestHash,
+    operation: 'ocr_document',
+    projectId: validatedInput.projectId,
+    authContext: context.agentId,
+  });
+
+  if (claimOutcome.outcome === 'replay') {
+    return { ...(claimOutcome.record.responsePayload as OcrDocumentToolResult), cached: true };
+  }
+  if (claimOutcome.outcome === 'conflict') {
+    throw new OcrError('IDEMPOTENCY_CONFLICT', claimOutcome.message);
+  }
+  if (claimOutcome.outcome === 'in_progress') {
+    throw new OcrError('CONCURRENT_MUTATION', claimOutcome.message);
+  }
+  if (claimOutcome.outcome === 'auth_mismatch') {
+    throw new OcrError('UNAUTHORIZED_TOOL_CALL', claimOutcome.message);
+  }
+
+  // 5. Execute OCR
+  const ocrService = services?.ocr || createServiceContainer(context.projectRoot).ocr;
+  const ocrOpts: OcrOptions = {
+    expectedSourceHash: validatedInput.expectedSourceHash,
+    language: validatedInput.language,
+    confidenceThresholds:
+      validatedInput.confidenceMode === 'strict'
+        ? { high: 0.9, medium: 0.7, low: 0.5 }
+        : DEFAULT_CONFIDENCE_THRESHOLDS,
+  };
+
+  if (validatedInput.pageRange) {
+    ocrOpts.targetPages = [];
+    for (let p = validatedInput.pageRange.start; p <= validatedInput.pageRange.end; p++) {
+      ocrOpts.targetPages.push(p);
+    }
+  }
+
+  let ocrDocRes: OcrDocumentResult;
+  try {
+    ocrDocRes = ocrService.ocrDocumentSync(validatedInput.sourcePath, ocrOpts);
+  } catch (err: any) {
+    idempotencyStore.fail(validatedInput.requestId, err.message);
+    throw err;
+  }
+
+  // 6. Emit tool-level immutable audit event on success
+  const auditService = services?.audit || new AuditService(context.projectRoot);
+  let auditRecord;
+  try {
+    auditRecord = auditService.recordAuditEvent({
+      source: 'ocr_document',
+      category: 'tool',
+      data: {
+        action: 'DOCUMENT_OCRED',
+        requestId: validatedInput.requestId,
+        projectId: validatedInput.projectId,
+        sourcePath: validatedInput.sourcePath,
+        sourceArtifactId: ocrDocRes.sourceArtifactId,
+        sourceHash: ocrDocRes.sourceHash,
+        totalPages: ocrDocRes.totalPages,
+        averageConfidence: ocrDocRes.averageConfidence,
+        pageResultsCount: ocrDocRes.pages.length,
+        agentId: context.agentId || 'unknown',
+      },
+    });
+  } catch (err: any) {
+    idempotencyStore.fail(validatedInput.requestId, `Audit event emission failed: ${err.message}`);
+    throw err;
+  }
+
+  // 7. Assemble tool result
+  const pageResults: OcrPageToolResult[] = ocrDocRes.pages.map((p) => ({
+    pageNumber: p.pageNumber,
+    artifactId: p.artifactId || `art_ocr_${p.sourceHash.substring(0, 8)}_${p.pageNumber}`,
+    artifactHash: p.artifactHash || p.sourceHash,
+    confidence: p.confidence,
+    warnings: p.warnings,
+    blockCount: p.blocks.length,
+  }));
+
+  const toolResult: OcrDocumentToolResult = {
+    schemaVersion: 1,
+    sourceArtifactId: ocrDocRes.sourceArtifactId,
+    sourceHash: ocrDocRes.sourceHash,
+    totalPages: ocrDocRes.totalPages,
+    text: ocrDocRes.text,
+    averageConfidence: ocrDocRes.averageConfidence,
+    warnings: ocrDocRes.warnings,
+    pageResults,
+    engine: 'maos-industrial-ocr',
+    engineVersion: '1.0.0',
+    auditEventId: auditRecord.hash,
+  };
+
+  // 8. Complete idempotency
+  idempotencyStore.complete(validatedInput.requestId, 200, toolResult, toolResult.sourceArtifactId);
+
+  return toolResult;
+}
+
+export async function executeOcrDocumentToolAsync(
+  input: unknown,
+  context: OcrToolExecutionContext,
+  services?: {
+    ocr?: OcrService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<OcrDocumentToolResult> {
+  return executeOcrDocumentTool(input, context, services);
+}
+
+export interface AnalyzeImageToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export function executeAnalyzeImageTool(
+  input: unknown,
+  context: AnalyzeImageToolExecutionContext,
+  services?: {
+    vision?: VisionService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): AnalyzeImageResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('analyze_image')) ||
+    AUTHORIZED_ANALYZE_IMAGE_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('analyze_image')) {
+    throw new VlmError(
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'analyze_image'. Allowed tools: ${context.allowedTools.join(', ')}`,
+      VLM_ERROR_CODES.UNAUTHORIZED_TOOL_CALL,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new VlmError(
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke analyze_image.`,
+      VLM_ERROR_CODES.UNAUTHORIZED_TOOL_CALL,
+    );
+  }
+
+  // 2. Validate typed input
+  const validatedInput = validateAnalyzeImageInput(input);
+
+  // 3. Project-root and scope confinement
+  if (
+    validatedInput.sourcePath &&
+    context.scope &&
+    context.scope.length > 0 &&
+    !isPathInScope(validatedInput.sourcePath, context.scope, context.projectRoot)
+  ) {
+    throw new VlmError(
+      `File '${validatedInput.sourcePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      VLM_ERROR_CODES.TRAVERSAL_REJECTED,
+    );
+  }
+
+  // 4. Durable Idempotency Claim
+  const idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
+  const requestHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(validatedInput))
+    .digest('hex');
+
+  const claimOutcome = idempotencyStore.claim({
+    key: validatedInput.requestId,
+    requestHash,
+    operation: 'analyze_image',
+    projectId: validatedInput.projectId,
+    authContext: context.agentId,
+  });
+
+  if (claimOutcome.outcome === 'replay') {
+    return { ...(claimOutcome.record.responsePayload as AnalyzeImageResult), cached: true };
+  }
+  if (claimOutcome.outcome === 'conflict') {
+    throw new VlmError(claimOutcome.message, VLM_ERROR_CODES.IDEMPOTENCY_CONFLICT);
+  }
+  if (claimOutcome.outcome === 'in_progress') {
+    throw new VlmError(claimOutcome.message, VLM_ERROR_CODES.CONCURRENT_MUTATION);
+  }
+  if (claimOutcome.outcome === 'auth_mismatch') {
+    throw new VlmError(claimOutcome.message, VLM_ERROR_CODES.UNAUTHORIZED_TOOL_CALL);
+  }
+
+  // 5. Execute VLM Analysis
+  const visionService = services?.vision || createServiceContainer(context.projectRoot).vision;
+  let toolResult: AnalyzeImageResult;
+  try {
+    toolResult = visionService.analyzeImageSync(validatedInput, context.agentId);
+  } catch (err: any) {
+    idempotencyStore.fail(validatedInput.requestId, err.message);
+    throw err;
+  }
+
+  // 6. Complete idempotency
+  idempotencyStore.complete(
+    validatedInput.requestId,
+    200,
+    toolResult,
+    toolResult.artifactId || toolResult.sourceArtifactId,
+  );
+
+  return toolResult;
+}
+
+export async function executeAnalyzeImageToolAsync(
+  input: unknown,
+  context: AnalyzeImageToolExecutionContext,
+  services?: {
+    vision?: VisionService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<AnalyzeImageResult> {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('analyze_image')) ||
+    AUTHORIZED_ANALYZE_IMAGE_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('analyze_image')) {
+    throw new VlmError(
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'analyze_image'. Allowed tools: ${context.allowedTools.join(', ')}`,
+      VLM_ERROR_CODES.UNAUTHORIZED_TOOL_CALL,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new VlmError(
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke analyze_image.`,
+      VLM_ERROR_CODES.UNAUTHORIZED_TOOL_CALL,
+    );
+  }
+
+  // 2. Validate typed input
+  const validatedInput = validateAnalyzeImageInput(input);
+
+  // 3. Project-root and scope confinement
+  if (
+    validatedInput.sourcePath &&
+    context.scope &&
+    context.scope.length > 0 &&
+    !isPathInScope(validatedInput.sourcePath, context.scope, context.projectRoot)
+  ) {
+    throw new VlmError(
+      `File '${validatedInput.sourcePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      VLM_ERROR_CODES.TRAVERSAL_REJECTED,
+    );
+  }
+
+  // 4. Durable Idempotency Claim
+  const idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
+  const requestHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(validatedInput))
+    .digest('hex');
+
+  const claimOutcome = idempotencyStore.claim({
+    key: validatedInput.requestId,
+    requestHash,
+    operation: 'analyze_image',
+    projectId: validatedInput.projectId,
+    authContext: context.agentId,
+  });
+
+  if (claimOutcome.outcome === 'replay') {
+    return { ...(claimOutcome.record.responsePayload as AnalyzeImageResult), cached: true };
+  }
+  if (claimOutcome.outcome === 'conflict') {
+    throw new VlmError(claimOutcome.message, VLM_ERROR_CODES.IDEMPOTENCY_CONFLICT);
+  }
+  if (claimOutcome.outcome === 'in_progress') {
+    throw new VlmError(claimOutcome.message, VLM_ERROR_CODES.CONCURRENT_MUTATION);
+  }
+  if (claimOutcome.outcome === 'auth_mismatch') {
+    throw new VlmError(claimOutcome.message, VLM_ERROR_CODES.UNAUTHORIZED_TOOL_CALL);
+  }
+
+  // 5. Execute VLM Analysis Async
+  const visionService = services?.vision || createServiceContainer(context.projectRoot).vision;
+  let toolResult: AnalyzeImageResult;
+  try {
+    toolResult = await visionService.analyzeImage(validatedInput, context.agentId);
+  } catch (err: any) {
+    idempotencyStore.fail(validatedInput.requestId, err.message);
+    throw err;
+  }
+
+  // 6. Complete idempotency
+  idempotencyStore.complete(
+    validatedInput.requestId,
+    200,
+    toolResult,
+    toolResult.artifactId || toolResult.sourceArtifactId,
+  );
+
+  return toolResult;
+}
+
+export interface SearchKnowledgeBaseToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export type SearchKnowledgeBaseToolResult = KbSearchResult & {
+  cached?: boolean;
+};
+
+export function executeSearchKnowledgeBaseTool(
+  input: unknown,
+  context: SearchKnowledgeBaseToolExecutionContext,
+  services?: {
+    kbSearch?: KbSearchService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): SearchKnowledgeBaseToolResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('search_knowledge_base')) ||
+    AUTHORIZED_SEARCH_KB_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('search_knowledge_base')) {
+    throw new KbSearchError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'search_knowledge_base'. Allowed tools: ${context.allowedTools.join(', ')}`,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new KbSearchError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke search_knowledge_base.`,
+    );
+  }
+
+  // 2. Validate typed input
+  const validation = validateKbSearchInput(input);
+  if (!validation.valid) {
+    throw new KbSearchError(
+      'INVALID_INPUT',
+      `Invalid search_knowledge_base input: ${validation.errors.join('; ')}`,
+    );
+  }
+  const validatedInput = input as KbSearchInput;
+
+  // 3. Project-root and scope confinement
+  if (context.scope && context.scope.length > 0 && validatedInput.filter?.sourcePaths) {
+    for (const sp of validatedInput.filter.sourcePaths) {
+      if (!isPathInScope(sp, context.scope, context.projectRoot)) {
+        throw new KbSearchError(
+          'TRAVERSAL_REJECTED',
+          `Filter path '${sp}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+        );
+      }
+    }
+  }
+
+  // 4. Durable Idempotency Claim
+  const requestId = validatedInput.requestId;
+  let idempotencyStore: DurableIdempotencyStore | undefined;
+  if (requestId) {
+    idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
+    const requestHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(validatedInput))
+      .digest('hex');
+
+    const claimOutcome = idempotencyStore.claim({
+      key: requestId,
+      requestHash,
+      operation: 'search_knowledge_base',
+      projectId: validatedInput.projectId,
+      authContext: context.agentId,
+    });
+
+    if (claimOutcome.outcome === 'replay') {
+      return { ...(claimOutcome.record.responsePayload as KbSearchResult), cached: true };
+    }
+    if (claimOutcome.outcome === 'conflict') {
+      throw new KbSearchError('IDEMPOTENCY_CONFLICT', claimOutcome.message);
+    }
+    if (claimOutcome.outcome === 'in_progress') {
+      throw new KbSearchError('CONCURRENT_MUTATION', claimOutcome.message);
+    }
+    if (claimOutcome.outcome === 'auth_mismatch') {
+      throw new KbSearchError('UNAUTHORIZED_TOOL_CALL', claimOutcome.message);
+    }
+  }
+
+  // 5. Execute search
+  const kbSearchService = services?.kbSearch || createServiceContainer(context.projectRoot).kbSearch;
+  let toolResult: KbSearchResult;
+  try {
+    toolResult = kbSearchService.searchSync(validatedInput);
+  } catch (err: any) {
+    if (idempotencyStore && requestId) {
+      idempotencyStore.fail(requestId, err.message);
+    }
+    throw err;
+  }
+
+  // 6. Complete idempotency
+  if (idempotencyStore && requestId) {
+    idempotencyStore.complete(
+      requestId,
+      200,
+      toolResult,
+    );
+  }
+
+  return toolResult;
+}
+
+export async function executeSearchKnowledgeBaseToolAsync(
+  input: unknown,
+  context: SearchKnowledgeBaseToolExecutionContext,
+  services?: {
+    kbSearch?: KbSearchService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<SearchKnowledgeBaseToolResult> {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('search_knowledge_base')) ||
+    AUTHORIZED_SEARCH_KB_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('search_knowledge_base')) {
+    throw new KbSearchError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'search_knowledge_base'. Allowed tools: ${context.allowedTools.join(', ')}`,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new KbSearchError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke search_knowledge_base.`,
+    );
+  }
+
+  // 2. Validate typed input
+  const validation = validateKbSearchInput(input);
+  if (!validation.valid) {
+    throw new KbSearchError(
+      'INVALID_INPUT',
+      `Invalid search_knowledge_base input: ${validation.errors.join('; ')}`,
+    );
+  }
+  const validatedInput = input as KbSearchInput;
+
+  // 3. Project-root and scope confinement
+  if (context.scope && context.scope.length > 0 && validatedInput.filter?.sourcePaths) {
+    for (const sp of validatedInput.filter.sourcePaths) {
+      if (!isPathInScope(sp, context.scope, context.projectRoot)) {
+        throw new KbSearchError(
+          'TRAVERSAL_REJECTED',
+          `Filter path '${sp}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+        );
+      }
+    }
+  }
+
+  // 4. Durable Idempotency Claim
+  const requestId = validatedInput.requestId;
+  let idempotencyStore: DurableIdempotencyStore | undefined;
+  if (requestId) {
+    idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
+    const requestHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(validatedInput))
+      .digest('hex');
+
+    const claimOutcome = idempotencyStore.claim({
+      key: requestId,
+      requestHash,
+      operation: 'search_knowledge_base',
+      projectId: validatedInput.projectId,
+      authContext: context.agentId,
+    });
+
+    if (claimOutcome.outcome === 'replay') {
+      return { ...(claimOutcome.record.responsePayload as KbSearchResult), cached: true };
+    }
+    if (claimOutcome.outcome === 'conflict') {
+      throw new KbSearchError('IDEMPOTENCY_CONFLICT', claimOutcome.message);
+    }
+    if (claimOutcome.outcome === 'in_progress') {
+      throw new KbSearchError('CONCURRENT_MUTATION', claimOutcome.message);
+    }
+    if (claimOutcome.outcome === 'auth_mismatch') {
+      throw new KbSearchError('UNAUTHORIZED_TOOL_CALL', claimOutcome.message);
+    }
+  }
+
+  // 5. Execute search async
+  const kbSearchService = services?.kbSearch || createServiceContainer(context.projectRoot).kbSearch;
+  let toolResult: KbSearchResult;
+  try {
+    toolResult = await kbSearchService.search(validatedInput);
+  } catch (err: any) {
+    if (idempotencyStore && requestId) {
+      idempotencyStore.fail(requestId, err.message);
+    }
+    throw err;
+  }
+
+  // 6. Complete idempotency
+  if (idempotencyStore && requestId) {
+    idempotencyStore.complete(
+      requestId,
+      200,
+      toolResult,
+    );
+  }
+
+  return toolResult;
+}
+
+export interface GenerateDocxToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export function executeGenerateDocxTool(
+  input: unknown,
+  context: GenerateDocxToolExecutionContext,
+  services?: {
+    docxGenerator?: DocxGeneratorService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): GenerateDocxToolResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('generate_docx')) ||
+    AUTHORIZED_GENERATE_DOCX_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('generate_docx')) {
+    throw new DocxGenerationError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'generate_docx'. Allowed tools: ${context.allowedTools.join(', ')}`,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new DocxGenerationError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke generate_docx.`,
+    );
+  }
+
+  // 2. Validate input is object
+  if (!input || typeof input !== 'object') {
+    throw new DocxGenerationError('INVALID_INPUT', 'generate_docx requires an object argument.');
+  }
+  const typedInput = input as GenerateDocxToolInput;
+
+  // 3. Project-root and scope confinement
+  if (context.scope && context.scope.length > 0 && typedInput.outputPath) {
+    if (!isPathInScope(typedInput.outputPath, context.scope, context.projectRoot)) {
+      throw new DocxGenerationError(
+        'PATH_TRAVERSAL_DETECTED',
+        `Output path '${typedInput.outputPath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      );
+    }
+  }
+  if (context.scope && context.scope.length > 0 && typedInput.templatePath) {
+    if (!isPathInScope(typedInput.templatePath, context.scope, context.projectRoot)) {
+      throw new DocxGenerationError(
+        'PATH_TRAVERSAL_DETECTED',
+        `Template path '${typedInput.templatePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      );
+    }
+  }
+
+  // 4. Delegate to DocxGeneratorService
+  const docxService = services?.docxGenerator || createServiceContainer(context.projectRoot).docxGenerator;
+  return docxService.generateDocx({
+    ...typedInput,
+    callerIdentity: {
+      agentId: context.agentId,
+      taskId: context.taskId,
+    },
+  });
+}
+
+export async function executeGenerateDocxToolAsync(
+  input: unknown,
+  context: GenerateDocxToolExecutionContext,
+  services?: {
+    docxGenerator?: DocxGeneratorService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<GenerateDocxToolResult> {
+  return Promise.resolve(executeGenerateDocxTool(input, context, services));
+}
+
+export interface GenerateXlsxToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export function executeGenerateXlsxTool(
+  input: unknown,
+  context: GenerateXlsxToolExecutionContext,
+  services?: {
+    xlsxGenerator?: XlsxGeneratorService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): GenerateXlsxToolResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('generate_xlsx')) ||
+    AUTHORIZED_GENERATE_XLSX_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('generate_xlsx')) {
+    throw new XlsxGenerationError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'generate_xlsx'. Allowed tools: ${context.allowedTools.join(', ')}`,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new XlsxGenerationError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke generate_xlsx.`,
+    );
+  }
+
+  // 2. Validate input is object
+  if (!input || typeof input !== 'object') {
+    throw new XlsxGenerationError('INVALID_INPUT', 'generate_xlsx requires an object argument.');
+  }
+  const typedInput = input as GenerateXlsxToolInput;
+
+  // 3. Project-root and scope confinement
+  if (context.scope && context.scope.length > 0 && typedInput.outputPath) {
+    if (!isPathInScope(typedInput.outputPath, context.scope, context.projectRoot)) {
+      throw new XlsxGenerationError(
+        'PATH_TRAVERSAL_DETECTED',
+        `Output path '${typedInput.outputPath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      );
+    }
+  }
+  if (context.scope && context.scope.length > 0 && typedInput.templatePath) {
+    if (!isPathInScope(typedInput.templatePath, context.scope, context.projectRoot)) {
+      throw new XlsxGenerationError(
+        'PATH_TRAVERSAL_DETECTED',
+        `Template path '${typedInput.templatePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      );
+    }
+  }
+
+  // 4. Delegate to XlsxGeneratorService
+  const xlsxService = services?.xlsxGenerator || createServiceContainer(context.projectRoot).xlsxGenerator;
+  return xlsxService.generateXlsx({
+    ...typedInput,
+    callerIdentity: {
+      agentId: context.agentId,
+      taskId: context.taskId,
+    },
+  });
+}
+
+export async function executeGenerateXlsxToolAsync(
+  input: unknown,
+  context: GenerateXlsxToolExecutionContext,
+  services?: {
+    xlsxGenerator?: XlsxGeneratorService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<GenerateXlsxToolResult> {
+  return Promise.resolve(executeGenerateXlsxTool(input, context, services));
+}
+
+export interface GeneratePptxToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export function executeGeneratePptxTool(
+  input: unknown,
+  context: GeneratePptxToolExecutionContext,
+  services?: {
+    pptxGenerator?: PptxGeneratorService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): GeneratePptxToolResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('generate_pptx')) ||
+    AUTHORIZED_GENERATE_PPTX_AGENTS.includes(agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('generate_pptx')) {
+    throw new PptxGenerationError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'generate_pptx'. Allowed tools: ${context.allowedTools.join(', ')}`,
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new PptxGenerationError(
+      'UNAUTHORIZED_TOOL_CALL',
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke generate_pptx.`,
+    );
+  }
+
+  // 2. Validate input is object
+  if (!input || typeof input !== 'object') {
+    throw new PptxGenerationError('INVALID_INPUT', 'generate_pptx requires an object argument.');
+  }
+  const typedInput = input as GeneratePptxToolInput;
+
+  // 3. Project-root and scope confinement
+  if (context.scope && context.scope.length > 0 && typedInput.outputPath) {
+    if (!isPathInScope(typedInput.outputPath, context.scope, context.projectRoot)) {
+      throw new PptxGenerationError(
+        'PATH_TRAVERSAL_DETECTED',
+        `Output path '${typedInput.outputPath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      );
+    }
+  }
+  if (context.scope && context.scope.length > 0 && typedInput.templatePath) {
+    if (!isPathInScope(typedInput.templatePath, context.scope, context.projectRoot)) {
+      throw new PptxGenerationError(
+        'PATH_TRAVERSAL_DETECTED',
+        `Template path '${typedInput.templatePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+      );
+    }
+  }
+
+  // 4. Delegate to PptxGeneratorService
+  const pptxService = services?.pptxGenerator || createServiceContainer(context.projectRoot).pptxGenerator;
+  return pptxService.generatePptx({
+    ...typedInput,
+    callerIdentity: {
+      agentId: context.agentId,
+      taskId: context.taskId,
+    },
+  });
+}
+
+export async function executeGeneratePptxToolAsync(
+  input: unknown,
+  context: GeneratePptxToolExecutionContext,
+  services?: {
+    pptxGenerator?: PptxGeneratorService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<GeneratePptxToolResult> {
+  return Promise.resolve(executeGeneratePptxTool(input, context, services));
+}
+
+export interface CodeSandboxToolExecutionContext {
+  projectRoot: string;
+  agentId?: string;
+  taskId?: string;
+  scope?: string[];
+  allowedTools?: string[];
+}
+
+export function executeCodeSandboxTool(
+  input: unknown,
+  context: CodeSandboxToolExecutionContext,
+  services?: {
+    sandboxRunner?: SandboxRunnerService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): SandboxExecutionResult {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('execute_code_sandbox')) ||
+    AUTHORIZED_CODE_SANDBOX_AGENTS.some((a) => a.toLowerCase() === agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('execute_code_sandbox')) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'execute_code_sandbox'. Allowed tools: ${context.allowedTools.join(', ')}`,
+      { agentId: context.agentId, allowedTools: context.allowedTools },
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke execute_code_sandbox.`,
+      { agentId: context.agentId, authorizedAgents: AUTHORIZED_CODE_SANDBOX_AGENTS },
+    );
+  }
+
+  // 2. Validate input object
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.INVALID_INPUT,
+      'execute_code_sandbox requires an object argument.',
+    );
+  }
+  const typedInput = input as Record<string, any>;
+
+  // Reject host executor in execute_code_sandbox
+  if (typedInput.executorType === 'host' || (typedInput.executorType && typedInput.executorType !== 'sandbox')) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.HOST_EXECUTOR_FORBIDDEN_IN_INDUSTRIAL,
+      "Host executor ('execute_python') is strictly forbidden in Industrial mode. All code tasks must run inside the container sandbox.",
+      { executorType: typedInput.executorType, agentId: context.agentId },
+    );
+  }
+
+  // 3. Project-root and scope confinement for staged files
+  if (context.scope && context.scope.length > 0 && typedInput.files && typeof typedInput.files === 'object') {
+    for (const relPath of Object.keys(typedInput.files)) {
+      if (!isPathInScope(relPath, context.scope, context.projectRoot)) {
+        throw new ContainerRunnerError(
+          CONTAINER_RUNNER_ERROR_CODES.PROJECT_ESCAPE_DETECTED,
+          `Staged file path '${relPath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+          { filePath: relPath, scope: context.scope },
+        );
+      }
+    }
+  }
+
+  // 4. Delegate to SandboxRunnerService synchronously
+  const runner =
+    services?.sandboxRunner ||
+    createServiceContainer(context.projectRoot).sandboxRunner;
+
+  return runner.executeSync(
+    {
+      ...typedInput,
+      callerIdentity: {
+        agentId: context.agentId,
+        taskId: context.taskId,
+      },
+    },
+    {
+      idempotencyKey: typedInput.requestId,
+    },
+  );
+}
+
+export async function executeCodeSandboxToolAsync(
+  input: unknown,
+  context: CodeSandboxToolExecutionContext,
+  services?: {
+    sandboxRunner?: SandboxRunnerService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+  },
+): Promise<SandboxExecutionResult> {
+  // 1. Authorization check
+  const agentLower = (context.agentId || '').toLowerCase();
+  const isAuthorized =
+    (context.allowedTools && context.allowedTools.includes('execute_code_sandbox')) ||
+    AUTHORIZED_CODE_SANDBOX_AGENTS.some((a) => a.toLowerCase() === agentLower);
+
+  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('execute_code_sandbox')) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
+      `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'execute_code_sandbox'. Allowed tools: ${context.allowedTools.join(', ')}`,
+      { agentId: context.agentId, allowedTools: context.allowedTools },
+    );
+  }
+
+  if (!isAuthorized) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
+      `Agent '${context.agentId || 'unknown'}' is not authorized to invoke execute_code_sandbox.`,
+      { agentId: context.agentId, authorizedAgents: AUTHORIZED_CODE_SANDBOX_AGENTS },
+    );
+  }
+
+  // 2. Validate input object
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new ContainerRunnerError(
+      CONTAINER_RUNNER_ERROR_CODES.INVALID_INPUT,
+      'execute_code_sandbox requires an object argument.',
+    );
+  }
+  const typedInput = input as Record<string, any>;
+
+  // 3. Project-root and scope confinement for staged files
+  if (context.scope && context.scope.length > 0 && typedInput.files && typeof typedInput.files === 'object') {
+    for (const relPath of Object.keys(typedInput.files)) {
+      if (!isPathInScope(relPath, context.scope, context.projectRoot)) {
+        throw new ContainerRunnerError(
+          CONTAINER_RUNNER_ERROR_CODES.PROJECT_ESCAPE_DETECTED,
+          `Staged file path '${relPath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
+          { filePath: relPath, scope: context.scope },
+        );
+      }
+    }
+  }
+
+  // 4. Delegate to SandboxRunnerService asynchronously
+  const runner =
+    services?.sandboxRunner ||
+    createServiceContainer(context.projectRoot).sandboxRunner;
+
+  return runner.execute(
+    {
+      ...typedInput,
+      callerIdentity: {
+        agentId: context.agentId,
+        taskId: context.taskId,
+      },
+    },
+    {
+      idempotencyKey: typedInput.requestId,
+    },
+  );
 }
 
 /**
@@ -516,18 +2209,214 @@ export function executeTool(
   scope: string[],
   agentId?: string,
   taskId?: string,
+  allowedTools?: string[],
+  services?: {
+    vision?: VisionService;
+    audit?: AuditService;
+    idempotency?: DurableIdempotencyStore;
+    kbSearch?: KbSearchService;
+    docxGenerator?: DocxGeneratorService;
+    xlsxGenerator?: XlsxGeneratorService;
+    pptxGenerator?: PptxGeneratorService;
+    sandboxRunner?: SandboxRunnerService;
+  },
 ): { result: string; isComplete: boolean } {
+  // Authorization check FIRST
+  if (allowedTools && allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+    return {
+      result: `🚫 TOOL_UNAUTHORIZED: Agent ${agentId} is not allowed to use tool '${toolName}'. Allowed tools: ${allowedTools.join(', ')}`,
+      isComplete: false,
+    };
+  }
+
   try {
     switch (toolName) {
+      case 'generate_docx': {
+        try {
+          const toolResult = executeGenerateDocxTool(args, {
+            projectRoot,
+            scope,
+            agentId,
+            taskId,
+            allowedTools,
+          }, services);
+          return { result: jsonResult(toolResult), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof DocxGenerationError ? err.code : 'GENERATION_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
+
+      case 'generate_xlsx': {
+        try {
+          const toolResult = executeGenerateXlsxTool(args, {
+            projectRoot,
+            scope,
+            agentId,
+            taskId,
+            allowedTools,
+          }, services);
+          return { result: jsonResult(toolResult), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof XlsxGenerationError ? err.code : 'GENERATION_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
+
+      case 'generate_pptx': {
+        try {
+          const toolResult = executeGeneratePptxTool(args, {
+            projectRoot,
+            scope,
+            agentId,
+            taskId,
+            allowedTools,
+          }, services);
+          return { result: jsonResult(toolResult), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof PptxGenerationError ? err.code : 'GENERATION_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
+
+      case 'search_knowledge_base': {
+        try {
+          const toolResult = executeSearchKnowledgeBaseTool(args, {
+            projectRoot,
+            scope,
+            agentId,
+            taskId,
+            allowedTools,
+          }, services);
+          return { result: jsonResult({ ok: true, ...toolResult }), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof KbSearchError ? err.code : 'SEARCH_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
+      case 'analyze_image': {
+        try {
+          const toolResult = executeAnalyzeImageTool(args, {
+            projectRoot,
+            scope,
+            agentId,
+            taskId,
+            allowedTools,
+          }, services);
+          return { result: jsonResult({ ok: true, ...toolResult }), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof VlmError ? err.code : 'INFERENCE_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
+      case 'ocr_document': {
+        try {
+          const toolResult = executeOcrDocumentTool(args, {
+            projectRoot,
+            scope,
+            agentId,
+            taskId,
+            allowedTools,
+          });
+          return { result: jsonResult({ ok: true, ...toolResult }), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof OcrError ? err.code : 'OCR_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
       case 'ingest_document': {
         try {
+          if (args.path && !isPathInScope(args.path, scope, projectRoot)) {
+            return { result: jsonResult({ ok: false, error: `SCOPE_VIOLATION: File '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]` }), isComplete: false };
+          }
           return { result: jsonResult(ingestDocument(projectRoot, args)), isComplete: false };
         } catch (err: any) {
           return { result: jsonResult({ ok: false, error: err.message }), isComplete: false };
         }
       }
 
+      case 'execute_code_sandbox': {
+        try {
+          const toolResult = executeCodeSandboxTool(
+            args,
+            {
+              projectRoot,
+              scope,
+              agentId,
+              taskId,
+              allowedTools,
+            },
+            services,
+          );
+          return { result: jsonResult(toolResult), isComplete: false };
+        } catch (err: any) {
+          const code = err instanceof ContainerRunnerError ? err.code : 'CONTAINER_EXECUTION_FAILED';
+          return {
+            result: jsonResult({
+              ok: false,
+              error: code,
+              message: err.message,
+            }),
+            isComplete: false,
+          };
+        }
+      }
+
       case 'execute_python': {
+        const isIndustrial = isIndustrialProfileEnvironment(projectRoot, args?.profileMode);
+        if (isIndustrial) {
+          return {
+            result: jsonResult({
+              ok: false,
+              error: 'HOST_EXECUTOR_FORBIDDEN_IN_INDUSTRIAL',
+              message:
+                "Host executor ('execute_python') is strictly forbidden in Industrial mode. All code tasks must run inside the container sandbox.",
+            }),
+            isComplete: false,
+          };
+        }
         return { result: jsonResult(executePython(projectRoot, args)), isComplete: false };
       }
 
@@ -540,16 +2429,23 @@ export function executeTool(
       }
 
       case 'read_file': {
-        const filePath = path.resolve(projectRoot, args.path);
-        if (!fs.existsSync(filePath)) {
-          return { result: `Error: File not found: ${args.path}`, isComplete: false };
+        try {
+          const filePath = projectFile(projectRoot, args.path);
+          if (!isPathInScope(args.path, scope, projectRoot)) {
+            return { result: `🚫 SCOPE_VIOLATION: File '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`, isComplete: false };
+          }
+          if (!fs.existsSync(filePath)) {
+            return { result: `Error: File not found: ${args.path}`, isComplete: false };
+          }
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const lines = content.split('\n').length;
+          return {
+            result: `File: ${args.path} (${lines} lines)\n\n${content}`,
+            isComplete: false,
+          };
+        } catch (err: any) {
+          return { result: `🚫 PATH_VIOLATION: ${err.message}`, isComplete: false };
         }
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const lines = content.split('\n').length;
-        return {
-          result: `File: ${args.path} (${lines} lines)\n\n${content}`,
-          isComplete: false,
-        };
       }
 
       case 'write_file': {
@@ -561,12 +2457,20 @@ export function executeTool(
             isComplete: false,
           };
         }
-        const filePath = path.resolve(projectRoot, args.path);
-        const dir = path.dirname(filePath);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
+        let filePath: string;
+        try {
+          // Re-check immediately before directory creation and write to reduce
+          // check/use exposure after the initial scope/ownership validation.
+          filePath = assertRealWritePathContained(args.path, projectRoot);
+          const dir = path.dirname(filePath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          filePath = assertRealWritePathContained(args.path, projectRoot);
+          fs.writeFileSync(filePath, args.content, { encoding: 'utf-8', flag: 'w' });
+        } catch (err: any) {
+          return { result: `🚫 PATH_VIOLATION: ${err.message}`, isComplete: false };
         }
-        fs.writeFileSync(filePath, args.content, 'utf-8');
         const lines = args.content.split('\n').length;
         return {
           result: `Written: ${args.path} (${lines} lines)`,
@@ -575,29 +2479,44 @@ export function executeTool(
       }
 
       case 'list_dir': {
-        const dirPath = path.resolve(projectRoot, args.path || '.');
-        if (!fs.existsSync(dirPath)) {
-          return { result: `Error: Directory not found: ${args.path}`, isComplete: false };
-        }
-        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-        const listing = entries.map((e) => {
-          const isDir = e.isDirectory();
-          const fullPath = path.join(dirPath, e.name);
-          if (isDir) {
-            return `📁 ${e.name}/`;
-          } else {
-            const stats = fs.statSync(fullPath);
-            const sizeKB = (stats.size / 1024).toFixed(1);
-            return `📄 ${e.name} (${sizeKB} KB)`;
+        try {
+          const dirPath = projectFile(projectRoot, args.path || '.');
+          if (!isPathInScope(args.path || '.', scope, projectRoot)) {
+            return { result: `🚫 SCOPE_VIOLATION: Directory '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`, isComplete: false };
           }
-        });
-        return {
-          result: `Directory: ${args.path || '.'}\n\n${listing.join('\n')}`,
-          isComplete: false,
-        };
+          if (!fs.existsSync(dirPath)) {
+            return { result: `Error: Directory not found: ${args.path}`, isComplete: false };
+          }
+          const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+          const listing = entries.map((e) => {
+            const isDir = e.isDirectory();
+            const fullPath = path.join(dirPath, e.name);
+            if (isDir) {
+              return `📁 ${e.name}/`;
+            } else {
+              const stats = fs.statSync(fullPath);
+              const sizeKB = (stats.size / 1024).toFixed(1);
+              return `📄 ${e.name} (${sizeKB} KB)`;
+            }
+          });
+          return {
+            result: `Directory: ${args.path || '.'}\n\n${listing.join('\n')}`,
+            isComplete: false,
+          };
+        } catch (err: any) {
+          return { result: `🚫 PATH_VIOLATION: ${err.message}`, isComplete: false };
+        }
       }
 
       case 'run_command': {
+        // Defense in depth: block shell execution for industrial-scoped agents
+        // even if allowedTools check was somehow bypassed
+        if (scope.every(s => s.startsWith('demo/industrial') || s.startsWith('profiles/industrial'))) {
+          return {
+            result: `🚫 SHELL_BLOCKED: Shell execution is disabled for industrial-scoped agents. Use specific tools (ingest_document, check_compliance, execute_code_sandbox) instead.`,
+            isComplete: false,
+          };
+        }
         // COMMAND SAFETY VALIDATION
         const cmdViolation = validateCommand(args.command, agentId || 'unknown', projectRoot);
         if (cmdViolation && cmdViolation.type === 'COMMAND_BLOCKED') {
@@ -627,6 +2546,13 @@ export function executeTool(
       }
 
       case 'git_commit': {
+        // Defense in depth: block git operations for industrial-scoped agents
+        if (scope.every(s => s.startsWith('demo/industrial') || s.startsWith('profiles/industrial'))) {
+          return {
+            result: `🚫 GIT_BLOCKED: Git operations are disabled for industrial-scoped agents.`,
+            isComplete: false,
+          };
+        }
         try {
           // Hard-scope git to the project root — NEVER escape upward
           const gitEnv = {
@@ -780,3 +2706,19 @@ export function executeTool(
     return { result: `Tool error [${toolName}]: ${err.message}`, isComplete: false };
   }
 }
+
+/**
+ * Verifies that a tool invocation conforms to an explicit ToolExecutionPlan contract (F7-04).
+ */
+export function verifyToolExecutionContract(
+  contract: ToolExecutionPlan,
+  toolName: string,
+  execContext: ToolPreExecutionContext,
+): PreExecutionEvaluationOutcome {
+  const planner = new ToolApprovalPlanner();
+  return planner.evaluatePreExecution(contract, {
+    ...execContext,
+    requestedTool: toolName,
+  });
+}
+

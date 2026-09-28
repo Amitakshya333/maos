@@ -8,10 +8,8 @@ export function getDashboardHTML(): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MAOS // Sovereign Industrial Mission Control</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+<title>MAOS // Industrial Mission Control</title>
+<!-- F1-09: Remote font assets removed. Dashboard uses system font stack only. No external network requests. -->
 <style>
   :root {
     --bg: #000000;
@@ -594,21 +592,21 @@ export function getDashboardHTML(): string {
 <header>
   <div class="brand-group">
     <div class="brand-box">M</div>
-    <div class="brand-title">MAOS // SOVEREIGN MISSION CONTROL</div>
+    <div class="brand-title">MAOS // INDUSTRIAL MISSION CONTROL</div>
     <span class="tag-mono">v0.3.0</span>
   </div>
 
   <div class="header-pills">
     <div class="cli-prompt-pill" onclick="copyCli()" title="Click to copy CLI command">
-      <span>$ maos run turbine-safety</span>
+      <span>$ maos industrial verify audit</span>
       <span style="font-size:10px;border:1px solid #333;padding:1px 4px;border-radius:2px">COPY</span>
     </div>
     <div class="pill-b-w">
       <span class="pill-dot"></span>
-      <span>AIR-GAPPED SOVEREIGN</span>
+      <span>LOCAL DEMO // SYNTHETIC DATA</span>
     </div>
     <div class="pill-b-w">
-      <span>RTX 4060 · CUDA 12.8</span>
+      <span>API · 127.0.0.1</span>
     </div>
   </div>
 </header>
@@ -618,14 +616,14 @@ export function getDashboardHTML(): string {
   <section class="banner-sovereign">
     <div class="banner-text">
       <h2>Turbine T-07 Condition Monitoring & Anomaly Detection</h2>
-      <p>Local Model Inference · Zero Internet Egress · Deterministic ISO 10816-3 Threshold Compliance</p>
+      <p>Evidence in · Threshold findings out · Human decides whether a report is generated</p>
     </div>
 
     <div class="specs-row">
-      <div class="spec-item">Model: <strong>Qwen2.5-3B-Instruct (Cache-Only)</strong></div>
-      <div class="spec-item">Latency: <strong>~1.6s / turn (GPU)</strong></div>
-      <div class="spec-item">Cloud Data Leak: <strong>0 Bytes</strong></div>
-      <div class="spec-item">Cloud Cost: <strong>$0.0000</strong></div>
+      <div class="spec-item">Evidence: <strong>Bundled T-07 demo pack</strong></div>
+      <div class="spec-item">Analysis: <strong>Deterministic threshold rules</strong></div>
+      <div class="spec-item">Decision: <strong>Human approval required</strong></div>
+      <div class="spec-item">Network scope: <strong>Loopback API endpoint</strong></div>
     </div>
   </section>
 
@@ -636,7 +634,7 @@ export function getDashboardHTML(): string {
     <button class="tab-btn" id="tab-stream" onclick="switchTab('stream')">Event Stream</button>
 
     <button class="btn-bw-primary" id="btn-trigger-bw" onclick="runSovereignAudit()">
-      <span>▶</span> RUN SOVEREIGN AUDIT
+      <span>▶</span> RUN T-07 SAFETY AUDIT
     </button>
   </div>
 
@@ -683,9 +681,9 @@ export function getDashboardHTML(): string {
         <span class="node-badge badge-idle" id="badge-AUDITOR_AGENT">READY</span>
       </div>
       <div class="node-name">AUDITOR_AGENT</div>
-      <div class="node-desc">Evaluates observations strictly against configured ISO 10816-3 safety limits (PASS / WARN / FAIL).</div>
+      <div class="node-desc">Evaluates observations strictly against configured safety thresholds (PASS / WARN / FAIL).</div>
       <div class="node-details">
-        <span>ISO 10816-3</span>
+        <span>configured-thresholds</span>
         <span>rule-engine</span>
       </div>
     </div>
@@ -751,7 +749,7 @@ export function getDashboardHTML(): string {
       </div>
 
       <div class="report-box" id="dossier-report">
-        Loading generated sovereign safety report...
+        Loading generated T-07 safety report...
       </div>
     </div>
   </div>
@@ -1033,34 +1031,36 @@ async function runSovereignAudit() {
   const toast = document.getElementById('audit-status-toast');
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = '<span>⏳</span> DISPATCHING FLEET...';
+    btn.innerHTML = '<span>⏳</span> ANALYZING T-07...';
   }
   if (toast) {
     toast.style.display = 'block';
-    toast.innerHTML = '⚡ Enqueueing Sovereign Task (INGEST_AGENT)...';
+    toast.innerHTML = 'Preparing the T-07 analysis and approval record...';
   }
   try {
     const res = await fetch('/api/industrial/trigger', { method: 'POST' });
     const data = await res.json();
     if (data.success) {
-      if (btn) btn.innerHTML = '<span>⚡</span> AUDIT ACTIVE...';
+      if (btn) btn.innerHTML = '<span>⚡</span> WAITING FOR REVIEW...';
       if (toast) {
-        toast.innerHTML = '● Task Dispatched [ID: ' + (data.task?.id || 'INGEST_AGENT') + '] — Fleet Processing';
+        const runId = data.runId || (data.task && data.task.id) || 'UNKNOWN';
+        const approvalId = data.details && data.details.approvalId ? data.details.approvalId : 'see approval queue';
+        toast.innerHTML = '● T-07 analysis is ready. Run: ' + escapeHtml(runId) + ' · Approval: ' + escapeHtml(approvalId) + ' · <a href="/#/approvals" style="color:var(--accent,#00d2ff);text-decoration:underline;">Review evidence</a>';
       }
       setTimeout(refresh, 400);
       setTimeout(() => {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '<span>▶</span> RUN SOVEREIGN AUDIT';
+          btn.innerHTML = '<span>▶</span> RUN T-07 SAFETY AUDIT';
         }
       }, 12000);
     } else {
       if (toast) toast.innerHTML = '❌ Error: ' + (data.error || 'Failed to dispatch');
-      if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> RUN SOVEREIGN AUDIT'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> RUN T-07 SAFETY AUDIT'; }
     }
   } catch (err) {
     if (toast) toast.innerHTML = '❌ Network Error: ' + err.message;
-    if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> RUN SOVEREIGN AUDIT'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> RUN T-07 SAFETY AUDIT'; }
   }
 }
 
@@ -1338,8 +1338,8 @@ async function loadReport() {
       if (el) el.innerHTML = parsed;
       if (fullEl) fullEl.innerHTML = parsed;
     } else {
-      if (el) el.textContent = 'Report not yet compiled. Click "RUN SOVEREIGN AUDIT" above.';
-      if (fullEl) fullEl.textContent = 'Report not yet compiled. Click "RUN SOVEREIGN AUDIT" above.';
+      if (el) el.textContent = 'Report not yet generated. Start the T-07 audit and review its approval first.';
+      if (fullEl) fullEl.textContent = 'Report not yet generated. Start the T-07 audit and review its approval first.';
     }
   } catch {
     if (el) el.textContent = 'Unable to load report.';
