@@ -51,6 +51,7 @@ import { isProcessAlive } from '../industrial/service-startup';
  * across processes instead.
  */
 const AUDIT_LOCK_FILE = 'audit-chain.lock';
+const AUDIT_LOCK_RECLAIM_FILE = `${AUDIT_LOCK_FILE}.reclaim`;
 /** Total time to wait for a competing writer before failing closed. */
 const AUDIT_LOCK_TIMEOUT_MS = 5_000;
 /** Backoff between acquisition attempts. */
@@ -93,10 +94,10 @@ export class AuditService {
   /**
    * Runs `fn` while holding the cross-process audit append lock.
    *
-   * The lock is taken with an exclusive create, so acquisition is atomic. A lock
-   * whose owner PID is no longer alive is stolen immediately — a dead process
-   * cannot be mid-append, and unlike a long-running lifecycle lock there is no
-   * legitimate reason for an audit lock to outlive its owner.
+   * The complete owner record is atomically published, so a contender cannot
+   * observe a partially written lock. A lock whose owner PID is no longer alive
+   * is reclaimed under a separate marker; malformed locks fail closed because
+   * no trustworthy owner can be established.
    *
    * If the lock cannot be acquired within the budget this throws rather than
    * appending unlocked: a refused append is recoverable, a forked chain is not.
@@ -120,37 +121,16 @@ export class AuditService {
       }
 
       try {
-        fs.writeFileSync(
-          this.auditLockPath,
-          JSON.stringify({ pid: process.pid, at: new Date().toISOString() }),
-          { encoding: 'utf-8', flag: 'wx' },
-        );
-        held = true;
+        held = this.createExclusiveLockFile(this.auditLockPath);
       } catch (err: any) {
-        if (err.code !== 'EEXIST') {
-          throw new Error(`AUDIT_LOCK_FAILED: ${err.message}`);
-        }
+        throw new Error(`AUDIT_LOCK_FAILED: ${err.message}`);
+      }
 
-        // Lock exists. Steal it if its owner is dead, or if it is unreadable.
-        let stole = false;
-        try {
-          const data = JSON.parse(fs.readFileSync(this.auditLockPath, 'utf-8'));
-          if (!isProcessAlive(Number(data.pid))) stole = true;
-        } catch {
-          // Corrupt lock file: no live owner can be established, so reclaim it.
-          stole = true;
-        }
-
-        if (stole) {
-          try {
-            fs.unlinkSync(this.auditLockPath);
-          } catch {
-            // Another process reclaimed it first, or it cannot be removed;
-            // either way the loop re-checks the deadline before retrying.
-          }
-          continue;
-        }
-
+      if (!held) {
+        // The owner record is atomically published (via hard link), so an
+        // unreadable lock is corruption rather than an in-progress write. Fail
+        // closed on that ambiguity instead of deleting a possibly-live lock.
+        this.tryReclaimAbandonedLock();
         sleepSync(AUDIT_LOCK_RETRY_MS);
       }
     }
@@ -162,6 +142,77 @@ export class AuditService {
         fs.unlinkSync(this.auditLockPath);
       } catch {
         // Already removed; nothing to release.
+      }
+    }
+  }
+
+  /**
+   * Publish a fully-written lock record in one atomic filesystem operation.
+   * `writeFileSync(..., { flag: 'wx' })` creates the destination before writing
+   * its contents; a competing process can observe an empty/partial file and
+   * mistakenly reclaim a live lock. A same-directory hard link is atomic and
+   * only succeeds if the destination does not already exist.
+   */
+  private createExclusiveLockFile(lockPath: string): boolean {
+    const tempPath = `${lockPath}.tmp_${process.pid}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    try {
+      fs.writeFileSync(tempPath, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), {
+        encoding: 'utf-8',
+        flag: 'wx',
+      });
+      try {
+        fs.linkSync(tempPath, lockPath);
+        return true;
+      } catch (err: any) {
+        if (err.code === 'EEXIST') return false;
+        throw err;
+      }
+    } finally {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // A leftover unique temp file is harmless; the published link, if any,
+        // owns the lock record independently.
+      }
+    }
+  }
+
+  /**
+   * Reclaim a dead owner's lock while serializing reclaimers. A malformed lock
+   * or an interrupted reclaim marker is never deleted automatically: that is
+   * safer than guessing and allowing two writers into the critical section.
+   */
+  private tryReclaimAbandonedLock(): void {
+    let reclaimHeld = false;
+    try {
+      reclaimHeld = this.createExclusiveLockFile(path.join(this.auditDir, AUDIT_LOCK_RECLAIM_FILE));
+    } catch {
+      // Reclamation is best effort. The append loop will fail closed on timeout.
+      return;
+    }
+    if (!reclaimHeld) return;
+
+    const reclaimPath = path.join(this.auditDir, AUDIT_LOCK_RECLAIM_FILE);
+    try {
+      let owner: { pid?: unknown };
+      try {
+        owner = JSON.parse(fs.readFileSync(this.auditLockPath, 'utf-8')) as { pid?: unknown };
+      } catch {
+        // The lock is absent or malformed. Do not unlink an unknown owner.
+        return;
+      }
+
+      if (!Number.isSafeInteger(owner.pid) || isProcessAlive(Number(owner.pid))) return;
+      try {
+        fs.unlinkSync(this.auditLockPath);
+      } catch {
+        // Another process already removed it; the outer loop retries.
+      }
+    } finally {
+      try {
+        fs.unlinkSync(reclaimPath);
+      } catch {
+        // Best effort; a leftover marker causes future writers to fail closed.
       }
     }
   }
@@ -191,12 +242,20 @@ export class AuditService {
     const tempPath = `${this.auditHeadPath}.tmp_${process.pid}_${Date.now()}`;
     const fd = fs.openSync(tempPath, 'wx');
     try {
-      fs.writeFileSync(fd, JSON.stringify({
-        schemaVersion: 1,
-        recordCount,
-        latestHash,
-        updatedAt: new Date().toISOString(),
-      }, null, 2), 'utf8');
+      fs.writeFileSync(
+        fd,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            recordCount,
+            latestHash,
+            updatedAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
@@ -210,7 +269,11 @@ export class AuditService {
         }
         fs.renameSync(tempPath, this.auditHeadPath);
       } catch (err) {
-        try { fs.unlinkSync(tempPath); } catch { /* best effort */ }
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {
+          /* best effort */
+        }
         throw err;
       }
     }
@@ -225,7 +288,9 @@ export class AuditService {
       errors.push(`AUDIT_HEAD_COUNT_MISMATCH: expected ${head.recordCount}, found ${records.length}`);
     }
     if (head.latestHash !== latestHash) {
-      errors.push(`AUDIT_HEAD_HASH_MISMATCH: expected ${head.latestHash || '<empty>'}, found ${latestHash || '<empty>'}`);
+      errors.push(
+        `AUDIT_HEAD_HASH_MISMATCH: expected ${head.latestHash || '<empty>'}, found ${latestHash || '<empty>'}`,
+      );
     }
     return errors;
   }
@@ -289,10 +354,7 @@ export class AuditService {
    * 4. Computes authoritative SHA-256 via Rust engine ('chain-append').
    * 5. Atomically appends and fsyncs record to .maos/audit/audit-chain.jsonl.
    */
-  public recordAuditEvent(
-    params: AuditEventParams,
-    mockRustFailure = false,
-  ): AuditRecord {
+  public recordAuditEvent(params: AuditEventParams, mockRustFailure = false): AuditRecord {
     // 1. Validate Category
     const catValidation = validateAuditCategory(params.category);
     if (!catValidation.valid) {
@@ -305,10 +367,7 @@ export class AuditService {
     }
 
     // 3. Validate Data
-    const dataObj =
-      params.data && typeof params.data === 'object' && !Array.isArray(params.data)
-        ? params.data
-        : {};
+    const dataObj = params.data && typeof params.data === 'object' && !Array.isArray(params.data) ? params.data : {};
 
     // 4. Redact sensitive content
     const { sanitized } = redactSensitive(dataObj);

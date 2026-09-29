@@ -12,7 +12,7 @@
  * This suite covers:
  *  1. Serialisation — the critical section is held exclusively.
  *  2. Fail-closed — an append that cannot take the lock refuses rather than forks.
- *  3. Recovery — dead-owner and corrupt locks are reclaimed.
+ *  3. Recovery — dead-owner locks are reclaimed; malformed locks fail closed.
  *  4. Hygiene — the lock never outlives an append.
  *  5. End-to-end — two real OS processes appending concurrently produce a linear
  *     chain with a consistent head.
@@ -45,9 +45,7 @@ function chainAnomalies(records: any[]) {
 }
 
 function headOf(projectRoot: string) {
-  return JSON.parse(
-    fs.readFileSync(path.join(projectRoot, '.maos', 'audit', 'audit-head.json'), 'utf8'),
-  );
+  return JSON.parse(fs.readFileSync(path.join(projectRoot, '.maos', 'audit', 'audit-head.json'), 'utf8'));
 }
 
 describe('F9-11: Audit chain append lock', () => {
@@ -113,14 +111,11 @@ describe('F9-11: Audit chain append lock', () => {
       const before = readChain(testTempDir).length;
 
       // Simulate a competing writer: a lock owned by a live PID (our own).
-      fs.writeFileSync(
-        lockPath(),
-        JSON.stringify({ pid: process.pid, at: new Date().toISOString() }),
-      );
+      fs.writeFileSync(lockPath(), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
 
-      expect(() =>
-        audit.recordAuditEvent({ category: 'stage', source: 'f9-11', data: { blocked: true } }),
-      ).toThrow(/AUDIT_LOCK_TIMEOUT/);
+      expect(() => audit.recordAuditEvent({ category: 'stage', source: 'f9-11', data: { blocked: true } })).toThrow(
+        /AUDIT_LOCK_TIMEOUT/,
+      );
 
       // The refusal must leave the chain untouched and un-forked.
       const records = readChain(testTempDir);
@@ -146,10 +141,7 @@ describe('F9-11: Audit chain append lock', () => {
   describe('3. Recovery from abandoned locks', () => {
     it('reclaims a lock whose owner process is dead', () => {
       // A PID that cannot be alive.
-      fs.writeFileSync(
-        lockPath(),
-        JSON.stringify({ pid: 2147483646, at: new Date().toISOString() }),
-      );
+      fs.writeFileSync(lockPath(), JSON.stringify({ pid: 2147483646, at: new Date().toISOString() }));
 
       expect(() =>
         audit.recordAuditEvent({ category: 'stage', source: 'f9-11', data: { recovered: true } }),
@@ -160,16 +152,17 @@ describe('F9-11: Audit chain append lock', () => {
       expect(chainAnomalies(records).sequenceAnomalies).toBe(0);
     });
 
-    it('reclaims an unreadable lock file', () => {
+    it('fails closed on an unreadable lock file', () => {
       fs.writeFileSync(lockPath(), 'not json at all');
 
-      expect(() =>
-        audit.recordAuditEvent({ category: 'stage', source: 'f9-11', data: { recovered: true } }),
-      ).not.toThrow();
+      expect(() => audit.recordAuditEvent({ category: 'stage', source: 'f9-11', data: { recovered: true } })).toThrow(
+        /AUDIT_LOCK_TIMEOUT/,
+      );
 
-      const records = readChain(testTempDir);
-      expect(records).toHaveLength(1);
-      expect(chainAnomalies(records).sequenceAnomalies).toBe(0);
+      // An unreadable lock has no trustworthy owner identity. Preserve it and
+      // refuse the append rather than risk deleting a live writer's lock.
+      expect(fs.existsSync(lockPath())).toBe(true);
+      expect(readChain(testTempDir)).toHaveLength(0);
     });
   });
 
@@ -187,9 +180,7 @@ describe('F9-11: Audit chain append lock', () => {
         lockTimeoutMs: 150,
       });
 
-      expect(() =>
-        broken.recordAuditEvent({ category: 'stage', source: 'f9-11', data: {} }),
-      ).toThrow();
+      expect(() => broken.recordAuditEvent({ category: 'stage', source: 'f9-11', data: {} })).toThrow();
 
       expect(fs.existsSync(lockPath())).toBe(false);
     });
