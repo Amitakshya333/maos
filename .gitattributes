@@ -3,3 +3,5 @@
 *.pdf binary
 *.exe binary
 *.zip binary
+# This hash-protected canary must remain byte-identical on Windows checkouts.
+rust/test.txt text eol=lf
