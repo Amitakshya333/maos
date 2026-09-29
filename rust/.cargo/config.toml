@@ -26,5 +26,8 @@ incremental = true
 [source.crates-io]
 replace-with = "vendored-sources"
 
+# Repository text files are canonicalized to LF. The vendored generic-array
+# per-file hashes reflect those LF bytes; Cargo.lock retains the upstream
+# package checksum, and the vendored source remains offline-verifiable.
 [source.vendored-sources]
 directory = "vendor"

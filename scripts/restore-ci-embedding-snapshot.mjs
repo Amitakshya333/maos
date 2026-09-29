@@ -196,10 +196,17 @@ async function main() {
       { label: 'raw/main', url: `https://huggingface.co/${modelPath}/raw/main/${encodedFilePath}` }
     );
 
-    let restored = false;
+    // Prefer the hash-pinned inline bytes before contacting the model host.
+    // This keeps small metadata files reproducible when a pinned Hub revision
+    // is unavailable (the failure seen in CI) and avoids needless network calls.
+    let restored = await tryInlineFallback(entry.path, entry, destination);
+    if (restored) {
+      console.log(`✓ ${entry.path} — restored from verified inline fallback`);
+    }
+
     const failures = [];
 
-    for (const { label, url } of urlCandidates) {
+    for (const { label, url } of (restored ? [] : urlCandidates)) {
       try {
         const result = await tryDownloadAndVerify(url, entry, destination);
         if (result.ok) {
@@ -210,14 +217,6 @@ async function main() {
         failures.push(`${label}: ${result.reason}`);
       } catch (err) {
         failures.push(`${label}: ${err.message}`);
-      }
-    }
-
-    // Last resort: use inline base64 fallback for small config files
-    if (!restored) {
-      if (await tryInlineFallback(entry.path, entry, destination)) {
-        console.log(`✓ ${entry.path} — restored from inline fallback`);
-        restored = true;
       }
     }
 
@@ -239,8 +238,9 @@ async function main() {
   if (await readIfValid(poolingDestination, poolingEntry)) {
     console.log(`✓ ${poolingPath} — cached, verified.`);
   } else {
-    let ok = false;
-    for (const rev of ['c9745ed1d9f207416be6d2e6f8de32d1f16199bf', 'main']) {
+    let ok = await tryInlineFallback(poolingPath, poolingEntry, poolingDestination);
+    if (ok) console.log(`✓ ${poolingPath} — restored from verified inline fallback`);
+    for (const rev of (ok ? [] : ['c9745ed1d9f207416be6d2e6f8de32d1f16199bf', 'main'])) {
       try {
         const result = await tryDownloadAndVerify(
           `https://huggingface.co/${modelPath}/resolve/${rev}/1_Pooling/config.json`,
@@ -248,10 +248,6 @@ async function main() {
         );
         if (result.ok) { console.log(`✓ ${poolingPath} — downloaded from ${rev.slice(0, 8)}`); ok = true; break; }
       } catch {}
-    }
-    if (!ok && await tryInlineFallback(poolingPath, poolingEntry, poolingDestination)) {
-      console.log(`✓ ${poolingPath} — restored from inline fallback`);
-      ok = true;
     }
     if (!ok) console.warn(`⚠ Could not restore ${poolingPath} — non-fatal.`);
   }
