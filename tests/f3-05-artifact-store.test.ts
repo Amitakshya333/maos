@@ -30,6 +30,7 @@ import { createRestApiServer, RestApiServer } from '../src/api/server';
 import { ArtifactService } from '../src/service/artifact-service';
 import { ApprovalService } from '../src/service/approval-service';
 import { EventService } from '../src/service/event-service';
+import { withJudgedRunOutputLock } from '../src/industrial/judged-run-lock';
 
 describe('F3-05 Safe Artifact Store', () => {
   let testDir: string;
@@ -457,6 +458,17 @@ describe('F3-05 Safe Artifact Store', () => {
       const remaining = fs.readdirSync(tmpDir).filter((f) => f.includes('art_crash_test'));
       expect(remaining.length).toBe(0);
     });
+
+    it('reuses an already-held project output lock for orphan cleanup', () => {
+      const tmpDir = path.join(testDir, 'artifacts', '.tmp');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      const tmpPath = path.join(tmpDir, '.tmp_inflight-docx');
+      fs.writeFileSync(tmpPath, 'in-flight output');
+
+      const purged = withJudgedRunOutputLock(testDir, () => artifactService.cleanupOrphanTempFiles(0));
+      expect(purged).toBe(1);
+      expect(fs.existsSync(tmpPath)).toBe(false);
+    });
   });
 
   // ── 5. Content Retrieval & Confinement ──────────────────────────
@@ -504,6 +516,20 @@ describe('F3-05 Safe Artifact Store', () => {
       expect(detailRes.status).toBe(200);
       const detailJson = await detailRes.json();
       expect(detailJson.data.id).toBe('art_rest_finalized_01');
+    });
+
+    it('should serve downloaded binary artifacts without UTF-8 conversion', async () => {
+      const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xe2, 0x3e, 0x23, 0xff, 0x00]);
+      artifactService.finalizeArtifact({
+        id: 'art_binary_download_01',
+        relativePath: 'artifacts/reports/binary-download.docx',
+        content: bytes,
+        type: 'file',
+      });
+
+      const response = await fetch(`${baseUrl}/api/v1/artifacts/art_binary_download_01/content`);
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
     });
 
     it('should return 400 for path traversal via REST POST', async () => {

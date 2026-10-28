@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ApprovalsIcon, CheckCircleIcon, AlertCircleIcon } from '../components/icons';
 import { apiAdapter } from '../api';
+import type { Artifact } from '../../../domain/schemas';
 import type {
   ApprovalRecord,
   ApprovalScope,
@@ -40,6 +41,7 @@ export const ApprovalsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [downloadArtifact, setDownloadArtifact] = useState<Artifact | null>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -110,6 +112,7 @@ export const ApprovalsView: React.FC = () => {
     setActionError(null);
 
     try {
+      setDownloadArtifact(null);
       const conds = reviewConditions
         .split('\n')
         .map((c) => c.trim())
@@ -129,7 +132,13 @@ export const ApprovalsView: React.FC = () => {
         const run = await apiAdapter.getIndustrialJudgedRun(activeReviewApproval.runId);
         successText = reviewDecision === 'approved' && run.status === 'completed'
           ? `Approved by ${reviewerId}. Report generated for ${run.runId}: ${run.deliverablePath}.`
-          : `Approval ${reviewDecision} by ${reviewerId}. T-07 run ${run.runId} is ${run.status.replace('_', ' ')}.`;
+          : `Approval ${reviewDecision} by ${reviewerId}. Industrial run ${run.runId} is ${run.status.replace('_', ' ')}.`;
+        if (reviewDecision === 'approved' && run.status === 'completed' && run.deliverablePath) {
+          const artifacts = await apiAdapter.getIndustrialRunArtifacts(run.runId);
+          const artifact = artifacts.find((item) => item.path === run.deliverablePath);
+          if (!artifact) throw new Error(`Run completed but its DOCX is not registered as an artifact: ${run.deliverablePath}`);
+          setDownloadArtifact(artifact);
+        }
       }
       setActionSuccess(successText);
       closeReviewModal();
@@ -138,6 +147,23 @@ export const ApprovalsView: React.FC = () => {
       setActionError((err as Error).message || `Failed to submit review decision`);
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const downloadReviewedReport = async () => {
+    if (!downloadArtifact) return;
+    setActionError(null);
+    try {
+      const blob = await apiAdapter.downloadArtifactContent(downloadArtifact.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = downloadArtifact.path.split(/[\\/]/).pop() || 'industrial-report.docx';
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setActionSuccess(`Downloaded authenticated DOCX artifact ${downloadArtifact.id}.`);
+    } catch (err: unknown) {
+      setActionError((err as Error).message || 'The approved DOCX could not be downloaded.');
     }
   };
 
@@ -252,6 +278,7 @@ export const ApprovalsView: React.FC = () => {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ color: 'var(--status-green, #2ea043)', fontSize: 13, fontWeight: 600 }}>{actionSuccess}</span>
+            {downloadArtifact && <button className="btn-secondary" onClick={() => void downloadReviewedReport()}>Download DOCX</button>}
             <button className="btn-secondary" style={{ padding: '2px 6px', fontSize: 11 }} onClick={() => setActionSuccess(null)}>
               Dismiss
             </button>
@@ -259,9 +286,10 @@ export const ApprovalsView: React.FC = () => {
         </div>
       )}
 
-      {actionError && (
+      {actionError && !activeReviewApproval && (
         <div
           className="state-box"
+          role="alert"
           style={{ borderColor: 'var(--status-red, #f85149)', backgroundColor: 'rgba(248,81,73,0.1)', marginBottom: 16, padding: 12 }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -376,6 +404,10 @@ export const ApprovalsView: React.FC = () => {
             const statusLabel = isExpired && app.status === 'pending' ? 'EXPIRED' : app.status.toUpperCase();
             const scopeColor = SCOPE_COLORS[app.scope] || '#8957e5';
             const isJudgedRun = app.metadata?.kind === 'maos-industrial-judged-run';
+            const isAgentAnalysis = app.metadata?.analysisKind === 'industrial-analysis-agent';
+            const agentAnalysis = isAgentAnalysis && app.metadata?.agentAnalysis && typeof app.metadata.agentAnalysis === 'object'
+              ? app.metadata.agentAnalysis as { analysisId?: string; sourcePath?: string; explanation?: string; explanationStatus?: string; model?: { provider?: string; requested?: string; reported?: string | null }; receiptSha256?: string }
+              : null;
             const judgedFindings = Array.isArray(app.metadata?.findings)
               ? app.metadata.findings as Array<{ row?: number; timestamp?: string; field?: string; value?: number; threshold?: number; unit?: string; verdict?: string }>
               : [];
@@ -467,10 +499,17 @@ export const ApprovalsView: React.FC = () => {
                 {isJudgedRun && (
                   <div style={{ marginTop: 10, padding: '10px 12px', backgroundColor: 'var(--bg-primary, #0d1117)', borderRadius: 4, width: '100%', boxSizing: 'border-box' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-                      T-07 pre-review findings · overall RMS {typeof judgedRms === 'number' ? `${judgedRms.toFixed(3)} mm/s` : 'not available'}
+                      {isAgentAnalysis ? 'Selected CSV pre-review findings' : 'T-07 pre-review findings'} · overall RMS {typeof judgedRms === 'number' ? `${judgedRms.toFixed(3)} mm/s` : 'not available'}
                     </div>
+                    {agentAnalysis && (
+                      <div style={{ margin: '6px 0', fontSize: 11, color: 'var(--muted, #8b949e)' }}>
+                        Selected source: <code>{agentAnalysis.sourcePath}</code> · requested model {agentAnalysis.model?.provider}/{agentAnalysis.model?.requested} · provider-reported model {agentAnalysis.model?.reported || 'unavailable'} · receipt {agentAnalysis.analysisId} · engineering verdict {String(app.metadata?.engineeringVerdict || 'not recorded')}
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, color: 'var(--muted, #8b949e)' }}>
-                      The report has not been generated. Review these source-derived threshold findings before deciding.
+                      {app.status === 'pending'
+                        ? 'The report has not been generated. Review these source-derived threshold findings before deciding.'
+                        : 'This is a pre-review snapshot. Check the run record for the final report outcome.'}
                     </div>
                     {judgedFindings.length > 0 && (
                       <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
@@ -481,6 +520,13 @@ export const ApprovalsView: React.FC = () => {
                         ))}
                         {judgedFindings.length > 12 && <li>…and {judgedFindings.length - 12} more findings</li>}
                       </ul>
+                    )}
+                    {agentAnalysis?.explanation && (
+                      <div style={{ marginTop: 8, borderTop: '1px solid var(--border, #30363d)', paddingTop: 8 }}>
+                        <strong>Model-generated explanation · UNVERIFIED</strong>
+                        <p style={{ whiteSpace: 'pre-wrap', margin: '4px 0' }}>{agentAnalysis.explanation}</p>
+                        <span>Reviewing or approving this report does not establish the explanation’s semantic correctness.</span>
+                      </div>
                     )}
                   </div>
                 )}
@@ -650,6 +696,11 @@ export const ApprovalsView: React.FC = () => {
             <h2 style={{ margin: '0 0 12px 0', fontSize: 18 }}>
               Governance Review: {activeReviewApproval.approvalId}
             </h2>
+            {actionError && (
+              <div role="alert" className="state-box" style={{ borderColor: 'var(--status-red, #f85149)', marginBottom: 12, padding: 10 }}>
+                {actionError}
+              </div>
+            )}
             <p style={{ fontSize: 12, color: 'var(--muted, #8b949e)', marginBottom: 16 }}>
               Scope: <strong>{SCOPE_LABELS[activeReviewApproval.scope] || activeReviewApproval.scope}</strong> | Requester:{' '}
               <code>{activeReviewApproval.actorId}</code> ({activeReviewApproval.actorRole})

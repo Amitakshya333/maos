@@ -46,11 +46,13 @@
  *     - Verifies rust/test.txt SHA-256 remains strictly untouched.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import * as crypto from 'crypto';
 import * as http from 'http';
+import { spawnSync } from 'node:child_process';
 
 import {
   createServiceContainer,
@@ -81,7 +83,8 @@ import {
   MockSocketObserver,
 } from '../../src/industrial/network';
 import { ContainerRunner } from '../../src/industrial/container-runner';
-import { getLockPath } from '../../src/industrial/lifecycle';
+import { acquireLock, getLockPath, LIFECYCLE_EXIT, releaseLock, runLifecycleCommand } from '../../src/industrial/lifecycle';
+import { isProcessAlive } from '../../src/industrial/service-startup';
 
 describe('F9-08: Interruption and Atomic Cleanup', () => {
   const TEST_PROJECT_ROOT = path.resolve(__dirname, '../../');
@@ -89,19 +92,15 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
   const EXPECTED_CANARY_SHA256 =
     '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
 
-  const testTempDir = path.join(
-    TEST_PROJECT_ROOT,
-    '.maos',
-    'test-temp-f908-' + Date.now(),
-  );
+  let testTempDir: string;
 
   let mockHttpServer: http.Server;
   let mockServerPort: number;
 
   beforeAll(async () => {
-    if (!fs.existsSync(testTempDir)) {
-      fs.mkdirSync(testTempDir, { recursive: true });
-    }
+    testTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-temp-f908-'));
+    fs.mkdirSync(path.join(testTempDir, '.maos'), { recursive: true });
+    fs.writeFileSync(path.join(testTempDir, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f9-08-test' }));
 
     // Start a mock HTTP server to simulate slow / responsive local model server endpoints
     mockHttpServer = http.createServer((req, res) => {
@@ -276,6 +275,13 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
     });
 
     afterEach(() => {
+      // These isolated service tests create no worker process; discard fixture entries before cleaning.
+      const activeDir = path.join(testTempDir, '.maos', 'queue', 'active');
+      if (fs.existsSync(activeDir)) {
+        for (const file of fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))) {
+          fs.unlinkSync(path.join(activeDir, file));
+        }
+      }
       taskService.clean();
     });
 
@@ -361,6 +367,13 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
     });
 
     afterEach(() => {
+      // No agent worker runs in these fixtures; remove their simulated active entries after assertions.
+      const activeDir = path.join(testTempDir, '.maos', 'queue', 'active');
+      if (fs.existsSync(activeDir)) {
+        for (const file of fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))) {
+          fs.unlinkSync(path.join(activeDir, file));
+        }
+      }
       taskService.clean();
     });
 
@@ -668,7 +681,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
         JSON.stringify({
           pid: 99999999, // definitely dead PID
           timestamp: new Date(Date.now() - 60000).toISOString(),
-          hostname: 'test-host',
+          hostname: os.hostname(),
         }),
       );
 
@@ -696,29 +709,90 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
       expect(fs.existsSync(lockPath)).toBe(false);
     });
 
-    it('preserves live lifecycle lock unless forced', () => {
+    it('forced cleanup preserves a live owner and another lifecycle command cannot enter', async () => {
+      const lockPath = getLockPath(testTempDir);
+      expect(acquireLock(testTempDir)).toBe(true);
+      const coordinator = new AtomicCleanupCoordinator(testTempDir);
+      try {
+        expect(isProcessAlive(process.pid)).toBe(true);
+        const orphanResult = coordinator.cleanupOrphanFiles();
+        expect(orphanResult.lifecycleLockStatus).toBe('live');
+        expect(orphanResult.locksRemoved).toBe(0);
+        expect(fs.existsSync(lockPath)).toBe(true);
+
+        const cleanup = await coordinator.executeAtomicCleanup({ reason: 'forced-live-lock-regression', force: true });
+        expect(cleanup.success).toBe(false);
+        expect(cleanup.errors).toContainEqual(expect.objectContaining({
+          subsystem: 'lifecycle_lock',
+          message: expect.stringContaining('force cannot remove it'),
+        }));
+        expect(isProcessAlive(process.pid)).toBe(true);
+        expect(fs.existsSync(lockPath)).toBe(true);
+
+        const lifecycleModule = path.join(TEST_PROJECT_ROOT, 'src', 'industrial', 'lifecycle.ts');
+        const script = [
+          "const fs = require('node:fs');",
+          "const ts = require('typescript');",
+          "require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);",
+          "const { runLifecycleCommand, LIFECYCLE_EXIT } = require(process.argv[1]);",
+          "const result = runLifecycleCommand(process.argv[2], 'install', undefined, { stateOnly: true });",
+          "process.stdout.write(String(result.exitCode));",
+          "process.exitCode = result.exitCode === LIFECYCLE_EXIT.LOCK_HELD ? 0 : 1;",
+        ].join('\n');
+        const child = spawnSync(process.execPath, ['-e', script, lifecycleModule, testTempDir], { cwd: TEST_PROJECT_ROOT, encoding: 'utf8', timeout: 15_000 });
+        expect(child.status).toBe(0);
+        expect(child.stdout).toBe(String(LIFECYCLE_EXIT.LOCK_HELD));
+        expect(fs.existsSync(lockPath)).toBe(true);
+      } finally {
+        releaseLock(testTempDir);
+      }
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
+    it('removes only a stale same-host lock whose owner is confirmed dead', () => {
       const lockPath = getLockPath(testTempDir);
       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-      fs.writeFileSync(
-        lockPath,
-        JSON.stringify({
-          pid: process.pid, // current process -> ALIVE
-          timestamp: new Date().toISOString(),
-          hostname: 'test-host',
-        }),
-      );
-
-      const coordinator = new AtomicCleanupCoordinator(testTempDir);
-
-      // Normal sweep preserves live lock
-      const res1 = coordinator.cleanupOrphanFiles();
-      expect(res1.locksRemoved).toBe(0);
-      expect(fs.existsSync(lockPath)).toBe(true);
-
-      // Forced sweep removes it
-      const res2 = coordinator.cleanupOrphanFiles({ forceLockRelease: true });
-      expect(res2.locksRemoved).toBe(1);
+      const exited = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+      const deadPid = Number(exited.stdout);
+      expect(exited.status).toBe(0);
+      expect(isProcessAlive(deadPid)).toBe(false);
+      fs.writeFileSync(lockPath, JSON.stringify({
+        pid: deadPid,
+        timestamp: new Date(Date.now() - 60_000).toISOString(),
+        hostname: os.hostname(),
+      }));
+      expect(isProcessAlive(2147483647)).toBe(false);
+      const result = new AtomicCleanupCoordinator(testTempDir).cleanupOrphanFiles();
+      expect(result.lifecycleLockStatus).toBe('removed');
+      expect(result.locksRemoved).toBe(1);
       expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
+    it('treats an unverified process-liveness result as possibly alive', () => {
+      const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+        throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+      });
+      try {
+        expect(isProcessAlive(process.pid)).toBe(true);
+      } finally {
+        kill.mockRestore();
+      }
+    });
+
+    it.each([
+      ['foreign host', JSON.stringify({ pid: process.pid, timestamp: new Date(Date.now() - 60_000).toISOString(), hostname: 'unknown-host' })],
+      ['malformed record', '{not-json'],
+    ])('leaves %s ownership ambiguity blocked', (_label, contents) => {
+      const lockPath = getLockPath(testTempDir);
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      fs.writeFileSync(lockPath, contents);
+      const result = new AtomicCleanupCoordinator(testTempDir).cleanupOrphanFiles();
+      expect(result.lifecycleLockStatus).toBe('ambiguous');
+      expect(result.locksRemoved).toBe(0);
+      expect(fs.existsSync(lockPath)).toBe(true);
+      expect(runLifecycleCommand(testTempDir, 'install', undefined, { stateOnly: true }).exitCode).toBe(LIFECYCLE_EXIT.LOCK_HELD);
+      // This malformed/foreign lock belongs only to this temporary regression fixture.
+      fs.unlinkSync(lockPath);
     });
   });
 
@@ -733,6 +807,13 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
     });
 
     afterEach(() => {
+      // No agent worker runs in these fixtures; remove their simulated active entries after assertions.
+      const activeDir = path.join(testTempDir, '.maos', 'queue', 'active');
+      if (fs.existsSync(activeDir)) {
+        for (const file of fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))) {
+          fs.unlinkSync(path.join(activeDir, file));
+        }
+      }
       services.task.clean();
     });
 

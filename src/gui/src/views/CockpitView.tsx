@@ -102,7 +102,26 @@ export const CockpitView: React.FC = () => {
       window.localStorage.setItem('maos:last-industrial-judged-run', run.runId);
       setActionMessage({ type: 'success', text: `T-07 analysis is ready. Review approval ${String(run.details?.approvalId || run.approvalId || 'in queue')} before the report is generated.` });
     } catch (err: unknown) {
-      setActionMessage({ type: 'error', text: `T-07 run could not start: ${(err as Error).message}` });
+      const failure = err as { code?: string; details?: unknown; message?: string };
+      if (failure.code === 'JUDGED_RUN_BUSY' || failure.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
+        const details = failure.details && typeof failure.details === 'object'
+          ? failure.details as Record<string, unknown>
+          : {};
+        const busy = failure.code === 'JUDGED_RUN_BUSY';
+        const status = busy ? 'in_progress' : 'unavailable';
+        setJudgedRun({
+          runId: typeof details.runId === 'string' ? details.runId : 'unavailable',
+          status,
+          verdict: 'UNAVAILABLE',
+          details,
+        });
+        setActionMessage({
+          type: 'error',
+          text: `T-07 status ${status === 'in_progress' ? 'in progress' : 'unavailable'}; no engineering verdict was produced. ${failure.message || 'Coordination lock unavailable.'}`,
+        });
+      } else {
+        setActionMessage({ type: 'error', text: `T-07 run could not start: ${failure.message || String(err)}` });
+      }
     } finally {
       setStartingJudgedRun(false);
     }
@@ -342,7 +361,7 @@ export const CockpitView: React.FC = () => {
             margin: '14px 0',
             padding: '14px 16px',
             borderRadius: 8,
-            border: `1px solid ${judgedRun.status === 'completed' ? '#238636' : judgedRun.status === 'rejected' || judgedRun.status === 'failed' ? '#da3633' : '#d29922'}`,
+            border: `1px solid ${judgedRun.status === 'completed' ? '#238636' : judgedRun.status === 'rejected' || judgedRun.status === 'failed' || judgedRun.status === 'unavailable' ? '#da3633' : '#d29922'}`,
             background: 'var(--card-bg, #161b22)',
           }}
         >

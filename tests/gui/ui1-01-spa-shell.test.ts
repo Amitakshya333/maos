@@ -229,6 +229,7 @@ describe('UI1-01: React SPA Shell with Local Assets', () => {
       expect(res.headers.get('content-type')).toContain('text/html');
       const text = await res.text();
       expect(text).toContain('<div id="root">');
+      expect(text).toContain(`<meta name="maos-project-root" content="${PROJECT_ROOT}">`);
     });
 
     it('should fall back to index.html for client route /chat', async () => {

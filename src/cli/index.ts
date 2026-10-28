@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import * as dotenv from 'dotenv';
-dotenv.config({ override: true });
+dotenv.config({ override: true, quiet: true });
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as fs from 'fs';
@@ -44,6 +44,9 @@ import {
 import { createServiceContainer } from '../service';
 
 const VERSION = '0.3.0';
+const invokedAsIndustrial =
+  path.basename(process.argv[1] || '').toLowerCase() === 'maos-industrial' ||
+  /[\\/]industrial[\\/]entrypoint\.(js|ts)$/i.test(process.argv[1] || '');
 
 // ─── Global Error Handlers ───────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -509,15 +512,25 @@ program
       process.exit(1);
     }
 
-    const services = createServiceContainer(cwd);
-    const result = services.task.clean();
-    console.log(chalk.green(`✅ Cleaned: ${result.tasksRemoved} tasks removed, statuses reset, logs cleared.`));
+    try {
+      const services = createServiceContainer(cwd);
+      const result = services.task.clean();
+      console.log(chalk.green(`✅ Cleaned: ${result.tasksRemoved} tasks removed, statuses reset, logs cleared.`));
+    } catch (error: any) {
+      console.error(chalk.yellow(`⚠️  Clean refused: ${error.message || String(error)}`));
+      process.exitCode = 1;
+    }
   });
 
 // ─── maos industrial ──────────────────────────────────────────
-const industrial = program
-  .command('industrial')
-  .description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification');
+const standaloneIndustrialProgram = invokedAsIndustrial
+  ? new Command()
+      .name('maos-industrial')
+      .version(VERSION)
+      .description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification')
+  : undefined;
+const industrial = standaloneIndustrialProgram ||
+  program.command('industrial').description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification');
 
 const bundleCmd = industrial
   .command('bundle')
@@ -900,4 +913,4 @@ program.action(() => {
 });
 
 // Parse
-program.parse(process.argv);
+(standaloneIndustrialProgram || program).parse(process.argv);

@@ -77,6 +77,8 @@ import { CockpitService } from './cockpit-service';
 import { SandboxImageService } from './sandbox-image-service';
 import { SandboxRunnerService } from './sandbox-runner-service';
 import { ChatInferenceService } from './chat-inference-service';
+import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
+import { OpenAIProvider } from '../backends/openai-provider';
 import { CalculationTraceService } from './calculation-trace-service';
 import { SovereigntyBoundaryService } from './sovereignty-boundary-service';
 import { EndpointAllowlistService } from './endpoint-allowlist-service';
@@ -139,6 +141,7 @@ export interface ServiceContainer {
   readonly sandboxImage: SandboxImageService;
   readonly sandboxRunner: SandboxRunnerService;
   readonly chatInference: ChatInferenceService;
+  readonly industrialAnalysisAgent: IndustrialAnalysisAgentService;
   readonly calculationTrace: CalculationTraceService;
   readonly sovereigntyBoundary: SovereigntyBoundaryService;
   readonly endpointAllowlist: EndpointAllowlistService;
@@ -273,6 +276,54 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
     auditService: audit,
     endpointAllowlist,
   });
+  const industrialAnalysisAgent = new IndustrialAnalysisAgentService(
+    undefined,
+    undefined,
+    audit,
+    endpointAllowlist,
+    () => {
+      if (!project.isInitialized()) {
+        throw new IndustrialAnalysisAgentError(
+          'PROJECT_NOT_INITIALIZED',
+          'Initialize this project with `maos init` before requesting Industrial CSV analysis.',
+        );
+      }
+      let projectConfig: ReturnType<ProjectService['loadConfig']>;
+      try {
+        projectConfig = project.loadConfig();
+      } catch (error) {
+        throw new IndustrialAnalysisAgentError(
+          'PROJECT_CONFIG_INVALID',
+          `Unable to read the project's MAOS configuration. Repair the configuration or its file permissions, then retry. ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (!Array.isArray(projectConfig.agents) || !projectConfig.providers || typeof projectConfig.providers !== 'object' || Array.isArray(projectConfig.providers)) {
+        throw new IndustrialAnalysisAgentError(
+          'PROJECT_CONFIG_INVALID',
+          'The project MAOS configuration must define agent and provider settings before Industrial CSV analysis.',
+        );
+      }
+      const analysisModel = projectConfig.agents.find((agent) => agent?.id === 'ANALYST_AGENT');
+      if (typeof analysisModel?.provider !== 'string' || !analysisModel.provider.trim() || typeof analysisModel.model !== 'string' || !analysisModel.model.trim()) return {};
+      const providerConfig = projectConfig.providers[analysisModel.provider];
+      if (!providerConfig || typeof providerConfig !== 'object' || typeof providerConfig.baseURL !== 'string' || !providerConfig.baseURL.trim()) return {};
+      const timeout = analysisModel.timeoutMs ?? 60_000;
+      if (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout <= 0) {
+        throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'ANALYST_AGENT.timeoutMs must be a positive number.');
+      }
+      return {
+        provider: new OpenAIProvider({
+          name: analysisModel.provider,
+          apiKey: 'local-only',
+          baseURL: providerConfig.baseURL,
+          model: analysisModel.model,
+          timeout,
+          maxRetries: 0,
+        }),
+        modelEndpoint: providerConfig.baseURL,
+      };
+    },
+  );
   const firewall = new FirewallService(projectRoot, {
     auditService: audit,
     endpointAllowlist,
@@ -376,6 +427,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
     sandboxImage,
     sandboxRunner,
     chatInference,
+    industrialAnalysisAgent,
     calculationTrace,
     sovereigntyBoundary,
     endpointAllowlist,
@@ -392,6 +444,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
 // Re-export individual services for direct import
 export { CalculationTraceService } from './calculation-trace-service';
 export { ChatInferenceService, ChatInferenceError } from './chat-inference-service';
+export { IndustrialAnalysisAgentService, IndustrialAnalysisAgentError } from '../industrial/analysis-agent-service';
 export { SandboxImageService } from './sandbox-image-service';
 export { SandboxRunnerService } from './sandbox-runner-service';
 export { CockpitService } from './cockpit-service';

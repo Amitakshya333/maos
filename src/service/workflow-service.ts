@@ -13,6 +13,7 @@ import {
 } from '../core/objective-store';
 import type { WorkflowStage, PlanHistoryEntry } from '../domain/schemas';
 import { type WorkflowProjection, projectWorkflowStage } from '../domain/cockpit';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 
 /**
  * Convert a core ObjectiveState to a domain WorkflowStage.
@@ -117,27 +118,29 @@ export class WorkflowService {
     reason = 'Workflow cancelled / interrupted',
     taskService?: import('./task-service').TaskService,
   ): WorkflowStage | null {
-    const obj = loadObjective(id, this.projectRoot);
-    if (!obj) return null;
+    return withJudgedRunOutputLock(this.projectRoot, () => {
+      const obj = loadObjective(id, this.projectRoot);
+      if (!obj) return null;
 
-    const uncompletedIds = obj.childTaskIds.filter(
-      (cid) => !obj.completedChildIds.includes(cid),
-    );
+      const uncompletedIds = obj.childTaskIds.filter(
+        (cid) => !obj.completedChildIds.includes(cid),
+      );
 
-    for (const cid of uncompletedIds) {
-      if (!obj.cancelledChildIds.includes(cid)) {
-        obj.cancelledChildIds.push(cid);
+      for (const cid of uncompletedIds) {
+        if (!obj.cancelledChildIds.includes(cid)) {
+          obj.cancelledChildIds.push(cid);
+        }
+        if (taskService) {
+          taskService.interruptTask(cid, reason);
+        }
       }
-      if (taskService) {
-        taskService.interruptTask(cid, reason);
-      }
-    }
 
-    obj.status = 'failed';
-    obj.doneAt = new Date().toISOString();
-    saveObjective(obj, this.projectRoot);
+      obj.status = 'failed';
+      obj.doneAt = new Date().toISOString();
+      saveObjective(obj, this.projectRoot);
 
-    return toWorkflowStage(obj);
+      return toWorkflowStage(obj);
+    });
   }
 
   /**
@@ -147,16 +150,18 @@ export class WorkflowService {
     reason = 'Emergency interruption / shutdown',
     taskService?: import('./task-service').TaskService,
   ): WorkflowStage[] {
-    const all = this.listObjectives();
-    const interrupted: WorkflowStage[] = [];
+    return withJudgedRunOutputLock(this.projectRoot, () => {
+      const all = this.listObjectives();
+      const interrupted: WorkflowStage[] = [];
 
-    for (const st of all) {
-      if (st.status === 'planning' || st.status === 'replanning' || st.status === 'executing' || st.status === 'reviewing') {
-        const res = this.interruptObjective(st.id, reason, taskService);
-        if (res) interrupted.push(res);
+      for (const st of all) {
+        if (st.status === 'planning' || st.status === 'replanning' || st.status === 'executing' || st.status === 'reviewing') {
+          const res = this.interruptObjective(st.id, reason, taskService);
+          if (res) interrupted.push(res);
+        }
       }
-    }
 
-    return interrupted;
+      return interrupted;
+    });
   }
 }

@@ -1,20 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
 import { createServiceContainer } from '../../src/service';
-import { handleIndustrialTrigger, IndustrialTriggerResult } from '../../src/cli/dashboard';
+import { handleIndustrialTrigger, IndustrialTriggerResult, writeLegacyIndustrialTriggerResponse } from '../../src/cli/dashboard';
+import type { JudgedRunResult } from '../../src/industrial/judged-run';
 
 describe('F10-02: Typed Dashboard Workflow Trigger', () => {
-  const testRoot = path.resolve(__dirname, '../../.maos/test-temp-f10-02-' + Date.now());
+  let testRoot: string;
 
   beforeEach(() => {
+    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-temp-f10-02-'));
     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'pending'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'active'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'done'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'objectives'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, '.maos', 'audit'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, '.maos', 'events'), { recursive: true });
+    fs.writeFileSync(path.join(testRoot, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f10-02-dashboard-test' }));
   });
 
   afterEach(() => {
@@ -134,6 +138,63 @@ describe('F10-02: Typed Dashboard Workflow Trigger', () => {
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
+    });
+  });
+
+  describe('legacy T-07 contention response', () => {
+    it.each([
+      ['JUDGED_RUN_BUSY', 409, 'in_progress'],
+      ['JUDGED_RUN_LOCK_UNAVAILABLE', 503, 'unavailable'],
+    ] as const)('preserves %s as unavailable/in-progress', (code, statusCode, status) => {
+      const details = { executionErrorCode: code, coordination: 'unavailable' };
+      const result = {
+        success: false,
+        exitCode: 9,
+        message: `${code}: retry later`,
+        runId: 'judged-run-unavailable',
+        durationMs: 1,
+        stagesCompleted: [],
+        boundaryVerified: true,
+        policyVerified: true,
+        overallVerdict: 'UNAVAILABLE',
+        approvalStatus: 'pending',
+        auditVerified: false,
+        details,
+      } as JudgedRunResult;
+      const response = { writeHead: vi.fn(), end: vi.fn() } as any;
+
+      writeLegacyIndustrialTriggerResponse({ headers: {} } as any, response, result);
+
+      expect(response.writeHead).toHaveBeenCalledWith(statusCode, expect.any(Object));
+      expect(JSON.parse(response.end.mock.calls[0][0])).toMatchObject({
+        success: false,
+        status,
+        verdict: 'UNAVAILABLE',
+        details,
+        message: `${code}: retry later`,
+      });
+    });
+
+    it('preserves a genuine engineering FAIL', () => {
+      const result = {
+        success: true,
+        exitCode: 0,
+        message: 'Analysis completed with engineering FAIL.',
+        runId: 'judged-run-fail',
+        durationMs: 1,
+        stagesCompleted: ['analysis'],
+        boundaryVerified: true,
+        policyVerified: true,
+        overallVerdict: 'FAIL',
+        approvalStatus: 'approved',
+        auditVerified: true,
+      } as JudgedRunResult;
+      const response = { writeHead: vi.fn(), end: vi.fn() } as any;
+
+      writeLegacyIndustrialTriggerResponse({ headers: {} } as any, response, result);
+
+      expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+      expect(JSON.parse(response.end.mock.calls[0][0])).toMatchObject({ success: true, status: 'completed', verdict: 'FAIL' });
     });
   });
 

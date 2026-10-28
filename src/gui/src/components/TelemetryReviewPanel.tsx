@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiAdapter } from '../api';
-import type { IndustrialTelemetryAnalysisResponse } from '../api/rest-client';
+import type { IndustrialAnalysisAgentResponse, IndustrialTelemetryAnalysisResponse, JudgedRunResponse } from '../api/rest-client';
 
 function fileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -22,12 +22,35 @@ export const TelemetryReviewPanel: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [busySource, setBusySource] = useState<'sample' | 'file' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [agentRequest, setAgentRequest] = useState('Summarize the measured vibration and temperature values against the configured demo thresholds. Do not infer causes or recommend an operating action.');
+  const [agentResult, setAgentResult] = useState<IndustrialAnalysisAgentResponse | null>(null);
+  const [agentPhase, setAgentPhase] = useState<'idle' | 'uploading' | 'requesting' | 'completed' | 'failed' | 'cancelled'>('idle');
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [reviewRun, setReviewRun] = useState<JudgedRunResponse | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const agentController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const runId = window.localStorage.getItem('maos:last-industrial-judged-run');
+    if (!runId?.startsWith('judged-run-agent-')) return;
+    let active = true;
+    void apiAdapter.getIndustrialJudgedRun(runId).then((run) => {
+      if (active) setReviewRun(run);
+    }).catch(() => {
+      if (active) setReviewError('Could not reconnect to the saved review run. Check the authenticated service and approvals queue.');
+    });
+    return () => { active = false; };
+  }, []);
 
   const runAnalysis = async (useSample: boolean) => {
     setBusy(true);
     setBusySource(useSample ? 'sample' : 'file');
     setError(null);
     setAnalysis(null);
+    setAgentResult(null);
+    setAgentPhase('idle');
+    setAgentError(null);
     try {
       const response = useSample
         ? await apiAdapter.analyzeIndustrialTelemetry({ useBundledSample: true })
@@ -44,6 +67,68 @@ export const TelemetryReviewPanel: React.FC = () => {
     } finally {
       setBusy(false);
       setBusySource(null);
+    }
+  };
+
+  const askAboutSelectedCsv = async () => {
+    if (!selectedFile || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
+    const controller = new AbortController();
+    agentController.current = controller;
+    setAgentResult(null);
+    setReviewRun(null);
+    setReviewError(null);
+    setAnalysis(null);
+    setAgentError(null);
+    setAgentPhase('uploading');
+    try {
+      const selectedReceipt = await apiAdapter.analyzeIndustrialTelemetry({
+        name: selectedFile.name,
+        contentBase64: await fileAsBase64(selectedFile),
+      }, { signal: controller.signal, timeoutMs: 30_000 });
+      if (controller.signal.aborted) return;
+      setAnalysis(selectedReceipt);
+      setAgentPhase('requesting');
+      const result = await apiAdapter.analyzeIndustrialCsv({
+        request: agentRequest,
+        sourcePath: selectedReceipt.source.relativePath,
+      }, { signal: controller.signal, timeoutMs: 65_000 });
+      if (controller.signal.aborted) return;
+      setAgentResult(result);
+      setAgentPhase('completed');
+    } catch (err: unknown) {
+      if (controller.signal.aborted) {
+        setAgentPhase('cancelled');
+        setAgentError('Cancelled. No successful model result was returned; retry to start a new run.');
+      } else {
+        const message = (err as Error).message || 'The analysis request failed.';
+        const timedOut = /timed out|timeout/i.test(message);
+        setAgentPhase('failed');
+        setAgentError(`${timedOut ? 'Timed out' : 'Failed'}: ${message} Retry is available.`);
+      }
+    } finally {
+      if (agentController.current === controller) agentController.current = null;
+    }
+  };
+
+  const cancelAgentRequest = () => agentController.current?.abort();
+
+  const openAgentReview = async () => {
+    if (!agentResult || reviewBusy) return;
+    if (reviewRun) {
+      window.location.hash = '#/approvals';
+      return;
+    }
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      const run = await apiAdapter.prepareIndustrialAgentReview(agentResult.evidence.analysisId);
+      setReviewRun(run);
+      window.localStorage.setItem('maos:last-industrial-judged-run', run.runId);
+      if (run.status === 'pending_approval') window.location.hash = '#/approvals';
+    } catch (err: unknown) {
+      setReviewError((err as Error).message || 'Could not prepare the persisted review package.');
+    } finally {
+      setReviewBusy(false);
     }
   };
 
@@ -84,15 +169,19 @@ export const TelemetryReviewPanel: React.FC = () => {
             onChange={(event) => {
               setSelectedFile(event.target.files?.[0] || null);
               setAnalysis(null);
+              setAgentResult(null);
+              setAgentPhase('idle');
+              setAgentError(null);
               setError(null);
             }}
+            disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
             style={{ maxWidth: 230, fontSize: 11 }}
           />
         </label>
         <button
           className="btn-primary"
           type="button"
-          disabled={!selectedFile || busy}
+          disabled={!selectedFile || busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
           onClick={() => void runAnalysis(false)}
           style={{ border: '1px solid #238636', borderRadius: 6, padding: '9px 12px', background: !selectedFile || busy ? '#21262d' : '#238636', color: '#fff', fontWeight: 600, cursor: !selectedFile || busy ? 'not-allowed' : 'pointer' }}
         >
@@ -101,7 +190,7 @@ export const TelemetryReviewPanel: React.FC = () => {
         <button
           className="secondary-btn"
           type="button"
-          disabled={busy}
+          disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
           onClick={() => void runAnalysis(true)}
           style={{ border: '1px solid #484f58', borderRadius: 6, padding: '9px 12px', background: '#21262d', color: '#e6edf3', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}
         >
@@ -111,6 +200,82 @@ export const TelemetryReviewPanel: React.FC = () => {
           {selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1024).toFixed(1)} KB` : 'Required columns: vibration_rms_mm_s, bearing_temperature_c · max 5 MB'}
         </span>
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto auto', alignItems: 'end', gap: 10, marginTop: 12 }}>
+        <label style={{ color: '#8b949e', fontSize: 11 }}>
+          Request to the configured local model
+          <textarea
+            aria-label="Request about selected CSV"
+            value={agentRequest}
+            maxLength={4000}
+            rows={2}
+            onChange={(event) => setAgentRequest(event.target.value)}
+            disabled={agentPhase === 'uploading' || agentPhase === 'requesting'}
+            style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: 8, borderRadius: 6, color: '#e6edf3', background: '#0d1117', border: '1px solid #3d444d', font: 'inherit' }}
+          />
+        </label>
+        <button
+          type="button"
+          aria-label="Ask about this CSV"
+          disabled={!selectedFile || !agentRequest.trim() || busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
+          onClick={() => void askAboutSelectedCsv()}
+          style={{ border: '1px solid #1f6feb', borderRadius: 6, padding: '9px 12px', background: !selectedFile || !agentRequest.trim() || busy || agentPhase === 'uploading' || agentPhase === 'requesting' ? '#21262d' : '#1f6feb', color: '#fff', fontWeight: 600, cursor: !selectedFile || agentPhase === 'uploading' || agentPhase === 'requesting' ? 'not-allowed' : 'pointer' }}
+        >
+          {agentPhase === 'uploading' ? 'Preparing selected CSV…' : agentPhase === 'requesting' ? 'Waiting for local model…' : 'Ask about this CSV'}
+        </button>
+        {(agentPhase === 'uploading' || agentPhase === 'requesting') && (
+          <button type="button" onClick={cancelAgentRequest} style={{ border: '1px solid #da3633', borderRadius: 6, padding: '9px 12px', color: '#ff7b72', background: '#21262d' }}>
+            Cancel request
+          </button>
+        )}
+      </div>
+
+      {agentPhase !== 'idle' && (
+        <div role="status" aria-live="polite" style={{ marginTop: 10, color: agentPhase === 'failed' || agentPhase === 'cancelled' ? '#ff7b72' : '#8b949e', fontSize: 11 }}>
+          Request: {agentPhase} · Tool execution: {agentResult ? 'completed' : agentPhase === 'requesting' ? 'awaiting model tool call' : agentPhase === 'failed' || agentPhase === 'cancelled' ? 'not confirmed' : 'not started'}
+        </div>
+      )}
+      {agentError && <div role="alert" style={{ marginTop: 8, color: '#ff7b72', fontSize: 11 }}>{agentError}</div>}
+
+      {agentResult && (
+        <div data-testid="industrial-agent-result" style={{ marginTop: 14, border: '1px solid #30363d', borderRadius: 7, padding: 12, background: '#0d1117' }}>
+          <h3 style={{ margin: '0 0 8px', color: '#e6edf3', fontSize: 14 }}>CSV analysis result · provider tool call completed</h3>
+          <div style={{ color: '#8b949e', fontSize: 11, lineHeight: 1.7 }}>
+            Selected source: <code>{selectedFile?.name}</code> · project path <code>{agentResult.evidence.source.selectedPath}</code><br />
+            Provider: <code>{agentResult.provider}</code> · requested model: <code>{agentResult.requestedModel}</code> · provider-reported model: <code>{agentResult.reportedModel ?? 'unavailable'}</code><br />
+            Request: completed · analysis tool: completed · receipt/replay checks: passed
+          </div>
+          <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid #30363d', fontSize: 11 }}>
+            <strong style={{ color: '#3fb950' }}>Numeric findings · same-analyzer replay matched</strong>
+            <div style={{ color: '#c9d1d9', marginTop: 5 }}>
+              {String(agentResult.evidence.result.rowsAnalyzed)} rows · RMS vibration {Number(agentResult.evidence.result.overallVibrationRms).toFixed(3)} mm/s · peak vibration {Number(agentResult.evidence.result.peakVibration).toFixed(2)} mm/s · peak temperature {Number(agentResult.evidence.result.peakTemperature).toFixed(1)} °C · {String(agentResult.evidence.result.warningCount)} warnings / {String(agentResult.evidence.result.criticalCount)} critical · verdict {String(agentResult.evidence.result.verdict)}
+            </div>
+            <div style={{ marginTop: 5, color: '#8b949e' }}>Recomputed by the same TypeScript analyzer against the persisted source and rules; this is not an independent implementation check.</div>
+            <div style={{ marginTop: 5, color: '#8b949e' }}>Receipt: <code>{agentResult.evidence.analysisId}</code> · <code>{agentResult.evidence.receiptPath}</code> · SHA-256 <code>{agentResult.evidence.receiptSha256}</code></div>
+            <div style={{ marginTop: 5, color: '#8b949e' }}>Generated report: <code>{agentResult.reportPath}</code> · SHA-256 <code>{agentResult.reportSha256}</code></div>
+            <div style={{ marginTop: 5, color: '#8b949e' }}>Audit record: sequence <code>{agentResult.audit.sequence}</code> · hash <code>{agentResult.audit.hash}</code></div>
+          </div>
+          <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid #30363d', fontSize: 11 }}>
+            <strong style={{ color: '#e3b341' }}>Model-generated explanation · UNVERIFIED</strong>
+            <p style={{ whiteSpace: 'pre-wrap', color: '#c9d1d9', margin: '5px 0 3px' }}>{agentResult.explanation}</p>
+            <div style={{ color: '#8b949e' }}>The receipt reference proves which deterministic result was supplied; it does not establish that the model’s explanation is semantically correct.</div>
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => void openAgentReview()} disabled={reviewBusy}>
+              {reviewBusy ? 'Preparing persisted review…' : reviewRun ? 'Open saved review in Approvals' : 'Send this receipt to human review'}
+            </button>
+            {reviewRun && <span role="status">Run {reviewRun.runId} · {reviewRun.status.replace('_', ' ')} · engineering verdict {String((reviewRun.details as any)?.engineeringVerdict || reviewRun.verdict)}</span>}
+          </div>
+          {reviewError && <div role="alert" style={{ marginTop: 8, color: '#ff7b72' }}>{reviewError}</div>}
+        </div>
+      )}
+
+      {!agentResult && reviewRun && (
+        <div role="status" style={{ marginTop: 12, padding: 10, border: '1px solid #30363d', borderRadius: 6 }}>
+          Saved analysis review · run <code>{reviewRun.runId}</code> · {reviewRun.status.replace('_', ' ')} · engineering verdict {String((reviewRun.details as any)?.engineeringVerdict || reviewRun.verdict)}
+          <button type="button" style={{ marginLeft: 10 }} onClick={() => { window.location.hash = '#/approvals'; }}>Resume in Approvals</button>
+        </div>
+      )}
 
       {error && (
         <div role="alert" style={{ marginTop: 12, border: '1px solid #da3633', color: '#ff7b72', borderRadius: 6, padding: '9px 11px', fontSize: 12 }}>
@@ -122,7 +287,7 @@ export const TelemetryReviewPanel: React.FC = () => {
         <div style={{ marginTop: 16, borderTop: '1px solid #30363d', paddingTop: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <strong style={{ color: verdictColor, fontSize: 14 }}>RESULT: {analysis.result.verdict}</strong>
-            <span style={{ color: '#8b949e', fontSize: 11 }}>{analysis.result.rowsAnalyzed} rows · {analysis.source.kind === 'bundled-synthetic-sample' ? 'bundled synthetic data' : 'device upload'}</span>
+            <span style={{ color: '#8b949e', fontSize: 11 }}>{analysis.result.rowsAnalyzed} rows · {analysis.source.kind === 'bundled-synthetic-sample' ? 'bundled synthetic data' : analysis.source.kind === 'project-local-file' ? 'project-local file' : 'device upload'}</span>
             <code style={{ color: '#c9d1d9', fontSize: 11 }}>ID {analysis.analysisId}</code>
           </div>
 

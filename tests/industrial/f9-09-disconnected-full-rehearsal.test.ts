@@ -33,6 +33,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as os from 'os';
 
 import {
   createServiceContainer,
@@ -118,11 +119,7 @@ describe('F9-09: Disconnected Full Rehearsal', () => {
   const EXPECTED_CANARY_SHA256 =
     '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
 
-  const rehearsalTempDir = path.join(
-    TEST_PROJECT_ROOT,
-    '.maos',
-    'test-rehearsal-f909-' + Date.now(),
-  );
+  let rehearsalTempDir: string;
   const rehearsalProjectId = 'proj_f909_industrial_rehearsal';
 
   // Core Service instances
@@ -235,6 +232,7 @@ describe('F9-09: Disconnected Full Rehearsal', () => {
 
   beforeAll(async () => {
     // 1. Ensure isolated temp root and initial directories exist
+    rehearsalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-rehearsal-f909-'));
     fs.mkdirSync(rehearsalTempDir, { recursive: true });
     fs.mkdirSync(path.join(rehearsalTempDir, 'evidence'), { recursive: true });
     fs.mkdirSync(path.join(rehearsalTempDir, 'reports'), { recursive: true });
@@ -242,6 +240,7 @@ describe('F9-09: Disconnected Full Rehearsal', () => {
     fs.mkdirSync(path.join(rehearsalTempDir, '.maos', 'audit'), { recursive: true });
     fs.mkdirSync(path.join(rehearsalTempDir, '.maos', 'tasks'), { recursive: true });
     fs.mkdirSync(path.join(rehearsalTempDir, '.maos', 'queue', 'active'), { recursive: true });
+    fs.writeFileSync(path.join(rehearsalTempDir, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f9-09-test' }));
 
     // 2. Initialize service container
     services = createServiceContainer(rehearsalTempDir);
@@ -525,11 +524,12 @@ Zone A/B: Vibration RMS <= 4.5 mm/s. Permissible for unrestricted long-term oper
 Zone C: Vibration RMS between 4.5 mm/s and 7.1 mm/s. Machine is considered restricted; remedial action required.
 Zone D: Vibration RMS > 7.1 mm/s. Critical danger limit. Vibration values are of sufficient severity to cause damage; immediate trip required.`;
 
-    const specDocPath = path.join(rehearsalTempDir, 'evidence', 'ISO-10816-3-Turbine-Specs.txt');
+    let specDocPath: string;
     let docId: string;
     let sourceHash: string;
 
     beforeAll(() => {
+      specDocPath = path.join(rehearsalTempDir, 'evidence', 'ISO-10816-3-Turbine-Specs.txt');
       fs.writeFileSync(specDocPath, specDocContent, 'utf-8');
       sourceHash = crypto.createHash('sha256').update(specDocContent, 'utf-8').digest('hex');
     });
@@ -1441,7 +1441,7 @@ Simulated In-flight Task
         },
       };
 
-      const outPath = path.join(TEST_PROJECT_ROOT, 'artifacts/verification/F9-09-rehearsal.json');
+      const outPath = path.join(rehearsalTempDir, 'artifacts/verification/F9-09-rehearsal.json');
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
       fs.writeFileSync(outPath, JSON.stringify(rehearsalReport, null, 2), 'utf-8');
 
@@ -1449,6 +1449,23 @@ Simulated In-flight Task
       const savedReport = JSON.parse(fs.readFileSync(outPath, 'utf-8'));
       expect(savedReport.status).toBe('PASSED');
       expect(savedReport.stages.D3_rms_calculation_trace.rmsValue).toBeCloseTo(2.63711, 4);
+      expect(savedReport.stages.D4_multimodal_evidence).toMatchObject({
+        conflictType: 'CONFLICTING_VALUE',
+        safetyCriticalReviewRequired: true,
+        humanReviewStatus: 'APPROVED_WITH_CRITICAL_DISCLOSURE',
+      });
+      expect(savedReport.stages.D5_office_artifacts).toMatchObject({
+        visualReviewsApproved: true,
+        zeroSecurityViolations: true,
+      });
+      expect(savedReport.stages.D5_office_artifacts.docxSha256).toBeDefined();
+      expect(savedReport.stages.D5_office_artifacts.xlsxSha256).toBeDefined();
+      expect(savedReport.stages.D5_office_artifacts.pptxSha256).toBeDefined();
+      expect(savedReport.stages.D6_sovereignty_bundle).toMatchObject({
+        status: 'COMPLETED',
+        operatorSignOff: 'SIGNED_OFF',
+        offlineVerificationPassed: true,
+      });
       expect(savedReport.stages.D6_sovereignty_bundle.offlineVerificationPassed).toBe(true);
       expect(savedReport.epistemicHonesty.measuredClaim).toBe(STANDARD_MEASURED_SOVEREIGNTY_CLAIM);
     });

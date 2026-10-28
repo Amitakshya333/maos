@@ -6,8 +6,8 @@
 
 [![npm](https://img.shields.io/npm/v/maosorch?style=flat-square&logo=npm&label=maosorch)](https://www.npmjs.com/package/maosorch)
 [![Website](https://img.shields.io/badge/Website-maos.web.app-FF6B35?style=flat-square&logo=firebase)](https://maos.web.app/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 ```bash
@@ -50,35 +50,74 @@ Modern AI coding assistants are powerful but **single-threaded**. You can only u
 
 ## 🏭 MAOS Industrial — Sovereign Solution Pack
 
-MAOS Industrial is an **optional vertical profile** on top of MAOS Core. It coordinates locally hosted open-weight models and deterministic industrial tools to analyze confidential plant documents and sensor data — entirely offline, with zero cloud dependency.
+MAOS Industrial is an **optional vertical profile** on top of MAOS Core. Its verified T-07 judged-run path analyzes bundled synthetic plant records locally. It makes no hosted-model call; loopback binding does not prove the whole workstation is offline.
 
-- **100% Air-Gapped / Sovereign:** Binds strictly to loopback `127.0.0.1` — no external API keys, telemetry leaks, or cloud WAN calls.
-- **Deterministic Rust Core:** Backed by `bin/maos-industrial-engine.exe` (`#![forbid(unsafe_code)]`) for streaming sensor CSV parsing, decimal math, canonical SHA-256 calculation, and tamper-evident audit chaining.
-- **Specialized 4-Stage DAG Pipeline:** `INGEST → ANALYZE → APPROVAL → SYNTHESIZE` with fail-closed human-in-the-loop governance.
-- **Verifiable Deliverables:** Generates validated OOXML Word (`.docx`), Excel (`.xlsx`), and PDF reports citing exact sensor rows, deviations, units, and corroborating maintenance evidence.
+- **Local-first synthetic demo:** Uses the checked-in T-07 fixture; the demonstrated workflow does not send data to a hosted model.
+- **Deterministic analysis and audit:** TypeScript computes the demo RMS and threshold findings. The Rust engine backs audit-chain hashing and verification.
+- **Judged workflow:** `PREFLIGHT → POLICY → SERVICES → INGEST → ANALYZE → APPROVAL → SYNTHESIZE → VERIFY → AUDIT EXPORT`, with an explicit approval boundary.
+- **Verifiable Deliverable:** The judged T-07 run generates a DOCX report citing synthetic sensor and maintenance evidence; independent verification checks its hash with the audit export.
 - **Safe Office Integration:** Inspect deliverables in native desktop office software (Microsoft Office / LibreOffice) via sanitized, injection-proof launch delegation.
 
 ### Industrial CLI Commands Reference
 
-All industrial operations are exposed under the unified `maos industrial` namespace:
+Use `maos industrial <command>` or the installed package's dedicated `maos-industrial <command>` executable. From a source checkout, build with `npm run build` and invoke `node .\dist\industrial\entrypoint.js <command>`.
 
 | Command | Description | Key Flags / Examples |
 |---|---|---|
-| `maos industrial preflight` | Verifies host firewall isolation, project initialization, and engine diagnostics | `--json`, `-p, --project-root <path>` |
-| `maos industrial start` | Launches long-running project service on local loopback | `--port 3847`, `--profile industrial` |
+| `maos industrial preflight` | Checks the process-scoped boundary, project initialization, and diagnostics | `--json`, `-p, --project-root <path>` |
+| `maos industrial start` | Launches the project service (defaults to loopback and an ephemeral port) | `--port <n>`, `--host 127.0.0.1` |
 | `maos industrial run` | Executes one-command 6-stage judged workflow with audit export | `--auto-approve -y`, `--enforce-firewall` |
-| `maos industrial demo` | Runs sovereign RMS coding demo inside isolated sandbox | `--demo rms`, `--json` |
-| `maos industrial verify` | Cryptographically verifies audit chain or boundary status | `--target audit`, `--target boundary` |
+| `maos industrial demo` | Runs the local RMS coding demo in the execution sandbox | `--demo rms`, `--json` |
+| `maos industrial verify` | Verifies the audit chain, a judged-run report/export, or boundary status | `audit --run-id <id>`, `boundary` |
 | `maos industrial kb` | Manages offline industrial knowledge base corpus and vector index | `status`, `build`, `search <query>`, `verify` |
 | `maos industrial open` | Safely validates and opens local deliverable in native desktop Office | `<target>`, `--dry-run`, `-l libreoffice` |
-| `maos industrial reset` | Deterministically cleans test queue, indices, sandbox mounts, and run outputs | `--dry-run`, `-y, --yes`, `-c all` |
-| `maos industrial stop` | Gracefully or forcefully terminates running industrial service | `--force -y` (marks tasks `INTERRUPTED`) |
+| `maos industrial reset` | Cleans coordinated task queues and run outputs; index, sandbox, and conversation reset are disabled pending writer coordination | `--dry-run`, `-y, --yes`, `-c queue,output` |
+| `maos industrial stop` | Gracefully or forcefully terminates running industrial service | `--mode force --yes` (marks tasks `INTERRUPTED`) |
+
+After a run, verify the returned run ID and its report/export hashes:
+
+The following uses the explicit demo auto-approval path; it does not represent a
+human review. Use the Cockpit for a reviewer decision.
+
+```powershell
+node .\dist\industrial\entrypoint.js run --auto-approve --yes --json
+node .\dist\industrial\entrypoint.js verify audit --run-id <run-id> --json
+```
+
+#### Package runtime assets
+
+- The npm package includes the four synthetic T-07 inputs under
+  `demo/industrial/`. Copy them into the project being run at
+  `<project-root>/demo/industrial/`; existing project inputs are not replaced.
+- The package includes the starter profile at
+  `profiles/industrial/maos.config.json`. For a new project, copy it to
+  `<project-root>/.maos/maos.config.json`; for an existing config, merge its
+  `profile` section so the GUI evidence endpoint is enabled without replacing
+  project settings.
+- The Rust audit engine is platform-specific and is not shipped in the npm
+  package. Build it from the MAOS source checkout with the pinned Rust toolchain
+  and stage it at `<project-root>/rust/target/release/maos-engine[.exe]`; the
+  current repository does not provide a signed release binary. A missing engine
+  is a failed run, and JSON output includes the expected path and build/copy
+  instructions. See the [runbook](demo/industrial/RUNBOOK.md) for version,
+  protocol, and SHA-256 checks.
+- The authenticated Browser Cockpit is launched through the Electron desktop
+  shell and private launcher IPC, with runtime project/session details held in
+  memory. This Windows test-shell path passed three installed-package browser
+  rehearsals. It is not a signed end-user installer; the old direct
+  `maos dashboard` route is not the supported authenticated path. See
+  [`desktop/README.md`](desktop/README.md) for launch prerequisites and the
+  worktree-only `docs/MAOS_INDUSTRIAL_EXECUTION_CHECKLIST.md` for evidence.
+- The package includes the built GUI under `dist/gui/` and Python workflow
+  scripts under `dist/industrial/python/`. The T-07 judged run does not invoke
+  Python; other OCR/embedding workflows still need a compatible Python runtime
+  and their Python dependencies.
 
 ### Architectural Limits & Operating Boundaries
 
 1. **Single-Project Boundary (MVP):** One project service per canonical project root. Multi-project concurrent leasing is a post-MVP roadmap item.
-2. **Local Persistence:** Local audit chains (`.maos/audit/`) and deliverables persist on disk for regulatory compliance (no "zero-data-left" claim). Use `maos industrial reset -y` to clear evaluation state.
-3. **Active Authoritative Rust:** Rust binary is active and authoritative in the MVP for all sensor arithmetic and hash chains (no deferred Rust).
+2. **Local Persistence:** Local audit chains (`.maos/audit/`) and deliverables persist on disk for auditability (no "zero-data-left" claim). Use `maos industrial reset -y` to clear evaluation state.
+3. **Analysis and Audit:** The judged-run RMS and threshold calculations are implemented in TypeScript. The Rust engine backs the audit chain; it is not the arithmetic engine for this workflow.
 4. **Browser Cockpit Interface:** React Single Page Application (SPA) connecting over local REST/WebSocket (no Tauri desktop wrapper claim).
 5. **Office Viewer Delegation:** Deliverables are opened in installed local desktop applications; no embedded office editor is claimed.
 

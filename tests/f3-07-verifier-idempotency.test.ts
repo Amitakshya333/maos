@@ -256,6 +256,48 @@ describe('F3-07 Run/API Verifier and Idempotency', () => {
       expect(authMismatchClaim.message).toContain('different authorization context');
     });
 
+    it('binds claims to operation context and only releases the owning busy claim for retry', () => {
+      const store = new DurableIdempotencyStore(testDir);
+      const params = {
+        key: 'key-context-01',
+        requestHash: 'hash-same-payload',
+        requestIdentityHash: 'identity-approval-A',
+        operation: 'review_approval',
+        projectId: 'project-A',
+      };
+      const first = store.claim(params);
+      expect(first.outcome).toBe('claimed');
+      if (first.outcome !== 'claimed') return;
+      expect(store.releaseForRetry(params.key, 'wrong-owner', 'busy')).toBe(false);
+      expect(store.releaseForRetry(params.key, first.record.claimToken, 'busy')).toBe(true);
+      expect(store.getRecord(params.key)?.status).toBe('retryable');
+
+      const retried = store.claim(params);
+      expect(retried.outcome).toBe('claimed');
+      if (retried.outcome !== 'claimed') return;
+      expect(store.releaseForRetry(params.key, first.record.claimToken, 'stale owner')).toBe(false);
+      store.complete(params.key, 200, { approved: true });
+
+      expect(store.claim(params).outcome).toBe('replay');
+      expect(store.claim({ ...params, requestIdentityHash: 'identity-approval-B' })).toMatchObject({ outcome: 'conflict' });
+      expect(store.claim({ ...params, operation: 'create_task' })).toMatchObject({ outcome: 'conflict' });
+      expect(store.claim({ ...params, projectId: 'project-B' })).toMatchObject({ outcome: 'conflict' });
+    });
+
+    it('fails closed when a pre-context record is reused by a contextual request', () => {
+      const store = new DurableIdempotencyStore(testDir);
+      store.claim({ key: 'key-old-context', requestHash: 'hash', operation: 'review_approval', projectId: 'project-A' });
+      store.complete('key-old-context', 200, { old: true });
+      const contextual = store.claim({
+        key: 'key-old-context',
+        requestHash: 'hash',
+        requestIdentityHash: 'approval-target-A',
+        operation: 'review_approval',
+        projectId: 'project-A',
+      });
+      expect(contextual).toMatchObject({ outcome: 'conflict', reason: 'IDEMPOTENCY_CONTEXT_UNAVAILABLE' });
+    });
+
     it('should survive process restarts and reload all completed records from disk', () => {
       const store1 = new DurableIdempotencyStore(testDir);
       store1.claim({

@@ -616,6 +616,38 @@ export const OPENAPI_SPEC: Record<string, unknown> = {
         responses: { '200': { description: 'Run status and evidence hashes.' }, '404': { description: 'Run not found.' } },
       },
     },
+    '/api/v1/industrial/telemetry/analyze': {
+      post: {
+        summary: 'Persist deterministic findings for a selected Industrial CSV',
+        description: 'Requires a launcher-authenticated project session. Persists the submitted selected CSV inside the project evidence store and returns its independently verifiable numeric receipt.',
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+        responses: {
+          '201': { description: 'Selected CSV findings and receipt persisted.' },
+          '400': { description: 'Invalid CSV selection or request.' },
+          '403': { description: 'Authenticated launcher session required.' },
+          '422': { description: 'CSV failed deterministic analysis.' },
+        },
+      },
+    },
+    '/api/v1/industrial/analysis-agent': {
+      post: {
+        summary: 'Request allowlisted Industrial telemetry analysis',
+        description: 'Requires a launcher-authenticated project session and a project-local loopback model endpoint. sourcePath is the caller-selected project-local CSV; the GUI supplies the uploaded file selected by the user, and the model tool call is restricted to that exact path. The persisted receipt is checked by replaying the same TypeScript analyzer against its source and rules, not by an independent implementation. The model explanation remains unverified. A successful response includes a completion audit reference linked to the run, receipt, source hash, and report hash.',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { type: 'object', required: ['request', 'sourcePath'], properties: { request: { type: 'string' }, sourcePath: { type: 'string', description: 'Relative project-local CSV explicitly selected by the caller. The GUI sends the path returned for its uploaded selected file.' } } } } },
+        },
+        responses: {
+          '200': { description: 'Model-requested analysis tool completed, same-implementation replay matched the persisted source/rules/receipt, and an unverified-explanation report and completion audit were persisted. requestedModel is the configured ID; reportedModel is provider-confirmed or null when omitted.' },
+          '400': { description: 'Invalid request or source path.' },
+          '403': { description: 'Authenticated launcher session required or configured model endpoint was blocked by local-only policy.' },
+          '503': { description: 'The project is uninitialized, its MAOS configuration is invalid/unavailable, a local provider/model is not configured, or required audit persistence failed. Failed reports remain unaccepted.' },
+          '500': { description: 'Report acceptance/final replacement failed; no successful completion audit is recorded.' },
+          '422': { description: 'Model did not use the allowlisted tool or source, rules, receipt hash, or replay checks failed.' },
+          '502': { description: 'Local model provider failed.' },
+        },
+      },
+    },
     '/api/v1/approvals': {
       get: {
         summary: 'List Governance Approvals',

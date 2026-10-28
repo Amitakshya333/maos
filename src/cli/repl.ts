@@ -17,6 +17,7 @@ import { runDashboard } from './dashboard';
 import { EventStore } from '../core/event-store';
 import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
 import { MemoryStore } from '../core/context-memory';
+import { TaskService } from '../service/task-service';
 
 const VERSION = '0.3.0';
 
@@ -584,40 +585,12 @@ function runClean(): void {
     return;
   }
 
-  const queueDirs = ['pending', 'active', 'done', 'retry', 'failed'];
-  let cleared = 0;
-  for (const dir of queueDirs) {
-    const dirPath = path.join(maosDir, 'queue', dir);
-    if (fs.existsSync(dirPath)) {
-      const files = fs.readdirSync(dirPath);
-      for (const file of files) {
-        fs.unlinkSync(path.join(dirPath, file));
-        cleared++;
-      }
-    }
+  try {
+    const result = new TaskService(cwd).clean();
+    console.log(chalk.green(`✅ Cleaned: ${result.tasksRemoved} tasks removed, statuses reset, logs cleared.`));
+  } catch (error: any) {
+    console.log(chalk.yellow(`⚠️  Clean refused: ${error.message || String(error)}`));
   }
-
-  const checkpointDir = path.join(maosDir, 'checkpoints');
-  if (fs.existsSync(checkpointDir)) {
-    for (const file of fs.readdirSync(checkpointDir)) {
-      fs.unlinkSync(path.join(checkpointDir, file));
-    }
-  }
-
-  const statusDir = path.join(maosDir, 'status');
-  if (fs.existsSync(statusDir)) {
-    const files = fs.readdirSync(statusDir).filter((f) => f.endsWith('.status'));
-    for (const file of files) {
-      fs.unlinkSync(path.join(statusDir, file));
-    }
-  }
-
-  const logFile = path.join(maosDir, 'logs', 'orchestrator.log');
-  if (fs.existsSync(logFile)) {
-    fs.writeFileSync(logFile, '', 'utf-8');
-  }
-
-  console.log(chalk.green(`✅ Cleaned: ${cleared} tasks removed, statuses reset, logs cleared.`));
 }
 
 // ── Parse helper for quoted strings ──────────────────────────

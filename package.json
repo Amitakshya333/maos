@@ -6,14 +6,26 @@
   "types": "./dist/cli/index.d.ts",
   "bin": {
     "maos": "./dist/cli/index.js",
+    "maos-industrial": "./dist/industrial/entrypoint.js",
     "maosorch": "./dist/cli/index.js"
   },
   "files": [
     "dist/",
+    "desktop/",
     "scripts/",
+    "profiles/industrial/maos.config.json",
+    "demo/industrial/RUNBOOK.md",
+    "demo/industrial/PRESENTATION_SCRIPT.md",
+    "demo/industrial/safety_thresholds.json",
+    "demo/industrial/turbine_vibration_log.csv",
+    "demo/industrial/maintenance_report.txt",
+    "demo/industrial/turbine_inspection_scan.pdf",
+    "docs/BOUNDARY_SCOPE.md",
     "README.md",
     "LICENSE",
-    "HACKATHON_SUBMISSION.md"
+    "HACKATHON_SUBMISSION.md",
+    "!**/__pycache__/**",
+    "!**/*.pyc"
   ],
   "engines": {
     "node": ">=20.0.0"

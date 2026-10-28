@@ -157,6 +157,7 @@ export class AnthropicProvider implements IProvider {
           totalTokens: response.usage.input_tokens + response.usage.output_tokens,
         },
         model: response.model,
+        reportedModel: response.model || undefined,
         latencyMs,
         finishReason,
       };

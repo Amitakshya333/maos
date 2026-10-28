@@ -146,7 +146,10 @@ export function mapHttpError(
     case 408:
       return new TimeoutError(message, details);
     case 409:
-      return new IdempotencyConflictError(message, details, correlationId);
+      if (code === 'IDEMPOTENCY_CONFLICT') {
+        return new IdempotencyConflictError(message, details, correlationId);
+      }
+      return new ApiError(message, code, status, details, correlationId);
     case 413:
       return new PayloadTooLargeError(message, details, correlationId);
     default:

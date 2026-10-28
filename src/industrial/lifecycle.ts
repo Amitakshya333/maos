@@ -33,6 +33,7 @@ import {
   ServiceStartupError,
 } from './service-startup';
 import { validateAllStores, StoreStatus } from './offline-stores';
+import { withJudgedRunOutputLock } from './judged-run-lock';
 
 // ── Exit Codes ─────────────────────────────────────────────────────
 
@@ -143,86 +144,88 @@ export function getStatePath(projectRoot: string): string {
 /**
  * Acquire exclusive lifecycle lock using atomic file creation.
  *
- * Uses `fs.writeFileSync(path, data, { flag: 'wx' })` which atomically
- * creates the file and fails with EEXIST if it already exists.
- * This eliminates the check-then-write race condition.
+ * The shared project-output lock serializes create, reclamation, and release;
+ * exclusive file creation remains the final guard against duplicate owners.
  *
  * Stale locks are only removed when BOTH conditions are true:
  *   1. Lock age exceeds LOCK_TIMEOUT_MS
- *   2. The owning PID is no longer alive
+ *   2. The same-host owning PID is confirmed dead
  *
- * A long-running lifecycle command with a live PID will NOT have its
- * lock stolen regardless of age.
+ * Malformed or foreign-host locks remain in place for manual inspection.
  */
 export function acquireLock(projectRoot: string): boolean {
-  const lockPath = getLockPath(projectRoot);
-  const lockDir = path.dirname(lockPath);
-
-  if (!fs.existsSync(lockDir)) {
-    fs.mkdirSync(lockDir, { recursive: true });
-  }
-
-  const lockContent: LockData = {
-    pid: process.pid,
-    timestamp: new Date().toISOString(),
-    hostname: os.hostname(),
-  };
-
-  // Try atomic exclusive create first
   try {
-    fs.writeFileSync(lockPath, JSON.stringify(lockContent, null, 2) + '\n', {
-      encoding: 'utf-8',
-      flag: 'wx', // Exclusive create — fails with EEXIST if file exists
-    });
-    return true; // Lock acquired
-  } catch (err: any) {
-    if (err.code !== 'EEXIST') {
-      // Unexpected error (permissions, disk full, etc.)
-      return false;
-    }
-    // File exists — check if stale
-  }
-
-  // Lock file exists. Check if we can steal it.
-  try {
-    const existingData: LockData = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
-    const lockAge = Date.now() - new Date(existingData.timestamp).getTime();
-
-    // Both conditions must be true to remove a stale lock:
-    // 1. Age exceeds timeout
-    // 2. Owning PID is dead
-    const ownerDead = !isProcessAlive(existingData.pid);
-
-    if (lockAge >= LOCK_TIMEOUT_MS && ownerDead) {
-      // Safe to remove stale lock — owner is dead
-      try { fs.unlinkSync(lockPath); } catch { /* race: someone else removed it */ }
-
-      // Retry atomic create
-      try {
-        fs.writeFileSync(lockPath, JSON.stringify(lockContent, null, 2) + '\n', {
-          encoding: 'utf-8',
-          flag: 'wx',
-        });
-        return true;
-      } catch {
-        return false; // Another process grabbed it
-      }
-    }
-
-    // Lock is held by a live process, or not old enough
-    return false;
+    return withJudgedRunOutputLock(projectRoot, () => acquireLockUnderProjectLock(projectRoot));
   } catch {
-    // Corrupt lock file — attempt removal and retry
-    try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
-    try {
-      fs.writeFileSync(lockPath, JSON.stringify(lockContent, null, 2) + '\n', {
-        encoding: 'utf-8',
-        flag: 'wx',
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
+  }
+}
+
+function isLockData(value: unknown): value is LockData {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Partial<LockData>;
+  return Number.isSafeInteger(data.pid) && Number(data.pid) > 0
+    && typeof data.timestamp === 'string' && Number.isFinite(Date.parse(data.timestamp))
+    && typeof data.hostname === 'string' && data.hostname.trim().length > 0;
+}
+
+function readLockData(lockPath: string): LockData | null {
+  try {
+    if (!fs.lstatSync(lockPath).isFile()) return null;
+    const data: unknown = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+    return isLockData(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function ownerIsDefinitelyDead(data: LockData): boolean {
+  return data.hostname === os.hostname() && !isProcessAlive(data.pid);
+}
+
+function writeExclusiveLock(lockPath: string, data: LockData): boolean {
+  try {
+    fs.writeFileSync(lockPath, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf-8', flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function acquireLockUnderProjectLock(projectRoot: string): boolean {
+  const lockPath = getLockPath(projectRoot);
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  const lockContent: LockData = { pid: process.pid, timestamp: new Date().toISOString(), hostname: os.hostname() };
+  if (writeExclusiveLock(lockPath, lockContent)) return true;
+
+  const existingData = readLockData(lockPath);
+  if (!existingData || Date.now() - Date.parse(existingData.timestamp) < LOCK_TIMEOUT_MS || !ownerIsDefinitelyDead(existingData)) {
+    return false;
+  }
+
+  try {
+    fs.unlinkSync(lockPath);
+  } catch {
+    return false;
+  }
+  return writeExclusiveLock(lockPath, lockContent);
+}
+
+export type LifecycleLockCleanupStatus = 'absent' | 'removed' | 'live' | 'not_stale' | 'ambiguous';
+
+/** Caller must hold withJudgedRunOutputLock for this project. */
+export function removeAbandonedLifecycleLockUnderProjectOutputLock(projectRoot: string): LifecycleLockCleanupStatus {
+  const lockPath = getLockPath(projectRoot);
+  if (!fs.existsSync(lockPath)) return 'absent';
+  const data = readLockData(lockPath);
+  if (!data || data.hostname !== os.hostname()) return 'ambiguous';
+  if (isProcessAlive(data.pid)) return 'live';
+  if (Date.now() - Date.parse(data.timestamp) < LOCK_TIMEOUT_MS) return 'not_stale';
+  try {
+    fs.unlinkSync(lockPath);
+    return 'removed';
+  } catch {
+    return fs.existsSync(lockPath) ? 'ambiguous' : 'absent';
   }
 }
 
@@ -230,22 +233,13 @@ export function acquireLock(projectRoot: string): boolean {
  * Release lifecycle lock. Only removes if we own it.
  */
 export function releaseLock(projectRoot: string): void {
-  const lockPath = getLockPath(projectRoot);
   try {
-    if (fs.existsSync(lockPath)) {
-      // Verify we own the lock before removing
-      try {
-        const lockData: LockData = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
-        if (lockData.pid === process.pid) {
-          fs.unlinkSync(lockPath);
-        }
-        // If not our PID, do NOT remove — another process owns it
-      } catch {
-        // Corrupt file — safe to remove
-        fs.unlinkSync(lockPath);
-      }
-    }
-  } catch { /* ignore */ }
+    withJudgedRunOutputLock(projectRoot, () => {
+      const lockPath = getLockPath(projectRoot);
+      const data = readLockData(lockPath);
+      if (data?.hostname === os.hostname() && data.pid === process.pid) fs.unlinkSync(lockPath);
+    });
+  } catch { /* Leave an unverifiable lock for explicit recovery. */ }
 }
 
 // ── State Management ───────────────────────────────────────────────

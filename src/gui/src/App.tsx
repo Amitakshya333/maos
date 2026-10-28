@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { apiAdapter } from './api';
 import { Header } from './components/Header';
-import { ActivityBar, ActiveView } from './components/ActivityBar';
+import { ActivityBar, ActiveView, INDUSTRIAL_DEMO_VIEWS } from './components/ActivityBar';
 import { NavigationSidebar } from './components/NavigationSidebar';
 import { ContextDrawer } from './components/ContextDrawer';
 import { StatusBar } from './components/StatusBar';
@@ -24,6 +25,22 @@ import { DocumentsView } from './views/DocumentsView';
 import { KnowledgeView } from './views/KnowledgeView';
 import { SandboxView } from './views/SandboxView';
 import { GenericModuleView } from './views/GenericModuleView';
+
+function readStatus(record: unknown, label: string, fallback = 'NOT REPORTED'): string {
+  if (record && typeof record === 'object' && 'status' in record && typeof record.status === 'string') {
+    return `${label}: ${record.status.toUpperCase()}`;
+  }
+  return `${label}: ${fallback}`;
+}
+
+function getApiEndpoint(): string {
+  try {
+    const url = new URL(apiAdapter.rest.getBaseUrl());
+    return `${url.hostname}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`;
+  } catch {
+    return 'UNVERIFIED';
+  }
+}
 
 const VALID_VIEWS: ActiveView[] = [
   'chat',
@@ -51,7 +68,7 @@ function getViewFromHash(): ActiveView | null {
   return null;
 }
 
-const AppContent: React.FC = () => {
+const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) => {
   const {
     activeModule,
     setActiveModule,
@@ -77,31 +94,102 @@ const AppContent: React.FC = () => {
   );
 
   const [activeView, setActiveView] = useState<ActiveView>(() => {
-    return getViewFromHash() || activeModule || 'chat';
+    const fromHash = getViewFromHash();
+    if (industrialDemo) {
+      return fromHash && INDUSTRIAL_DEMO_VIEWS.includes(fromHash as (typeof INDUSTRIAL_DEMO_VIEWS)[number])
+        ? fromHash
+        : 'cockpit';
+    }
+    return fromHash || activeModule || 'chat';
   });
 
   const { toggleTheme } = useTheme();
+  const [readiness, setReadiness] = useState({
+    apiStatus: 'CHECKING',
+        modelStatus: 'MODEL: NOT VERIFIED',
+    engineStatus: 'ENGINE: NOT REPORTED',
+    projectRoot: 'UNVERIFIED',
+    apiEndpoint: getApiEndpoint(),
+    sessionStatus: apiAdapter.rest.getSessionToken() ? 'PRESENT' : 'NO TOKEN',
+  });
+
+  useEffect(() => {
+    let active = true;
+    const sessionStatus = apiAdapter.rest.getSessionToken() ? 'PRESENT' : 'NO TOKEN';
+    apiAdapter
+      .getHealth()
+      .then((health) => {
+        if (!active) return;
+        setReadiness({
+          apiStatus: String(health.status).toUpperCase(),
+          modelStatus: readStatus(health.model, 'MODEL', 'NOT VERIFIED'),
+          engineStatus: readStatus(health.rust, 'ENGINE'),
+          projectRoot: apiAdapter.rest.getProjectRoot(),
+          apiEndpoint: getApiEndpoint(),
+          sessionStatus,
+        });
+        apiAdapter
+          .getChatHealth()
+          .then((chatHealth) => {
+            if (!active) return;
+            setReadiness((current) => ({
+              ...current,
+              modelStatus:
+                typeof chatHealth.available === 'boolean'
+                  ? `MODEL: ${chatHealth.available ? 'AVAILABLE' : 'UNAVAILABLE'}`
+                  : 'MODEL: NOT VERIFIED',
+            }));
+          })
+          .catch(() => {
+            if (active) setReadiness((current) => ({ ...current, modelStatus: 'MODEL: NOT VERIFIED' }));
+          });
+      })
+      .catch(() => {
+        if (!active) return;
+        setReadiness({
+          apiStatus: 'UNAVAILABLE',
+          modelStatus: 'MODEL: NOT VERIFIED',
+          engineStatus: 'ENGINE: NOT REPORTED',
+          projectRoot: 'UNVERIFIED',
+          apiEndpoint: getApiEndpoint(),
+          sessionStatus,
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Sync route on hash change
   useEffect(() => {
     const handleHashChange = () => {
       const fromHash = getViewFromHash();
       if (fromHash) {
-        setActiveView(fromHash);
-        setActiveModule(fromHash as ModuleId);
+        const nextView = industrialDemo && !INDUSTRIAL_DEMO_VIEWS.includes(fromHash as (typeof INDUSTRIAL_DEMO_VIEWS)[number])
+          ? 'cockpit'
+          : fromHash;
+        setActiveView(nextView);
+        setActiveModule(nextView as ModuleId);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [setActiveModule]);
+  }, [setActiveModule, industrialDemo]);
+
+  useEffect(() => {
+    if (industrialDemo && window.location.hash !== `#/${activeView}`) {
+      window.location.hash = `#/${activeView}`;
+    }
+  }, [activeView, industrialDemo]);
 
   // Sync when activeModule in layout changes (e.g. role switch)
   useEffect(() => {
+    if (industrialDemo) return;
     if (activeModule && activeModule !== activeView) {
       setActiveView(activeModule);
       window.location.hash = `#/${activeModule}`;
     }
-  }, [activeModule]);
+  }, [activeModule, industrialDemo]);
 
   const handleSelectView = useCallback(
     (view: ActiveView) => {
@@ -123,8 +211,11 @@ const AppContent: React.FC = () => {
       // Alt+1 .. Alt+8 view switching
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= VALID_VIEWS.length) {
-          const target = (num <= 7 ? pinnedModules[num - 1] : undefined) || VALID_VIEWS[num - 1];
+        const shortcutCount = industrialDemo ? INDUSTRIAL_DEMO_VIEWS.length : VALID_VIEWS.length;
+        if (num >= 1 && num <= shortcutCount) {
+          const target = industrialDemo
+            ? INDUSTRIAL_DEMO_VIEWS[num - 1]
+            : (num <= 7 ? pinnedModules[num - 1] : undefined) || VALID_VIEWS[num - 1];
           if (target) {
             e.preventDefault();
             handleSelectView(target as ActiveView);
@@ -164,7 +255,7 @@ const AppContent: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSelectView, toggleTheme, toggleDrawer, toggleSidebar, pinnedModules]);
+  }, [handleSelectView, toggleTheme, toggleDrawer, toggleSidebar, pinnedModules, industrialDemo]);
 
   const renderActiveView = () => {
     switch (activeView) {
@@ -204,12 +295,18 @@ const AppContent: React.FC = () => {
       <RoleOnboardingModal />
 
       {/* 2. Header */}
-      <Header />
+      <Header
+        projectRoot={readiness.projectRoot}
+        apiStatus={readiness.apiStatus}
+        modelStatus={readiness.modelStatus}
+        engineStatus={readiness.engineStatus}
+        sessionStatus={readiness.sessionStatus}
+      />
 
       {/* Middle Layout Body */}
       <div className="app-body">
         {/* 3. Activity Bar */}
-        <ActivityBar activeView={activeView} onSelectView={handleSelectView} />
+        <ActivityBar activeView={activeView} onSelectView={handleSelectView} industrialDemo={industrialDemo} />
 
         {/* 4. Navigation Sidebar */}
         <NavigationSidebar
@@ -217,6 +314,7 @@ const AppContent: React.FC = () => {
           collapsed={isSidebarCollapsed}
           width={sidebarWidth}
           onSelectView={handleSelectView}
+          industrialDemo={industrialDemo}
         />
 
         {/* 5. Center Container (Workspace + Drawer) */}
@@ -237,15 +335,19 @@ const AppContent: React.FC = () => {
       </div>
 
       {/* 7. Status Bar */}
-      <StatusBar />
+      <StatusBar
+        projectRoot={readiness.projectRoot}
+        apiEndpoint={readiness.apiEndpoint}
+        apiStatus={readiness.apiStatus}
+      />
     </div>
   );
 };
 
-export const App: React.FC = () => {
+export const App: React.FC<{ industrialDemo?: boolean }> = ({ industrialDemo = false }) => {
   return (
     <LayoutProvider>
-      <AppContent />
+      <AppContent industrialDemo={industrialDemo} />
     </LayoutProvider>
   );
 };

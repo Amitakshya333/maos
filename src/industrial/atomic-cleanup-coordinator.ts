@@ -47,8 +47,8 @@ import type { Task, WorkflowStage } from '../domain/schemas';
 import type { FirewallRestoreResult } from '../domain/firewall-policy';
 import type { NetworkObservationTrace } from '../domain/network-monitor';
 import { ContainerRunner } from './container-runner';
-import { isProcessAlive } from './service-startup';
-import { getLockPath } from './lifecycle';
+import { withJudgedRunOutputLock } from './judged-run-lock';
+import { removeAbandonedLifecycleLockUnderProjectOutputLock } from './lifecycle';
 
 export interface AtomicCleanupReport {
   readonly timestamp: string;
@@ -306,12 +306,22 @@ export class AtomicCleanupCoordinator {
   }
 
   /**
-   * Purges orphan temporary files and releases dead lifecycle locks.
+   * Purges orphan temporary files and removes only confirmed abandoned lifecycle locks.
    */
-  public cleanupOrphanFiles(options?: { forceLockRelease?: boolean }): {
+  public cleanupOrphanFiles(): {
     artifactsPurged: number;
     bundlesPurged: number;
     locksRemoved: number;
+    lifecycleLockStatus: 'absent' | 'removed' | 'live' | 'not_stale' | 'ambiguous';
+  } {
+    return withJudgedRunOutputLock(this.projectRoot, () => this.cleanupOrphanFilesUnderProjectLock());
+  }
+
+  private cleanupOrphanFilesUnderProjectLock(): {
+    artifactsPurged: number;
+    bundlesPurged: number;
+    locksRemoved: number;
+    lifecycleLockStatus: 'absent' | 'removed' | 'live' | 'not_stale' | 'ambiguous';
   } {
     let artifactsPurged = 0;
     let bundlesPurged = 0;
@@ -326,7 +336,6 @@ export class AtomicCleanupCoordinator {
       }
     }
     const artifactDirs = [
-      path.join(this.projectRoot, 'artifacts', '.tmp'),
       path.join(this.projectRoot, '.maos', 'artifacts', 'tmp'),
     ];
     for (const dir of artifactDirs) {
@@ -368,27 +377,11 @@ export class AtomicCleanupCoordinator {
       } catch {}
     }
 
-    // 3. Stale lifecycle lock
-    const lockPath = getLockPath(this.projectRoot);
-    if (fs.existsSync(lockPath)) {
-      try {
-        const raw = fs.readFileSync(lockPath, 'utf8');
-        const data = JSON.parse(raw);
-        const ownerDead = typeof data.pid === 'number' ? !isProcessAlive(data.pid) : true;
-        if (ownerDead || options?.forceLockRelease) {
-          fs.unlinkSync(lockPath);
-          locksRemoved++;
-        }
-      } catch {
-        // Corrupt lock file -> remove
-        try {
-          fs.unlinkSync(lockPath);
-          locksRemoved++;
-        } catch {}
-      }
-    }
+    // The project-output guard serializes this check/unlink with lifecycle lock writers.
+    const lifecycleLockStatus = removeAbandonedLifecycleLockUnderProjectOutputLock(this.projectRoot);
+    if (lifecycleLockStatus === 'removed') locksRemoved++;
 
-    return { artifactsPurged, bundlesPurged, locksRemoved };
+    return { artifactsPurged, bundlesPurged, locksRemoved, lifecycleLockStatus };
   }
 
   // ── Unified Atomic Cleanup Orchestrator ───────────────────────────────
@@ -399,6 +392,7 @@ export class AtomicCleanupCoordinator {
    */
   public async executeAtomicCleanup(options: {
     reason?: string;
+    /** Compatibility flag; it never overrides lifecycle-lock ownership. */
     force?: boolean;
   } = {}): Promise<AtomicCleanupReport> {
     if (this.inProgressCleanup) {
@@ -509,10 +503,20 @@ export class AtomicCleanupCoordinator {
 
       // Step 6: Orphan files and locks
       try {
-        const orphanRes = this.cleanupOrphanFiles({ forceLockRelease: options.force });
+        const orphanRes = this.cleanupOrphanFiles();
         orphanArtifactsPurgedCount = orphanRes.artifactsPurged;
         orphanBundlesPurgedCount = orphanRes.bundlesPurged;
         lifecycleLocksRemovedCount = orphanRes.locksRemoved;
+        if (['live', 'not_stale', 'ambiguous'].includes(orphanRes.lifecycleLockStatus)) {
+          errors.push({
+            subsystem: 'lifecycle_lock',
+            message: orphanRes.lifecycleLockStatus === 'live'
+              ? 'Lifecycle lock is owned by a live process; force cannot remove it.'
+              : orphanRes.lifecycleLockStatus === 'ambiguous'
+                ? 'Lifecycle lock ownership is ambiguous; left in place for manual inspection.'
+                : 'Lifecycle lock owner is not confirmed abandoned yet; left in place for retry.',
+          });
+        }
       } catch (err: any) {
         errors.push({ subsystem: 'orphan_files', message: err.message || String(err) });
       }

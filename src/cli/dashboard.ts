@@ -26,6 +26,7 @@ import type { WorkflowStage } from '../domain/schemas';
 import { RestApiRouter } from '../api';
 import { SECURITY_HEADERS, CONTENT_SECURITY_POLICY } from '../api/security-headers';
 import { executeJudgedRun } from '../industrial/judged-run';
+import type { JudgedRunResult } from '../industrial/judged-run';
 
 const PORT = 3847;
 
@@ -70,6 +71,15 @@ function getMimeType(filePath: string): string {
     default:
       return 'application/octet-stream';
   }
+}
+
+function withProjectRootMeta(html: string, projectRoot: string): string {
+  const escapedRoot = path.resolve(projectRoot).replace(/[&"<>]/g, (character) => {
+    const entities: Record<string, string> = { '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' };
+    return entities[character];
+  });
+  const meta = `<meta name="maos-project-root" content="${escapedRoot}">`;
+  return html.replace(/<meta\b(?=[^>]*\bname=["']maos-project-root["'])[^>]*>/gi, '').replace('</head>', `${meta}\n</head>`);
 }
 
 export function serveSpaOrFallback(req: http.IncomingMessage, res: http.ServerResponse, cwd: string): void {
@@ -128,7 +138,8 @@ export function serveSpaOrFallback(req: http.IncomingMessage, res: http.ServerRe
         ? 'public, max-age=31536000, immutable'
         : 'no-store',
     });
-    res.end(fs.readFileSync(targetFile));
+    const content = fs.readFileSync(targetFile);
+    res.end(reqRelative === 'index.html' ? withProjectRootMeta(content.toString('utf8'), cwd) : content);
     return;
   }
 
@@ -139,7 +150,7 @@ export function serveSpaOrFallback(req: http.IncomingMessage, res: http.ServerRe
       ...SECURITY_HEADERS,
       'Content-Type': 'text/html; charset=utf-8',
     });
-    res.end(fs.readFileSync(indexHtml));
+    res.end(withProjectRootMeta(fs.readFileSync(indexHtml, 'utf8'), cwd));
     return;
   }
 
@@ -162,6 +173,30 @@ export interface IndustrialTriggerResult {
     readonly stages: string;
     readonly cockpit: string;
   };
+}
+
+export function writeLegacyIndustrialTriggerResponse(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  result: JudgedRunResult,
+): void {
+  const errorCode = result.details?.executionErrorCode;
+  const busy = errorCode === 'JUDGED_RUN_BUSY';
+  const unavailable = errorCode === 'JUDGED_RUN_LOCK_UNAVAILABLE';
+  const waiting = result.approvalStatus === 'pending' && Boolean(result.details?.approvalId);
+  const status = busy ? 'in_progress'
+    : unavailable ? 'unavailable'
+      : waiting ? 'pending_approval'
+        : result.success ? 'completed' : 'failed';
+  res.writeHead(busy ? 409 : unavailable ? 503 : waiting ? 202 : result.success ? 200 : 422, getLegacyCorsHeaders(req));
+  res.end(JSON.stringify({
+    success: waiting || result.success,
+    runId: result.runId,
+    status,
+    verdict: busy || unavailable ? 'UNAVAILABLE' : result.overallVerdict,
+    details: result.details,
+    message: result.message,
+  }));
 }
 
 export function handleIndustrialTrigger(
@@ -281,19 +316,20 @@ export function runDashboard(): void {
         demoName: 'safety-audit',
         json: true,
       }).then((result) => {
-        const waiting = result.approvalStatus === 'pending' && Boolean(result.details?.approvalId);
-        res.writeHead(waiting ? 202 : (result.success ? 200 : 422), getLegacyCorsHeaders(req));
-        res.end(JSON.stringify({
-          success: waiting || result.success,
-          runId: result.runId,
-          status: waiting ? 'pending_approval' : (result.success ? 'completed' : 'failed'),
-          verdict: result.overallVerdict,
-          details: result.details,
-          message: result.message,
-        }));
+        writeLegacyIndustrialTriggerResponse(req, res, result);
       }).catch((err: any) => {
-        res.writeHead(500, getLegacyCorsHeaders(req));
-        res.end(JSON.stringify({ success: false, error: err.message }));
+        const busy = err?.code === 'JUDGED_RUN_BUSY';
+        const unavailable = err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE';
+        res.writeHead(busy ? 409 : unavailable ? 503 : 500, getLegacyCorsHeaders(req));
+        res.end(JSON.stringify({
+          success: false,
+          status: busy ? 'in_progress' : unavailable ? 'unavailable' : 'failed',
+          verdict: busy || unavailable ? 'UNAVAILABLE' : undefined,
+          code: err?.code,
+          details: err?.details,
+          error: err?.message || String(err),
+          message: err?.message || String(err),
+        }));
       });
       return;
     }

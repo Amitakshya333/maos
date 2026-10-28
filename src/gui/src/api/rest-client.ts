@@ -83,6 +83,7 @@ import type {
 import type { WorkspaceLayout } from '../../../domain/layout';
 import type { BasicSettings } from '../../../domain/settings';
 import type { TelemetryAnalysisReceipt } from '../../../industrial/telemetry-analysis';
+import type { IndustrialAnalysisAgentResult } from '../../../domain/industrial-analysis-agent';
 import type {
   OperationalMode,
   PurgeOptions,
@@ -118,6 +119,7 @@ import type {
 export interface RestClientOptions {
   baseUrl?: string;
   projectRoot?: string;
+  projectId?: string;
   sessionToken?: string;
   defaultTimeoutMs?: number;
   timeoutMs?: number;
@@ -133,8 +135,8 @@ export interface RequestOptions {
 
 export interface JudgedRunResponse {
   runId: string;
-  status: 'pending_approval' | 'rejected' | 'completed' | 'failed';
-  verdict: 'PASS' | 'WARNING' | 'FAIL';
+  status: 'pending_approval' | 'finalizing' | 'rejected' | 'completed' | 'failed' | 'in_progress' | 'unavailable';
+  verdict: 'PASS' | 'WARNING' | 'FAIL' | 'UNAVAILABLE';
   message?: string;
   approvalId?: string;
   deliverablePath?: string;
@@ -149,6 +151,8 @@ export type IndustrialTelemetryAnalysisResponse = TelemetryAnalysisReceipt & {
   receiptSha256: string;
 };
 
+export type IndustrialAnalysisAgentResponse = IndustrialAnalysisAgentResult;
+
 /** In-memory session handoff returned by the trusted launcher IPC channel. */
 export interface LauncherSessionBootstrap {
   sessionToken: string;
@@ -157,8 +161,48 @@ export interface LauncherSessionBootstrap {
   serviceInstanceId: string;
   projectRootHash: string;
   servicePort: number;
+  baseUrl: string;
+  projectRoot: string;
+  projectId: string;
   expiresAt: number;
   protocolVersion: string;
+}
+
+export function validateLauncherSessionBootstrap(session: LauncherSessionBootstrap): void {
+  if (
+    !session ||
+    !/^[0-9a-f]{64}$/i.test(session.sessionToken) ||
+    !session.sessionId ||
+    !session.windowId ||
+    !session.serviceInstanceId ||
+    !/^[0-9a-f]{64}$/i.test(session.projectRootHash) ||
+    !Number.isInteger(session.servicePort) ||
+    session.servicePort < 1 ||
+    session.servicePort > 65535 ||
+    !session.projectRoot?.trim() ||
+    !session.projectId?.trim() ||
+    session.expiresAt <= Date.now() ||
+    session.protocolVersion !== '1.0'
+  ) {
+    throw new Error('INVALID_SESSION_BOOTSTRAP: Launcher session identity is malformed or expired.');
+  }
+
+  let url: URL;
+  try {
+    url = new URL(session.baseUrl);
+  } catch {
+    throw new Error('INVALID_SESSION_BOOTSTRAP: Service URL is malformed.');
+  }
+  const host = url.hostname.toLowerCase();
+  const loopback = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host) || host.endsWith('.localhost');
+  if (
+    !loopback ||
+    url.protocol !== 'http:' ||
+    url.origin !== session.baseUrl ||
+    Number(url.port) !== session.servicePort
+  ) {
+    throw new Error('INVALID_SESSION_BOOTSTRAP: Service URL must match the authenticated loopback port.');
+  }
 }
 
 export interface RestResponse<T> {
@@ -169,8 +213,9 @@ export interface RestResponse<T> {
 }
 
 export class BrowserRestClient {
-  private readonly baseUrl: string;
-  private readonly projectRoot: string;
+  private baseUrl: string;
+  private projectRoot: string;
+  private projectId?: string;
   private readonly defaultTimeoutMs: number;
   private readonly fetch: typeof fetch;
   private sessionToken?: string;
@@ -178,6 +223,7 @@ export class BrowserRestClient {
   constructor(options: RestClientOptions = {}) {
     this.baseUrl = (options.baseUrl || 'http://127.0.0.1:3847').replace(/\/+$/, '');
     this.projectRoot = options.projectRoot || 'C:\\maos';
+    this.projectId = options.projectId;
     this.sessionToken = options.sessionToken;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? options.timeoutMs ?? 10_000;
     this.fetch = options.fetchFn || (options as any).customFetch || globalThis.fetch.bind(globalThis);
@@ -227,9 +273,10 @@ export class BrowserRestClient {
    * handshake or URL.
    */
   initializeFromLauncher(session: LauncherSessionBootstrap): void {
-    if (!session || !/^[0-9a-f]{64}$/i.test(session.sessionToken)) {
-      throw new Error('INVALID_SESSION_BOOTSTRAP: Launcher session token is malformed.');
-    }
+    validateLauncherSessionBootstrap(session);
+    this.baseUrl = session.baseUrl;
+    this.projectRoot = session.projectRoot;
+    this.projectId = session.projectId;
     this.sessionToken = session.sessionToken;
   }
 
@@ -258,6 +305,7 @@ export class BrowserRestClient {
       'X-Project-Root': this.projectRoot,
       'X-Correlation-ID': correlationId,
     };
+    if (this.projectId) headers['X-Project-ID'] = this.projectId;
 
     if (typeof window === 'undefined') {
       headers['Origin'] = this.baseUrl;
@@ -579,7 +627,10 @@ export class BrowserRestClient {
       usage: { promptTokens: number; completionTokens: number; totalTokens: number };
       model: string;
       deterministic: boolean;
-    }>('POST', '/api/v1/chat/completions', input, options);
+    }>('POST', '/api/v1/chat/completions', input, {
+      timeoutMs: 120_000,
+      ...options,
+    });
     return res.data;
   }
 
@@ -620,12 +671,25 @@ export class BrowserRestClient {
     name?: string;
     contentBase64?: string;
     useBundledSample?: boolean;
-  }): Promise<IndustrialTelemetryAnalysisResponse> {
+  }, options: RequestOptions = {}): Promise<IndustrialTelemetryAnalysisResponse> {
     const res = await this.request<IndustrialTelemetryAnalysisResponse>(
       'POST',
-      '/api/industrial/telemetry/analyze',
+      '/api/v1/industrial/telemetry/analyze',
       input,
-      { timeoutMs: 30_000 },
+      { ...options, timeoutMs: options.timeoutMs ?? 30_000 },
+    );
+    return res.data;
+  }
+
+  async analyzeIndustrialCsv(
+    input: { request: string; sourcePath: string },
+    options: RequestOptions = {},
+  ): Promise<IndustrialAnalysisAgentResponse> {
+    const res = await this.request<IndustrialAnalysisAgentResponse>(
+      'POST',
+      '/api/v1/industrial/analysis-agent',
+      input,
+      { ...options, timeoutMs: options.timeoutMs ?? 65_000 },
     );
     return res.data;
   }
@@ -831,6 +895,11 @@ export class BrowserRestClient {
     return res.data;
   }
 
+  async getArtifactsForRun(runId: string, options?: RequestOptions): Promise<Artifact[]> {
+    const res = await this.request<Artifact[]>('GET', `/api/v1/artifacts?runId=${encodeURIComponent(runId)}`, undefined, options);
+    return res.data;
+  }
+
   async getArtifact(id: string, options?: RequestOptions): Promise<Artifact> {
     const res = await this.request<Artifact>('GET', `/api/v1/artifacts/${encodeURIComponent(id)}`, undefined, options);
     return res.data;
@@ -844,6 +913,49 @@ export class BrowserRestClient {
       options,
     );
     return res.data;
+  }
+
+  async downloadArtifactContent(id: string, options: RequestOptions = {}): Promise<Blob> {
+    const correlationId = options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    if (options.signal) options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+
+    const headers: Record<string, string> = {
+      Accept: 'application/octet-stream',
+      'X-Project-Root': this.projectRoot,
+      'X-Correlation-ID': correlationId,
+    };
+    if (this.projectId) headers['X-Project-ID'] = this.projectId;
+    if (typeof window === 'undefined') headers.Origin = this.baseUrl;
+    if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
+
+    try {
+      const response = await this.fetch(
+        `${this.baseUrl}/api/v1/artifacts/${encodeURIComponent(id)}/content`,
+        { method: 'GET', headers, signal: controller.signal },
+      );
+      if (!response.ok) {
+        const text = await response.text();
+        let body: unknown = { message: text };
+        try {
+          body = JSON.parse(text);
+        } catch {
+          // Keep the server's plain-text failure available to typed error mapping.
+        }
+        throw mapHttpError(response.status, body, correlationId);
+      }
+      return await response.blob();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new TimeoutError(`Request timed out after ${timeoutMs}ms for artifact '${id}'`);
+      }
+      throw new NetworkError(`Failed to download artifact '${id}': ${(err as Error)?.message || String(err)}`, err);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -1156,6 +1268,16 @@ export class BrowserRestClient {
       '/api/v1/industrial/judged-runs',
       {},
       reqOptions,
+    );
+    return res.data;
+  }
+
+  async prepareIndustrialAgentReview(analysisId: string, reqOptions?: RequestOptions): Promise<JudgedRunResponse> {
+    const res = await this.request<JudgedRunResponse>(
+      'POST',
+      '/api/v1/industrial/judged-runs',
+      { analysisId },
+      { ...reqOptions, idempotencyKey: reqOptions?.idempotencyKey || `industrial-agent-review:${analysisId}` },
     );
     return res.data;
   }

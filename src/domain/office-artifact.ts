@@ -120,6 +120,7 @@ export type DocxGenerationErrorCode =
   | 'DOCX_PACKAGE_INVALID'
   | 'TEMPLATE_SAFETY_VIOLATION'
   | 'OUTPUT_SAFETY_VIOLATION'
+  | 'AUDIT_PERSISTENCE_FAILED'
   | 'GENERATION_FAILED';
 
 export class DocxGenerationError extends Error {

@@ -101,10 +101,11 @@ interface ParsedArgs {
   host?: string;
   allowTemp?: boolean;
   allowSymlinks?: boolean;
+  allowedOrigins: string[];
 }
 
 function parseCliArgs(argv: string[]): ParsedArgs {
-  const result: ParsedArgs = {};
+  const result: ParsedArgs = { allowedOrigins: [] };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--project-root' && i + 1 < argv.length) {
@@ -117,9 +118,28 @@ function parseCliArgs(argv: string[]): ParsedArgs {
       result.allowTemp = true;
     } else if (arg === '--allow-symlinks') {
       result.allowSymlinks = true;
+    } else if (arg === '--allowed-origin' && i + 1 < argv.length) {
+      result.allowedOrigins.push(argv[++i]);
     }
   }
   return result;
+}
+
+function validateAllowedOrigin(origin: string): string {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    throw new Error(`INVALID_ALLOWED_ORIGIN: '${origin}' is not a valid loopback origin.`);
+  }
+  if (
+    url.protocol !== 'http:' ||
+    !['127.0.0.1', '[::1]'].includes(url.hostname.toLowerCase()) ||
+    url.origin !== origin
+  ) {
+    throw new Error(`INVALID_ALLOWED_ORIGIN: '${origin}' must be a canonical HTTP loopback origin.`);
+  }
+  return origin;
 }
 
 async function main(): Promise<void> {
@@ -153,10 +173,24 @@ async function main(): Promise<void> {
   // 2. Instantiate and start ProjectServiceHost
   const bindHost = args.host || '127.0.0.1';
   const bindPort = args.port ?? 0;
+  let allowedOrigins: Set<string> | undefined;
+  try {
+    if (args.allowedOrigins.length) {
+      allowedOrigins = new Set(args.allowedOrigins.map(validateAllowedOrigin));
+    }
+  } catch (err: any) {
+    emitEnvelope({
+      type: 'service_error',
+      code: 'INVALID_ALLOWED_ORIGIN',
+      message: err.message || String(err),
+    });
+    process.exit(1);
+  }
 
   const serviceHost = new ProjectServiceHost(project.canonicalPath, {
     host: bindHost,
     port: bindPort,
+    allowedOrigins,
   });
 
   let isStopping = false;

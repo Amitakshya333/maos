@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { IdempotencyRecord, IdempotencyStatus } from '../domain/schemas';
+import { withJudgedRunLock } from '../industrial/judged-run-lock';
 
 export type ClaimOutcome =
   | { outcome: 'claimed'; record: IdempotencyRecord }
@@ -30,6 +31,7 @@ export interface ClaimParams {
   requestHash: string;
   operation: string;
   projectId: string;
+  requestIdentityHash?: string;
   authContext?: string;
 }
 
@@ -54,10 +56,35 @@ export class DurableIdempotencyStore {
     return path.join(this.storeDir, `${keyHash}.json`);
   }
 
+  private withKeyLock<T>(key: string, operation: () => T): T {
+    const lockId = `judged-run-idempotency-${crypto.createHash('sha256').update(key).digest('hex')}`;
+    return withJudgedRunLock(this.projectRoot, lockId, operation);
+  }
+
+  public getCanonicalProjectIdentity(): string {
+    const realRoot = fs.realpathSync(this.projectRoot);
+    return process.platform === 'win32' ? realRoot.toLowerCase() : realRoot;
+  }
+
   /**
    * Attempt to claim an idempotency key atomically.
    */
   public claim(params: ClaimParams): ClaimOutcome {
+    try {
+      return this.withKeyLock(params.key, () => this.claimUnderKeyLock(params));
+    } catch (error: any) {
+      if (error?.code === 'JUDGED_RUN_BUSY') {
+        return {
+          outcome: 'in_progress',
+          reason: 'CONCURRENT_MUTATION',
+          message: `Operation for Idempotency-Key '${params.key}' is currently being claimed.`,
+        };
+      }
+      throw error;
+    }
+  }
+
+  private claimUnderKeyLock(params: ClaimParams): ClaimOutcome {
     this.ensureDirectory();
     const filePath = this.getRecordPath(params.key);
 
@@ -66,11 +93,29 @@ export class DurableIdempotencyStore {
       try {
         existing = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as IdempotencyRecord;
       } catch {
-        // Corrupt file, remove and allow re-claim
+        // Corrupt state is removed only while holding the per-key process lock.
         try {
           fs.unlinkSync(filePath);
-        } catch {}
-        return this.claim(params);
+        } catch (error) {
+          return { outcome: 'conflict', reason: 'IDEMPOTENCY_STATE_CORRUPT', message: `Idempotency-Key '${params.key}' has unreadable state and cannot be safely reused: ${String(error)}` };
+        }
+        return this.claimUnderKeyLock(params);
+      }
+
+      if (params.requestIdentityHash && !existing.requestIdentityHash) {
+        return {
+          outcome: 'conflict',
+          reason: 'IDEMPOTENCY_CONTEXT_UNAVAILABLE',
+          message: `Idempotency-Key '${params.key}' has an older record without the required operation context; use a new key.`,
+        };
+      }
+
+      if (existing.requestIdentityHash !== params.requestIdentityHash) {
+        return {
+          outcome: 'conflict',
+          reason: 'IDEMPOTENCY_CONFLICT',
+          message: `Idempotency-Key '${params.key}' was previously used for a different operation context.`,
+        };
       }
 
       // Check request hash
@@ -91,6 +136,14 @@ export class DurableIdempotencyStore {
         };
       }
 
+      if (existing.operation !== params.operation || existing.projectId !== params.projectId) {
+        return {
+          outcome: 'conflict',
+          reason: 'IDEMPOTENCY_CONFLICT',
+          message: `Idempotency-Key '${params.key}' was previously used for a different operation or project.`,
+        };
+      }
+
       // Check status
       if (existing.status === 'in_progress') {
         const ageMs = Date.now() - new Date(existing.createdAt).getTime();
@@ -106,6 +159,8 @@ export class DurableIdempotencyStore {
         return { outcome: 'replay', record: existing };
       } else if (existing.status === 'failed') {
         return { outcome: 'failed', record: existing };
+      } else if (existing.status === 'retryable') {
+        // A lock-busy attempt owns no successful result; a fresh claim may retry.
       }
     }
 
@@ -114,6 +169,8 @@ export class DurableIdempotencyStore {
       schemaVersion: 1,
       key: params.key,
       requestHash: params.requestHash,
+      requestIdentityHash: params.requestIdentityHash,
+      claimToken: crypto.randomUUID(),
       operation: params.operation,
       projectId: params.projectId,
       status: 'in_progress',
@@ -131,7 +188,7 @@ export class DurableIdempotencyStore {
     } catch (err: any) {
       if (err.code === 'EEXIST') {
         // Race condition: another caller claimed concurrently
-        return this.claim(params);
+        return this.claimUnderKeyLock(params);
       }
       throw err;
     }
@@ -141,6 +198,15 @@ export class DurableIdempotencyStore {
    * Complete an operation and record the response atomically.
    */
   public complete(
+    key: string,
+    responseStatus: number,
+    responsePayload: unknown,
+    resultReference?: string,
+  ): IdempotencyRecord {
+    return this.withKeyLock(key, () => this.completeUnderKeyLock(key, responseStatus, responsePayload, resultReference));
+  }
+
+  private completeUnderKeyLock(
     key: string,
     responseStatus: number,
     responsePayload: unknown,
@@ -163,6 +229,8 @@ export class DurableIdempotencyStore {
       schemaVersion: 1,
       key,
       requestHash: existing.requestHash || '',
+      requestIdentityHash: existing.requestIdentityHash,
+      claimToken: existing.claimToken,
       operation: existing.operation || 'mutation',
       projectId: existing.projectId || 'default',
       status: 'completed',
@@ -201,6 +269,10 @@ export class DurableIdempotencyStore {
    * Mark an operation as failed.
    */
   public fail(key: string, errorMessage: string): void {
+    this.withKeyLock(key, () => this.failUnderKeyLock(key, errorMessage));
+  }
+
+  private failUnderKeyLock(key: string, errorMessage: string): void {
     this.ensureDirectory();
     const filePath = this.getRecordPath(key);
     if (!fs.existsSync(filePath)) return;
@@ -215,6 +287,47 @@ export class DurableIdempotencyStore {
       };
       fs.writeFileSync(filePath, JSON.stringify(failedRecord, null, 2), 'utf-8');
     } catch {}
+  }
+
+  /** Mark only this request's fresh claim retryable after a contention refusal. */
+  public releaseForRetry(key: string, claimToken: string | undefined, reason: string): boolean {
+    if (!claimToken) return false;
+    return this.withKeyLock(key, () => {
+      const filePath = this.getRecordPath(key);
+      if (!fs.existsSync(filePath)) return false;
+      try {
+        const existing = JSON.parse(fs.readFileSync(filePath, 'utf8')) as IdempotencyRecord;
+        if (existing.status !== 'in_progress' || existing.claimToken !== claimToken) return false;
+        const retryable: IdempotencyRecord = {
+          ...existing,
+          status: 'retryable',
+          resultReference: reason,
+          completedAt: undefined,
+        };
+        const tempPath = `${filePath}.tmp_${process.pid}_${crypto.randomUUID()}`;
+        const fd = fs.openSync(tempPath, 'wx');
+        try {
+          fs.writeSync(fd, JSON.stringify(retryable, null, 2), undefined, 'utf-8');
+          fs.fsyncSync(fd);
+        } finally {
+          fs.closeSync(fd);
+        }
+        try {
+          fs.renameSync(tempPath, filePath);
+        } catch {
+          try {
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            fs.renameSync(tempPath, filePath);
+          } catch (error) {
+            try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+            throw error;
+          }
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    });
   }
 
   /**

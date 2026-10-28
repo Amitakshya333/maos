@@ -79,6 +79,7 @@ function makeHttpRequest(
   pathName: string,
   token?: string,
   projectRoot?: string,
+  origin?: string,
 ): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = {
@@ -89,6 +90,9 @@ function makeHttpRequest(
     }
     if (projectRoot) {
       headers['X-Project-Root'] = projectRoot;
+    }
+    if (origin) {
+      headers.Origin = origin;
     }
 
     const req = http.request(
@@ -397,6 +401,54 @@ describe('UI1-04: Launcher Handshake and Project Validation', () => {
       // Identity file must be cleared
       const postRecorded = readServiceIdentity(testProjectDir);
       expect(postRecorded).toBeNull();
+    }, 15000);
+
+    it('passes one exact renderer origin to the child and rejects missing, wrong, and cross-project requests', async () => {
+      const rendererOrigin = 'http://127.0.0.1:43127';
+      const otherProject = path.join(tempBaseDir, 'cross-project');
+      const invalidOriginProject = path.join(tempBaseDir, 'invalid-origin');
+      fs.mkdirSync(otherProject, { recursive: true });
+      fs.mkdirSync(invalidOriginProject, { recursive: true });
+      createValidProjectStructure(otherProject);
+      createValidProjectStructure(invalidOriginProject);
+
+      const host = await launcher.launch(testProjectDir, {
+        allowTemp: true,
+        extraArgs: ['--allowed-origin', rendererOrigin],
+      });
+      const session = await host.createSession('native-renderer');
+
+      const good = await makeHttpRequest(host.port, '/api/v1/project', session.token, testProjectDir, rendererOrigin);
+      expect(good.status).toBe(200);
+
+      const missingOrigin = await makeHttpRequest(host.port, '/api/v1/project', session.token, testProjectDir);
+      expect(missingOrigin.status).toBe(403);
+      expect(missingOrigin.body.error.code).toBe('FORBIDDEN_ORIGIN');
+
+      const wrongOrigin = await makeHttpRequest(
+        host.port,
+        '/api/v1/project',
+        session.token,
+        testProjectDir,
+        'http://127.0.0.1:43128',
+      );
+      expect(wrongOrigin.status).toBe(403);
+      expect(wrongOrigin.body.error.code).toBe('FORBIDDEN_ORIGIN');
+
+      const missingSession = await makeHttpRequest(host.port, '/api/v1/project', undefined, testProjectDir, rendererOrigin);
+      expect(missingSession.status).toBe(401);
+      expect(missingSession.body.error.code).toBe('AUTH_REQUIRED');
+
+      const wrongProject = await makeHttpRequest(host.port, '/api/v1/project', session.token, otherProject, rendererOrigin);
+      expect(wrongProject.status).toBe(400);
+      expect(wrongProject.body.error.code).toBe('PROJECT_SCOPE_MISMATCH');
+
+      await expect(
+        launcher.launch(invalidOriginProject, {
+          allowTemp: true,
+          extraArgs: ['--allowed-origin', 'https://attacker.example'],
+        }),
+      ).rejects.toThrow(/INVALID_ALLOWED_ORIGIN/);
     }, 15000);
 
     it('fails closed before spawning if folder validation fails', async () => {

@@ -22,6 +22,7 @@ import * as path from 'path';
 import { getMaosRoot } from '../utils/paths';
 import { BusEvent, MessageBus } from './message-bus';
 import type { SequencedEvent } from '../domain/schemas';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 
 // ---- Config ----
 
@@ -39,6 +40,7 @@ export interface PersistedEvent extends BusEvent {
 // ---- Event Store ----
 
 export class EventStore {
+  private readonly projectRoot: string;
   private eventFile: string;
   private archiveDir: string;
   private seq: number;
@@ -52,6 +54,7 @@ export class EventStore {
   private _statsCacheSeq: number = -1; // seq at which cache was last valid
 
   constructor(projectRoot: string) {
+    this.projectRoot = projectRoot;
     const eventsDir = path.join(getMaosRoot(projectRoot), 'events');
     if (!fs.existsSync(eventsDir)) {
       fs.mkdirSync(eventsDir, { recursive: true });
@@ -66,7 +69,12 @@ export class EventStore {
    * Called for every event emitted on the MessageBus.
    */
   write(event: BusEvent): void {
+    return withJudgedRunOutputLock(this.projectRoot, () => this.writeUnderProjectLock(event));
+  }
+
+  private writeUnderProjectLock(event: BusEvent): void {
     try {
+      this.seq = Math.max(this.seq, this.readLastSeq());
       // Rotate if file is too large
       if (this.shouldRotate()) {
         this.rotate();
@@ -112,6 +120,21 @@ export class EventStore {
     correlationId: string;
     payload: unknown;
   }): SequencedEvent {
+    return withJudgedRunOutputLock(this.projectRoot, () => this.writeSequencedUnderProjectLock(event));
+  }
+
+  private writeSequencedUnderProjectLock(event: {
+    eventId?: string;
+    eventType: string;
+    projectId: string;
+    runId?: string;
+    taskId?: string;
+    sequence?: number;
+    occurredAt?: string;
+    correlationId: string;
+    payload: unknown;
+  }): SequencedEvent {
+    this.seq = Math.max(this.seq, this.readLastSeq());
     if (this.shouldRotate()) {
       this.rotate();
       this._cachedByType = {};

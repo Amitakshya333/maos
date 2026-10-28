@@ -1,123 +1,130 @@
-# MAOS Industrial — 3–5 Minute Judged Presentation Script
+# MAOS Industrial — 3–5 Minute Recording Script
 
-This script is structured for live evaluation by judges and industrial operators. It demonstrates sovereign execution, deterministic mathematics, human-in-the-loop governance, and verifiable audit sealing.
+**Status:** Script prepared for a truthful local/synthetic capture. No video has
+been recorded. Before using it as a hackathon submission, check the actual
+participant rules and confirm that a local demo with no live Meta request is
+eligible.
 
----
+## Capture setup
 
-## 🕒 Timing & Scene Breakdown
+Use the final installed package from the same release rehearsal gate, a fresh
+temporary project, the bundled synthetic T-07 fixtures/profile, and the
+separately staged Rust engine. Follow the authenticated-shell setup in
+[`RUNBOOK.md`](RUNBOOK.md). The Windows launch command is:
 
-### Act 1: The Problem & Sovereign Architecture (0:00 – 0:45)
-- **Speaker:**
-  > "Welcome. Industrial operators of critical infrastructure—like power turbines, refineries, and manufacturing plants—cannot send sensor telemetry or incident logs to third-party cloud LLMs. That exposes proprietary operational data and violates sovereignty mandates.
-  >
-  > MAOS Industrial is a sovereign multi-agent solution running entirely on local infrastructure. It binds strictly to loopback `127.0.0.1`, operates with zero WAN calls, and enforces mathematical certainty: AI agents coordinate and explain findings, while a native Rust industrial engine guarantees decimal-accurate RMS arithmetic and tamper-evident audit sealing."
+```powershell
+$projectRoot = (Resolve-Path .\demo-project).Path
+npx electron .\node_modules\maosorch\desktop\main.cjs --project-root $projectRoot --allow-temp
+```
 
-- **Screen Action:**
-  - Show terminal in `C:\maos`.
-  - Run preflight check:
-    ```powershell
-    maos industrial preflight
-    ```
-  - Point to `Boundary Status: VERIFIED / Ephemeral Loopback` and `Project Initialized: PASSED`.
+Record the real Electron window. Keep run IDs visible; never show session
+tokens, API keys, personal browser profiles, unrelated files, or unsanitized
+terminal output. Use four isolated runs so approval, stale-source failure,
+stale-rules failure, and rejection cannot be confused as one run. Use brief
+cuts for waits and clearly signal each new run; do not imply skipped time was
+instantaneous.
 
----
+## Timed script
 
-### Act 2: The Data Pack & Ruleset (0:45 – 1:30)
-- **Speaker:**
-  > "Our demonstration pack is completely non-proprietary and licensed under CC0 / MIT. It contains 500 real-world vibration readings, a maintenance log, an inspection scan PDF, and a demonstration safety ruleset.
-  >
-  > Notice that we never claim this ruleset is a certified regulatory standard—it is an explicit demonstration ruleset defined in `safety_thresholds.json`. Warning threshold is 4.5 mm/s; critical is 7.1 mm/s."
+### 0:00–0:25 — Explain the boundary
 
-- **Screen Action:**
-  - Quickly show `demo/industrial/safety_thresholds.json` and `demo/industrial/turbine_vibration_log.csv`.
-  - Highlight the cryptographic canary hash ensuring repository integrity:
-    ```powershell
-    Get-FileHash -Algorithm SHA256 rust/test.txt
-    ```
+**Show:** The Cockpit running in the native shell and the synthetic T-07 input.
 
----
+**Say:** “This is a local industrial evidence workflow using synthetic turbine
+data and demonstration thresholds. The T-07 calculation is deterministic. This
+capture makes no hosted Meta Model API call and is not an operating decision.”
 
-### Act 3: The One-Command Judged Run & Approval Gate (1:30 – 2:45)
-- **Speaker:**
-  > "Now we execute the complete judged workflow. Watch how MAOS Industrial enforces fail-closed human governance. If an operator tries to bypass the gate without explicit confirmation, execution halts immediately."
+### 0:25–1:10 — Analyze and resume the pending review
 
-- **Screen Action (Negative Defense Demonstration):**
-  - Run unconfirmed command:
-    ```powershell
-    maos industrial run --auto-approve
-    ```
-  - Show exit code 4: `CONFIRMATION_REQUIRED: --auto-approve requires explicit confirmation flag (-y or --yes).`
+**Action:** In a fresh project, click **Run T-07 Safety Audit**. Copy the run ID
+shown in the T-07 judged-run panel. Show the pending approval and that no report
+exists yet. Open **Review the evidence**, reload the window, click **Refresh**
+in approvals, return to **Cockpit** and show the same pending run ID, then open
+**Review the evidence** again.
 
-- **Speaker:**
-  > "Now we run the complete verified journey with explicit confirmation:"
+**Say:** “The workflow pauses for review. Refresh reconnects to the same
+project-scoped run; it does not silently approve it.”
 
-- **Screen Action (Full Judged Run):**
-  - Run:
-    ```powershell
-    maos industrial run --auto-approve --yes
-    ```
-  - Narrate the 6 stages as they complete:
-    1. **PREFLIGHT:** Verified local engine binary and loopback boundary.
-    2. **POLICY:** Verified thresholds against safety ruleset.
-    3. **SERVICES:** Initialized typed container and genesis audit event.
-    4. **DAG WORKFLOW:**
-       - *Ingest:* Processed 500 CSV rows, PDF inspection, and maintenance report.
-       - *Analyze:* Rust engine computed exact overall RMS of `2.63711 mm/s`. Found critical excursion of `8.3 mm/s` (row 367) and temperature `97.2 °C`.
-       - *Approval Gate:* Recorded authenticated Lead Engineer sign-off.
-       - *Synthesize:* Generated signed OOXML `.docx` safety note.
-    5. **VERIFY:** Verified deliverable signature and audit chain.
-    6. **AUDIT EXPORT:** Exported and sealed sovereign audit bundle.
+### 1:10–2:05 — Review and approve that run
 
----
+**Action:** Open the approval for the same ID. Inspect the evidence and
+source/rule hashes. Click **Review & Approve**, enter reviewer
+`release-reviewer`, and note “Reviewed synthetic T-07 evidence; not operational
+authorization.” Confirm approval. Return to the Cockpit and show the completed
+report for that run.
 
-### Act 4: Deliverable Inspection & Office Delegation (2:45 – 3:45)
-- **Speaker:**
-  > "MAOS Industrial does not simulate or pretend to have an embedded office editor. It delegates viewing directly to your installed desktop software—Microsoft Word or LibreOffice—while sanitizing paths and preventing shell injection."
+**Say:** “This approval is bound to the reviewed evidence and rules. A later
+change invalidates it.”
 
-- **Screen Action:**
-  - Open the generated deliverable:
-    ```powershell
-    maos industrial open artifacts/generated/turbine_safety_approval_note.docx
-    ```
-  - (Or show `--dry-run` with launch parameters in air-gap/headless environments):
-    ```powershell
-    maos industrial open artifacts/generated/turbine_safety_approval_note.docx --dry-run
-    ```
-  - Point to the generated Word document:
-    - Overall Verdict: `FAIL`
-    - Cites exact row 121 (5.2 mm/s WARNING) and row 367 (8.3 mm/s CRITICAL).
-    - Cites corroborating maintenance log excerpt.
-    - Displays mandatory ruleset disclaimer and cryptographic SHA-256 hash.
+### 2:05–2:55 — Download and verify the exact run
 
----
+**Action:** Open **Deliverables**, download that run’s DOCX, then in the
+project-root terminal run:
 
-### Act 5: Tamper-Evident Audit Chain & Architectural Honesty (3:45 – 4:30)
-- **Speaker:**
-  > "Finally, let's look at audit integrity. Every single action—ingestion, analysis, approval, synthesis, and opening—is written to an append-only log hash-linked and verified by our Rust industrial engine."
+```powershell
+$runId = '<the exact run ID shown in the Cockpit>'
+& .\node_modules\.bin\maos-industrial.cmd verify audit --run-id $runId --json
+```
 
-- **Screen Action:**
-  - Run audit chain verification:
-    ```powershell
-    maos industrial verify --target audit
-    ```
-  - Show: `Audit Chain Valid: true (Rust engine verified)`.
+Open the Audit view, click **Verify Cryptographic Chain**, and show
+`CHAIN: VERIFIED`. Keep the same run ID visible in the report, download, audit
+export, and verifier output.
 
-- **Speaker:**
-  > "To conclude with complete architectural honesty:
-  > 1. **No zero-data-left claims:** Audit records and generated deliverables persist locally on disk for regulatory compliance; clean reset is performed via `maos industrial reset -y`.
-  > 2. **No deferred Rust:** The native Rust binary is active and authoritative right now.
-  > 3. **Single project MVP:** One service per project root, bound strictly to loopback.
-  > 4. **Standard Web SPA:** Browser cockpit over HTTP/WebSocket, not Tauri.
-  >
-  > MAOS Industrial proves that mission-critical, confidential AI operations can be sovereign, deterministic, and auditable. Thank you."
+**Say:** “The software workflow completed and the artifacts verify. Its
+engineering verdict is still **FAIL** because the synthetic measurements cross
+the configured demo limits.”
 
----
+### 2:55–3:40 — Show source and rules stale-approval failures
 
-## 🛠️ Recovery & Contingency Instructions
+**Action:** In a separate fresh project, start a new run and change one byte in
+`demo/industrial/turbine_vibration_log.csv` after analysis but before approval.
+Attempt approval/resume; show the failed state and absence of a report. In
+another fresh project, repeat but change
+`demo/industrial/safety_thresholds.json` after analysis. Show the failed state
+and absence of a report. Keep the different run IDs visible between cuts.
 
-- **If live Word launch is blocked by OS permissions:**
-  Execute `maos industrial open artifacts/generated/turbine_safety_approval_note.docx --dry-run --json` to demonstrate parameter validation and safe command formulation without GUI spawning.
-- **If Docker sandbox is not running:**
-  MAOS automatically falls back to in-process verified calculation fixtures (`fixtures/f8-05/`) with identical mathematical outputs.
-- **To clean up after the presentation:**
-  Run `maos industrial reset --dry-run` to inspect, then `maos industrial reset --yes` to reset test artifacts cleanly.
+**Say:** “Both source evidence and the safety-rule input are checked again at
+resume. A stale review fails closed; no report is created.”
+
+### 3:40–4:10 — Show explicit rejection
+
+**Action:** In a third fresh project, analyze a new run, open its approval,
+choose **Reject**, enter a concise reason, and confirm. Show the persisted
+rejected state and that no report is listed for that run.
+
+**Say:** “A reviewer can reject the evidence. Rejection is persisted, and the
+system does not present it as a successful report.”
+
+### 4:10–4:35 — Close with limitations
+
+**Say:** “The fixtures and limits are synthetic and not safety certification.
+TypeScript performs the T-07 analysis; a separately installed Rust engine
+provides audit hashing and verification. No live Meta integration is shown.
+Loopback binding does not prove the whole workstation is offline.”
+
+## Capture checks
+
+- Confirm each segment uses the correct, distinct run ID. Never splice a
+  negative case into the approved run.
+- Keep the engineering `FAIL` verdict visible after report generation; do not
+  describe it as a passing safety result.
+- Make sure the DOCX download, report hash, audit export, and CLI verification
+  all refer to the approved run ID.
+- If any action fails, show the failure state or retake the full segment in a
+  fresh project. Do not edit the video to imply a failed operation succeeded.
+- The earlier three rehearsals used a separate browser context and temporary
+  project on one installed Windows package. They are test evidence, not a
+  recording, submission, safety certification, or live Meta integration.
+
+## Headless fallback
+
+If the Cockpit cannot be shown, a separate CLI capture may demonstrate package
+execution and verification, but it cannot stand in for the human-review flow:
+
+```powershell
+maos-industrial run --auto-approve --yes --json
+maos-industrial verify audit --run-id <run-id-from-output> --json
+```
+
+`--auto-approve --yes` records an explicit synthetic demo approval. It is not
+human review and must be labeled as a CLI-only fallback.

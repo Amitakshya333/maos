@@ -183,6 +183,13 @@ export class RestApiServer {
 
         // Strict Origin check for WebSocket upgrades
         const originHeader = req.headers['origin'];
+        if ((!originHeader || !String(originHeader).trim()) && this.allowedOrigins?.size) {
+          socket.write(
+            'HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nForbidden: Renderer origin is required.\r\n',
+          );
+          socket.destroy();
+          return;
+        }
         if (typeof originHeader === 'string' && originHeader.trim()) {
           const trimmedOrigin = originHeader.trim();
           if (trimmedOrigin === 'null' || trimmedOrigin.startsWith('file:')) {

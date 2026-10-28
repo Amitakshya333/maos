@@ -15,19 +15,55 @@
  * 8. Mandatory preservation of canary hash (rust/test.txt).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
+import fsDefault from 'node:fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { executeJudgedRun } from '../../src/industrial/judged-run';
-import { runIndustrialRun, INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
+import * as os from 'os';
+import {
+  executeJudgedRun,
+  getJudgedRunManifestPath,
+  readJudgedRunManifest,
+  resumeJudgedRunAfterApproval,
+} from '../../src/industrial/judged-run';
+import { runIndustrialRun, runIndustrialVerify, INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
 import { createServiceContainer } from '../../src/service';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const CANARY_PATH = path.resolve(PROJECT_ROOT, 'rust', 'test.txt');
 const CANARY_EXPECTED_HASH = '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
+let testProjectRoot: string;
+
+function createIndustrialTestProject(): string {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f10-06-'));
+  fs.mkdirSync(path.join(projectRoot, '.maos'), { recursive: true });
+  fs.writeFileSync(
+    path.join(projectRoot, '.maos', 'maos.config.json'),
+    JSON.stringify({ projectName: 'maos-f10-06-test' }),
+  );
+  const demoDir = path.join(projectRoot, 'demo', 'industrial');
+  fs.mkdirSync(demoDir, { recursive: true });
+  for (const name of [
+    'safety_thresholds.json',
+    'turbine_vibration_log.csv',
+    'maintenance_report.txt',
+    'turbine_inspection_scan.pdf',
+  ]) {
+    fs.copyFileSync(path.join(PROJECT_ROOT, 'demo', 'industrial', name), path.join(demoDir, name));
+  }
+  return projectRoot;
+}
 
 describe('F10-06: One-Command Judged Run', () => {
+  beforeAll(() => {
+    testProjectRoot = createIndustrialTestProject();
+  });
+
+  afterAll(() => {
+    if (testProjectRoot) fs.rmSync(testProjectRoot, { recursive: true, force: true });
+  });
+
   beforeEach(() => {
     // Assert canary invariant prior to each test
     const canaryContent = fs.readFileSync(CANARY_PATH);
@@ -48,8 +84,10 @@ describe('F10-06: One-Command Judged Run', () => {
 
   describe('1. Full End-to-End Judged Run Flow', () => {
     it('executes all 6 stages in exact sequence with --auto-approve --yes', async () => {
+      const services = createServiceContainer(testProjectRoot);
       const result = await executeJudgedRun({
-        projectRoot: PROJECT_ROOT,
+        projectRoot: testProjectRoot,
+        services,
         autoApprove: true,
         yes: true,
         json: true,
@@ -81,12 +119,19 @@ describe('F10-06: One-Command Judged Run', () => {
 
       // Verify deliverable document on disk
       expect(result.deliverablePath).toBe('artifacts/generated/turbine_safety_approval_note.docx');
-      const docxAbsPath = path.join(PROJECT_ROOT, result.deliverablePath!);
+      const docxAbsPath = path.join(testProjectRoot, result.deliverablePath!);
       expect(fs.existsSync(docxAbsPath)).toBe(true);
 
       const docxBytes = fs.readFileSync(docxAbsPath);
       const computedDocxHash = crypto.createHash('sha256').update(docxBytes).digest('hex');
       expect(computedDocxHash).toBe(result.deliverableSha256);
+      const runArtifacts = services.artifact.listArtifacts(result.runId);
+      expect(runArtifacts).toHaveLength(1);
+      expect(runArtifacts[0]).toMatchObject({
+        runId: result.runId,
+        path: result.deliverablePath,
+        hash: result.deliverableSha256,
+      });
 
       // Validate OOXML ZIP header (PK\x03\x04)
       expect(docxBytes[0]).toBe(0x50);
@@ -95,8 +140,8 @@ describe('F10-06: One-Command Judged Run', () => {
       expect(docxBytes[3]).toBe(0x04);
 
       // Verify audit trail export on disk
-      expect(result.auditExportPath).toBe('artifacts/generated/judged-run-audit-export.json');
-      const auditAbsPath = path.join(PROJECT_ROOT, result.auditExportPath!);
+      expect(result.auditExportPath).toBe(`artifacts/generated/${result.runId}-audit-export.json`);
+      const auditAbsPath = path.join(testProjectRoot, result.auditExportPath!);
       expect(fs.existsSync(auditAbsPath)).toBe(true);
 
       const auditContent = fs.readFileSync(auditAbsPath, 'utf8');
@@ -115,7 +160,7 @@ describe('F10-06: One-Command Judged Run', () => {
   describe('2. Confirmation & Human Gate Boundaries', () => {
     it('halts with CONFIRMATION_REQUIRED (exit code 4) when --auto-approve is missing --yes', async () => {
       const result = await executeJudgedRun({
-        projectRoot: PROJECT_ROOT,
+        projectRoot: testProjectRoot,
         autoApprove: true,
         yes: false,
         json: true,
@@ -132,7 +177,7 @@ describe('F10-06: One-Command Judged Run', () => {
 
     it('halts with GATE_REJECTED (exit code 10) in interactive run without auto-approve', async () => {
       const result = await executeJudgedRun({
-        projectRoot: PROJECT_ROOT,
+        projectRoot: testProjectRoot,
         autoApprove: false,
         yes: false,
         json: true,
@@ -163,7 +208,7 @@ describe('F10-06: One-Command Judged Run', () => {
     // no boundary pre-exists — pinned behaviour that was unreachable by design.
     it('establishes a boundary for the run and leaves observation evidence behind', async () => {
       const result = await executeJudgedRun({
-        projectRoot: PROJECT_ROOT,
+        projectRoot: testProjectRoot,
         autoApprove: true,
         yes: true,
         enforceFirewall: true,
@@ -176,7 +221,7 @@ describe('F10-06: One-Command Judged Run', () => {
 
       // Teardown persisted the observation trace — proof a boundary really was
       // held during the run rather than merely checked.
-      const evidenceDir = path.join(PROJECT_ROOT, '.maos', 'network-evidence');
+      const evidenceDir = path.join(testProjectRoot, '.maos', 'network-evidence');
       expect(fs.existsSync(evidenceDir)).toBe(true);
       const traces = fs
         .readdirSync(evidenceDir)
@@ -184,7 +229,7 @@ describe('F10-06: One-Command Judged Run', () => {
       expect(traces.length).toBeGreaterThan(0);
 
       // And no boundary record was left behind claiming enforcement that ended.
-      const recordPath = path.join(PROJECT_ROOT, '.maos', 'firewall', 'process-boundary.json');
+      const recordPath = path.join(testProjectRoot, '.maos', 'firewall', 'process-boundary.json');
       if (fs.existsSync(recordPath)) {
         const state = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
         expect(state.records.default).toBeUndefined();
@@ -194,7 +239,7 @@ describe('F10-06: One-Command Judged Run', () => {
     it('aborts with PREFLIGHT_BLOCKED when the boundary cannot be established', async () => {
       // A project root where the boundary record cannot be written: the run must
       // refuse as a structured result rather than proceed unenforced or throw.
-      const tempDir = path.resolve(PROJECT_ROOT, '.maos', 'temp-f10-06-boundary-' + Date.now());
+      const tempDir = path.resolve(testProjectRoot, '.maos', 'temp-f10-06-boundary-' + Date.now());
       fs.mkdirSync(path.join(tempDir, '.maos'), { recursive: true });
       // Occupy the record path with a file so the directory cannot be created.
       fs.writeFileSync(path.join(tempDir, '.maos', 'firewall'), 'not a directory');
@@ -218,7 +263,7 @@ describe('F10-06: One-Command Judged Run', () => {
     });
 
     it('aborts with PREFLIGHT_BLOCKED when health diagnostics fail', async () => {
-      const tempDir = path.resolve(PROJECT_ROOT, '.maos', 'temp-f10-06-diag-' + Date.now());
+      const tempDir = path.resolve(testProjectRoot, '.maos', 'temp-f10-06-diag-' + Date.now());
       fs.mkdirSync(tempDir, { recursive: true });
 
       try {
@@ -247,7 +292,7 @@ describe('F10-06: One-Command Judged Run', () => {
 
   describe('4. Fail-Closed Policy Checks', () => {
     it('aborts with POLICY_VIOLATION (exit code 9) when safety_thresholds.json is missing', async () => {
-      const tempDir = path.resolve(PROJECT_ROOT, '.maos', 'temp-f10-06-policy-' + Date.now());
+      const tempDir = path.resolve(testProjectRoot, '.maos', 'temp-f10-06-policy-' + Date.now());
       fs.mkdirSync(path.join(tempDir, '.maos'), { recursive: true });
       fs.writeFileSync(
         path.join(tempDir, '.maos', 'maos.config.json'),
@@ -276,7 +321,7 @@ describe('F10-06: One-Command Judged Run', () => {
     });
 
     it('aborts with POLICY_VIOLATION when safety thresholds file is malformed', async () => {
-      const tempDir = path.resolve(PROJECT_ROOT, '.maos', 'temp-f10-06-badpolicy-' + Date.now());
+      const tempDir = path.resolve(testProjectRoot, '.maos', 'temp-f10-06-badpolicy-' + Date.now());
       fs.mkdirSync(path.join(tempDir, '.maos'), { recursive: true });
       fs.writeFileSync(
         path.join(tempDir, '.maos', 'maos.config.json'),
@@ -313,7 +358,7 @@ describe('F10-06: One-Command Judged Run', () => {
 
   describe('5. Fail-Closed Ingest Checks', () => {
     it('aborts when demo telemetry files are missing', async () => {
-      const tempDir = path.resolve(PROJECT_ROOT, '.maos', 'temp-f10-06-missing-csv-' + Date.now());
+      const tempDir = path.resolve(testProjectRoot, '.maos', 'temp-f10-06-missing-csv-' + Date.now());
       fs.mkdirSync(path.join(tempDir, '.maos'), { recursive: true });
       fs.writeFileSync(
         path.join(tempDir, '.maos', 'maos.config.json'),
@@ -358,23 +403,179 @@ describe('F10-06: One-Command Judged Run', () => {
   // ══════════════════════════════════════════════════════════════
 
   describe('6. CLI Subcommand Wrapper & Output', () => {
-    it('runIndustrialRun returns structured result object with SUCCESS exitCode', async () => {
-      const cliResult = await runIndustrialRun({
-        projectRoot: PROJECT_ROOT,
-        autoApprove: true,
-        yes: true,
-        json: true,
-      });
+    it('reports the separate Rust engine prerequisite in structured CLI failures', async () => {
+      const projectRoot = createIndustrialTestProject();
+      const previousCwd = process.cwd();
+      try {
+        process.chdir(projectRoot);
+        const cliResult = await runIndustrialRun({
+          projectRoot,
+          autoApprove: true,
+          yes: true,
+          json: true,
+        });
 
-      expect(cliResult.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
-      expect(cliResult.data).toBeDefined();
-      expect(cliResult.data?.success).toBe(true);
-      expect(cliResult.data?.overallVerdict).toBe('FAIL');
-      expect(cliResult.data?.approvalStatus).toBe('approved');
-      expect(cliResult.data?.auditVerified).toBe(true);
-      expect(cliResult.data?.deliverablePath).toBe(
-        'artifacts/generated/turbine_safety_approval_note.docx',
-      );
+        expect(cliResult.exitCode).toBe(INDUSTRIAL_CLI_EXIT.FAILURE);
+        expect(cliResult.data?.success).toBe(false);
+        expect(cliResult.data?.message).toContain('Engine executable not found');
+        expect(cliResult.data?.message).toContain('cargo build --release --locked --manifest-path rust/Cargo.toml');
+        expect(cliResult.data?.message).toContain('copy rust/target/release/maos-engine[.exe]');
+      } finally {
+        process.chdir(previousCwd);
+        fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
     });
+
+    it('fails verification when an auto-approved run cannot persist its finalizing manifest', async () => {
+      const projectRoot = createIndustrialTestProject();
+      const realRename = fsDefault.renameSync.bind(fsDefault);
+      let rejectedFinalizingWrite = false;
+      const renameSpy = vi.spyOn(fsDefault, 'renameSync').mockImplementation(((source: fs.PathLike, destination: fs.PathLike) => {
+        if (!rejectedFinalizingWrite && String(destination).includes(`${path.sep}industrial-runs${path.sep}`) && String(destination).endsWith('.json')) {
+          const pending = JSON.parse(fs.readFileSync(String(source), 'utf8'));
+          if (pending.status === 'finalizing') {
+            rejectedFinalizingWrite = true;
+            throw new Error('simulated finalizing-manifest persistence failure');
+          }
+        }
+        return realRename(source, destination);
+      }) as typeof fsDefault.renameSync);
+      try {
+        const cliResult = await runIndustrialRun({
+          projectRoot,
+          autoApprove: true,
+          yes: true,
+          json: true,
+        });
+
+        expect(cliResult.exitCode).toBe(INDUSTRIAL_CLI_EXIT.VERIFY_FAILED);
+        expect(cliResult.message).toContain('RUN_MANIFEST_PERSIST_FAILED');
+        expect(cliResult.data?.success).toBe(false);
+        expect(cliResult.data?.stagesCompleted).not.toContain('DAG');
+        expect(cliResult.data?.stagesCompleted).not.toContain('AUDIT_EXPORT');
+        expect(rejectedFinalizingWrite).toBe(true);
+      } finally {
+        renameSpy.mockRestore();
+        fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('persists an auto-approved run manifest that same-run verification accepts', async () => {
+      const projectRoot = createIndustrialTestProject();
+      try {
+        const cliResult = await runIndustrialRun({
+          projectRoot,
+          autoApprove: true,
+          yes: true,
+          json: true,
+        });
+
+        expect(cliResult.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
+        expect(cliResult.data).toBeDefined();
+        expect(cliResult.data?.success).toBe(true);
+        expect(cliResult.data?.overallVerdict).toBe('FAIL');
+        expect(cliResult.data?.approvalStatus).toBe('approved');
+        expect(cliResult.data?.auditVerified).toBe(true);
+        expect(cliResult.data?.deliverablePath).toBe(
+          'artifacts/generated/turbine_safety_approval_note.docx',
+        );
+
+        const runId = String(cliResult.data?.runId);
+        expect(readJudgedRunManifest(projectRoot, runId)?.status).toBe('completed');
+        const verification = await runIndustrialVerify({
+          projectRoot,
+          target: 'audit',
+          runId,
+          json: true,
+        });
+        expect(verification.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
+        expect(verification.data?.judgedRun?.valid).toBe(true);
+      } finally {
+        fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('resumes an unchanged report only after a reviewer decision and independently verifies it', async () => {
+    const projectRoot = createIndustrialTestProject();
+    try {
+      const services = createServiceContainer(projectRoot);
+      const result = await executeJudgedRun({ projectRoot, services, json: true });
+      const approvalId = String(result.details?.approvalId || '');
+      expect(result.exitCode).toBe(INDUSTRIAL_CLI_EXIT.GATE_REJECTED);
+      expect(approvalId).not.toBe('');
+      services.approval.decideApproval(
+        approvalId,
+        'approved',
+        'synthetic-reviewer',
+        'Reviewed the prepared synthetic evidence.',
+        'reviewer',
+      );
+
+      const completed = await resumeJudgedRunAfterApproval(projectRoot, services, approvalId);
+      expect(completed.status).toBe('completed');
+      expect(completed.officeInput.evidenceState.reviewedByHuman).toBe(true);
+      const runArtifacts = services.artifact.listArtifacts(result.runId);
+      expect(runArtifacts).toHaveLength(1);
+      expect(runArtifacts[0]).toMatchObject({
+        runId: result.runId,
+        path: completed.deliverablePath,
+        hash: completed.deliverableSha256,
+      });
+      const verification = await runIndustrialVerify({ projectRoot, target: 'audit', runId: result.runId, json: true });
+      expect(verification.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
+      expect(verification.data.judgedRun.valid).toBe(true);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['source evidence', 'source'],
+    ['threshold rules', 'rules'],
+    ['report input', 'report'],
+  ] as const)('refuses to resume an approved run after %s changes', async (_name, change) => {
+    const projectRoot = createIndustrialTestProject();
+    try {
+      const services = createServiceContainer(projectRoot);
+      const result = await executeJudgedRun({ projectRoot, services, json: true });
+      const approvalId = String(result.details?.approvalId || '');
+      expect(result.exitCode).toBe(INDUSTRIAL_CLI_EXIT.GATE_REJECTED);
+      expect(approvalId).not.toBe('');
+
+      if (change === 'source') {
+        fs.appendFileSync(path.join(projectRoot, 'demo', 'industrial', 'turbine_vibration_log.csv'), '\nchanged after analysis');
+      } else if (change === 'rules') {
+        const rulesPath = path.join(projectRoot, 'demo', 'industrial', 'safety_thresholds.json');
+        const rules = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
+        rules.thresholds.vibration_rms_mm_s.warning += 0.1;
+        fs.writeFileSync(rulesPath, JSON.stringify(rules));
+      } else {
+        const manifest = readJudgedRunManifest(projectRoot, result.runId)!;
+        const tamperedManifest = {
+          ...manifest,
+          officeInput: {
+            ...manifest.officeInput,
+            sections: manifest.officeInput.sections.map((section, index) =>
+              index === 0 ? { ...section, content: 'Changed after analysis.' } : section,
+            ),
+          },
+        };
+        fs.writeFileSync(getJudgedRunManifestPath(projectRoot, result.runId), JSON.stringify(tamperedManifest, null, 2));
+      }
+
+      services.approval.decideApproval(
+        approvalId,
+        'approved',
+        'synthetic-reviewer',
+        'Reviewed the prepared synthetic evidence.',
+        'reviewer',
+      );
+      const expectedError = change === 'report' ? /report input changed after analysis/ : /source changed after analysis/;
+      await expect(resumeJudgedRunAfterApproval(projectRoot, services, approvalId)).rejects.toThrow(expectedError);
+      expect(readJudgedRunManifest(projectRoot, result.runId)?.status).toBe('failed');
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 });

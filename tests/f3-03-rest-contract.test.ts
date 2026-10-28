@@ -432,6 +432,28 @@ describe('F3-03 OpenAPI REST Contract', () => {
     expect(second.error?.code).toBe('IDEMPOTENCY_CONFLICT');
   });
 
+  it('binds approval URL targets and operation paths into idempotency replay identity', async () => {
+    const firstApproval = await client.createApproval({ gateId: 'IDEMPOTENCY-TARGET-A' });
+    const secondApproval = await client.createApproval({ gateId: 'IDEMPOTENCY-TARGET-B' });
+    expect(firstApproval.status).toBe(201);
+    expect(secondApproval.status).toBe(201);
+
+    const key = 'idem-approval-target-context';
+    const decision = await client.decideApproval(firstApproval.data!.id, 'approved', 'synthetic-reviewer', undefined, key);
+    expect(decision.status).toBe(200);
+    const sameOperationRetry = await client.decideApproval(firstApproval.data!.id, 'approved', 'synthetic-reviewer', undefined, key);
+    expect(sameOperationRetry.status).toBe(200);
+    expect(sameOperationRetry.isReplay).toBe(true);
+
+    const differentApproval = await client.decideApproval(secondApproval.data!.id, 'approved', 'synthetic-reviewer', undefined, key);
+    expect(differentApproval.status).toBe(409);
+    expect(differentApproval.error?.code).toBe('IDEMPOTENCY_CONFLICT');
+
+    const differentOperation = await client.createTask({ description: 'same body context probe' }, key);
+    expect(differentOperation.status).toBe(409);
+    expect(differentOperation.error?.code).toBe('IDEMPOTENCY_CONFLICT');
+  });
+
   it('Negative: Non-loopback caller simulation should return 403', () => {
     // Unit test middleware verification of non-loopback IP
     const fakeReq: any = {

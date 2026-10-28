@@ -16,16 +16,19 @@
  *   8. Zero bypass of ServiceContainer.
  */
 
-import * as fs from 'fs';
+import fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import chalk from 'chalk';
 import { createServiceContainer, ServiceContainer } from '../service';
 import { INDUSTRIAL_CLI_EXIT, IndustrialCliExitCode } from './industrial-cli';
+import type { ApprovalRecord, ReviewApprovalInput } from '../domain/approval';
+import { withJudgedRunLock, withJudgedRunOutputLock } from './judged-run-lock';
 import {
   OfficeDocxInput,
   computeOfficeInputHash,
 } from '../domain/office-artifact';
+import { verifyTelemetryAnalysis } from './telemetry-analysis';
 
 export interface JudgedRunOptions {
   readonly projectRoot?: string;
@@ -47,7 +50,7 @@ export interface JudgedRunResult {
   readonly stagesCompleted: readonly string[];
   readonly boundaryVerified: boolean;
   readonly policyVerified: boolean;
-  readonly overallVerdict: 'PASS' | 'WARNING' | 'FAIL';
+  readonly overallVerdict: 'PASS' | 'WARNING' | 'FAIL' | 'UNAVAILABLE';
   readonly approvalStatus: 'approved' | 'rejected' | 'pending';
   readonly deliverablePath?: string;
   readonly deliverableSha256?: string;
@@ -60,19 +63,27 @@ export interface JudgedRunResult {
 export interface JudgedRunManifest {
   schemaVersion: 1;
   runId: string;
+  /** This run ID is one immutable attempt; failed attempts are never retried in place. */
+  attempt: 1;
   approvalId: string;
-  status: 'pending_approval' | 'rejected' | 'completed' | 'failed';
+  status: 'pending_approval' | 'finalizing' | 'rejected' | 'completed' | 'failed';
   verdict: 'PASS' | 'WARNING' | 'FAIL';
   createdAt: string;
   updatedAt: string;
   sourceHashes: Record<string, string>;
+  officeInputHash: string;
   approvalPayloadHash: string;
   officeInput: OfficeDocxInput;
   details: Record<string, unknown>;
   deliverablePath?: string;
   deliverableSha256?: string;
+  deliverableArtifactId?: string;
+  finalOfficeInputHash?: string;
   auditExportPath?: string;
   auditExportSha256?: string;
+  auditExportThroughSequence?: number;
+  auditExportLatestHash?: string;
+  failureReason?: string;
 }
 
 export function getJudgedRunManifestPath(projectRoot: string, runId: string): string {
@@ -84,6 +95,625 @@ export function readJudgedRunManifest(projectRoot: string, runId: string): Judge
   const manifestPath = getJudgedRunManifestPath(projectRoot, runId);
   if (!fs.existsSync(manifestPath)) return null;
   return JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as JudgedRunManifest;
+}
+
+function writeJsonAtomically(filePath: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${crypto.randomUUID()}.tmp`;
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(temporaryPath, 'wx');
+    fs.writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temporaryPath, filePath);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+  }
+}
+
+function resolveRunFile(projectRoot: string, relativePath: string): string | null {
+  if (!relativePath || path.isAbsolute(relativePath)) return null;
+  const root = fs.realpathSync(projectRoot);
+  const candidate = path.resolve(root, relativePath);
+  const relative = path.relative(root, candidate);
+  if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..') return null;
+  try {
+    const realPath = fs.realpathSync(candidate);
+    const realRelative = path.relative(root, realPath);
+    if (realRelative.startsWith(`..${path.sep}`) || realRelative === '..') return null;
+    return fs.statSync(realPath).isFile() ? realPath : null;
+  } catch {
+    return null;
+  }
+}
+
+function fileSha256(filePath: string): string {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function terminalRunRecords(services: ServiceContainer, manifest: JudgedRunManifest) {
+  if (!services.audit.verifyChain().valid) return [];
+  return services.audit.getRecords().filter((record) => {
+    const data = record.data as Record<string, unknown>;
+    return data.runId === manifest.runId && (data.attempt ?? 1) === (manifest.attempt ?? 1) &&
+      ['JUDGED_RUN_COMPLETED', 'JUDGED_RUN_FAILED', 'JUDGED_RUN_REJECTED'].includes(String(data.event));
+  });
+}
+
+function matchingCompletionRecords(services: ServiceContainer, manifest: JudgedRunManifest) {
+  const terminalRecords = terminalRunRecords(services, manifest);
+  if (terminalRecords.length !== 1 || (terminalRecords[0].data as Record<string, unknown>).event !== 'JUDGED_RUN_COMPLETED') return [];
+  const runRecords = terminalRecords;
+  if (runRecords.length !== 1) return [];
+  return runRecords.filter((record) => {
+    const data = record.data as Record<string, unknown>;
+    return data.approvalId === manifest.approvalId &&
+      record.sequence > manifest.auditExportThroughSequence! &&
+      data.approvalPayloadHash === manifest.approvalPayloadHash && data.verdict === manifest.verdict &&
+      data.deliverablePath === manifest.deliverablePath &&
+      data.deliverableArtifactId === manifest.deliverableArtifactId &&
+      data.deliverableSha256 === manifest.deliverableSha256 &&
+      data.finalOfficeInputHash === manifest.finalOfficeInputHash &&
+      data.auditExportPath === manifest.auditExportPath &&
+      data.auditExportSha256 === manifest.auditExportSha256 &&
+      data.auditExportThroughSequence === manifest.auditExportThroughSequence &&
+      data.auditExportLatestHash === manifest.auditExportLatestHash;
+  });
+}
+
+function hasDurableFinalizationInputs(
+  projectRoot: string,
+  services: ServiceContainer,
+  manifest: JudgedRunManifest,
+): boolean {
+  if (
+    !manifest.deliverablePath || !manifest.deliverableArtifactId || !manifest.deliverableSha256 ||
+    !manifest.finalOfficeInputHash || !manifest.auditExportPath || !manifest.auditExportSha256 ||
+    !Number.isSafeInteger(manifest.auditExportThroughSequence) || !manifest.auditExportLatestHash ||
+    !services.audit.verifyChain().valid
+  ) return false;
+  const approval = services.approval.getApproval(manifest.approvalId);
+  if (!approval || approval.status !== 'approved' || approval.payloadHash !== manifest.approvalPayloadHash) return false;
+  for (const [relativePath, expectedHash] of Object.entries(manifest.sourceHashes)) {
+    const sourcePath = resolveRunFile(projectRoot, relativePath);
+    if (!sourcePath || fileSha256(sourcePath) !== expectedHash) return false;
+  }
+  const outputPath = resolveRunFile(projectRoot, manifest.deliverablePath);
+  const exportPath = resolveRunFile(projectRoot, manifest.auditExportPath);
+  if (!outputPath || !exportPath || fileSha256(outputPath) !== manifest.deliverableSha256 ||
+      fileSha256(exportPath) !== manifest.auditExportSha256) return false;
+  const runArtifacts = services.artifact.listArtifacts(manifest.runId);
+  const artifacts = runArtifacts.filter((artifact) =>
+    artifact.id === manifest.deliverableArtifactId && artifact.path === manifest.deliverablePath &&
+    artifact.hash === manifest.deliverableSha256,
+  );
+  if (artifacts.length !== 1 || runArtifacts.filter((artifact) => artifact.path === manifest.deliverablePath).length !== 1) return false;
+  try {
+    const auditExport = JSON.parse(fs.readFileSync(exportPath, 'utf8')) as any;
+    if (
+      auditExport.verification?.valid !== true ||
+      auditExport.verification.recordCount !== manifest.auditExportThroughSequence! + 1 ||
+      auditExport.verification.latestHash !== manifest.auditExportLatestHash ||
+      !Array.isArray(auditExport.records) ||
+      auditExport.records.length !== manifest.auditExportThroughSequence! + 1
+    ) return false;
+    const docxEvents = auditExport.records.filter((record: any) =>
+      record.data?.event === 'DOCX_GENERATED' && record.data.runId === manifest.runId &&
+      record.data.artifactId === manifest.deliverableArtifactId &&
+      record.data.artifactHash === manifest.deliverableSha256 && record.data.inputHash === manifest.finalOfficeInputHash &&
+      record.data.relativePath === manifest.deliverablePath,
+    );
+    return docxEvents.length === 1;
+  } catch {
+    return false;
+  }
+}
+
+export function isAcceptedJudgedRun(
+  projectRoot: string,
+  services: ServiceContainer,
+  manifest: JudgedRunManifest | null,
+): boolean {
+  if (!manifest || manifest.status !== 'completed' || !hasDurableFinalizationInputs(projectRoot, services, manifest)) return false;
+  return matchingCompletionRecords(services, manifest).length === 1;
+}
+
+export function isAcceptedJudgedRunArtifact(
+  projectRoot: string,
+  services: ServiceContainer,
+  artifact: { id: string; runId?: string; path: string; hash: string },
+): boolean {
+  if (!artifact.runId?.startsWith('judged-run-')) return true;
+  const manifest = readJudgedRunManifest(projectRoot, artifact.runId);
+  if (!manifest || !isAcceptedJudgedRun(projectRoot, services, manifest)) return false;
+  return manifest.deliverableArtifactId === artifact.id && manifest.deliverablePath === artifact.path &&
+    manifest.deliverableSha256 === artifact.hash;
+}
+
+function markJudgedRunFailed(
+  projectRoot: string,
+  services: ServiceContainer,
+  manifest: JudgedRunManifest,
+  reason: string,
+): JudgedRunManifest {
+  const existingTerminals = terminalRunRecords(services, manifest);
+  if (existingTerminals.some((record) => {
+    const event = (record.data as Record<string, unknown>).event;
+    return event === 'JUDGED_RUN_COMPLETED' || event === 'JUDGED_RUN_REJECTED';
+  })) return manifest;
+
+  const failed: JudgedRunManifest = {
+    ...manifest,
+    status: 'failed',
+    failureReason: reason,
+    updatedAt: new Date().toISOString(),
+  };
+  writeJsonAtomically(getJudgedRunManifestPath(projectRoot, manifest.runId), failed);
+  if (!existingTerminals.some((record) => (record.data as Record<string, unknown>).event === 'JUDGED_RUN_FAILED')) {
+    try {
+      services.audit.recordAuditEvent({
+        category: 'stage',
+        source: 'judged-runner',
+        data: {
+          event: 'JUDGED_RUN_FAILED',
+          runId: manifest.runId,
+          attempt: manifest.attempt ?? 1,
+          approvalId: manifest.approvalId,
+          reason,
+          ...((manifest.details as any)?.agentAnalysis ? {
+            analysisId: (manifest.details as any).agentAnalysis.analysisId,
+            agentRunId: (manifest.details as any).agentAnalysis.agentRunId,
+            receiptSha256: (manifest.details as any).agentAnalysis.receiptSha256,
+          } : {}),
+          timestamp: failed.updatedAt,
+        },
+      });
+    } catch {
+      // The failed manifest remains the fail-closed state if the audit chain is unavailable.
+    }
+  }
+  try {
+    services.docxGenerator.markRequestFailed(`req-${manifest.runId}`, reason);
+  } catch {
+    // Artifact visibility still depends on the failed manifest and matching completion audit.
+  }
+  return failed;
+}
+
+function appendCompletionEvent(services: ServiceContainer, manifest: JudgedRunManifest): void {
+  const terminalRecords = terminalRunRecords(services, manifest);
+  if (terminalRecords.length) {
+    if (terminalRecords.length === 1 && (terminalRecords[0].data as Record<string, unknown>).event === 'JUDGED_RUN_COMPLETED' &&
+        matchingCompletionRecords(services, manifest).length === 1) return;
+    throw new Error(`Judged run '${manifest.runId}' already has terminal history and cannot complete again.`);
+  }
+  services.audit.recordAuditEvent({
+    category: 'stage',
+    source: 'judged-runner',
+    data: {
+      event: 'JUDGED_RUN_COMPLETED',
+      runId: manifest.runId,
+      attempt: manifest.attempt ?? 1,
+      approvalId: manifest.approvalId,
+      approvalPayloadHash: manifest.approvalPayloadHash,
+      verdict: manifest.verdict,
+      deliverablePath: manifest.deliverablePath,
+      deliverableArtifactId: manifest.deliverableArtifactId,
+      deliverableSha256: manifest.deliverableSha256,
+      finalOfficeInputHash: manifest.finalOfficeInputHash,
+      auditExportPath: manifest.auditExportPath,
+      auditExportSha256: manifest.auditExportSha256,
+      auditExportThroughSequence: manifest.auditExportThroughSequence,
+      auditExportLatestHash: manifest.auditExportLatestHash,
+      ...((manifest.details as any)?.agentAnalysis ? {
+        analysisId: (manifest.details as any).agentAnalysis.analysisId,
+        agentRunId: (manifest.details as any).agentAnalysis.agentRunId,
+        receiptSha256: (manifest.details as any).agentAnalysis.receiptSha256,
+      } : {}),
+      timestamp: new Date().toISOString(),
+    },
+  });
+}
+
+function appendRejectedEvent(services: ServiceContainer, manifest: JudgedRunManifest, approval: ApprovalRecord): void {
+  const terminalRecords = terminalRunRecords(services, manifest);
+  if (terminalRecords.length) {
+    if (terminalRecords.length === 1) {
+      const data = terminalRecords[0].data as Record<string, unknown>;
+      if (data.event === 'JUDGED_RUN_REJECTED' && data.approvalId === manifest.approvalId) return;
+    }
+    throw new Error(`Judged run '${manifest.runId}' already has contradictory terminal history.`);
+  }
+  services.audit.recordAuditEvent({
+    category: 'stage',
+    source: 'judged-runner',
+    data: {
+      event: 'JUDGED_RUN_REJECTED',
+      runId: manifest.runId,
+      attempt: manifest.attempt ?? 1,
+      approvalId: manifest.approvalId,
+      reviewer: approval.reviewedBy || approval.approvedBy,
+      ...((manifest.details as any)?.agentAnalysis ? {
+        analysisId: (manifest.details as any).agentAnalysis.analysisId,
+        agentRunId: (manifest.details as any).agentAnalysis.agentRunId,
+        receiptSha256: (manifest.details as any).agentAnalysis.receiptSha256,
+      } : {}),
+      timestamp: new Date().toISOString(),
+    },
+  });
+}
+
+function recoverJudgedRunFinalization(
+  projectRoot: string,
+  services: ServiceContainer,
+  manifest: JudgedRunManifest,
+): JudgedRunManifest | null {
+  if (isAcceptedJudgedRun(projectRoot, services, manifest)) return manifest;
+  if (terminalRunRecords(services, manifest).length > 0) return null;
+  if (!hasDurableFinalizationInputs(projectRoot, services, manifest)) return null;
+  const completed: JudgedRunManifest = { ...manifest, status: 'completed', failureReason: undefined, updatedAt: new Date().toISOString() };
+  writeJsonAtomically(getJudgedRunManifestPath(projectRoot, manifest.runId), completed);
+  try {
+    appendCompletionEvent(services, completed);
+  } catch {
+    if (!isAcceptedJudgedRun(projectRoot, services, completed)) return null;
+  }
+  return isAcceptedJudgedRun(projectRoot, services, completed) ? completed : null;
+}
+
+function finalizeJudgedRunOutput(
+  projectRoot: string,
+  services: ServiceContainer,
+  manifest: JudgedRunManifest,
+  officeInput: OfficeDocxInput,
+  deliverable: { artifactId: string; path: string; sha256: string },
+  auditExportPath: string,
+): JudgedRunManifest {
+  const verification = services.audit.verifyChain();
+  if (!verification.valid) throw new Error(`Audit chain verification failed: ${verification.errors.join('; ')}`);
+  const auditExport = services.audit.exportAuditTrail();
+  if (!auditExport.verification.valid) throw new Error('Audit export did not verify before judged-run acceptance.');
+  const auditExportAbsolutePath = path.join(projectRoot, auditExportPath);
+  writeJsonAtomically(auditExportAbsolutePath, auditExport);
+  const auditExportSha256 = fileSha256(auditExportAbsolutePath);
+  const latestAuditRecord = auditExport.records[auditExport.records.length - 1];
+  const finalizing: JudgedRunManifest = {
+    ...manifest,
+    status: 'finalizing',
+    updatedAt: new Date().toISOString(),
+    officeInput,
+    deliverablePath: deliverable.path,
+    deliverableArtifactId: deliverable.artifactId,
+    deliverableSha256: deliverable.sha256,
+    finalOfficeInputHash: computeOfficeInputHash(officeInput),
+    auditExportPath,
+    auditExportSha256,
+    auditExportThroughSequence: latestAuditRecord?.sequence ?? -1,
+    auditExportLatestHash: latestAuditRecord?.hash ?? '',
+    failureReason: undefined,
+  };
+  writeJsonAtomically(getJudgedRunManifestPath(projectRoot, manifest.runId), finalizing);
+  const completed: JudgedRunManifest = { ...finalizing, status: 'completed', updatedAt: new Date().toISOString() };
+  writeJsonAtomically(getJudgedRunManifestPath(projectRoot, manifest.runId), completed);
+  try {
+    appendCompletionEvent(services, completed);
+  } catch (error) {
+    if (!isAcceptedJudgedRun(projectRoot, services, completed)) throw error;
+  }
+  if (!isAcceptedJudgedRun(projectRoot, services, completed)) throw new Error('Judged run completion could not be verified after its terminal audit append.');
+  return completed;
+}
+
+/** Put a completed model analysis through the existing judged-run approval and DOCX path. */
+export function prepareAgentJudgedRun(
+  projectRoot: string,
+  services: ServiceContainer,
+  analysisId: string,
+): JudgedRunManifest {
+  if (!/^telemetry-\d{10,}-[a-f0-9]{8}$/.test(analysisId)) throw new Error('Invalid telemetry analysis ID.');
+  const runId = `judged-run-agent-${analysisId}`;
+  return withJudgedRunOutputLock(projectRoot, () =>
+    withJudgedRunLock(projectRoot, runId, () => prepareAgentJudgedRunLocked(projectRoot, services, analysisId, runId)));
+}
+
+function prepareAgentJudgedRunLocked(
+  projectRoot: string,
+  services: ServiceContainer,
+  analysisId: string,
+  runId: string,
+): JudgedRunManifest {
+  const manifestPath = getJudgedRunManifestPath(projectRoot, runId);
+  const existing = readJudgedRunManifest(projectRoot, runId);
+  if (existing) {
+    if ((existing.details as any)?.agentAnalysis?.analysisId !== analysisId) throw new Error('Agent review run identity mismatch.');
+    if (existing.status === 'failed') {
+      markJudgedRunFailed(projectRoot, services, existing, existing.failureReason || 'This attempt already failed and cannot be resubmitted.');
+      throw new Error(`Agent review run '${runId}' failed and cannot be resubmitted.`);
+    }
+    if (existing.status === 'finalizing' || existing.status === 'completed') {
+      const recovered = recoverJudgedRunFinalization(projectRoot, services, existing);
+      if (recovered) return recovered;
+      markJudgedRunFailed(projectRoot, services, existing, 'Interrupted finalization could not be reconciled from its persisted artifact, audit snapshot, approval, and source hashes.');
+      throw new Error(`Agent review run '${runId}' has an incomplete finalization and remains unaccepted.`);
+    }
+    const existingApproval = services.approval.getApproval(existing.approvalId);
+    if (!existingApproval || existingApproval.payloadHash !== existing.approvalPayloadHash) {
+      throw new Error(`Agent review run '${runId}' has no matching persisted approval.`);
+    }
+    return existing;
+  }
+
+  const reportRelativePath = `.maos/industrial/telemetry-analyses/agent-reports/${analysisId}.json`;
+  const reportPath = path.resolve(projectRoot, reportRelativePath);
+  const projectRealPath = fs.realpathSync(projectRoot);
+  if (!fs.existsSync(reportPath) || !fs.realpathSync(reportPath).startsWith(`${projectRealPath}${path.sep}`)) {
+    throw new Error('Accepted agent report was not found inside the active project.');
+  }
+  const reportBytes = fs.readFileSync(reportPath);
+  const reportSha256 = crypto.createHash('sha256').update(reportBytes).digest('hex');
+  const report = JSON.parse(reportBytes.toString('utf8')) as any;
+  if (
+    report.schemaVersion !== 1 || report.status !== 'completed' || report.acceptance !== 'accepted' ||
+    report.analysisId !== analysisId || typeof report.runId !== 'string' ||
+    report.numericFindings?.status !== 'replay-matched' ||
+    report.numericFindings?.verificationMethod !== 'same-implementation-replay' ||
+    typeof report.numericFindings?.rulesetSha256 !== 'string' ||
+    report.explanation?.status !== 'unverified' || typeof report.explanation?.text !== 'string'
+  ) {
+    throw new Error('Agent report is not an accepted, replay-verified result with explicitly unverified model prose.');
+  }
+
+  const auditTrail = services.audit.exportAuditTrail();
+  const completionAudit = auditTrail.records.find((record) => {
+    const data = record.data as Record<string, unknown>;
+    return data.event === 'INDUSTRIAL_ANALYSIS_AGENT_COMPLETED' && data.runId === report.runId &&
+      data.analysisId === analysisId && data.reportSha256 === reportSha256 && data.outcome === 'completed';
+  });
+  if (!auditTrail.verification.valid || !completionAudit) {
+    if (report.status === 'completed' && report.acceptance === 'accepted') {
+      writeJsonAtomically(reportPath, {
+        ...report,
+        status: 'failed',
+        acceptance: 'unaccepted',
+        failure: { code: 'COMPLETION_AUDIT_NOT_VERIFIED' },
+      });
+    }
+    throw new Error('Agent report has no matching valid completion audit record and cannot enter human review.');
+  }
+
+  const receiptPath = String(report.numericFindings.receiptPath || '');
+  const expectedReceiptPath = `.maos/industrial/telemetry-analyses/${analysisId}.json`;
+  if (receiptPath !== expectedReceiptPath) throw new Error('Agent report points to an unexpected telemetry receipt path.');
+  const verification = verifyTelemetryAnalysis(projectRoot, analysisId);
+  const result = verification.result;
+  const expectedReportedResult = result && {
+    ...result,
+    findings: result.findings.slice(0, 30),
+    omittedFindingCount: Math.max(0, result.findings.length - 30),
+  };
+  if (
+    !verification.valid || !result || verification.receiptSha256 !== report.numericFindings.receiptSha256 ||
+    verification.sourcePath !== report.source?.evidencePath || verification.sourceSha256 !== report.source?.sha256 ||
+    JSON.stringify(expectedReportedResult) !== JSON.stringify(report.numericFindings.result)
+  ) {
+    throw new Error('Agent receipt, selected-source copy, ruleset or numeric replay no longer matches the accepted report.');
+  }
+
+  const selectedPath = String(report.source?.selectedPath || '');
+  if (!selectedPath || path.isAbsolute(selectedPath)) throw new Error('Agent report has no safe selected source path.');
+  const selectedAbsolutePath = path.resolve(projectRoot, selectedPath);
+  const selectedRealPath = fs.realpathSync(selectedAbsolutePath);
+  if (!selectedRealPath.startsWith(`${projectRealPath}${path.sep}`) || !fs.statSync(selectedRealPath).isFile()) {
+    throw new Error('Selected source is missing or resolves outside the active project.');
+  }
+  const selectedSha256 = crypto.createHash('sha256').update(fs.readFileSync(selectedRealPath)).digest('hex');
+  if (selectedSha256 !== report.source.sha256) throw new Error('Selected source changed after agent analysis.');
+
+  const rulesetRelativePath = 'demo/industrial/safety_thresholds.json';
+  const rulesetPath = path.join(projectRoot, rulesetRelativePath);
+  const rulesetSha256 = crypto.createHash('sha256').update(fs.readFileSync(rulesetPath)).digest('hex');
+  if (rulesetSha256 !== report.numericFindings.rulesetSha256) throw new Error('Demonstration rules changed after agent analysis.');
+  const receiptBytes = fs.readFileSync(path.join(projectRoot, receiptPath));
+  const receiptSha256 = crypto.createHash('sha256').update(receiptBytes).digest('hex');
+  if (receiptSha256 !== report.numericFindings.receiptSha256) throw new Error('Telemetry receipt changed after agent analysis.');
+
+  const sourceHashes = {
+    [selectedPath]: selectedSha256,
+    [String(report.source.evidencePath)]: String(report.source.sha256),
+    [rulesetRelativePath]: rulesetSha256,
+    [receiptPath]: receiptSha256,
+    [reportRelativePath]: reportSha256,
+  };
+  const activeProjectId = services.officeInput.resolveProjectId();
+  const approvalId = `appr-${runId}`;
+  const verdict: JudgedRunManifest['verdict'] = result.verdict === 'CRITICAL' ? 'FAIL' : result.verdict;
+  const generatedAt = new Date().toISOString();
+  const citationIds = ['CIT-SOURCE', 'CIT-RULES', 'CIT-RECEIPT'];
+  const findings = result.findings.map((finding, index) => ({
+    id: `TELEMETRY-${String(index + 1).padStart(3, '0')}`,
+    category: 'TELEMETRY',
+    statement: `Row ${finding.row}${finding.timestamp ? ` at ${finding.timestamp}` : ''}: ${finding.field} measured ${finding.value} ${finding.unit}; demonstration threshold ${finding.threshold} ${finding.unit}.`,
+    severity: finding.severity === 'CRITICAL' ? 'critical' as const : 'warning' as const,
+    status: finding.severity === 'CRITICAL' ? 'FAIL' as const : 'WARNING' as const,
+    metric: finding.field,
+    observedValue: finding.value,
+    thresholdValue: finding.threshold,
+    unit: finding.unit,
+    citationIds,
+    verified: true,
+  }));
+  const officeInput: OfficeDocxInput = {
+    schemaVersion: 1,
+    projectId: activeProjectId,
+    runId,
+    taskId: runId,
+    artifactType: 'docx',
+    title: `Telemetry Review — ${path.basename(selectedPath)}`,
+    author: { id: 'industrial-analysis-agent', name: 'Industrial Analysis Agent', role: 'Telemetry reviewer' },
+    sections: [{
+      id: 'AGENT-ANALYSIS',
+      heading: 'Selected CSV analysis',
+      content: `Deterministic findings were replayed from the selected source. Engineering verdict: ${result.verdict} (${verdict}). Human review is required before the report is finalized.`,
+      order: 1,
+      findingIds: findings.map((finding) => finding.id),
+      citationIds,
+    }],
+    findings,
+    measurements: [
+      { id: 'M-RMS', name: 'Overall vibration RMS', numericValue: result.overallVibrationRms, unit: 'mm/s', status: result.verdict === 'CRITICAL' ? 'critical' : result.verdict === 'WARNING' ? 'out_of_spec' : 'nominal', citationIds },
+      { id: 'M-PEAK-VIBRATION', name: 'Peak vibration', numericValue: result.peakVibration, unit: 'mm/s', status: result.criticalCount > 0 ? 'critical' : result.warningCount > 0 ? 'out_of_spec' : 'nominal', citationIds },
+      { id: 'M-PEAK-TEMPERATURE', name: 'Peak temperature', numericValue: result.peakTemperature, unit: 'deg C', status: result.findings.some((finding) => finding.field === 'bearing_temperature_c' && finding.severity === 'CRITICAL') ? 'critical' : result.findings.some((finding) => finding.field === 'bearing_temperature_c') ? 'out_of_spec' : 'nominal', citationIds },
+    ],
+    units: ['mm/s', 'deg C', 'rows'],
+    calculations: [{
+      id: 'CALC-RMS',
+      name: 'Overall vibration RMS',
+      inputs: [{ name: 'rowsAnalyzed', value: result.rowsAnalyzed, unit: 'rows' }],
+      methodOrFormula: 'sqrt(mean(vibration_rms_mm_s ** 2))',
+      resultValue: result.overallVibrationRms,
+      resultUnit: 'mm/s',
+      verifiedBy: 'deterministic_calc',
+      citationIds,
+    }],
+    warnings: [],
+    limitations: [
+      'Demonstration thresholds only; not a certified standard, diagnosis, or operating authorization.',
+      'Model-generated explanation remains unverified even after human approval.',
+    ],
+    citations: [
+      { citationId: 'CIT-SOURCE', sourcePath: selectedPath, sourceHash: selectedSha256, snippet: `Selected CSV source (${report.source.bytes} bytes).`, verifiedAt: generatedAt },
+      { citationId: 'CIT-RULES', sourcePath: rulesetRelativePath, sourceHash: rulesetSha256, snippet: 'Configured demonstration threshold ruleset.', verifiedAt: generatedAt },
+      { citationId: 'CIT-RECEIPT', sourcePath: receiptPath, sourceHash: receiptSha256, snippet: `Replay-verified telemetry receipt ${analysisId}.`, verifiedAt: generatedAt },
+    ],
+    sourceArtifactIds: [],
+    sourceHashes,
+    references: [{ id: 'REF-SELECTED-SOURCE', sourcePath: selectedPath, sourceHash: selectedSha256 }],
+    evidenceState: { hasUnresolvedConflicts: false, isQuarantined: false, reviewedByHuman: false },
+    modelIdentity: {
+      modelId: `provider-reported: ${report.model.reported || 'unavailable'}`,
+      revision: `requested: ${report.model.provider}/${report.model.requested}`,
+    },
+    generatedAt,
+    approval: { required: true, status: 'pending', approvalId },
+    proseBlocks: [{
+      id: 'MODEL-EXPLANATION',
+      label: 'Model-generated explanation — unverified',
+      text: report.explanation.text,
+      isModelGenerated: true,
+      verifiedAgainstData: false,
+      approvedByReviewer: false,
+      modelId: `provider-reported: ${report.model.reported || 'unavailable'}`,
+    }],
+    conclusions: [{
+      id: 'PENDING-HUMAN-REVIEW',
+      statement: 'The replayed engineering verdict is distinct from model prose. A human reviewer must decide whether to accept the prepared report.',
+      verdict: 'conditional',
+      signOffIdentity: 'pending reviewer',
+      signedAt: generatedAt,
+    }],
+  };
+  const officeInputHash = computeOfficeInputHash(officeInput);
+  const details = {
+    anomalyCount: findings.length,
+    overallRms: result.overallVibrationRms,
+    anomalies: result.findings,
+    engineeringVerdict: result.verdict,
+    agentAnalysis: {
+      kind: 'industrial-analysis-agent',
+      agentRunId: report.runId,
+      analysisId,
+      reportPath: reportRelativePath,
+      reportSha256,
+      receiptPath,
+      receiptSha256,
+      sourcePath: selectedPath,
+      sourceSha256: selectedSha256,
+      rulesetSha256,
+      model: report.model,
+      explanation: report.explanation.text,
+      explanationStatus: 'unverified',
+      replayVerification: verification.method,
+    },
+  };
+  const approvalPayloadHash = computeJudgedRunApprovalHash(
+    runId,
+    verdict,
+    result.overallVibrationRms,
+    result.findings,
+    sourceHashes,
+    officeInputHash,
+  );
+  const manifest: JudgedRunManifest = {
+    schemaVersion: 1,
+    runId,
+    attempt: 1,
+    approvalId,
+    status: 'pending_approval',
+    verdict,
+    createdAt: generatedAt,
+    updatedAt: generatedAt,
+    sourceHashes,
+    officeInputHash,
+    approvalPayloadHash,
+    officeInput,
+    details,
+  };
+
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), { flag: 'wx' });
+  try {
+    services.approval.createApproval({
+      approvalId,
+      projectId: activeProjectId,
+      runId,
+      taskId: runId,
+      stepId: 'step-human-review',
+      actorId: 'maos-analysis-engine',
+      actorRole: 'agent',
+      reason: `Review selected CSV telemetry: ${result.verdict} engineering verdict with ${findings.length} threshold findings.`,
+      scope: 'reviewer_signoff',
+      payloadHash: approvalPayloadHash,
+      sourceHashes: Object.values(sourceHashes),
+      metadata: {
+        kind: 'maos-industrial-judged-run',
+        analysisKind: 'industrial-analysis-agent',
+        runId,
+        manifestPath: path.relative(projectRoot, manifestPath),
+        approvalPayloadHash,
+        officeInputHash,
+        overallRms: result.overallVibrationRms,
+        engineeringVerdict: result.verdict,
+        findings: result.findings.map((finding) => ({ ...finding, verdict: finding.severity === 'CRITICAL' ? 'FAIL' : finding.severity })),
+        sourceFiles: Object.fromEntries(Object.entries(sourceHashes).map(([sourcePath, sha256]) => [sourcePath, { sha256 }])),
+        agentAnalysis: details.agentAnalysis,
+      },
+    });
+  } catch (error) {
+    markJudgedRunFailed(projectRoot, services, manifest, error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+  return manifest;
+}
+
+function computeJudgedRunApprovalHash(
+  runId: string,
+  verdict: JudgedRunManifest['verdict'],
+  overallRms: unknown,
+  anomalies: unknown,
+  sourceHashes: Record<string, string>,
+  officeInputHash: string,
+): string {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    runId,
+    overallVerdict: verdict,
+    overallRms,
+    detectedAnomalies: anomalies,
+    sourceHashes,
+    officeInputHash,
+  })).digest('hex');
 }
 
 /**
@@ -125,10 +755,36 @@ export async function executeJudgedRun(
     };
   }
 
+  const runId = `judged-run-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+  const runUnderLock = async () => {
+    try {
+      return await withJudgedRunOutputLock(projectRoot, () =>
+        withJudgedRunLock(projectRoot, 'judged-run-t07-output', () =>
+          withJudgedRunLock(projectRoot, runId, () => executeJudgedRunInner(options, services, runId))));
+    } catch (error) {
+      if (!['JUDGED_RUN_BUSY', 'JUDGED_RUN_LOCK_UNAVAILABLE'].includes(String((error as any)?.code))) throw error;
+      const code = String((error as any).code);
+      return {
+        success: false,
+        exitCode: INDUSTRIAL_CLI_EXIT.VERIFY_FAILED,
+        message: `${code}: ${error instanceof Error ? error.message : String(error)}`,
+        runId,
+        durationMs: Date.now() - startTime,
+        stagesCompleted: [],
+        boundaryVerified: true,
+        policyVerified: true,
+        overallVerdict: 'UNAVAILABLE' as const,
+        approvalStatus: 'pending' as const,
+        auditVerified: false,
+        details: { executionErrorCode: code },
+      };
+    }
+  };
+
   const scope = services.industrialFirewallRequirement.getScope();
 
   if (!options.enforceFirewall || scope !== 'process') {
-    return executeJudgedRunInner(options, services);
+    return runUnderLock();
   }
 
   // Never tear down a boundary this run did not establish: a live boundary may
@@ -162,7 +818,7 @@ export async function executeJudgedRun(
   }
 
   try {
-    return await executeJudgedRunInner(options, services);
+    return await runUnderLock();
   } finally {
     if (!boundaryPreExisted) {
       // Tear down and persist the observation trace as evidence of what the
@@ -180,10 +836,10 @@ export async function executeJudgedRun(
 async function executeJudgedRunInner(
   options: JudgedRunOptions,
   services: ServiceContainer,
+  runId: string,
 ): Promise<JudgedRunResult> {
   const startTime = Date.now();
   const projectRoot = path.resolve(options.projectRoot || process.cwd());
-  const runId = `judged-run-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   const stagesCompleted: string[] = [];
 
   const logStep = (stepName: string, detail: string) => {
@@ -268,9 +924,11 @@ async function executeJudgedRunInner(
     };
   }
 
+  let thresholdsBuffer: Buffer;
   let thresholdsData: any;
   try {
-    thresholdsData = JSON.parse(fs.readFileSync(thresholdsPath, 'utf8'));
+    thresholdsBuffer = fs.readFileSync(thresholdsPath);
+    thresholdsData = JSON.parse(thresholdsBuffer.toString('utf8'));
     const vibrationRule = thresholdsData.thresholds?.vibration_rms_mm_s;
     const temperatureRule = thresholdsData.thresholds?.bearing_temperature_c;
     if (
@@ -298,6 +956,7 @@ async function executeJudgedRunInner(
       auditVerified: false,
     };
   }
+  const thresholdsHash = crypto.createHash('sha256').update(thresholdsBuffer).digest('hex');
   const vibrationRule = thresholdsData.thresholds.vibration_rms_mm_s;
   const temperatureRule = thresholdsData.thresholds.bearing_temperature_c;
 
@@ -369,6 +1028,12 @@ async function executeJudgedRunInner(
   const csvHash = crypto.createHash('sha256').update(csvBuffer).digest('hex');
   const maintHash = crypto.createHash('sha256').update(fs.readFileSync(maintPath)).digest('hex');
   const scanHash = crypto.createHash('sha256').update(fs.readFileSync(scanPath)).digest('hex');
+  const sourceHashes = {
+    'demo/industrial/safety_thresholds.json': thresholdsHash,
+    'demo/industrial/turbine_vibration_log.csv': csvHash,
+    'demo/industrial/maintenance_report.txt': maintHash,
+    'demo/industrial/turbine_inspection_scan.pdf': scanHash,
+  };
   stagesCompleted.push('INGEST');
 
   // 4b. Analyze Telemetry & Detect Anomalies
@@ -425,73 +1090,7 @@ async function executeJudgedRunInner(
 
   const approvalId = `appr-${runId}`;
   const autoApproval = options.autoApprove === true && options.yes === true;
-  const approvalPayloadHash = crypto.createHash('sha256').update(JSON.stringify({
-    runId,
-    overallVerdict,
-    overallRms,
-    detectedAnomalies,
-    sourceHashes: { csvHash, maintHash, scanHash },
-  })).digest('hex');
   const manifestPath = getJudgedRunManifestPath(projectRoot, runId);
-  if (!options.autoApprove || options.yes) {
-    services.approval.createApproval({
-    approvalId,
-    projectId: activeProjectId,
-    runId,
-    taskId: runId,
-    stepId: 'step-human-review',
-    actorId: 'maos-analysis-engine',
-    actorRole: 'agent',
-    reason: `Review T-07 safety analysis: ${overallVerdict} verdict with ${detectedAnomalies.length} threshold findings.`,
-    scope: 'reviewer_signoff',
-    payloadHash: approvalPayloadHash,
-    sourceHashes: [csvHash, maintHash, scanHash],
-      metadata: {
-        kind: 'maos-industrial-judged-run',
-        runId,
-        manifestPath: path.relative(projectRoot, manifestPath),
-        approvalPayloadHash,
-        overallRms,
-        findings: detectedAnomalies,
-        sourceFiles: {
-          'demo/industrial/turbine_vibration_log.csv': { sha256: csvHash },
-          'demo/industrial/maintenance_report.txt': { sha256: maintHash },
-          'demo/industrial/turbine_inspection_scan.pdf': { sha256: scanHash },
-        },
-      },
-    });
-    stagesCompleted.push('APPROVAL');
-  }
-
-  // Check interactive confirmation boundary
-  if (options.autoApprove) {
-    if (!options.yes) {
-      const msg = 'CONFIRMATION_REQUIRED: Non-interactive --auto-approve mandates confirmation flag (-y or --yes).';
-      if (!options.json) console.error(chalk.red(`\n❌ ${msg}`));
-      return {
-        success: false,
-        exitCode: INDUSTRIAL_CLI_EXIT.CONFIRMATION_REQUIRED,
-        message: msg,
-        runId,
-        durationMs: Date.now() - startTime,
-        stagesCompleted,
-        boundaryVerified: true,
-        policyVerified: true,
-        overallVerdict,
-        approvalStatus: 'pending',
-        auditVerified: false,
-      };
-    }
-
-    // Persist verified approval contract via authoritative ApprovalService
-    services.approval.decideApproval(
-      approvalId,
-      'approved',
-      'judge-evaluator',
-      'Confirmed judged run evaluation auto-approval under hackathon demonstration criteria.',
-      'lead',
-    );
-  }
 
   // Construct OfficeDocxInput
   const officeInput: OfficeDocxInput = {
@@ -603,11 +1202,7 @@ async function executeJudgedRunInner(
       },
     ],
     sourceArtifactIds: [],
-    sourceHashes: {
-      'demo/industrial/turbine_vibration_log.csv': csvHash,
-      'demo/industrial/maintenance_report.txt': maintHash,
-      'demo/industrial/turbine_inspection_scan.pdf': scanHash,
-    },
+    sourceHashes,
     references: [
       {
         id: 'REF-01',
@@ -652,22 +1247,95 @@ async function executeJudgedRunInner(
     ],
   };
 
-  if (!autoApproval) {
-    const manifest: JudgedRunManifest = {
-      schemaVersion: 1,
-      runId,
+  const officeInputHash = computeOfficeInputHash(officeInput);
+  const approvalPayloadHash = computeJudgedRunApprovalHash(
+    runId,
+    overallVerdict,
+    overallRms,
+    detectedAnomalies,
+    sourceHashes,
+    officeInputHash,
+  );
+  const preparedManifest: JudgedRunManifest = {
+    schemaVersion: 1,
+    runId,
+    attempt: 1,
+    approvalId,
+    status: 'pending_approval',
+    verdict: overallVerdict,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    sourceHashes: officeInput.sourceHashes,
+    officeInputHash,
+    approvalPayloadHash,
+    officeInput,
+    details: { anomalyCount: detectedAnomalies.length, overallRms, anomalies: detectedAnomalies },
+  };
+
+  if (!options.autoApprove || options.yes) {
+    services.approval.createApproval({
       approvalId,
-      status: 'pending_approval',
-      verdict: overallVerdict,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      sourceHashes: officeInput.sourceHashes,
-      approvalPayloadHash,
-      officeInput,
-      details: { anomalyCount: detectedAnomalies.length, overallRms, anomalies: detectedAnomalies },
-    };
-    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+      projectId: activeProjectId,
+      runId,
+      taskId: runId,
+      stepId: 'step-human-review',
+      actorId: 'maos-analysis-engine',
+      actorRole: 'agent',
+      reason: `Review T-07 safety analysis: ${overallVerdict} verdict with ${detectedAnomalies.length} threshold findings.`,
+      scope: 'reviewer_signoff',
+      payloadHash: approvalPayloadHash,
+      sourceHashes: Object.values(sourceHashes),
+      metadata: {
+        kind: 'maos-industrial-judged-run',
+        runId,
+        manifestPath: path.relative(projectRoot, manifestPath),
+        approvalPayloadHash,
+        officeInputHash,
+        overallRms,
+        findings: detectedAnomalies,
+        sourceFiles: {
+          'demo/industrial/safety_thresholds.json': { sha256: thresholdsHash },
+          'demo/industrial/turbine_vibration_log.csv': { sha256: csvHash },
+          'demo/industrial/maintenance_report.txt': { sha256: maintHash },
+          'demo/industrial/turbine_inspection_scan.pdf': { sha256: scanHash },
+        },
+      },
+    });
+    stagesCompleted.push('APPROVAL');
+  }
+
+  // Check interactive confirmation boundary
+  if (options.autoApprove) {
+    if (!options.yes) {
+      const msg = 'CONFIRMATION_REQUIRED: Non-interactive --auto-approve mandates confirmation flag (-y or --yes).';
+      if (!options.json) console.error(chalk.red(`\n❌ ${msg}`));
+      return {
+        success: false,
+        exitCode: INDUSTRIAL_CLI_EXIT.CONFIRMATION_REQUIRED,
+        message: msg,
+        runId,
+        durationMs: Date.now() - startTime,
+        stagesCompleted,
+        boundaryVerified: true,
+        policyVerified: true,
+        overallVerdict,
+        approvalStatus: 'pending',
+        auditVerified: false,
+      };
+    }
+
+    // Persist verified approval contract via authoritative ApprovalService
+    services.approval.decideApproval(
+      approvalId,
+      'approved',
+      'judge-evaluator',
+      'Confirmed judged run evaluation auto-approval under hackathon demonstration criteria.',
+      'lead',
+    );
+  }
+
+  if (!autoApproval) {
+    writeJsonAtomically(manifestPath, preparedManifest);
     const msg = `WAITING_FOR_APPROVAL: T-07 analysis is ready for human review. Run ${runId}; approval ${approvalId}.`;
     if (!options.json) console.log(chalk.yellow(`\n⏸  ${msg}`));
     return {
@@ -686,10 +1354,31 @@ async function executeJudgedRunInner(
     };
   }
 
+  let runManifest: JudgedRunManifest = { ...preparedManifest, status: 'finalizing', updatedAt: new Date().toISOString() };
+  try {
+    writeJsonAtomically(manifestPath, runManifest);
+  } catch (err: any) {
+    try { runManifest = markJudgedRunFailed(projectRoot, services, runManifest, `RUN_MANIFEST_PERSIST_FAILED: ${err.message}`); } catch {}
+    return {
+      success: false,
+      exitCode: INDUSTRIAL_CLI_EXIT.VERIFY_FAILED,
+      message: `RUN_MANIFEST_PERSIST_FAILED: Could not persist finalizing state: ${err.message}`,
+      runId,
+      durationMs: Date.now() - startTime,
+      stagesCompleted,
+      boundaryVerified: true,
+      policyVerified: true,
+      overallVerdict,
+      approvalStatus: 'approved',
+      auditVerified: false,
+    };
+  }
+
   // 4d. Synthesize Deliverable
   logStep('DAG: SYNTHESIZE', 'Generating verified OOXML .docx approval note...');
+  let docxResult;
   try {
-    const docxResult = services.docxGenerator.generateDocx({
+    docxResult = services.docxGenerator.generateDocx({
       schemaVersion: 1,
       projectId: activeProjectId,
       input: officeInput,
@@ -699,12 +1388,13 @@ async function executeJudgedRunInner(
       callerIdentity: { agentId: 'synthesizer_agent', taskId: runId },
     });
 
-    if (!docxResult.ok || !fs.existsSync(deliverableAbsPath)) {
+    if (!docxResult.ok || !docxResult.artifactId || !fs.existsSync(deliverableAbsPath)) {
       throw new Error(`Docx generation failed: ${docxResult.error || 'File not written'}`);
     }
     stagesCompleted.push('DAG');
   } catch (err: any) {
     const msg = `SYNTHESIZE_FAILED: ${err.message}`;
+    try { runManifest = markJudgedRunFailed(projectRoot, services, runManifest, msg); } catch {}
     if (!options.json) console.error(chalk.red(`\n❌ ${msg}`));
     return {
       success: false,
@@ -721,16 +1411,27 @@ async function executeJudgedRunInner(
     };
   }
 
-  const deliverableBuffer = fs.readFileSync(deliverableAbsPath);
-  const deliverableSha256 = crypto.createHash('sha256').update(deliverableBuffer).digest('hex');
+  const deliverableSha256 = fileSha256(deliverableAbsPath);
 
   // ══════════════════════════════════════════════════════════════
   // STAGE 5: POST-RUN VERIFICATION
   // ══════════════════════════════════════════════════════════════
   logStep('VERIFY', 'Validating deliverable signatures and cryptographic audit chain...');
-  const chainVerification = services.audit.verifyChain();
-  if (!chainVerification.valid) {
-    const msg = `AUDIT_VERIFICATION_FAILED: Hash chain integrity failure: ${chainVerification.errors.join('; ')}`;
+  const auditExportRelPath = `artifacts/generated/${runId}-audit-export.json`;
+  let completedManifest: JudgedRunManifest;
+  try {
+    if (!services.audit.verifyChain().valid) throw new Error('AUDIT_VERIFICATION_FAILED: Hash chain integrity failure before export.');
+    stagesCompleted.push('VERIFY');
+    logStep('AUDIT EXPORT', 'Exporting the verified audit snapshot and sealing the run record...');
+    completedManifest = finalizeJudgedRunOutput(projectRoot, services, runManifest, officeInput, {
+      artifactId: docxResult.artifactId,
+      path: deliverableRelPath,
+      sha256: deliverableSha256,
+    }, auditExportRelPath);
+    stagesCompleted.push('AUDIT_EXPORT');
+  } catch (err: any) {
+    const msg = `RUN_FINALIZATION_FAILED: ${err.message}`;
+    try { runManifest = markJudgedRunFailed(projectRoot, services, runManifest, msg); } catch {}
     if (!options.json) console.error(chalk.red(`\n❌ ${msg}`));
     return {
       success: false,
@@ -743,41 +1444,13 @@ async function executeJudgedRunInner(
       policyVerified: true,
       overallVerdict,
       approvalStatus: 'approved',
-      deliverablePath: deliverableRelPath,
-      deliverableSha256,
       auditVerified: false,
+      details: { unacceptedDeliverablePath: deliverableRelPath, unacceptedDeliverableSha256: deliverableSha256 },
     };
   }
-  stagesCompleted.push('VERIFY');
 
-  // ══════════════════════════════════════════════════════════════
-  // STAGE 6: AUDIT EXPORT
-  // ══════════════════════════════════════════════════════════════
-  logStep('AUDIT EXPORT', 'Exporting sovereign audit bundle and sealing run record...');
-  const auditExportRelPath = 'artifacts/generated/judged-run-audit-export.json';
-  const auditExportAbsPath = path.join(projectRoot, auditExportRelPath);
+  const auditExportSha256 = completedManifest.auditExportSha256!;
 
-  services.audit.recordAuditEvent({
-    category: 'stage',
-    source: 'judged-runner',
-    data: {
-      event: 'JUDGED_RUN_COMPLETED',
-      runId,
-      verdict: overallVerdict,
-      deliverableSha256,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    },
-  });
-
-  const auditExportData = services.audit.exportAuditTrail();
-  fs.writeFileSync(auditExportAbsPath, JSON.stringify(auditExportData, null, 2), 'utf8');
-  const auditExportSha256 = crypto
-    .createHash('sha256')
-    .update(fs.readFileSync(auditExportAbsPath))
-    .digest('hex');
-
-  stagesCompleted.push('AUDIT_EXPORT');
   const durationMs = Date.now() - startTime;
 
   if (!options.json) {
@@ -823,29 +1496,73 @@ export async function resumeJudgedRunAfterApproval(
     throw new Error(`Approval '${approvalId}' is not bound to a MAOS Industrial judged run.`);
   }
   const runId = String(approval.metadata.runId || approval.runId || '');
+  return withJudgedRunOutputLock(projectRoot, () =>
+    withJudgedRunLock(projectRoot, runId, () => resumeJudgedRunAfterApprovalLocked(projectRoot, services, approvalId)));
+}
+
+export async function decideAndResumeJudgedRunAfterApproval(
+  projectRoot: string,
+  services: ServiceContainer,
+  approvalId: string,
+  review: ReviewApprovalInput,
+): Promise<{ approval: ApprovalRecord; judgedRun: JudgedRunManifest }> {
+  const approval = services.approval.getApproval(approvalId);
+  if (!approval || approval.metadata?.kind !== 'maos-industrial-judged-run') {
+    throw new Error(`Approval '${approvalId}' is not bound to a MAOS Industrial judged run.`);
+  }
+  const runId = String(approval.metadata.runId || approval.runId || '');
+  return withJudgedRunOutputLock(projectRoot, () =>
+    withJudgedRunLock(projectRoot, runId, async (): Promise<{ approval: ApprovalRecord; judgedRun: JudgedRunManifest }> => {
+    const current = services.approval.getApproval(approvalId);
+    const sameDecision = current?.status === review.decision && current.reviewedBy === review.actorId &&
+      current.reviewRole === review.actorRole && (current.reviewNotes || undefined) === (review.notes || undefined) &&
+      (!review.conditions || JSON.stringify(current.conditions) === JSON.stringify(review.conditions));
+    const updatedApproval = sameDecision && current
+      ? current
+      : services.approval.decideApproval(approvalId, review);
+    const judgedRun = await resumeJudgedRunAfterApprovalLocked(projectRoot, services, approvalId);
+    return { approval: updatedApproval, judgedRun };
+    }));
+}
+
+async function resumeJudgedRunAfterApprovalLocked(
+  projectRoot: string,
+  services: ServiceContainer,
+  approvalId: string,
+): Promise<JudgedRunManifest> {
+  const approval = services.approval.getApproval(approvalId);
+  if (!approval || approval.metadata?.kind !== 'maos-industrial-judged-run') {
+    throw new Error(`Approval '${approvalId}' is not bound to a MAOS Industrial judged run.`);
+  }
+  const runId = String(approval.metadata.runId || approval.runId || '');
   const manifest = readJudgedRunManifest(projectRoot, runId);
   if (!manifest || manifest.approvalId !== approvalId) {
     throw new Error(`Prepared judged run manifest for approval '${approvalId}' was not found.`);
   }
-  if (manifest.status === 'completed' || manifest.status === 'rejected') return manifest;
+  if (manifest.status === 'rejected') {
+    appendRejectedEvent(services, manifest, approval);
+    return manifest;
+  }
+  if (manifest.status === 'failed') {
+    markJudgedRunFailed(projectRoot, services, manifest, manifest.failureReason || 'This attempt already failed and cannot be resumed.');
+    throw new Error(`Judged run '${runId}' failed and cannot be resumed.`);
+  }
+  if (manifest.status === 'completed' || manifest.status === 'finalizing') {
+    const recovered = recoverJudgedRunFinalization(projectRoot, services, manifest);
+    if (recovered) return recovered;
+    markJudgedRunFailed(projectRoot, services, manifest, 'Interrupted finalization could not be reconciled from its persisted artifact, audit snapshot, approval, and source hashes.');
+    throw new Error(`Judged run '${runId}' has an incomplete finalization and remains unaccepted.`);
+  }
   const refusePreparedRun = (message: string): never => {
-    const failed: JudgedRunManifest = { ...manifest, status: 'failed', updatedAt: new Date().toISOString() };
-    fs.writeFileSync(getJudgedRunManifestPath(projectRoot, runId), JSON.stringify(failed, null, 2), 'utf8');
-    services.audit.recordAuditEvent({
-      category: 'stage',
-      source: 'judged-runner',
-      data: { event: 'JUDGED_RUN_FAILED', runId, approvalId, reason: message, timestamp: new Date().toISOString() },
-    });
-    throw new Error(message);
+    markJudgedRunFailed(projectRoot, services, manifest, message);
+    const error = new Error(message) as Error & { code: string };
+    error.code = 'STALE_APPROVAL';
+    throw error;
   };
   if (approval.status === 'rejected') {
     const rejected: JudgedRunManifest = { ...manifest, status: 'rejected', updatedAt: new Date().toISOString() };
-    fs.writeFileSync(getJudgedRunManifestPath(projectRoot, runId), JSON.stringify(rejected, null, 2), 'utf8');
-    services.audit.recordAuditEvent({
-      category: 'stage',
-      source: 'judged-runner',
-      data: { event: 'JUDGED_RUN_REJECTED', runId, approvalId, reviewer: approval.reviewedBy || approval.approvedBy, timestamp: new Date().toISOString() },
-    });
+    writeJsonAtomically(getJudgedRunManifestPath(projectRoot, runId), rejected);
+    appendRejectedEvent(services, rejected, approval);
     return rejected;
   }
   if (approval.status !== 'approved') {
@@ -864,17 +1581,18 @@ export async function resumeJudgedRunAfterApproval(
   }
 
   const details = manifest.details as { overallRms?: number; anomalies?: unknown[] };
-  const expectedPayloadHash = crypto.createHash('sha256').update(JSON.stringify({
+  const officeInputHash = computeOfficeInputHash(manifest.officeInput);
+  if (!manifest.officeInputHash || officeInputHash !== manifest.officeInputHash) {
+    return refusePreparedRun(`Judged run '${runId}' report input changed after analysis.`);
+  }
+  const expectedPayloadHash = computeJudgedRunApprovalHash(
     runId,
-    overallVerdict: manifest.verdict,
-    overallRms: details.overallRms,
-    detectedAnomalies: details.anomalies,
-    sourceHashes: {
-      csvHash: sourceHashes['demo/industrial/turbine_vibration_log.csv'],
-      maintHash: sourceHashes['demo/industrial/maintenance_report.txt'],
-      scanHash: sourceHashes['demo/industrial/turbine_inspection_scan.pdf'],
-    },
-  })).digest('hex');
+    manifest.verdict,
+    details.overallRms,
+    details.anomalies,
+    sourceHashes,
+    officeInputHash,
+  );
   if (expectedPayloadHash !== manifest.approvalPayloadHash || approval.payloadHash !== manifest.approvalPayloadHash) {
     return refusePreparedRun(`Judged run '${runId}' approval payload does not match its prepared analysis.`);
   }
@@ -887,7 +1605,7 @@ export async function resumeJudgedRunAfterApproval(
       ...manifest.officeInput.evidenceState,
       reviewedByHuman: true,
       reviewerId: reviewer,
-      reviewerNotes: approval.reviewNotes || 'Approved after reviewing the T-07 safety findings and cited source evidence.',
+      reviewerNotes: approval.reviewNotes || undefined,
     },
     approval: {
       required: true,
@@ -895,7 +1613,7 @@ export async function resumeJudgedRunAfterApproval(
       approvalId,
       approvedBy: reviewer,
       approvedAt: reviewedAt,
-      comment: approval.reviewNotes || 'Approved after reviewing the T-07 safety findings and cited source evidence.',
+      comment: approval.reviewNotes || undefined,
     },
     proseBlocks: manifest.officeInput.proseBlocks.map((block) => ({ ...block, approvedByReviewer: true })),
     conclusions: manifest.officeInput.conclusions.map((conclusion) => ({
@@ -908,9 +1626,10 @@ export async function resumeJudgedRunAfterApproval(
 
   const deliverableRelPath = `artifacts/generated/${runId}-turbine_safety_approval_note.docx`;
   const deliverableAbsPath = path.join(projectRoot, deliverableRelPath);
-  fs.mkdirSync(path.dirname(deliverableAbsPath), { recursive: true });
+  let finalizing: JudgedRunManifest = { ...manifest, status: 'finalizing', updatedAt: new Date().toISOString() };
   try {
-    const docxResult = services.docxGenerator.generateDocx({
+    writeJsonAtomically(getJudgedRunManifestPath(projectRoot, runId), finalizing);
+    const docxResult = await services.docxGenerator.generateDocxAsync({
       schemaVersion: 1,
       projectId: officeInput.projectId,
       input: officeInput,
@@ -920,35 +1639,22 @@ export async function resumeJudgedRunAfterApproval(
       requestId: `req-${runId}`,
       callerIdentity: { agentId: 'synthesizer_agent', taskId: runId },
     });
-    if (!docxResult.ok || !fs.existsSync(deliverableAbsPath)) {
+    if (!docxResult.ok || !docxResult.artifactId || !fs.existsSync(deliverableAbsPath)) {
       throw new Error(`Docx generation failed: ${docxResult.error || 'File not written'}`);
     }
-    const deliverableSha256 = crypto.createHash('sha256').update(fs.readFileSync(deliverableAbsPath)).digest('hex');
-    services.audit.recordAuditEvent({
-      category: 'stage',
-      source: 'judged-runner',
-      data: { event: 'JUDGED_RUN_COMPLETED', runId, approvalId, verdict: manifest.verdict, deliverableSha256, timestamp: new Date().toISOString() },
-    });
-    const verification = services.audit.verifyChain();
-    if (!verification.valid) throw new Error(`Audit chain verification failed: ${verification.errors.join('; ')}`);
-    const auditExportRelPath = 'artifacts/generated/judged-run-audit-export.json';
-    const auditExportAbsPath = path.join(projectRoot, auditExportRelPath);
-    fs.writeFileSync(auditExportAbsPath, JSON.stringify(services.audit.exportAuditTrail(), null, 2), 'utf8');
-    const completed: JudgedRunManifest = {
-      ...manifest,
-      status: 'completed',
-      updatedAt: new Date().toISOString(),
+    const deliverableSha256 = fileSha256(deliverableAbsPath);
+    return finalizeJudgedRunOutput(
+      projectRoot,
+      services,
+      finalizing,
       officeInput,
-      deliverablePath: deliverableRelPath,
-      deliverableSha256,
-      auditExportPath: auditExportRelPath,
-      auditExportSha256: crypto.createHash('sha256').update(fs.readFileSync(auditExportAbsPath)).digest('hex'),
-    };
-    fs.writeFileSync(getJudgedRunManifestPath(projectRoot, runId), JSON.stringify(completed, null, 2), 'utf8');
-    return completed;
+      { artifactId: docxResult.artifactId, path: deliverableRelPath, sha256: deliverableSha256 },
+      `artifacts/generated/${runId}-audit-export.json`,
+    );
   } catch (error) {
-    const failed: JudgedRunManifest = { ...manifest, status: 'failed', updatedAt: new Date().toISOString() };
-    fs.writeFileSync(getJudgedRunManifestPath(projectRoot, runId), JSON.stringify(failed, null, 2), 'utf8');
+    const latest = readJudgedRunManifest(projectRoot, runId) || finalizing;
+    if (isAcceptedJudgedRun(projectRoot, services, latest)) return latest;
+    markJudgedRunFailed(projectRoot, services, latest, error instanceof Error ? error.message : String(error));
     throw error;
   }
 }

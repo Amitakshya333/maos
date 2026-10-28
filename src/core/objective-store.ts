@@ -19,6 +19,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import { getObjectivesDir } from '../utils/paths';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -87,6 +88,16 @@ export function createObjective(opts: {
   maxReplanAttempts?: number;
   cwd?: string;
 }): ObjectiveState {
+  return withJudgedRunOutputLock(opts.cwd || process.cwd(), () => createObjectiveUnderProjectLock(opts));
+}
+
+function createObjectiveUnderProjectLock(opts: {
+  id: string;
+  goal: string;
+  plannerAgentId: string;
+  maxReplanAttempts?: number;
+  cwd?: string;
+}): ObjectiveState {
   const obj: ObjectiveState = {
     id: opts.id,
     goal: opts.goal,
@@ -128,6 +139,10 @@ export function loadObjective(id: string, cwd?: string): ObjectiveState | null {
  * Save an objective state to disk (atomic write-then-rename).
  */
 export function saveObjective(obj: ObjectiveState, cwd?: string): void {
+  withJudgedRunOutputLock(cwd || process.cwd(), () => saveObjectiveUnderProjectLock(obj, cwd));
+}
+
+function saveObjectiveUnderProjectLock(obj: ObjectiveState, cwd?: string): void {
   const dir = getObjectivesDir(cwd);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -166,6 +181,10 @@ export function loadAllObjectives(cwd?: string): ObjectiveState[] {
  * Record that planning completed and subtasks were created.
  */
 export function recordPlanCompletion(objectiveId: string, subtaskIds: string[], reason: string, cwd?: string): void {
+  withJudgedRunOutputLock(cwd || process.cwd(), () => recordPlanCompletionUnderProjectLock(objectiveId, subtaskIds, reason, cwd));
+}
+
+function recordPlanCompletionUnderProjectLock(objectiveId: string, subtaskIds: string[], reason: string, cwd?: string): void {
   const obj = loadObjective(objectiveId, cwd);
   if (!obj) return;
 
@@ -187,6 +206,10 @@ export function recordPlanCompletion(objectiveId: string, subtaskIds: string[], 
  * Record a subtask completion.
  */
 export function recordChildCompletion(objectiveId: string, taskId: string, cwd?: string): void {
+  withJudgedRunOutputLock(cwd || process.cwd(), () => recordChildCompletionUnderProjectLock(objectiveId, taskId, cwd));
+}
+
+function recordChildCompletionUnderProjectLock(objectiveId: string, taskId: string, cwd?: string): void {
   const obj = loadObjective(objectiveId, cwd);
   if (!obj) return;
 
@@ -212,6 +235,10 @@ export function recordChildCompletion(objectiveId: string, taskId: string, cwd?:
  * Record a subtask failure (after retries exhausted / dead-lettered).
  */
 export function recordChildFailure(objectiveId: string, taskId: string, cwd?: string): void {
+  withJudgedRunOutputLock(cwd || process.cwd(), () => recordChildFailureUnderProjectLock(objectiveId, taskId, cwd));
+}
+
+function recordChildFailureUnderProjectLock(objectiveId: string, taskId: string, cwd?: string): void {
   const obj = loadObjective(objectiveId, cwd);
   if (!obj) return;
 
@@ -226,6 +253,10 @@ export function recordChildFailure(objectiveId: string, taskId: string, cwd?: st
  * Cancel pending subtasks of an objective (used during replanning).
  */
 export function cancelObjectiveSubtasks(objectiveId: string, taskIds: string[], cwd?: string): void {
+  withJudgedRunOutputLock(cwd || process.cwd(), () => cancelObjectiveSubtasksUnderProjectLock(objectiveId, taskIds, cwd));
+}
+
+function cancelObjectiveSubtasksUnderProjectLock(objectiveId: string, taskIds: string[], cwd?: string): void {
   const obj = loadObjective(objectiveId, cwd);
   if (!obj) return;
 
@@ -242,6 +273,10 @@ export function cancelObjectiveSubtasks(objectiveId: string, taskIds: string[], 
  * Mark an objective as replanning.
  */
 export function startReplan(objectiveId: string, cwd?: string): ObjectiveState | null {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => startReplanUnderProjectLock(objectiveId, cwd));
+}
+
+function startReplanUnderProjectLock(objectiveId: string, cwd?: string): ObjectiveState | null {
   const obj = loadObjective(objectiveId, cwd);
   if (!obj) return null;
 
@@ -262,6 +297,10 @@ export function startReplan(objectiveId: string, cwd?: string): ObjectiveState |
  * Mark an objective as failed.
  */
 export function failObjective(objectiveId: string, reason: string, cwd?: string): void {
+  withJudgedRunOutputLock(cwd || process.cwd(), () => failObjectiveUnderProjectLock(objectiveId, reason, cwd));
+}
+
+function failObjectiveUnderProjectLock(objectiveId: string, reason: string, cwd?: string): void {
   const obj = loadObjective(objectiveId, cwd);
   if (!obj) return;
 

@@ -193,6 +193,30 @@ describe('UI1-02: Typed API & Event Clients', () => {
       expect(proj.profile?.zeroCloud).toBe(true);
     });
 
+    it('downloads artifact bytes with the project scope and in-memory session header', async () => {
+      let requestUrl = '';
+      let requestHeaders: HeadersInit | undefined;
+      const payload = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xff]);
+      const downloadClient = new BrowserRestClient({
+        baseUrl,
+        projectRoot: testDir,
+        sessionToken: 'a'.repeat(64),
+        fetchFn: async (input, init) => {
+          requestUrl = String(input);
+          requestHeaders = init?.headers;
+          return new Response(payload, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+        },
+      });
+      const blob = await downloadClient.downloadArtifactContent('docx-01');
+      const bytes = Buffer.from(await blob.arrayBuffer());
+      const headers = requestHeaders as Record<string, string>;
+
+      expect(requestUrl).toBe(`${baseUrl}/api/v1/artifacts/docx-01/content`);
+      expect(headers.Authorization).toBe(`Bearer ${'a'.repeat(64)}`);
+      expect(headers['X-Project-Root']).toBe(testDir);
+      expect(bytes).toEqual(payload);
+    });
+
     it('GET /api/v1/settings returns configuration object', async () => {
       const settings = await client.getSettings();
       expect(settings).toBeDefined();
@@ -248,6 +272,25 @@ describe('UI1-02: Typed API & Event Clients', () => {
       }
     });
 
+    it.each([
+      [409, 'JUDGED_RUN_BUSY', { status: 'in_progress', verdict: 'UNAVAILABLE' }],
+      [503, 'JUDGED_RUN_LOCK_UNAVAILABLE', { status: 'unavailable', verdict: 'UNAVAILABLE' }],
+    ] as const)('preserves structured judged-run contention details for %s errors', async (status, code, details) => {
+      const contentionClient = new BrowserRestClient({
+        baseUrl,
+        projectRoot: testDir,
+        fetchFn: async () => new Response(JSON.stringify({
+          error: { code, message: 'T-07 could not acquire project coordination.', details },
+        }), { status, headers: { 'Content-Type': 'application/json' } }),
+      });
+
+      await expect(contentionClient.startIndustrialJudgedRun()).rejects.toMatchObject({
+        status,
+        code,
+        details,
+      });
+    });
+
     it('maps network failures to NetworkError', async () => {
       // Port 59999 is unlikely to have an active listener
       const unreachableClient = new BrowserRestClient({
@@ -275,6 +318,44 @@ describe('UI1-02: Typed API & Event Clients', () => {
       } finally {
         await new Promise<void>((resolve) => hangingServer.close(() => resolve()));
       }
+    });
+
+    it('allows chat completions to outlive the generic REST timeout and honors an explicit override', async () => {
+      const fetchFn: typeof fetch = async (_input, init) => {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 40);
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(new DOMException('Aborted', 'AbortError'));
+            },
+            { once: true },
+          );
+        });
+        return new Response(
+          JSON.stringify({
+            data: {
+              message: { role: 'assistant', content: 'Local analysis complete.' },
+              usage: { promptTokens: 2, completionTokens: 3, totalTokens: 5 },
+              model: 'local-test-model',
+              deterministic: true,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      };
+      const chatClient = new BrowserRestClient({ baseUrl, projectRoot: testDir, timeoutMs: 10, fetchFn });
+      const input = {
+        conversationId: 'conv-slow-local-model',
+        messages: [{ role: 'user' as const, content: 'Analyze the synthetic sample.' }],
+      };
+
+      await expect(chatClient.chatCompletion(input)).resolves.toMatchObject({
+        message: { role: 'assistant', content: 'Local analysis complete.' },
+        model: 'local-test-model',
+      });
+      await expect(chatClient.chatCompletion(input, { timeoutMs: 5 })).rejects.toThrow(TimeoutError);
     });
   });
 

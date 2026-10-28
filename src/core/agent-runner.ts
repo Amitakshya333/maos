@@ -21,6 +21,8 @@ export interface AgentConfig {
   scope: string[];
   maxIterations: number;
   systemPrompt?: string;
+  /** Use a task-specific prompt in place of the coding-agent instructions. */
+  promptOverride?: string;
   allowedTools?: string[];
 }
 
@@ -33,12 +35,21 @@ export interface AgentTask {
   branch: string;
 }
 
+export interface AgentRunOptions {
+  signal?: AbortSignal;
+  maxTokens?: number;
+  maxProviderRetries?: number;
+  allowPartialSuccess?: boolean;
+}
+
 /**
  * Result of an agent run.
  */
 export interface AgentRunResult {
   agentId: string;
   taskId: string;
+  model?: string;
+  reportedModel?: string;
   success: boolean;
   summary: string;
   filesChanged: string[];
@@ -61,6 +72,8 @@ function filterTools(allTools: ToolDef[], allowedTools?: string[], agentId?: str
 }
 
 function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: string): string {
+  if (agent.promptOverride) return agent.promptOverride;
+
   // ---- BRAIN INJECTION ----
   // If brain has been initialized, inject compact project context.
   // This saves the agent 2-5 exploration iterations.
@@ -144,10 +157,14 @@ export async function runAgent(
   projectRoot: string,
   costPerMillionTokens: number,
   onProgress?: (iteration: number, action: string) => void,
+  onToolResult?: (toolName: string, result: string) => void,
+  options: AgentRunOptions = {},
 ): Promise<AgentRunResult> {
   const logger = createLogger(projectRoot);
   const startTime = Date.now();
   let totalTokens = 0;
+  let returnedModel = provider.model;
+  let reportedModel: string | undefined;
   let iterations = 0;
   let lastSnapshot = snapshotFilesystem(projectRoot);
   let hadMutatingToolCall = false;
@@ -178,9 +195,18 @@ export async function runAgent(
 
   // Effective max = base + bonus for productive agents
   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
+  const generate = () => {
+    if (options.signal?.aborted) throw new Error('Agent run cancelled.');
+    return provider.generate(
+      messages,
+      filterTools(AGENT_TOOLS, agent.allowedTools, agent.id),
+      options.signal || options.maxTokens ? { signal: options.signal, maxTokens: options.maxTokens } : undefined,
+    );
+  };
 
   try {
     while (iterations < getEffectiveMax()) {
+      if (options.signal?.aborted) throw new Error('Agent run cancelled.');
       iterations++;
       onProgress?.(iterations, 'thinking');
 
@@ -221,11 +247,13 @@ export async function runAgent(
 
       // Call the model (with retry for transient errors including 504)
       const response = await retryOnTransient(
-        () => provider.generate(messages, filterTools(AGENT_TOOLS, agent.allowedTools, agent.id)),
-        3, // 3 retries for 504/timeout resilience
+        generate,
+        options.maxProviderRetries ?? 3,
         logger,
         agent.id,
       );
+      returnedModel = response.model || returnedModel;
+      if (response.reportedModel) reportedModel = response.reportedModel;
       totalTokens += response.usage.totalTokens;
 
       logger.debug(
@@ -252,11 +280,13 @@ export async function runAgent(
           });
 
           const retryResponse = await retryOnTransient(
-            () => provider.generate(messages, filterTools(AGENT_TOOLS, agent.allowedTools, agent.id)),
-            1,
+            generate,
+            options.maxProviderRetries ?? 1,
             logger,
             agent.id,
           );
+          returnedModel = retryResponse.model || returnedModel;
+          if (retryResponse.reportedModel) reportedModel = retryResponse.reportedModel;
           totalTokens += retryResponse.usage.totalTokens;
 
           messages.push({
@@ -268,6 +298,7 @@ export async function runAgent(
           // Check if it called task_complete this time
           if (retryResponse.toolCalls.length > 0) {
             for (const tc of retryResponse.toolCalls) {
+              if (options.signal?.aborted) throw new Error('Agent run cancelled.');
               let tcArgs: Record<string, any>;
               try {
                 tcArgs = JSON.parse(tc.function.arguments);
@@ -283,6 +314,7 @@ export async function runAgent(
                 task.id,
                 agent.allowedTools,
               );
+              onToolResult?.(tc.function.name, result);
               messages.push({ role: 'tool', name: tc.function.name, content: result, tool_call_id: tc.id });
               if (done) {
                 logger.success(agent.id, `Task completed (after nudge): ${tcArgs.summary || 'Task completed'}`);
@@ -290,6 +322,8 @@ export async function runAgent(
                 return {
                   agentId: agent.id,
                   taskId: task.id,
+                  model: returnedModel,
+                  reportedModel,
                   success: true,
                   summary: tcArgs.summary || 'Task completed',
                   filesChanged: tcArgs.files_changed || [],
@@ -317,6 +351,7 @@ export async function runAgent(
       hadMutatingToolCall = false;
 
       for (const toolCall of response.toolCalls) {
+        if (options.signal?.aborted) throw new Error('Agent run cancelled.');
         let args: Record<string, any>;
         try {
           args = JSON.parse(toolCall.function.arguments);
@@ -352,6 +387,7 @@ export async function runAgent(
         }
 
         const { result, isComplete: done } = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id, agent.allowedTools);
+        onToolResult?.(toolName, result);
 
         // Truncate huge tool results to prevent context bloat
         const truncatedResult =
@@ -379,6 +415,8 @@ export async function runAgent(
         return {
           agentId: agent.id,
           taskId: task.id,
+          model: returnedModel,
+          reportedModel,
           success: true,
           summary: completionSummary,
           filesChanged: completionFiles,
@@ -467,11 +505,12 @@ export async function runAgent(
     const finalSnapshot = snapshotFilesystem(projectRoot);
     const madeProgress = finalSnapshot !== initialSnapshot;
 
-    if (madeProgress) {
+    if (madeProgress && options.allowPartialSuccess !== false && !options.signal?.aborted) {
       logger.warn(agent.id, `Agent did not call task_complete but DID modify files. Treating as partial success.`);
       return {
         agentId: agent.id,
         taskId: task.id,
+        model: returnedModel,
         success: true,
         summary: `Partial completion: agent modified files but did not finalize (${iterations} iterations)`,
         filesChanged: [],
@@ -486,6 +525,7 @@ export async function runAgent(
     return {
       agentId: agent.id,
       taskId: task.id,
+      model: returnedModel,
       success: false,
       summary: `Reached max iterations (${getEffectiveMax()}) without completing`,
       filesChanged: [],
@@ -500,7 +540,7 @@ export async function runAgent(
     const crashSnapshot = snapshotFilesystem(projectRoot);
     const crashedButWorked = crashSnapshot !== initialSnapshot;
 
-    if (crashedButWorked) {
+    if (crashedButWorked && options.allowPartialSuccess !== false && !options.signal?.aborted) {
       logger.warn(agent.id, `Agent crashed but DID modify files. Treating as partial success. Error: ${err.message}`);
       return {
         agentId: agent.id,
@@ -516,17 +556,19 @@ export async function runAgent(
     }
 
     logger.error(agent.id, `Agent error: ${err.stack || err.message}`);
+    const error = options.signal?.aborted ? 'ABORTED' : err.message;
     return {
       agentId: agent.id,
       taskId: task.id,
+      model: returnedModel,
       success: false,
-      summary: `Agent failed: ${err.message}`,
+      summary: options.signal?.aborted ? 'Agent run cancelled.' : `Agent failed: ${err.message}`,
       filesChanged: [],
       iterations,
       totalTokens,
       costUSD: (totalTokens / 1_000_000) * costPerMillionTokens,
       latencyMs: Date.now() - startTime,
-      error: err.message,
+      error,
     };
   } finally {
     // ALWAYS release file locks when the agent finishes (success or failure)

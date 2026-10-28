@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getPendingDir, getActiveDir, getDoneDir } from '../utils/paths';
 import type { ExtendedTaskRequirements, TaskModality } from '../domain/schemas';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 
 // ─── Task Types ───────────────────────────────────────────────
 // task       = standalone task (backward compat, default)
@@ -319,7 +320,7 @@ function parseTaskFile(filePath: string): TaskFile | null {
 /**
  * Create a new task and write it to the pending queue.
  */
-export function createTask(opts: {
+interface CreateTaskOptions {
   id?: string;
   agent?: string;
   branch?: string;
@@ -338,7 +339,13 @@ export function createTask(opts: {
   parentTaskId?: string;
   // F7-01 extended requirements
   requirements?: ExtendedTaskRequirements;
-}): TaskFile {
+}
+
+export function createTask(opts: CreateTaskOptions): TaskFile {
+  return withJudgedRunOutputLock(opts.cwd || process.cwd(), () => createTaskUnderProjectLock(opts));
+}
+
+function createTaskUnderProjectLock(opts: CreateTaskOptions): TaskFile {
   const agent = opts.agent || 'AUTO';
   const taskType = opts.type || 'task';
   // Generate ID with type-aware prefix unless caller provides one.
@@ -446,6 +453,10 @@ export function getDoneTasks(cwd?: string): TaskFile[] {
  * Move a task file from pending → active atomically.
  */
 export function moveToActive(task: TaskFile, cwd?: string): TaskFile {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => moveToActiveUnderProjectLock(task, cwd));
+}
+
+function moveToActiveUnderProjectLock(task: TaskFile, cwd?: string): TaskFile {
   const activeDir = getActiveDir(cwd);
   if (!fs.existsSync(activeDir)) fs.mkdirSync(activeDir, { recursive: true });
 
@@ -499,6 +510,10 @@ export function moveToActive(task: TaskFile, cwd?: string): TaskFile {
  * Move a task file from active → done atomically.
  */
 export function moveToDone(task: TaskFile, cwd?: string): TaskFile {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => moveToDoneUnderProjectLock(task, cwd));
+}
+
+function moveToDoneUnderProjectLock(task: TaskFile, cwd?: string): TaskFile {
   const doneDir = getDoneDir(cwd);
   if (!fs.existsSync(doneDir)) fs.mkdirSync(doneDir, { recursive: true });
 

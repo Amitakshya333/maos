@@ -60,6 +60,7 @@ import { NetworkMonitorService } from './network-monitor-service';
 import { ServiceIdentityService } from './service-identity-service';
 import { CalculationTraceService } from './calculation-trace-service';
 import { AuditService } from './audit-service';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import {
   getDefaultEnginePath,
   verifyExecutable,
@@ -549,6 +550,10 @@ export class SovereigntyBundleService {
    * Saves a bundle to disk as `.maos/bundles/<bundleId>.json`.
    */
   public saveBundle(bundle: SovereigntyEvidenceBundle): void {
+    withJudgedRunOutputLock(this.projectRoot, () => this.saveBundleUnderProjectLock(bundle));
+  }
+
+  private saveBundleUnderProjectLock(bundle: SovereigntyEvidenceBundle): void {
     this.ensureDirectory();
     const filePath = path.join(this.bundlesDir, `${bundle.bundleId}.json`);
     this.safeWriteFileAtomic(filePath, JSON.stringify(bundle, null, 2));
@@ -593,6 +598,13 @@ export class SovereigntyBundleService {
    * Generates a deterministic ZIP archive containing the bundle and its partitioned evidence.
    */
   public exportBundleArchive(bundleId: string): {
+    zipBuffer: Buffer;
+    zipPath: string;
+  } {
+    return withJudgedRunOutputLock(this.projectRoot, () => this.exportBundleArchiveUnderProjectLock(bundleId));
+  }
+
+  private exportBundleArchiveUnderProjectLock(bundleId: string): {
     zipBuffer: Buffer;
     zipPath: string;
   } {
@@ -735,23 +747,25 @@ Signed By: ${bundle.signoff?.operatorId ?? 'Unsigned'}
    * Cleans up orphaned temporary bundle files left by interrupted saves or exports.
    */
   public cleanupOrphanTempFiles(): number {
-    let purged = 0;
-    if (!fs.existsSync(this.bundlesDir)) return 0;
-    try {
-      const files = fs.readdirSync(this.bundlesDir);
-      for (const file of files) {
-        if (file.includes('.tmp_')) {
-          try {
-            fs.unlinkSync(path.join(this.bundlesDir, file));
-            purged++;
-          } catch {
-            // ignore
+    return withJudgedRunOutputLock(this.projectRoot, () => {
+      let purged = 0;
+      if (!fs.existsSync(this.bundlesDir)) return 0;
+      try {
+        const files = fs.readdirSync(this.bundlesDir);
+        for (const file of files) {
+          if (file.includes('.tmp_')) {
+            try {
+              fs.unlinkSync(path.join(this.bundlesDir, file));
+              purged++;
+            } catch {
+              // ignore
+            }
           }
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-    return purged;
+      return purged;
+    });
   }
 }

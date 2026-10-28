@@ -26,6 +26,7 @@ import { createObjective, loadObjective, recordPlanCompletion } from './objectiv
 import type { InferenceResult } from '../domain/inference';
 import type { WorkflowPlan, WorkflowPlanStep, WorkflowPlanningOutcome } from '../domain/workflow-plan';
 import { WorkflowPlanner } from '../industrial/workflow-planner';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import type { ToolExecutionPlan, PreExecutionEvaluationOutcome } from '../domain/tool-plan';
 import {
   ToolApprovalPlanner,
@@ -796,7 +797,9 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
         // Clean up the active task file so it doesn't linger in active/
         if (fs.existsSync(activeTask.filePath)) {
           try {
-            fs.unlinkSync(activeTask.filePath);
+            withJudgedRunOutputLock(cwd, () => {
+              if (fs.existsSync(activeTask.filePath)) fs.unlinkSync(activeTask.filePath);
+            });
           } catch (err: any) {
             logger.error(
               'ORCHESTRATOR',
@@ -895,7 +898,9 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
       // Clean up the active task file
       if (fs.existsSync(activeTask.filePath)) {
         try {
-          fs.unlinkSync(activeTask.filePath);
+          withJudgedRunOutputLock(cwd, () => {
+            if (fs.existsSync(activeTask.filePath)) fs.unlinkSync(activeTask.filePath);
+          });
         } catch (unlinkErr: any) {
           logger.error(
             'ORCHESTRATOR',
@@ -976,7 +981,9 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
               logger.info('SCHEDULER', `Skipping ${task.id} — already completed in this session`);
               // Clean it out of pending so it doesn't linger
               try {
-                if (fs.existsSync(task.filePath)) fs.unlinkSync(task.filePath);
+                withJudgedRunOutputLock(cwd, () => {
+                  if (fs.existsSync(task.filePath)) fs.unlinkSync(task.filePath);
+                });
               } catch {}
               continue;
             }

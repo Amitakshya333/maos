@@ -12,5 +12,7 @@ test-sdk.ts
 *.log
 # Git
 .git/
+**/__pycache__/
+**/*.pyc
 # Extra docs (not needed in package)
 PITCH_DECK.md

@@ -18,6 +18,8 @@ import {
   TaskFile,
 } from '../core/queue';
 import type { Task, QueueCounts, CreateTaskInput, TaskFilter, CleanResult } from '../domain/schemas';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
+import { getActiveDir, getCheckpointsDir } from '../utils/paths';
 
 /**
  * Convert a core TaskFile to a domain Task.
@@ -146,24 +148,23 @@ export class TaskService {
    * Prevents phantom success after service interruption or force stop.
    */
   interruptActiveTasks(reason = 'Service force-stopped'): Task[] {
-    const activeFiles = getActiveTasks(this.projectRoot);
-    const interrupted: Task[] = [];
+    return withJudgedRunOutputLock(this.projectRoot, () => {
+      const activeFiles = getActiveTasks(this.projectRoot);
+      const interrupted: Task[] = [];
 
-    for (const tf of activeFiles) {
-      try {
-        if (!fs.existsSync(tf.filePath)) continue;
-        const content = fs.readFileSync(tf.filePath, 'utf-8');
-        const updated = content.replace(/^status:\s*\w+$/m, 'status: interrupted')
-          + `\n\n## Interruption\n\n${reason} at ${new Date().toISOString()}\n`;
-        fs.writeFileSync(tf.filePath, updated, 'utf-8');
-        interrupted.push({
-          ...toTask(tf),
-          status: 'interrupted',
-        });
-      } catch {}
-    }
+      for (const tf of activeFiles) {
+        try {
+          if (!fs.existsSync(tf.filePath)) continue;
+          const content = fs.readFileSync(tf.filePath, 'utf-8');
+          const updated = content.replace(/^status:\s*\w+$/m, 'status: interrupted')
+            + `\n\n## Interruption\n\n${reason} at ${new Date().toISOString()}\n`;
+          fs.writeFileSync(tf.filePath, updated, 'utf-8');
+          interrupted.push({ ...toTask(tf), status: 'interrupted' });
+        } catch {}
+      }
 
-    return interrupted;
+      return interrupted;
+    });
   }
 
   /**
@@ -171,75 +172,81 @@ export class TaskService {
    * Prevents phantom success after force-stop.
    */
   interruptTask(taskId: string, reason = 'Force-stopped'): Task | null {
-    const activeFiles = getActiveTasks(this.projectRoot);
-    const tf = activeFiles.find((f) => f.id === taskId);
-    if (!tf) return null;
+    return withJudgedRunOutputLock(this.projectRoot, () => {
+      const activeFiles = getActiveTasks(this.projectRoot);
+      const tf = activeFiles.find((f) => f.id === taskId);
+      if (!tf) return null;
 
-    try {
-      if (!fs.existsSync(tf.filePath)) return null;
-      const content = fs.readFileSync(tf.filePath, 'utf-8');
-      const updated = content.replace(/^status:\s*\w+$/m, 'status: interrupted')
-        + `\n\n## Interruption\n\n${reason} at ${new Date().toISOString()}\n`;
-      fs.writeFileSync(tf.filePath, updated, 'utf-8');
-      return {
-        ...toTask(tf),
-        status: 'interrupted',
-      };
-    } catch {
-      return null;
-    }
+      try {
+        if (!fs.existsSync(tf.filePath)) return null;
+        const content = fs.readFileSync(tf.filePath, 'utf-8');
+        const updated = content.replace(/^status:\s*\w+$/m, 'status: interrupted')
+          + `\n\n## Interruption\n\n${reason} at ${new Date().toISOString()}\n`;
+        fs.writeFileSync(tf.filePath, updated, 'utf-8');
+        return { ...toTask(tf), status: 'interrupted' };
+      } catch {
+        return null;
+      }
+    });
   }
 
   /**
    * Clean all queue directories, statuses, checkpoints, and logs.
    */
   clean(): CleanResult {
-    const maosDir = path.join(this.projectRoot, '.maos');
-    if (!fs.existsSync(maosDir)) {
-      return { tasksRemoved: 0, statusesReset: false, logsCleared: false };
-    }
+    return withJudgedRunOutputLock(this.projectRoot, () => {
+      const activeDir = getActiveDir(this.projectRoot);
+      const activeEntries = fs.existsSync(activeDir)
+        ? fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))
+        : [];
+      if (activeEntries.length > 0) {
+        throw new Error(`QUEUE_CLEAN_REFUSED: ${activeEntries.length} active queue entr${activeEntries.length === 1 ? 'y remains' : 'ies remain'} (including interrupted entries whose worker exit is unconfirmed). Stop the owning MAOS worker; after it exits, restart MAOS to recover the orphaned queue entry, then retry clean.`);
+      }
+      const maosDir = path.join(this.projectRoot, '.maos');
+      if (!fs.existsSync(maosDir)) return { tasksRemoved: 0, statusesReset: false, logsCleared: false };
 
-    // Clear queue directories
-    const queueDirs = ['pending', 'active', 'done', 'retry', 'failed'];
-    let cleared = 0;
-    for (const dir of queueDirs) {
-      const dirPath = path.join(maosDir, 'queue', dir);
-      if (fs.existsSync(dirPath)) {
-        const files = fs.readdirSync(dirPath);
-        for (const file of files) {
-          fs.unlinkSync(path.join(dirPath, file));
-          cleared++;
+      // Clear queue directories
+      const queueDirs = ['pending', 'active', 'done', 'retry', 'failed'];
+      let cleared = 0;
+      for (const dir of queueDirs) {
+        const dirPath = path.join(maosDir, 'queue', dir);
+        if (fs.existsSync(dirPath)) {
+          const files = fs.readdirSync(dirPath);
+          for (const file of files) {
+            fs.unlinkSync(path.join(dirPath, file));
+            cleared++;
+          }
         }
       }
-    }
 
-    // Clear checkpoints
-    const checkpointDir = path.join(maosDir, 'checkpoints');
-    if (fs.existsSync(checkpointDir)) {
-      for (const file of fs.readdirSync(checkpointDir)) {
-        fs.unlinkSync(path.join(checkpointDir, file));
+      // Clear checkpoints
+      const checkpointDir = getCheckpointsDir(this.projectRoot);
+      if (fs.existsSync(checkpointDir)) {
+        for (const file of fs.readdirSync(checkpointDir)) {
+          fs.unlinkSync(path.join(checkpointDir, file));
+        }
       }
-    }
 
-    // Clear status files
-    let statusesReset = false;
-    const statusDir = path.join(maosDir, 'status');
-    if (fs.existsSync(statusDir)) {
-      const files = fs.readdirSync(statusDir).filter((f) => f.endsWith('.status'));
-      for (const file of files) {
-        fs.unlinkSync(path.join(statusDir, file));
+      // Clear status files
+      let statusesReset = false;
+      const statusDir = path.join(maosDir, 'status');
+      if (fs.existsSync(statusDir)) {
+        const files = fs.readdirSync(statusDir).filter((f) => f.endsWith('.status'));
+        for (const file of files) {
+          fs.unlinkSync(path.join(statusDir, file));
+        }
+        statusesReset = files.length > 0;
       }
-      statusesReset = files.length > 0;
-    }
 
-    // Clear logs
-    let logsCleared = false;
-    const logFile = path.join(maosDir, 'logs', 'orchestrator.log');
-    if (fs.existsSync(logFile)) {
-      fs.writeFileSync(logFile, '', 'utf-8');
-      logsCleared = true;
-    }
+      // Clear logs
+      let logsCleared = false;
+      const logFile = path.join(maosDir, 'logs', 'orchestrator.log');
+      if (fs.existsSync(logFile)) {
+        fs.writeFileSync(logFile, '', 'utf-8');
+        logsCleared = true;
+      }
 
-    return { tasksRemoved: cleared, statusesReset, logsCleared };
+      return { tasksRemoved: cleared, statusesReset, logsCleared };
+    });
   }
 }

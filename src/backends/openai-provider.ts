@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderResponse } from './provider';
+import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderRequestOptions, ProviderResponse } from './provider';
 
 /**
  * OpenAI-Compatible Provider Adapter
@@ -26,7 +26,7 @@ export class OpenAIProvider implements IProvider {
 
   private client: OpenAI;
 
-  constructor(opts: { name: string; apiKey: string; model: string; baseURL?: string; timeout?: number }) {
+  constructor(opts: { name: string; apiKey: string; model: string; baseURL?: string; timeout?: number; maxRetries?: number }) {
     this.name = opts.name;
     this.model = opts.model;
 
@@ -34,11 +34,11 @@ export class OpenAIProvider implements IProvider {
       apiKey: opts.apiKey,
       baseURL: opts.baseURL,
       timeout: opts.timeout || 180_000, // 3 min default timeout
-      maxRetries: 2,
+      maxRetries: opts.maxRetries ?? 2,
     });
   }
 
-  async generate(messages: ChatMessage[], tools?: ToolDef[]): Promise<ProviderResponse> {
+  async generate(messages: ChatMessage[], tools?: ToolDef[], options?: ProviderRequestOptions): Promise<ProviderResponse> {
     const startMs = Date.now();
 
     try {
@@ -48,6 +48,10 @@ export class OpenAIProvider implements IProvider {
         messages: messages.map((m) => this.toOpenAIMessage(m)),
         temperature: 0.2,
       };
+      const maxTokens = options?.maxTokens;
+      if (typeof maxTokens === 'number' && Number.isInteger(maxTokens) && maxTokens > 0) {
+        requestBody.max_tokens = maxTokens;
+      }
 
       if (tools && tools.length > 0) {
         requestBody.tools = tools.map((t) => ({
@@ -58,10 +62,12 @@ export class OpenAIProvider implements IProvider {
             parameters: t.function.parameters as OpenAI.FunctionParameters,
           },
         }));
-        requestBody.tool_choice = 'auto';
       }
 
-      const rawResponse = await this.client.chat.completions.create(requestBody);
+      const rawResponse = await this.client.chat.completions.create(
+        requestBody,
+        options?.signal ? { signal: options.signal } : undefined,
+      );
       const latencyMs = Date.now() - startMs;
 
       // CRITICAL: Freemodel (and some other OpenAI-compatible providers) return
@@ -131,6 +137,7 @@ export class OpenAIProvider implements IProvider {
           totalTokens: response.usage?.total_tokens ?? 0,
         },
         model: response.model || this.model,
+        reportedModel: typeof response.model === 'string' && response.model.trim() ? response.model : undefined,
         latencyMs,
         finishReason,
       };

@@ -30,6 +30,7 @@ import { DEFAULT_RETENTION_SETTINGS } from '../domain/settings';
 import type { AuditService } from './audit-service';
 import type { BasicSettingsStore } from './project-service/settings-store';
 import type { Conversation } from '../domain/schemas';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -237,6 +238,14 @@ export class RetentionService {
     if (!val.valid) {
       throw new Error(`VALIDATION_FAILED: ${val.errors.join('; ')}`);
     }
+
+    const purgesArtifactPreviews = options.target === 'artifact_previews' || options.target === 'all_expired';
+    return !options.dryRun && purgesArtifactPreviews
+      ? withJudgedRunOutputLock(this.projectRoot, () => this.executeValidatedPurge(options))
+      : this.executeValidatedPurge(options);
+  }
+
+  private executeValidatedPurge(options: PurgeOptions): PurgeResult {
 
     const retention = this.getRetentionSettings();
     const conversationDays = options.conversationDays ?? retention.conversationDays;

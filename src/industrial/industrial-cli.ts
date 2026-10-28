@@ -30,9 +30,11 @@ import {
   executeDeterministicReset,
   ResetCategory,
   RESET_CATEGORIES,
+  RESET_ENABLED_CATEGORIES,
 } from './deterministic-reset';
 import {
   executeJudgedRun,
+  isAcceptedJudgedRun,
   JudgedRunOptions,
   JudgedRunResult,
   readJudgedRunManifest,
@@ -678,11 +680,9 @@ export async function runIndustrialVerify(
           const exportHash = exportAbsPath && fs.existsSync(exportAbsPath)
             ? crypto.createHash('sha256').update(fs.readFileSync(exportAbsPath)).digest('hex')
             : undefined;
-          const exportText = exportAbsPath && fs.existsSync(exportAbsPath) ? fs.readFileSync(exportAbsPath, 'utf8') : '';
-          judgedRunValid = manifest.status === 'completed' &&
+          judgedRunValid = isAcceptedJudgedRun(projectRoot, services, manifest) &&
             reportHash === manifest.deliverableSha256 &&
-            exportHash === manifest.auditExportSha256 &&
-            exportText.includes(options.runId) && exportText.includes('JUDGED_RUN_COMPLETED');
+            exportHash === manifest.auditExportSha256;
           judgedRun = {
             runId: manifest.runId,
             status: manifest.status,
@@ -851,7 +851,7 @@ export async function runIndustrialReset(
   const services = createServiceContainer(projectRoot);
 
   // Parse categories from allowlist
-  let categories: ResetCategory[] = [...RESET_CATEGORIES];
+  let categories: ResetCategory[] = [...RESET_ENABLED_CATEGORIES];
   if (options.allowlist && options.allowlist.trim().toLowerCase() !== 'all') {
     const rawCategories = options.allowlist
       .split(',')
@@ -888,11 +888,15 @@ export async function runIndustrialReset(
     });
 
     const data: Record<string, unknown> = {
+      success: result.success,
+      error: result.error,
       dryRun: result.dryRun,
       projectRoot: result.projectRoot,
       categories: result.categories,
       runId: result.runId,
       totalFiles: result.dryRun ? result.candidateFiles.length : result.removedFiles.length,
+      scannedBytes: result.scannedBytes,
+      removedBytes: result.removedBytes,
       totalBytes: result.totalBytes,
       files: result.dryRun
         ? result.candidateFiles.map((f) => f.relativePath)
@@ -902,7 +906,7 @@ export async function runIndustrialReset(
     if (options.json) {
       console.log(JSON.stringify(data, null, 2));
     } else {
-      if (result.dryRun) {
+      if (result.dryRun && result.success) {
         console.log(chalk.bold.yellow('\n🔍 MAOS Industrial — Deterministic Reset (DRY-RUN)\n'));
         console.log(chalk.gray(`Project Root: ${projectRoot}`));
         console.log(chalk.gray(`Categories:   ${categories.join(', ')}`));
@@ -913,20 +917,26 @@ export async function runIndustrialReset(
         }
         console.log(chalk.yellow('\nNo files were deleted. To perform live reset, run with --yes.'));
       } else {
-        console.log(chalk.bold.green('\n🧹 MAOS Industrial — Deterministic Reset (COMPLETED)\n'));
+        const status = result.success ? 'COMPLETED' : result.removedFiles.length > 0 ? 'COMPLETED WITH ERRORS' : 'FAILED';
+        console.log(chalk.bold[result.success ? 'green' : 'yellow'](`\n🧹 MAOS Industrial — Deterministic Reset (${status})\n`));
         console.log(chalk.gray(`Project Root: ${projectRoot}`));
         console.log(chalk.gray(`Categories:   ${categories.join(', ')}`));
         console.log(`Removed ${result.removedFiles.length} generated files (${result.totalBytes} bytes).\n`);
+        if (result.error) console.error(chalk.red(result.error));
       }
     }
 
     return {
-      exitCode: INDUSTRIAL_CLI_EXIT.SUCCESS,
+      exitCode: result.success ? INDUSTRIAL_CLI_EXIT.SUCCESS : INDUSTRIAL_CLI_EXIT.RESET_FAILED,
       message: result.message,
       data,
     };
   } catch (err: any) {
-    const msg = `Reset failed: ${err.message}`;
+    const msg = err?.code === 'JUDGED_RUN_BUSY'
+      ? `JUDGED_RUN_BUSY: Reset busy: ${err.message}`
+      : err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE'
+        ? `JUDGED_RUN_LOCK_UNAVAILABLE: Reset unavailable: ${err.message}`
+        : `Reset failed: ${err.message}`;
     if (!options.json) console.error(chalk.red(msg));
     return { exitCode: INDUSTRIAL_CLI_EXIT.RESET_FAILED, message: msg };
   }
@@ -956,6 +966,7 @@ export async function runIndustrialRun(
   });
 
   const data: Record<string, unknown> = {
+    message: result.message,
     success: result.success,
     runId: result.runId,
     durationMs: result.durationMs,

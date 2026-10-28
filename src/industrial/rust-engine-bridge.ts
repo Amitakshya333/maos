@@ -89,7 +89,9 @@ export function verifyExecutable(executablePath: string, expectedHash?: string):
 
   if (!fs.existsSync(absPath)) {
     throw new EngineError(
-      `Engine executable not found: ${absPath}. Build with: cargo build --release --locked`,
+      `Engine executable not found: ${absPath}. Install the platform-matched release binary at this path. ` +
+        `From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, ` +
+        `then copy rust/target/release/maos-engine[.exe] to the missing path.`,
       'missing_binary',
     );
   }

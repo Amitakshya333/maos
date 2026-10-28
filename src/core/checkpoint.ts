@@ -23,7 +23,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getMaosRoot, getActiveDir, getPendingDir, getDoneDir } from '../utils/paths';
+import { getCheckpointsDir, getActiveDir, getPendingDir, getDoneDir } from '../utils/paths';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 
 // ---- Types ----
 
@@ -76,18 +77,14 @@ export interface TaskCheckpoint {
 
 // ---- Checkpoint Directory ----
 
-function getCheckpointDir(projectRoot: string): string {
-  return path.join(getMaosRoot(projectRoot), 'checkpoints');
-}
-
 function getCheckpointPath(projectRoot: string, taskId: string): string {
   // Sanitize task ID for filesystem
   const safe = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  return path.join(getCheckpointDir(projectRoot), `${safe}.json`);
+  return path.join(getCheckpointsDir(projectRoot), `${safe}.json`);
 }
 
 function ensureCheckpointDir(projectRoot: string): void {
-  const dir = getCheckpointDir(projectRoot);
+  const dir = getCheckpointsDir(projectRoot);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -100,6 +97,10 @@ function ensureCheckpointDir(projectRoot: string): void {
  * Called after each iteration in the agent runner.
  */
 export function saveCheckpoint(projectRoot: string, checkpoint: TaskCheckpoint): void {
+  return withJudgedRunOutputLock(projectRoot, () => saveCheckpointUnderProjectLock(projectRoot, checkpoint));
+}
+
+function saveCheckpointUnderProjectLock(projectRoot: string, checkpoint: TaskCheckpoint): void {
   ensureCheckpointDir(projectRoot);
   const filePath = getCheckpointPath(projectRoot, checkpoint.taskId);
   const tempPath = path.join(
@@ -129,6 +130,10 @@ export function loadCheckpoint(projectRoot: string, taskId: string): TaskCheckpo
  * Delete a checkpoint (called when task completes successfully).
  */
 export function deleteCheckpoint(projectRoot: string, taskId: string): void {
+  return withJudgedRunOutputLock(projectRoot, () => deleteCheckpointUnderProjectLock(projectRoot, taskId));
+}
+
+function deleteCheckpointUnderProjectLock(projectRoot: string, taskId: string): void {
   const filePath = getCheckpointPath(projectRoot, taskId);
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
@@ -139,7 +144,7 @@ export function deleteCheckpoint(projectRoot: string, taskId: string): void {
  * List all checkpoint files.
  */
 export function listCheckpoints(projectRoot: string): TaskCheckpoint[] {
-  const dir = getCheckpointDir(projectRoot);
+  const dir = getCheckpointsDir(projectRoot);
   if (!fs.existsSync(dir)) return [];
 
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
@@ -182,6 +187,10 @@ export interface RecoveryResult {
  *   4. If retry count >= 3 → abandon (move to done with FAILED status)
  */
 export function recoverOrphanedTasks(projectRoot: string): RecoveryResult {
+  return withJudgedRunOutputLock(projectRoot, () => recoverOrphanedTasksUnderProjectLock(projectRoot));
+}
+
+function recoverOrphanedTasksUnderProjectLock(projectRoot: string): RecoveryResult {
   const activeDir = getActiveDir(projectRoot);
   const pendingDir = getPendingDir(projectRoot);
   const doneDir = getDoneDir(projectRoot);

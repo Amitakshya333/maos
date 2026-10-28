@@ -37,7 +37,7 @@ export interface TelemetryAnalysisReceipt {
     relativePath: string;
     sha256: string;
     bytes: number;
-    kind: 'device-upload' | 'bundled-synthetic-sample';
+    kind: 'device-upload' | 'bundled-synthetic-sample' | 'project-local-file';
   };
   rulesetSha256: string;
   thresholds: TelemetryThresholds;
@@ -280,6 +280,7 @@ export function storeTelemetryAnalysis(
 
 export interface TelemetryVerificationResult {
   valid: boolean;
+  method: 'same-implementation-replay';
   analysisId: string;
   sourceHashMatched: boolean;
   rulesetHashMatched: boolean;
@@ -294,7 +295,7 @@ export interface TelemetryVerificationResult {
 export function verifyTelemetryAnalysis(projectRoot: string, analysisId: string): TelemetryVerificationResult {
   const errors: string[] = [];
   const invalid = (): TelemetryVerificationResult => ({
-    valid: false, analysisId, sourceHashMatched: false, rulesetHashMatched: false, recomputationMatched: false, errors,
+    valid: false, method: 'same-implementation-replay', analysisId, sourceHashMatched: false, rulesetHashMatched: false, recomputationMatched: false, errors,
   });
   if (!ANALYSIS_ID_PATTERN.test(analysisId)) {
     errors.push('Invalid telemetry analysis ID.');
@@ -355,6 +356,7 @@ export function verifyTelemetryAnalysis(projectRoot: string, analysisId: string)
 
     return {
       valid: sourceHashMatched && rulesetHashMatched && recomputationMatched,
+      method: 'same-implementation-replay',
       analysisId,
       sourceHashMatched,
       rulesetHashMatched,

@@ -26,9 +26,18 @@ export type ActiveView =
   | ModuleId
   | 'agents';
 
+export const INDUSTRIAL_DEMO_VIEWS = [
+  'cockpit',
+  'evidence',
+  'approvals',
+  'documents',
+  'audit',
+] as const satisfies readonly ActiveView[];
+
 interface ActivityBarProps {
   activeView: ActiveView;
   onSelectView: (view: ActiveView) => void;
+  industrialDemo?: boolean;
 }
 
 interface NavConfig {
@@ -56,7 +65,7 @@ const MODULE_REGISTRY: Record<string, NavConfig> = {
   settings: { label: 'Settings & Roles', icon: <SettingsIcon size={20} /> },
 };
 
-export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectView }) => {
+export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectView, industrialDemo = false }) => {
   const { pinnedModules, collapsedModules } = useLayout();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -79,17 +88,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectVi
   // Display pinned items from layout (fallback to default top items if empty).
   // Every module remains discoverable even when an older or role-specific layout
   // omitted it from both pinnedModules and collapsedModules.
-  const effectivePinned = (pinnedModules.length > 0
-    ? pinnedModules
-    : ['chat', 'tasks', 'agents', 'evidence', 'artifacts', 'audit', 'models']
+  const effectivePinned = (industrialDemo
+    ? INDUSTRIAL_DEMO_VIEWS
+    : pinnedModules.length > 0
+      ? pinnedModules
+      : ['chat', 'tasks', 'agents', 'evidence', 'artifacts', 'audit', 'models']
   ).filter((id) => id !== 'settings' && ALL_MODULE_IDS.includes(id as ModuleId));
 
   // Collapsed modules are discoverable via "+ More". Append unlisted modules so
   // persisted role layouts can never strand a view behind an inaccessible route.
-  const configuredCollapsed = collapsedModules.filter(
+  const configuredCollapsed = industrialDemo ? [] : collapsedModules.filter(
     (id) => id !== 'settings' && !effectivePinned.includes(id) && ALL_MODULE_IDS.includes(id as ModuleId),
   );
-  const unlistedModules = ALL_MODULE_IDS.filter(
+  const unlistedModules = industrialDemo ? [] : ALL_MODULE_IDS.filter(
     (id) => id !== 'settings' && !effectivePinned.includes(id) && !configuredCollapsed.includes(id),
   );
   const effectiveCollapsed = [...configuredCollapsed, ...unlistedModules];
@@ -212,19 +223,21 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectVi
       </div>
 
       {/* Bottom Group (Settings & Roles) */}
-      <div className="activity-group" role="tablist" aria-orientation="vertical">
-        <button
-          role="tab"
-          aria-selected={activeView === 'settings'}
-          aria-label="Settings & Roles (Alt+8)"
-          className={`activity-btn ${activeView === 'settings' ? 'active' : ''}`}
-          onClick={() => onSelectView('settings')}
-          title="Settings & Roles (Alt+8)"
-          data-testid="activity-btn-settings"
-        >
-          <SettingsIcon size={20} />
-        </button>
-      </div>
+      {!industrialDemo && (
+        <div className="activity-group" role="tablist" aria-orientation="vertical">
+          <button
+            role="tab"
+            aria-selected={activeView === 'settings'}
+            aria-label="Settings & Roles (Alt+8)"
+            className={`activity-btn ${activeView === 'settings' ? 'active' : ''}`}
+            onClick={() => onSelectView('settings')}
+            title="Settings & Roles (Alt+8)"
+            data-testid="activity-btn-settings"
+          >
+            <SettingsIcon size={20} />
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

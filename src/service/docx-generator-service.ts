@@ -405,6 +405,9 @@ export class DocxGeneratorService {
     try {
       finalizedArtifact = this.artifactService.finalizeArtifact({
         id: artifactId,
+        runId: params.input.runId,
+        taskId: params.input.taskId,
+        projectId: params.projectId,
         type: 'report',
         relativePath: normalizedRelPath,
         content: zipBuffer,
@@ -436,14 +439,20 @@ export class DocxGeneratorService {
     }
 
     // 16. Audit Event: DOCX_GENERATED (Privacy-safe: no raw text)
-    this.recordAudit('DOCX_GENERATED', finalizedArtifact.id, params.callerIdentity?.agentId || 'docx_generator', {
-      artifactId: finalizedArtifact.id,
-      artifactHash: finalizedArtifact.hash,
-      inputHash: canonicalHash,
-      relativePath: normalizedRelPath,
-      bytesWritten: finalizedArtifact.size,
-      approvalId: params.input.approval.approvalId,
-    });
+    try {
+      this.recordAudit('DOCX_GENERATED', finalizedArtifact.id, params.callerIdentity?.agentId || 'docx_generator', {
+        artifactId: finalizedArtifact.id,
+        runId: params.input.runId,
+        artifactHash: finalizedArtifact.hash,
+        inputHash: canonicalHash,
+        relativePath: normalizedRelPath,
+        bytesWritten: finalizedArtifact.size,
+        approvalId: params.input.approval.approvalId,
+      });
+    } catch (err: any) {
+      this.idempotencyStore.fail(requestId, `DOCX_GENERATED audit persistence failed: ${err.message}`);
+      throw new DocxGenerationError('AUDIT_PERSISTENCE_FAILED', `DOCX was retained as unaccepted because its DOCX_GENERATED audit event failed: ${err.message}`);
+    }
 
     const result: GenerateDocxToolResult = {
       ok: true,
@@ -461,6 +470,11 @@ export class DocxGeneratorService {
     this.idempotencyStore.complete(requestId, 200, result);
 
     return result;
+  }
+
+  /** Mark the DOCX sub-operation unusable when its enclosing judged run fails. */
+  markRequestFailed(requestId: string, reason: string): void {
+    this.idempotencyStore.fail(requestId, reason);
   }
 
   /**
@@ -1140,7 +1154,7 @@ export class DocxGeneratorService {
         xmlTableCell(xmlPara('Human Review:', undefined, true), false, 'F9FAFB'),
         xmlTableCell(xmlPara(ev.reviewedByHuman ? `Reviewed by ${ev.reviewerId || 'Human'}` : 'Not Required / Clean'), false),
         xmlTableCell(xmlPara('Reviewer Notes:', undefined, true), false, 'F9FAFB'),
-        xmlTableCell(xmlPara(ev.reviewerNotes || 'None'), false),
+        xmlTableCell(xmlPara(ev.reviewerNotes || 'System note: No reviewer comment provided.'), false),
       ]),
     ];
     return xmlTable(rows);

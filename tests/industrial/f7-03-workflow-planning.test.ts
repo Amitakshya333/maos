@@ -48,6 +48,8 @@ describe('F7-03: Typed Workflow Planning & Safety Engine', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f7-03-test-'));
+    fs.mkdirSync(path.join(tmpDir, '.maos'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f7-03-test' }));
     fs.mkdirSync(path.join(tmpDir, '.maos', 'audit'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, '.maos', 'plans'), { recursive: true });
 

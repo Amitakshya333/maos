@@ -62,6 +62,10 @@ export function getFailedDir(cwd?: string): string {
   return path.join(getMaosRoot(cwd), 'queue', 'failed');
 }
 
+export function getPlansDir(cwd?: string): string {
+  return path.join(getMaosRoot(cwd), 'plans');
+}
+
 export function getEventsDir(cwd?: string): string {
   return path.join(getMaosRoot(cwd), 'events');
 }

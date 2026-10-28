@@ -13,6 +13,8 @@ import type {
   WorkflowPlanningOutcome,
 } from '../domain/workflow-plan';
 import { validateWorkflowPlan } from '../domain/validators';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
+import { getPlansDir } from '../utils/paths';
 import {
   WorkflowPlanner,
   type WorkflowPlanningInput,
@@ -32,7 +34,7 @@ export class WorkflowPlanningService {
     private readonly projectRoot: string,
     options: WorkflowPlanningServiceOptions = {},
   ) {
-    this.plansDir = path.join(this.projectRoot, '.maos', 'plans');
+    this.plansDir = getPlansDir(this.projectRoot);
     this.planner = options.planner || new WorkflowPlanner();
     this.auditService = options.auditService;
   }
@@ -92,6 +94,10 @@ export class WorkflowPlanningService {
    * Atomically saves a workflow plan to disk.
    */
   public savePlan(plan: WorkflowPlan): void {
+    withJudgedRunOutputLock(this.projectRoot, () => this.savePlanUnderProjectLock(plan));
+  }
+
+  private savePlanUnderProjectLock(plan: WorkflowPlan): void {
     const val = validateWorkflowPlan(plan);
     if (!val.valid) {
       throw new Error(`Cannot save invalid WorkflowPlan: ${val.errors.join('; ')}`);

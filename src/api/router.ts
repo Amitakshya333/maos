@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as child_process from 'child_process';
-import { ServiceContainer, ChatInferenceError } from '../service';
+import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError } from '../service';
 import {
   getCorrelationId,
   checkLoopback,
@@ -55,6 +55,7 @@ import {
   APPROVAL_ERROR_CODES,
   validateCreateApprovalInput,
   validateReviewApprovalInput,
+  type ApprovalRecord,
 } from '../domain/approval';
 import {
   ContainerRunnerError,
@@ -89,7 +90,60 @@ import {
 import { getDocumentGeneratorPresets } from '../domain/document-presets';
 import { projectWorkflowState, projectWorkflowStage } from '../domain/cockpit';
 import { getOrGenerateProjectId } from '../service/project-service/recent-projects';
-import { executeJudgedRun, readJudgedRunManifest, resumeJudgedRunAfterApproval } from '../industrial/judged-run';
+import {
+  decideAndResumeJudgedRunAfterApproval,
+  executeJudgedRun,
+  isAcceptedJudgedRun,
+  isAcceptedJudgedRunArtifact,
+  prepareAgentJudgedRun,
+  readJudgedRunManifest,
+} from '../industrial/judged-run';
+import { withJudgedRunLock, withJudgedRunOutputLock } from '../industrial/judged-run-lock';
+import type { IdempotencyRecord as DurableIdempotencyRecord } from '../domain/schemas';
+import { storeTelemetryAnalysis } from '../industrial/telemetry-analysis';
+
+function replayCurrentJudgedRunCompletion(
+  projectRoot: string,
+  services: ServiceContainer,
+  response: http.ServerResponse,
+  correlationId: string,
+  record: DurableIdempotencyRecord,
+): boolean {
+  const payload = record.responsePayload as any;
+  const completedRun = payload?.data?.success === true && payload.data.status === 'completed'
+    ? payload.data
+    : payload?.judgedRun?.status === 'completed' ? payload.judgedRun : undefined;
+  if (!completedRun) return false;
+
+  const runId = typeof completedRun.runId === 'string' ? completedRun.runId : undefined;
+  if (!runId) {
+    sendError(response, 409, 'JUDGED_RUN_NOT_ACCEPTED', 'The historical completion response has no run ID to verify; no work was repeated.', correlationId);
+    return true;
+  }
+
+  try {
+    return withJudgedRunOutputLock(projectRoot, () => withJudgedRunLock(projectRoot, runId, () => {
+      const manifest = readJudgedRunManifest(projectRoot, runId);
+      if (!manifest || !isAcceptedJudgedRun(projectRoot, services, manifest)) {
+        sendError(response, 409, 'JUDGED_RUN_NOT_ACCEPTED', 'This request previously completed, but the run is no longer currently accepted or its output is unavailable. No work was repeated.', correlationId);
+      } else {
+        sendJson(response, record.responseStatus || 200, record.responsePayload, correlationId, {
+          'Idempotent-Replay': 'true',
+        });
+      }
+      return true;
+    }));
+  } catch (error: any) {
+    if (error?.code === 'JUDGED_RUN_BUSY') {
+      sendError(response, 409, 'JUDGED_RUN_BUSY', 'Current run acceptance is being changed; retry this replay after the active operation finishes.', correlationId);
+    } else if (error?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
+      sendError(response, 503, 'JUDGED_RUN_LOCK_UNAVAILABLE', 'Current run acceptance could not be checked because its coordination lock is unavailable.', correlationId);
+    } else {
+      sendError(response, 503, 'JUDGED_RUN_REPLAY_CHECK_FAILED', 'Current run acceptance could not be checked. The historical operation was not repeated.', correlationId);
+    }
+    return true;
+  }
+}
 
 export class RestApiRouter {
   constructor(
@@ -301,7 +355,9 @@ export class RestApiRouter {
       ) {
         let status = 400;
         let code = err.code || 'GENERATION_ERROR';
-        if (
+        if (code === 'AUDIT_PERSISTENCE_FAILED') {
+          status = 503;
+        } else if (
           code === 'APPROVAL_REQUIRED' ||
           (err.message && err.message.includes('APPROVAL_REQUIRED')) ||
           code === 'STALE_APPROVAL' ||
@@ -351,9 +407,36 @@ export class RestApiRouter {
     correlationId: string,
     currentSession?: SessionInfo,
   ): Promise<boolean> {
+    const requireAuthenticatedIndustrialHost = (): boolean => {
+      if (this.sessionManager && this.instanceIdentity && currentSession) return true;
+      sendError(
+        res,
+        403,
+        'AUTHENTICATED_HOST_REQUIRED',
+        'Industrial telemetry analysis is available only through the authenticated launcher service.',
+        correlationId,
+      );
+      return false;
+    };
+
     if (method === 'POST' && pathname === '/api/v1/industrial/judged-runs') {
       const bodyResult = await readJsonBody(req, res, correlationId);
       if (!bodyResult) return true;
+      const payload = bodyResult.parsed && typeof bodyResult.parsed === 'object' && !Array.isArray(bodyResult.parsed)
+        ? bodyResult.parsed as Record<string, unknown>
+        : {};
+      const agentAnalysisId = typeof payload.analysisId === 'string' ? payload.analysisId : undefined;
+      if (agentAnalysisId) {
+        if (Object.keys(payload).some((key) => key !== 'analysisId')) {
+          sendError(res, 400, 'VALIDATION_FAILED', 'Only analysisId may be provided for a selected-CSV review.', correlationId);
+          return true;
+        }
+        if (!requireAuthenticatedIndustrialHost()) return true;
+      }
+      if (!agentAnalysisId && Object.keys(payload).length > 0) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'Provide only analysisId to prepare a selected-CSV review, or an empty object to start the T-07 demo.', correlationId);
+        return true;
+      }
       const idempotency = checkIdempotency(
         req,
         res,
@@ -362,9 +445,30 @@ export class RestApiRouter {
         this.services.idempotency,
         'start_industrial_judged_run',
         'default',
+        (record) => replayCurrentJudgedRunCompletion(this.projectRoot, this.services, res, correlationId, record),
       );
       if (idempotency.isReplay) return true;
       try {
+        if (agentAnalysisId) {
+          const manifest = prepareAgentJudgedRun(this.projectRoot, this.services, agentAnalysisId);
+          const responsePayload = { data: {
+            runId: manifest.runId,
+            approvalId: manifest.approvalId,
+            success: manifest.status === 'completed',
+            status: manifest.status,
+            verdict: manifest.verdict,
+            message: manifest.status === 'pending_approval'
+              ? `Review package prepared from analysis ${agentAnalysisId}; engineering verdict ${String((manifest.details as any).engineeringVerdict)} requires human review.`
+              : `Agent review run ${manifest.runId} is ${manifest.status}.`,
+            details: manifest.details,
+          } };
+          const statusCode = manifest.status === 'pending_approval' ? 202 : manifest.status === 'failed' ? 422 : 200;
+          if (idempotency.idempotencyKey && idempotency.bodyHash) {
+            recordIdempotency(idempotency.idempotencyKey, idempotency.bodyHash, statusCode, responsePayload, this.services.idempotency);
+          }
+          sendJson(res, statusCode, responsePayload, correlationId);
+          return true;
+        }
         const result = await executeJudgedRun({
           projectRoot: this.projectRoot,
           services: this.services,
@@ -374,19 +478,53 @@ export class RestApiRouter {
         const data = {
           runId: result.runId,
           success: result.success,
-          status: result.approvalStatus === 'pending' ? 'pending_approval' : (result.success ? 'completed' : 'failed'),
+          status: result.details?.executionErrorCode === 'JUDGED_RUN_BUSY'
+            ? 'in_progress'
+            : result.details?.executionErrorCode === 'JUDGED_RUN_LOCK_UNAVAILABLE'
+              ? 'unavailable'
+              : result.approvalStatus === 'pending' ? 'pending_approval' : (result.success ? 'completed' : 'failed'),
           verdict: result.overallVerdict,
           message: result.message,
           details: result.details,
         };
-        const statusCode = result.approvalStatus === 'pending' ? 202 : (result.success ? 200 : 422);
+        const statusCode = result.details?.executionErrorCode === 'JUDGED_RUN_BUSY'
+          ? 409
+          : result.details?.executionErrorCode === 'JUDGED_RUN_LOCK_UNAVAILABLE'
+            ? 503
+            : result.approvalStatus === 'pending' ? 202 : (result.success ? 200 : 422);
         const responsePayload = { data };
-        if (idempotency.idempotencyKey && idempotency.bodyHash) {
+        if (result.details?.executionErrorCode) {
+          if (idempotency.idempotencyKey) {
+            if (['JUDGED_RUN_BUSY', 'JUDGED_RUN_LOCK_UNAVAILABLE'].includes(String(result.details.executionErrorCode))) {
+              this.services.idempotency.releaseForRetry(idempotency.idempotencyKey, idempotency.claimToken, result.message);
+            } else {
+              this.services.idempotency.fail(idempotency.idempotencyKey, result.message);
+            }
+          }
+          if (['JUDGED_RUN_BUSY', 'JUDGED_RUN_LOCK_UNAVAILABLE'].includes(String(result.details.executionErrorCode))) {
+            const busy = result.details.executionErrorCode === 'JUDGED_RUN_BUSY';
+            sendError(res, busy ? 409 : 503, String(result.details.executionErrorCode), result.message, correlationId, {
+              runId: result.runId,
+              status: busy ? 'in_progress' : 'unavailable',
+              verdict: 'UNAVAILABLE',
+              executionErrorCode: result.details.executionErrorCode,
+            });
+            return true;
+          }
+        } else if (idempotency.idempotencyKey && idempotency.bodyHash) {
           recordIdempotency(idempotency.idempotencyKey, idempotency.bodyHash, statusCode, responsePayload, this.services.idempotency);
         }
         sendJson(res, statusCode, responsePayload, correlationId);
       } catch (err: any) {
-        sendError(res, 422, 'JUDGED_RUN_START_FAILED', err.message || 'Unable to start judged run.', correlationId);
+        if (idempotency.idempotencyKey) {
+          if (['JUDGED_RUN_BUSY', 'JUDGED_RUN_LOCK_UNAVAILABLE'].includes(String(err?.code))) {
+            this.services.idempotency.releaseForRetry(idempotency.idempotencyKey, idempotency.claimToken, err.message || String(err.code));
+          } else {
+            this.services.idempotency.fail(idempotency.idempotencyKey, err.message || 'Judged run start failed.');
+          }
+        }
+        const status = err?.code === 'JUDGED_RUN_BUSY' ? 409 : err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE' ? 503 : 422;
+        sendError(res, status, err?.code || 'JUDGED_RUN_START_FAILED', err.message || 'Unable to start judged run.', correlationId);
       }
       return true;
     }
@@ -395,14 +533,101 @@ export class RestApiRouter {
     if (method === 'GET' && judgedRunMatch) {
       try {
         const runId = decodeURIComponent(judgedRunMatch[1]);
+        if (runId.startsWith('judged-run-agent-') && !requireAuthenticatedIndustrialHost()) return true;
         const manifest = readJudgedRunManifest(this.projectRoot, runId);
         if (!manifest) {
           sendError(res, 404, 'JUDGED_RUN_NOT_FOUND', `Judged run '${runId}' was not found.`, correlationId);
+        } else if (manifest.status === 'completed' && !isAcceptedJudgedRun(this.projectRoot, this.services, manifest)) {
+          sendError(res, 409, 'JUDGED_RUN_NOT_ACCEPTED', 'Run finalization is incomplete or cannot be verified; its output remains unaccepted.', correlationId);
         } else {
           sendJson(res, 200, { data: manifest }, correlationId);
         }
       } catch (err: any) {
         sendError(res, 400, 'INVALID_JUDGED_RUN_ID', err.message, correlationId);
+      }
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v1/industrial/telemetry/analyze') {
+      if (!requireAuthenticatedIndustrialHost()) return true;
+      const maxBytes = Math.ceil((5 * 1024 * 1024 * 4) / 3) + 8192;
+      const bodyResult = await readJsonBody<Record<string, unknown>>(req, res, correlationId, maxBytes);
+      if (!bodyResult) return true;
+      const payload = bodyResult.parsed;
+      try {
+        let filename: string;
+        let csv: Buffer;
+        let kind: 'device-upload' | 'bundled-synthetic-sample';
+        if (payload?.useBundledSample === true && Object.keys(payload).length === 1) {
+          filename = 'turbine_vibration_log.csv';
+          csv = fs.readFileSync(path.join(this.projectRoot, 'demo', 'industrial', filename));
+          kind = 'bundled-synthetic-sample';
+        } else if (
+          payload &&
+          typeof payload.name === 'string' &&
+          typeof payload.contentBase64 === 'string' &&
+          Object.keys(payload).every((key) => key === 'name' || key === 'contentBase64') &&
+          Object.keys(payload).length === 2
+        ) {
+          filename = path.basename(payload.name);
+          if (path.extname(filename).toLowerCase() !== '.csv' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(payload.contentBase64)) {
+            sendError(res, 400, 'VALIDATION_FAILED', 'Choose a valid CSV file encoded as base64.', correlationId);
+            return true;
+          }
+          csv = Buffer.from(payload.contentBase64, 'base64');
+          if (csv.length < 1 || csv.length > 5 * 1024 * 1024 || csv.toString('base64') !== payload.contentBase64) {
+            sendError(res, 400, 'VALIDATION_FAILED', 'CSV must be between 1 byte and 5 MB and use canonical base64.', correlationId);
+            return true;
+          }
+          kind = 'device-upload';
+        } else {
+          sendError(res, 400, 'VALIDATION_FAILED', 'Provide a selected CSV name and content, or explicitly request the synthetic sample.', correlationId);
+          return true;
+        }
+        const stored = storeTelemetryAnalysis(this.projectRoot, filename, csv, kind);
+        sendJson(res, 201, { data: { ...stored.receipt, receiptPath: stored.receiptPath, receiptSha256: stored.receiptSha256 } }, correlationId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendError(res, message.includes('ENOENT') ? 404 : 422, 'TELEMETRY_ANALYSIS_FAILED', message, correlationId);
+      }
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v1/industrial/analysis-agent') {
+      if (!requireAuthenticatedIndustrialHost()) return true;
+      const bodyResult = await readJsonBody<{ request?: string; sourcePath?: string }>(req, res, correlationId);
+      if (!bodyResult) return true;
+      const payload = bodyResult.parsed;
+      if (!payload || typeof payload.request !== 'string' || typeof payload.sourcePath !== 'string' || Object.keys(payload).some((key) => key !== 'request' && key !== 'sourcePath')) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'request and sourcePath strings are required.', correlationId);
+        return true;
+      }
+      const abortController = new AbortController();
+      const onRequestAborted = () => abortController.abort();
+      const onResponseClosed = () => { if (!res.writableEnded) abortController.abort(); };
+      req.once('aborted', onRequestAborted);
+      res.once('close', onResponseClosed);
+      if (req.aborted || res.destroyed) abortController.abort();
+      try {
+        const result = await this.services.industrialAnalysisAgent.analyze(
+          this.projectRoot,
+          payload as { request: string; sourcePath: string },
+          { signal: abortController.signal },
+        );
+        if (!abortController.signal.aborted && !res.writableEnded) sendJson(res, 200, { data: result }, correlationId);
+      } catch (err: any) {
+        const code = err instanceof IndustrialAnalysisAgentError ? err.code : 'INDUSTRIAL_AGENT_FAILED';
+        const status = code === 'INVALID_REQUEST' || code === 'INVALID_SOURCE_PATH' ? 400
+          : code === 'MODEL_ENDPOINT_BLOCKED' ? 403
+          : code === 'MODEL_NOT_CONFIGURED' || code === 'PROJECT_NOT_INITIALIZED' || code === 'PROJECT_CONFIG_INVALID' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
+          : code === 'AGENT_EXECUTION_FAILED' ? 502
+          : 422;
+        if (!abortController.signal.aborted && !res.writableEnded && !res.destroyed) {
+          sendError(res, status, code, err.message || 'Industrial analysis failed.', correlationId);
+        }
+      } finally {
+        req.off('aborted', onRequestAborted);
+        res.off('close', onResponseClosed);
       }
       return true;
     }
@@ -602,6 +827,14 @@ export class RestApiRouter {
         }
         sendJson(res, 200, responsePayload, correlationId);
       } catch (err: any) {
+        if (err?.code === 'JUDGED_RUN_BUSY') {
+          sendError(res, 409, 'JUDGED_RUN_BUSY', 'Artifact preview purge is deferred while a judged-run output is being finalized.', correlationId);
+          return true;
+        }
+        if (err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
+          sendError(res, 503, 'JUDGED_RUN_LOCK_UNAVAILABLE', 'Artifact preview purge could not acquire the project output lock.', correlationId);
+          return true;
+        }
         const code = err.message?.includes('IMMUTABLE_AUDIT_PURGE_FORBIDDEN')
           ? 'IMMUTABLE_AUDIT_PURGE_FORBIDDEN'
           : err.message?.includes('FINALIZED_DELIVERABLE_PURGE_FORBIDDEN')
@@ -1531,13 +1764,16 @@ export class RestApiRouter {
       const runId = query.get('runId') || undefined;
       const taskId = query.get('taskId') || undefined;
 
-      const approvals = this.services.approval.listApprovals({
+      let approvals = this.services.approval.listApprovals({
         status,
         scope,
         projectId,
         runId,
         taskId,
       });
+      if (!(this.sessionManager && this.instanceIdentity && currentSession)) {
+        approvals = approvals.filter((approval) => approval.metadata?.analysisKind !== 'industrial-analysis-agent');
+      }
       sendJson(res, 200, { data: approvals }, correlationId);
       return true;
     }
@@ -1654,6 +1890,7 @@ export class RestApiRouter {
         sendError(res, 404, 'NOT_FOUND', `Approval '${apprId}' not found.`, correlationId);
         return true;
       }
+      if (appr.metadata?.analysisKind === 'industrial-analysis-agent' && !requireAuthenticatedIndustrialHost()) return true;
       sendJson(res, 200, { data: appr }, correlationId);
       return true;
     }
@@ -1663,6 +1900,8 @@ export class RestApiRouter {
     );
     if (method === 'POST' && approvalReviewMatch) {
       const apprId = decodeURIComponent(approvalReviewMatch[1]);
+      const currentApproval = this.services.approval.getApproval(apprId);
+      if (currentApproval?.metadata?.analysisKind === 'industrial-analysis-agent' && !requireAuthenticatedIndustrialHost()) return true;
       const bodyResult = await readJsonBody(req, res, correlationId);
       if (!bodyResult) return true;
 
@@ -1674,6 +1913,9 @@ export class RestApiRouter {
         this.services.idempotency,
         'review_approval',
         'default',
+        currentApproval?.metadata?.kind === 'maos-industrial-judged-run'
+          ? (record) => replayCurrentJudgedRunCompletion(this.projectRoot, this.services, res, correlationId, record)
+          : undefined,
       );
       if (idempotency.isReplay) return true;
 
@@ -1685,17 +1927,15 @@ export class RestApiRouter {
       const conditions = payload.conditions;
 
       try {
-        const updated = this.services.approval.decideApproval(apprId, {
-          decision,
-          actorId,
-          actorRole,
-          notes,
-          conditions,
-        });
-
+        let updated: ApprovalRecord;
         let judgedRun: unknown;
-        if (updated.metadata?.kind === 'maos-industrial-judged-run' && (updated.status === 'approved' || updated.status === 'rejected')) {
-          judgedRun = await resumeJudgedRunAfterApproval(this.projectRoot, this.services, updated.approvalId);
+        const review = { decision, actorId, actorRole, notes, conditions } as const;
+        if (currentApproval?.metadata?.kind === 'maos-industrial-judged-run') {
+          const result = await decideAndResumeJudgedRunAfterApproval(this.projectRoot, this.services, apprId, review);
+          updated = result.approval;
+          judgedRun = result.judgedRun;
+        } else {
+          updated = this.services.approval.decideApproval(apprId, review);
         }
         const responsePayload = { data: updated, ...(judgedRun ? { judgedRun } : {}) };
         if (idempotency.idempotencyKey && idempotency.bodyHash) {
@@ -1710,6 +1950,17 @@ export class RestApiRouter {
 
         sendJson(res, 200, responsePayload, correlationId);
       } catch (err: any) {
+        if (idempotency.idempotencyKey) {
+          if (['JUDGED_RUN_BUSY', 'JUDGED_RUN_LOCK_UNAVAILABLE'].includes(String(err?.code))) {
+            this.services.idempotency.releaseForRetry(
+              idempotency.idempotencyKey,
+              idempotency.claimToken,
+              err instanceof Error ? err.message : String(err),
+            );
+          } else {
+            this.services.idempotency.fail(idempotency.idempotencyKey, `Approval decision/finalization failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
         if (err instanceof ApprovalError) {
           let status = 400;
           if (err.code === APPROVAL_ERROR_CODES.APPROVAL_NOT_FOUND) status = 404;
@@ -1725,6 +1976,10 @@ export class RestApiRouter {
           )
             status = 403;
           sendError(res, status, err.code, err.message, correlationId);
+        } else if (err?.code === 'STALE_APPROVAL' || err?.code === 'JUDGED_RUN_BUSY') {
+          sendError(res, 409, err.code, err.message, correlationId);
+        } else if (err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
+          sendError(res, 503, err.code, err.message, correlationId);
         } else {
           throw err;
         }
@@ -1851,7 +2106,12 @@ export class RestApiRouter {
 
     if (method === 'GET' && pathname === '/api/v1/artifacts') {
       const runId = query.get('runId') || undefined;
-      const artifacts = this.services.artifact.listArtifacts(runId);
+      if (runId?.startsWith('judged-run-agent-') && !requireAuthenticatedIndustrialHost()) return true;
+      let artifacts = this.services.artifact.listArtifacts(runId);
+      if (!(this.sessionManager && this.instanceIdentity && currentSession)) {
+        artifacts = artifacts.filter((artifact) => !artifact.runId?.startsWith('judged-run-agent-'));
+      }
+      artifacts = artifacts.filter((artifact) => isAcceptedJudgedRunArtifact(this.projectRoot, this.services, artifact));
       sendJson(res, 200, { data: artifacts }, correlationId);
       return true;
     }
@@ -1906,8 +2166,15 @@ export class RestApiRouter {
         return true;
       }
 
+      const registeredArtifact = this.services.artifact.getArtifact(rawId);
+      if (registeredArtifact?.runId?.startsWith('judged-run-agent-') && !requireAuthenticatedIndustrialHost()) return true;
+      if (registeredArtifact && !isAcceptedJudgedRunArtifact(this.projectRoot, this.services, registeredArtifact)) {
+        sendError(res, 404, 'NOT_FOUND', `Artifact '${rawId}' is not an accepted judged-run deliverable.`, correlationId);
+        return true;
+      }
+
       try {
-        const { content, contentType } = this.services.artifact.getArtifactContent(rawId);
+        const { content, contentType } = this.services.artifact.getArtifactContentBytes(rawId);
         res.writeHead(200, {
           'Content-Type': contentType,
           'X-Correlation-ID': correlationId,
@@ -1929,6 +2196,11 @@ export class RestApiRouter {
       const art = this.services.artifact.getArtifact(artId);
       if (!art) {
         sendError(res, 404, 'NOT_FOUND', `Artifact '${artId}' not found.`, correlationId);
+        return true;
+      }
+      if (art.runId?.startsWith('judged-run-agent-') && !requireAuthenticatedIndustrialHost()) return true;
+      if (!isAcceptedJudgedRunArtifact(this.projectRoot, this.services, art)) {
+        sendError(res, 404, 'NOT_FOUND', `Artifact '${artId}' is not an accepted judged-run deliverable.`, correlationId);
         return true;
       }
       sendJson(res, 200, { data: art }, correlationId);
@@ -2291,15 +2563,28 @@ export class RestApiRouter {
       );
       if (idempotency.isReplay) return true;
 
-      const event = this.services.event.recordEvent({
-        eventId: payload.eventId,
-        eventType: payload.eventType,
-        projectId: eventProjectId,
-        runId: payload.runId,
-        taskId: payload.taskId,
-        correlationId: payload.correlationId || correlationId,
-        payload: payload.payload !== undefined ? payload.payload : (payload.data || {}),
-      });
+      let event: ReturnType<typeof this.services.event.recordEvent>;
+      try {
+        event = this.services.event.recordEvent({
+          eventId: payload.eventId,
+          eventType: payload.eventType,
+          projectId: eventProjectId,
+          runId: payload.runId,
+          taskId: payload.taskId,
+          correlationId: payload.correlationId || correlationId,
+          payload: payload.payload !== undefined ? payload.payload : (payload.data || {}),
+        });
+      } catch (error: any) {
+        if (error?.code === 'JUDGED_RUN_BUSY' || error?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
+          if (idempotency.idempotencyKey) {
+            this.services.idempotency.releaseForRetry(idempotency.idempotencyKey, idempotency.claimToken, error.message || error.code);
+          }
+          const busy = error.code === 'JUDGED_RUN_BUSY';
+          sendError(res, busy ? 409 : 503, error.code, 'Event recording was deferred by project state coordination; retry after the active operation completes.', correlationId);
+          return true;
+        }
+        throw error;
+      }
 
       const responsePayload = { data: event };
       if (idempotency.idempotencyKey && idempotency.bodyHash) {
@@ -3265,6 +3550,11 @@ export class RestApiRouter {
         sendError(res, 404, 'NOT_FOUND', `Artifact '${idOrPath}' not found in artifact store.`, correlationId);
         return true;
       }
+      if (artifact.runId?.startsWith('judged-run-agent-') && !requireAuthenticatedIndustrialHost()) return true;
+      if (!isAcceptedJudgedRunArtifact(this.projectRoot, this.services, artifact)) {
+        sendError(res, 404, 'NOT_FOUND', `Artifact '${idOrPath}' is not an accepted judged-run deliverable.`, correlationId);
+        return true;
+      }
 
       const absPath = path.resolve(this.projectRoot, artifact.path);
       if (!fs.existsSync(absPath)) {
@@ -3311,10 +3601,13 @@ export class RestApiRouter {
     // GET /api/v1/generator/artifacts
     if (method === 'GET' && pathname === '/api/v1/generator/artifacts') {
       const allArtifacts = this.services.artifact.listArtifacts();
-      const officeArtifacts = allArtifacts.filter((a) => {
+      const visibleArtifacts = this.sessionManager && this.instanceIdentity && currentSession
+        ? allArtifacts
+        : allArtifacts.filter((artifact) => !artifact.runId?.startsWith('judged-run-agent-'));
+      const officeArtifacts = visibleArtifacts.filter((a) => {
         const p = a.path.toLowerCase();
         return p.endsWith('.docx') || p.endsWith('.xlsx') || p.endsWith('.pptx');
-      });
+      }).filter((artifact) => isAcceptedJudgedRunArtifact(this.projectRoot, this.services, artifact));
       sendJson(res, 200, { data: officeArtifacts }, correlationId);
       return true;
     }

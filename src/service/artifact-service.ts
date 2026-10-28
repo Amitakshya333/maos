@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { Artifact, ArtifactType } from '../domain/schemas';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import { EventService } from './event-service';
 import { ApprovalService } from './approval-service';
 import { getDefaultEnginePath, verifyExecutable, engineHash } from '../industrial/rust-engine-bridge';
@@ -331,6 +332,10 @@ export class ArtifactService {
    *   → append artifact-finalized event
    */
   finalizeArtifact(params: FinalizeArtifactParams): Artifact {
+    return withJudgedRunOutputLock(this.projectRoot, () => this.finalizeArtifactUnderProjectLock(params));
+  }
+
+  private finalizeArtifactUnderProjectLock(params: FinalizeArtifactParams): Artifact {
     this.ensureDirs();
 
     // 1. Validate path, containment, type, extensions, content
@@ -597,7 +602,7 @@ export class ArtifactService {
    * Safely retrieve artifact content, strictly asserting confinement to projectRoot.
    * Throws PATH_TRAVERSAL error if the path attempts to escape the project root.
    */
-  getArtifactContent(idOrPath: string): { content: string; contentType: string } {
+  getArtifactContentBytes(idOrPath: string): { content: Buffer; contentType: string } {
     if (idOrPath.includes('.tmp') || idOrPath.includes('..')) {
       throw new Error(`PATH_TRAVERSAL: Access to '${idOrPath}' is forbidden.`);
     }
@@ -645,40 +650,52 @@ export class ArtifactService {
         );
       }
     }
-    const content = rawContent.toString('utf-8');
     const contentType = this.getContentType(resolvedPath);
-    return { content, contentType };
+    return { content: rawContent, contentType };
+  }
+
+  getArtifactContent(idOrPath: string): { content: string; contentType: string } {
+    const { content, contentType } = this.getArtifactContentBytes(idOrPath);
+    return { content: content.toString('utf-8'), contentType };
   }
 
   /**
    * Purge orphaned temporary files left behind by crashes or interrupted writes.
    */
   cleanupOrphanTempFiles(maxAgeMs = 0): number {
-    let purged = 0;
-    if (!fs.existsSync(this.tmpDir)) return 0;
-
     try {
-      const entries = fs.readdirSync(this.tmpDir);
-      const now = Date.now();
+      return withJudgedRunOutputLock(this.projectRoot, () => {
+        let purged = 0;
+        if (!fs.existsSync(this.tmpDir)) return 0;
 
-      for (const entry of entries) {
-        if (entry.startsWith('.tmp_')) {
-          const full = path.join(this.tmpDir, entry);
-          try {
-            const stat = fs.statSync(full);
-            // A zero age is an explicit recovery sweep and must remove every
-            // matching temp file, even when filesystem timestamp resolution
-            // reports a freshly-created file a few milliseconds in the future.
-            const ageMs = Math.max(0, now - stat.mtimeMs);
-            if (maxAgeMs <= 0 || ageMs >= maxAgeMs) {
-              fs.unlinkSync(full);
-              purged++;
+        try {
+          const entries = fs.readdirSync(this.tmpDir);
+          const now = Date.now();
+
+          for (const entry of entries) {
+            if (entry.startsWith('.tmp_')) {
+              const full = path.join(this.tmpDir, entry);
+              try {
+                const stat = fs.statSync(full);
+                // A zero age is an explicit recovery sweep and must remove every
+                // matching temp file, even when filesystem timestamp resolution
+                // reports a freshly-created file a few milliseconds in the future.
+                const ageMs = Math.max(0, now - stat.mtimeMs);
+                if (maxAgeMs <= 0 || ageMs >= maxAgeMs) {
+                  fs.unlinkSync(full);
+                  purged++;
+                }
+              } catch {}
             }
-          } catch {}
-        }
-      }
-    } catch {}
+          }
+        } catch {}
 
-    return purged;
+        return purged;
+      });
+    } catch (error: any) {
+      // Startup/housekeeping cleanup can be retried after active publication releases the lock.
+      if (error?.code === 'JUDGED_RUN_BUSY' || error?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') return 0;
+      throw error;
+    }
   }
 }

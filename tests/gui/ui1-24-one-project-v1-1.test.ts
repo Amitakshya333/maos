@@ -107,7 +107,7 @@ describe('UI1-24: One-Project MVP & v1.1 Multi-Window Readiness', () => {
       expect(computedDocxHash).toBe(result.deliverableSha256);
 
       // Verify cryptographic audit export exists and contains sealed records
-      expect(result.auditExportPath).toBe('artifacts/generated/judged-run-audit-export.json');
+      expect(result.auditExportPath).toBe(`artifacts/generated/${result.runId}-audit-export.json`);
       const auditAbsPath = path.join(PROJECT_ROOT, result.auditExportPath!);
       expect(fs.existsSync(auditAbsPath)).toBe(true);
 
@@ -147,22 +147,22 @@ describe('UI1-24: One-Project MVP & v1.1 Multi-Window Readiness', () => {
       expect(html).not.toContain('multi-project');
     });
 
-    it('StatusBar renders strictly one project path and single host port', () => {
+    it('StatusBar renders the runtime API endpoint and readiness contract', () => {
       const html = renderToString(
         React.createElement(StatusBar, {
           projectRoot: 'C:\\maos\\demo\\industrial',
           activeStage: 'ANALYZE_TELEMETRY',
-          serverPort: 3847,
-          engineVerified: true,
+          apiEndpoint: 'http://127.0.0.1:3847',
+          apiStatus: 'READY',
         }),
-      );
+      ).replace(/<!-- -->/g, '');
 
-      // Displays single project root and loopback host
+      // Displays the single project root, current API readiness, and target endpoint.
       expect(html).toContain('PROJECT:');
       expect(html).toContain('C:\\maos\\demo\\industrial');
-      expect(html).toContain('HOST:');
-      expect(html).toContain('127.0.0.1:');
-      expect(html).toContain('3847');
+      expect(html).toContain('API:</strong> READY');
+      expect(html).toContain('API TARGET:</strong> http://127.0.0.1:3847');
+      expect(html).not.toContain('HOST:');
 
       // Negative requirement: No multi-project indicators or tab switches
       expect(html).not.toContain('PROJECTS (');

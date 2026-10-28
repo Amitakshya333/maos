@@ -771,12 +771,14 @@ export interface AuditFilter {
 
 // ── Idempotency & Verifier Types (F3-07) ──────────────────────────
 
-export type IdempotencyStatus = 'in_progress' | 'completed' | 'failed';
+export type IdempotencyStatus = 'in_progress' | 'retryable' | 'completed' | 'failed';
 
 export interface IdempotencyRecord {
   readonly schemaVersion: 1;
   readonly key: string;
   readonly requestHash: string;
+  readonly requestIdentityHash?: string;
+  readonly claimToken?: string;
   readonly operation: string;
   readonly projectId: string;
   readonly status: IdempotencyStatus;

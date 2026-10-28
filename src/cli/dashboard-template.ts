@@ -1040,7 +1040,12 @@ async function runSovereignAudit() {
   try {
     const res = await fetch('/api/industrial/trigger', { method: 'POST' });
     const data = await res.json();
-    if (data.success) {
+    if (data.status === 'in_progress' || data.status === 'unavailable') {
+      const busy = data.status === 'in_progress';
+      if (toast) toast.innerHTML = (busy ? '⏳ T-07 analysis is already in progress: ' : '⚠️ T-07 analysis unavailable: ') + escapeHtml(data.message || data.error || data.status);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> RUN T-07 SAFETY AUDIT'; }
+      if (busy) setTimeout(refresh, 1000);
+    } else if (data.success) {
       if (btn) btn.innerHTML = '<span>⚡</span> WAITING FOR REVIEW...';
       if (toast) {
         const runId = data.runId || (data.task && data.task.id) || 'UNKNOWN';

@@ -1,4 +1,5 @@
 import React from 'react';
+import { INDUSTRIAL_DEMO_VIEWS } from './ActivityBar';
 import type { ActiveView } from './ActivityBar';
 
 interface NavigationSidebarProps {
@@ -6,6 +7,7 @@ interface NavigationSidebarProps {
   collapsed?: boolean;
   width?: number;
   onSelectView?: (view: ActiveView) => void;
+  industrialDemo?: boolean;
 }
 
 interface QuickLink {
@@ -126,8 +128,11 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   collapsed = false,
   width,
   onSelectView,
+  industrialDemo = false,
 }) => {
-  const links = QUICK_LINKS[activeView] || [];
+  const links = (QUICK_LINKS[activeView] || []).filter(
+    ({ view }) => !industrialDemo || INDUSTRIAL_DEMO_VIEWS.includes(view as (typeof INDUSTRIAL_DEMO_VIEWS)[number]),
+  );
 
   return (
     <aside

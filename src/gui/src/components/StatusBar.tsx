@@ -5,15 +5,15 @@ import type { ConnectionState } from '../api/event-client';
 interface StatusBarProps {
   projectRoot?: string;
   activeStage?: string;
-  serverPort?: number;
-  engineVerified?: boolean;
+  apiEndpoint?: string;
+  apiStatus?: string;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
-  projectRoot = 'C:\\maos',
-  activeStage = 'IDLE // STANDBY',
-  serverPort = 3847,
-  engineVerified = true,
+  projectRoot = 'UNVERIFIED',
+  activeStage = 'NO ACTIVE RUN REPORTED',
+  apiEndpoint = 'UNVERIFIED',
+  apiStatus = 'CHECKING',
 }) => {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [eventSeq, setEventSeq] = useState<number>(() => apiAdapter.getLastEventSeq());
@@ -40,7 +40,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <strong>PROJECT:</strong> {projectRoot}
         </span>
         <span className="status-item">
-          <strong>STATUS:</strong> {connectionState.toUpperCase()}
+          <strong>API:</strong> {apiStatus}
         </span>
       </div>
 
@@ -49,16 +49,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <strong>STAGE:</strong> {activeStage}
         </span>
         <span className="status-item">
-          <strong>EVENT SEQ:</strong> #{String(eventSeq).padStart(4, '0')}
+          <strong>EVENTS:</strong> {connectionState.toUpperCase()} · #{String(eventSeq).padStart(4, '0')}
         </span>
       </div>
 
       <div className="status-section">
         <span className="status-item">
-          <strong>HOST:</strong> 127.0.0.1:{serverPort}
-        </span>
-        <span className="status-item">
-          <strong>RUST:</strong> {engineVerified ? 'SHA-256 VERIFIED' : 'UNVERIFIED'}
+          <strong>API TARGET:</strong> {apiEndpoint}
         </span>
         <span className="kbd-hint">Alt+1..8: Views</span>
         <span className="kbd-hint">Ctrl+J: Cockpit</span>

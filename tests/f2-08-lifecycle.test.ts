@@ -43,7 +43,8 @@ import {
   LockData,
 } from '../src/industrial/lifecycle';
 
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+let PROJECT_ROOT: string;
+const REPOSITORY_ROOT = path.resolve(__dirname, '..');
 
 // These tests exercise lifecycle state transitions without shipping the six
 // production offline stores. Production/default install remains strict.
@@ -52,17 +53,13 @@ const installStateOnly = () => lifecycleInstall(PROJECT_ROOT, { stateOnly: true 
 describe('F2-08: Idempotent Lifecycle Scripts', () => {
 
   beforeEach(() => {
-    const statePath = getStatePath(PROJECT_ROOT);
-    const lockPath = getLockPath(PROJECT_ROOT);
-    try { if (fs.existsSync(statePath)) fs.unlinkSync(statePath); } catch { /* ok */ }
-    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch { /* ok */ }
+    PROJECT_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f2-08-'));
+    fs.writeFileSync(path.join(PROJECT_ROOT, 'package.json'), JSON.stringify({ name: 'maos-f2-08-test' }));
+    fs.writeFileSync(path.join(PROJECT_ROOT, 'tsconfig.json'), '{}');
   });
 
   afterEach(() => {
-    const statePath = getStatePath(PROJECT_ROOT);
-    const lockPath = getLockPath(PROJECT_ROOT);
-    try { if (fs.existsSync(statePath)) fs.unlinkSync(statePath); } catch { /* ok */ }
-    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch { /* ok */ }
+    fs.rmSync(PROJECT_ROOT, { recursive: true, force: true });
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -184,7 +181,7 @@ describe('F2-08: Idempotent Lifecycle Scripts', () => {
 
     it('should persist OwnedService records on successful start', () => {
       // This test requires a real executable — gate behind existence
-      const rustBinary = path.resolve(PROJECT_ROOT, 'rust', 'target', 'release',
+      const rustBinary = path.resolve(REPOSITORY_ROOT, 'rust', 'target', 'release',
         process.platform === 'win32' ? 'maos-industrial-engine.exe' : 'maos-industrial-engine');
 
       if (!fs.existsSync(rustBinary)) {
@@ -447,7 +444,7 @@ describe('F2-08: Idempotent Lifecycle Scripts', () => {
       fs.writeFileSync(lockPath, JSON.stringify({
         pid: 999999, // dead PID
         timestamp: new Date(Date.now() - 60_000).toISOString(), // 60s ago
-        hostname: 'test',
+        hostname: os.hostname(),
       }), 'utf-8');
 
       expect(acquireLock(PROJECT_ROOT)).toBe(true);

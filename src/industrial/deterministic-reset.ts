@@ -2,11 +2,9 @@
  * F10-05: Deterministic Reset for Industrial Generated Test State
  *
  * Implements safe, allowlisted, dry-run-capable reset of confirmed generated state:
- *   - queue: generated tasks, objectives, plans, and events (.maos/queue/**, .maos/plans/**, .maos/events/**)
+ *   - queue: generated tasks, objectives, plans, events, and checkpoints (.maos/queue/**, .maos/plans/**, .maos/events/**, .maos/checkpoints/**)
  *   - output: generated artifacts (artifacts/generated/**, .maos/generated/**, demo/industrial/generated/**)
- *   - index: local KB vector index (.maos/industrial/kb/**)
- *   - sandbox: temporary sandbox execution files (.maos/sandbox/**, .maos/tmp/**)
- *   - conversation: session/chat records (.maos/sessions/**, .maos/conversations/**)
+ *   - index, sandbox, conversation: currently disabled until their writers share this reset guard
  *
  * Negative Invariants & Protection List:
  *   1. NEVER removes source fixtures (fixtures/**).
@@ -19,9 +17,22 @@
  *   8. Strictly mandates explicit confirmation (--yes) for destructive live execution.
  */
 
-import * as fs from 'fs';
+import fs from 'node:fs';
 import * as path from 'path';
 import type { AuditService } from '../service/audit-service';
+import { withJudgedRunOutputLock } from './judged-run-lock';
+import {
+  getActiveDir,
+  getCancelledDir,
+  getCheckpointsDir,
+  getDoneDir,
+  getEventsDir,
+  getFailedDir,
+  getObjectivesDir,
+  getPendingDir,
+  getPlansDir,
+  getRetryDir,
+} from '../utils/paths';
 
 export const RESET_CATEGORIES = [
   'queue',
@@ -32,6 +43,9 @@ export const RESET_CATEGORIES = [
 ] as const;
 
 export type ResetCategory = (typeof RESET_CATEGORIES)[number];
+
+export const RESET_ENABLED_CATEGORIES = ['queue', 'output'] as const satisfies readonly ResetCategory[];
+export const RESET_DISABLED_CATEGORIES = ['index', 'sandbox', 'conversation'] as const satisfies readonly ResetCategory[];
 
 export interface ResetCandidateFile {
   readonly relativePath: string;
@@ -57,6 +71,8 @@ export interface DeterministicResetResult {
   readonly runId?: string;
   readonly candidateFiles: readonly ResetCandidateFile[];
   readonly removedFiles: readonly ResetCandidateFile[];
+  readonly scannedBytes: number;
+  readonly removedBytes: number;
   readonly totalBytes: number;
   readonly message: string;
   readonly error?: string;
@@ -188,10 +204,15 @@ export function discoverResetCandidates(
 
   const categoryDirs: Record<ResetCategory, string[]> = {
     queue: [
-      path.join(normalizedRoot, '.maos', 'queue', 'tasks'),
-      path.join(normalizedRoot, '.maos', 'queue', 'objectives'),
-      path.join(normalizedRoot, '.maos', 'plans'),
-      path.join(normalizedRoot, '.maos', 'events'),
+      getPendingDir(normalizedRoot),
+      getDoneDir(normalizedRoot),
+      getRetryDir(normalizedRoot),
+      getFailedDir(normalizedRoot),
+      getCancelledDir(normalizedRoot),
+      getCheckpointsDir(normalizedRoot),
+      getObjectivesDir(normalizedRoot),
+      getPlansDir(normalizedRoot),
+      getEventsDir(normalizedRoot),
     ],
     output: [
       path.join(normalizedRoot, 'artifacts', 'generated'),
@@ -235,15 +256,13 @@ export function discoverResetCandidates(
           const matchesRunIdInName = entry.name.includes(runId);
           let matchesRunIdInContent = false;
 
-          if (absPath.endsWith('.json') || absPath.endsWith('.jsonl')) {
-            try {
-              const fileSnippet = fs.readFileSync(absPath, 'utf8').substring(0, 2048);
-              if (fileSnippet.includes(runId)) {
-                matchesRunIdInContent = true;
-              }
-            } catch {
-              // Ignore read errors during filter
+          try {
+            const fileSnippet = fs.readFileSync(absPath, 'utf8').substring(0, 2048);
+            if (fileSnippet.includes(runId)) {
+              matchesRunIdInContent = true;
             }
+          } catch {
+            // Ignore read errors during filter
           }
 
           if (!matchesRunIdInName && !matchesRunIdInContent) {
@@ -269,6 +288,28 @@ export function discoverResetCandidates(
   return candidates;
 }
 
+function activeQueueWork(projectRoot: string): string[] {
+  const activeTasksDir = getActiveDir(projectRoot);
+  const activeTasks = fs.existsSync(activeTasksDir)
+    ? fs.readdirSync(activeTasksDir).filter((name) => !name.startsWith('.'))
+      .map((name) => path.relative(projectRoot, path.join(activeTasksDir, name)).replace(/\\/g, '/'))
+    : [];
+  const objectivesDir = getObjectivesDir(projectRoot);
+  const activeObjectives = fs.existsSync(objectivesDir)
+    ? fs.readdirSync(objectivesDir).filter((name) => name.endsWith('.json')).flatMap((name) => {
+      try {
+        const objective = JSON.parse(fs.readFileSync(path.join(objectivesDir, name), 'utf8'));
+        return ['planning', 'replanning', 'executing', 'reviewing'].includes(objective.status)
+          ? [path.relative(projectRoot, path.join(objectivesDir, name)).replace(/\\/g, '/')]
+          : [];
+      } catch {
+        return [path.relative(projectRoot, path.join(objectivesDir, name)).replace(/\\/g, '/')];
+      }
+    })
+    : [];
+  return [...activeTasks, ...activeObjectives];
+}
+
 /**
  * Executes deterministic reset over allowlisted generated test state.
  */
@@ -279,7 +320,7 @@ export async function executeDeterministicReset(
   const dryRun = options.dryRun ?? true;
   const categories = options.categories && options.categories.length > 0
     ? options.categories
-    : RESET_CATEGORIES;
+    : RESET_ENABLED_CATEGORIES;
 
   if (!fs.existsSync(projectRoot)) {
     return {
@@ -290,17 +331,38 @@ export async function executeDeterministicReset(
       runId: options.runId,
       candidateFiles: [],
       removedFiles: [],
+      scannedBytes: 0,
+      removedBytes: 0,
       totalBytes: 0,
       message: `Project root directory does not exist: ${projectRoot}`,
       error: 'PROJECT_ROOT_NOT_FOUND',
     };
   }
 
-  const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
-  const totalBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
+  const disabledCategories = categories.filter((category) =>
+    (RESET_DISABLED_CATEGORIES as readonly ResetCategory[]).includes(category));
+  if (disabledCategories.length > 0) {
+    const message = `RESET_CATEGORY_UNSUPPORTED: ${disabledCategories.join(', ')} reset is disabled until its active writers use the shared reset guard. Stop the owning service and remove that state through its service-specific cleanup.`;
+    return {
+      success: false,
+      dryRun,
+      projectRoot,
+      categories,
+      runId: options.runId,
+      candidateFiles: [],
+      removedFiles: [],
+      scannedBytes: 0,
+      removedBytes: 0,
+      totalBytes: 0,
+      message,
+      error: 'RESET_CATEGORY_UNSUPPORTED',
+    };
+  }
 
   // Dry run mode
   if (dryRun) {
+    const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
+    const scannedBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
     return {
       success: true,
       dryRun: true,
@@ -309,13 +371,17 @@ export async function executeDeterministicReset(
       runId: options.runId,
       candidateFiles: candidates,
       removedFiles: [],
-      totalBytes,
-      message: `[DRY-RUN] Deterministic reset would remove ${candidates.length} generated files (${totalBytes} bytes). No files were deleted.`,
+      scannedBytes,
+      removedBytes: 0,
+      totalBytes: scannedBytes,
+      message: `[DRY-RUN] Deterministic reset found ${candidates.length} generated files (${scannedBytes} bytes scanned). No files were deleted.`,
     };
   }
 
   // Live execution mandates explicit confirmation
   if (!options.confirmed) {
+    const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
+    const scannedBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
     return {
       success: false,
       dryRun: false,
@@ -324,65 +390,96 @@ export async function executeDeterministicReset(
       runId: options.runId,
       candidateFiles: candidates,
       removedFiles: [],
-      totalBytes,
+      scannedBytes,
+      removedBytes: 0,
+      totalBytes: scannedBytes,
       message: 'CONFIRMATION_REQUIRED: Live reset mandates explicit confirmation (--yes).',
       error: 'CONFIRMATION_REQUIRED',
     };
   }
 
-  // Execute deletion
-  const removed: ResetCandidateFile[] = [];
-  const errors: string[] = [];
-
-  for (const file of candidates) {
-    // Double-check forbidden guard before physical deletion
-    if (isForbiddenPath(file.absolutePath, projectRoot)) {
-      errors.push(`Attempted deletion of protected path skipped: ${file.relativePath}`);
-      continue;
-    }
-
-    try {
-      if (fs.existsSync(file.absolutePath)) {
-        fs.unlinkSync(file.absolutePath);
-        removed.push(file);
-      }
-    } catch (err: any) {
-      errors.push(`Failed to delete ${file.relativePath}: ${err.message}`);
-    }
-  }
-
-  // Record audit log if audit service is available
-  if (options.auditService) {
-    try {
-      options.auditService.recordAuditEvent({
-        category: 'interruption',
-        source: 'deterministic-reset',
-        data: {
-          event: 'DETERMINISTIC_RESET_EXECUTED',
+  return withJudgedRunOutputLock(projectRoot, () => {
+    // Scan under the same project lock as deletion so a publisher cannot appear between them.
+    if (categories.includes('queue')) {
+      const active = activeQueueWork(projectRoot);
+      if (active.length > 0) {
+        return {
+          success: false,
+          dryRun: false,
+          projectRoot,
           categories,
           runId: options.runId,
-          filesRemovedCount: removed.length,
-          totalBytesRemoved: totalBytes,
-          timestamp: new Date().toISOString(),
-        },
-      });
-    } catch {
-      // Non-fatal audit recording
+          candidateFiles: [],
+          removedFiles: [],
+          scannedBytes: 0,
+          removedBytes: 0,
+          totalBytes: 0,
+          message: `QUEUE_RESET_REFUSED: Active queue entries or workflows remain (including interrupted entries whose worker exit is unconfirmed): ${active.join(', ')}. Stop the owning MAOS worker; after it exits, restart MAOS to recover orphaned work, then retry reset.`,
+          error: 'ACTIVE_QUEUE_WORK',
+        };
+      }
     }
-  }
+    const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
+    const scannedBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
+    const removed: ResetCandidateFile[] = [];
+    let removedBytes = 0;
+    const errors: string[] = [];
 
-  const msg = `Deterministic reset removed ${removed.length} generated files (${totalBytes} bytes) across categories [${categories.join(', ')}].`;
+    for (const file of candidates) {
+      // Double-check forbidden guard before physical deletion
+      if (isForbiddenPath(file.absolutePath, projectRoot)) {
+        errors.push(`Attempted deletion of protected path skipped: ${file.relativePath}`);
+        continue;
+      }
 
-  return {
-    success: errors.length === 0,
-    dryRun: false,
-    projectRoot,
-    categories,
-    runId: options.runId,
-    candidateFiles: candidates,
-    removedFiles: removed,
-    totalBytes,
-    message: msg,
-    error: errors.length > 0 ? errors.join('; ') : undefined,
-  };
+      try {
+        if (fs.existsSync(file.absolutePath)) {
+          const actualBytes = fs.statSync(file.absolutePath).size;
+          fs.unlinkSync(file.absolutePath);
+          removed.push({ ...file, byteSize: actualBytes });
+          removedBytes += actualBytes;
+        }
+      } catch (err: any) {
+        errors.push(`Failed to delete ${file.relativePath}: ${err.message}`);
+      }
+    }
+
+    // Record the reset without changing a judged run's historical terminal state.
+    if (options.auditService) {
+      try {
+        options.auditService.recordAuditEvent({
+          category: 'interruption',
+          source: 'deterministic-reset',
+          data: {
+            event: 'DETERMINISTIC_RESET_EXECUTED',
+            categories,
+            runId: options.runId,
+            filesRemovedCount: removed.length,
+            scannedBytes,
+            totalBytesRemoved: removedBytes,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch (err: any) {
+        errors.push(`Failed to record reset audit event after removing ${removed.length} files: ${err.message}`);
+      }
+    }
+
+    const msg = `Deterministic reset removed ${removed.length} generated files (${removedBytes} bytes; ${scannedBytes} bytes scanned) across categories [${categories.join(', ')}].`;
+
+    return {
+      success: errors.length === 0,
+      dryRun: false,
+      projectRoot,
+      categories,
+      runId: options.runId,
+      candidateFiles: candidates,
+      removedFiles: removed,
+      scannedBytes,
+      removedBytes,
+      totalBytes: removedBytes,
+      message: msg,
+      error: errors.length > 0 ? errors.join('; ') : undefined,
+    };
+  });
 }

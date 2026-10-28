@@ -12,6 +12,8 @@
  */
 
 import { validateSequencedEvent } from './runtime-validation';
+import { validateLauncherSessionBootstrap } from './rest-client';
+import type { LauncherSessionBootstrap } from './rest-client';
 import type { SequencedEvent, ResyncReason } from '../../../domain/schemas';
 
 export type ConnectionState =
@@ -39,8 +41,8 @@ export type StateListener = (state: ConnectionState) => void;
 export type ResyncListener = (reason: ResyncReason, latestSequence?: number) => void;
 
 export class BrowserEventClient {
-  private readonly wsUrl: string;
-  private readonly projectId: string;
+  private wsUrl: string;
+  private projectId: string;
   private readonly runId?: string;
   private readonly maxReconnectAttempts: number;
   private readonly baseBackoffMs: number;
@@ -76,6 +78,13 @@ export class BrowserEventClient {
 
   setSessionToken(token?: string): void {
     this.sessionToken = token;
+  }
+
+  initializeFromLauncher(session: LauncherSessionBootstrap): void {
+    validateLauncherSessionBootstrap(session);
+    this.wsUrl = session.baseUrl.replace(/^http:/, 'ws:') + '/api/v1/events';
+    this.projectId = session.projectId;
+    this.sessionToken = session.sessionToken;
   }
 
   getSessionToken(): string | undefined {

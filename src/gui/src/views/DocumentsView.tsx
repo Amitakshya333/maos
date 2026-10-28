@@ -49,6 +49,7 @@ export const DocumentsView: React.FC = () => {
 
   // Deliverables History
   const [recentArtifacts, setRecentArtifacts] = useState<Artifact[]>([]);
+  const [downloadError, setDownloadError] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'citations' | 'measurements' | 'prose' | 'template' | 'history'>('overview');
 
   // Load presets on mount
@@ -84,6 +85,23 @@ export const DocumentsView: React.FC = () => {
       // Ignored
     }
   }, []);
+
+  const handleDownloadArtifact = async (artifactId: string, filename: string) => {
+    setDownloadError('');
+    try {
+      const blob = await apiAdapter.rest.downloadArtifactContent(artifactId);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      setDownloadError((error as Error).message || 'Artifact download failed.');
+    }
+  };
 
   useEffect(() => {
     refreshArtifacts();
@@ -562,6 +580,7 @@ export const DocumentsView: React.FC = () => {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {downloadError && <div role="alert" className="state-box">Download failed: {downloadError}</div>}
                   {recentArtifacts.map((art) => (
                     <div
                       key={art.id}
@@ -582,13 +601,14 @@ export const DocumentsView: React.FC = () => {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        <a
-                          href={`/api/v1/artifacts/${encodeURIComponent(art.id)}/content`}
-                          download
+                        <button
+                          type="button"
+                          onClick={() => void handleDownloadArtifact(art.id, art.path.split('/').pop() || art.id)}
                           className="btn btn-xs btn-secondary"
+                          aria-label={`Download ${art.path.split('/').pop() || art.id}`}
                         >
                           Download
-                        </a>
+                        </button>
                         <button
                           className="btn btn-xs btn-primary"
                           onClick={() => handleLaunch(art.id)}
@@ -788,13 +808,16 @@ export const DocumentsView: React.FC = () => {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                <a
-                  href={`/api/v1/artifacts/${encodeURIComponent(generationResult.artifactId || '')}/content`}
-                  download
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadArtifact(
+                    generationResult.artifactId || '',
+                    generationResult.relativePath?.split('/').pop() || generationResult.artifactId || 'artifact',
+                  )}
                   className="btn btn-secondary btn-sm"
                 >
                   Download File
-                </a>
+                </button>
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={() => handleLaunch(generationResult.artifactId)}
@@ -809,6 +832,7 @@ export const DocumentsView: React.FC = () => {
                   {launchResult.message}
                 </div>
               )}
+              {downloadError && <div role="alert" className="state-box">Download failed: {downloadError}</div>}
             </div>
           )}
         </div>

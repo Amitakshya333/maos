@@ -27,6 +27,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getMaosRoot, getPendingDir, getDoneDir } from '../utils/paths';
+import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import { TaskFile } from './queue';
 
 // ---- Retry Directory ----
@@ -192,6 +193,20 @@ export function enqueueRetry(
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
   cwd?: string,
 ): RetryRecord | null {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => enqueueRetryUnderProjectLock(
+    taskFile, taskContent, error, filesChangedSoFar, iterationsCompleted, policy, cwd,
+  ));
+}
+
+function enqueueRetryUnderProjectLock(
+  taskFile: TaskFile,
+  taskContent: string,
+  error: string,
+  filesChangedSoFar: string[],
+  iterationsCompleted: number,
+  policy: RetryPolicy,
+  cwd?: string,
+): RetryRecord | null {
   ensureRetryDirs(cwd);
 
   const errorType = classifyError(error);
@@ -260,6 +275,10 @@ export function enqueueRetry(
  * Move a task to the dead-letter queue (permanently failed).
  */
 export function deadLetter(taskFile: TaskFile, taskContent: string, error: string, reason: string, cwd?: string): void {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => deadLetterUnderProjectLock(taskFile, taskContent, error, reason, cwd));
+}
+
+function deadLetterUnderProjectLock(taskFile: TaskFile, taskContent: string, error: string, reason: string, cwd?: string): void {
   ensureRetryDirs(cwd);
   const failedDir = getFailedDir(cwd);
   const safe = taskFile.id.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -282,6 +301,10 @@ export function deadLetter(taskFile: TaskFile, taskContent: string, error: strin
  * Returns the number of tasks moved to pending.
  */
 export function drainRetryQueue(cwd?: string): number {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => drainRetryQueueUnderProjectLock(cwd));
+}
+
+function drainRetryQueueUnderProjectLock(cwd?: string): number {
   ensureRetryDirs(cwd);
   const retryDir = getRetryDir(cwd);
   const pendingDir = getPendingDir(cwd);

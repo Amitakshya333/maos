@@ -96,9 +96,13 @@ describe('F3-01 ProjectService', () => {
 
   it('should detect non-initialized project', () => {
     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-empty-'));
-    const emptySvc = createServiceContainer(emptyDir);
-    expect(emptySvc.project.isInitialized()).toBe(false);
-    fs.rmSync(emptyDir, { recursive: true, force: true });
+    try {
+      const emptySvc = createServiceContainer(emptyDir);
+      expect(emptySvc.industrialAnalysisAgent).toBeDefined();
+      expect(emptySvc.project.isInitialized()).toBe(false);
+    } finally {
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
   });
 
   it('should load config as domain Project type', () => {

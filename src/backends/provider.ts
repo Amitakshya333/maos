@@ -55,14 +55,22 @@ export interface ProviderResponse {
   /** Token usage for cost tracking */
   usage: TokenUsage;
 
-  /** Actual model name returned by the API */
+  /** Configured model identifier used for the request. */
   model: string;
+
+  /** Model identifier explicitly reported by the provider, if present. */
+  reportedModel?: string;
 
   /** Round-trip latency in milliseconds */
   latencyMs: number;
 
   /** Whether the model wants to stop or continue with tools */
   finishReason: 'stop' | 'tool_calls' | 'length' | 'unknown';
+}
+
+export interface ProviderRequestOptions {
+  signal?: AbortSignal;
+  maxTokens?: number;
 }
 
 // ─── Provider Interface ───────────────────────────────────────
@@ -81,6 +89,7 @@ export interface IProvider {
   generate(
     messages: ChatMessage[],
     tools?: ToolDef[],
+    options?: ProviderRequestOptions,
   ): Promise<ProviderResponse>;
 }
 

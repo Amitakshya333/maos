@@ -77,6 +77,10 @@ import {
   SandboxExecutionRequest,
   SandboxExecutionResult,
 } from '../domain/sandbox-run';
+import {
+  storeTelemetryAnalysis,
+  verifyTelemetryAnalysis,
+} from '../industrial/telemetry-analysis';
 
 /**
  * MAOS Agent Tool Definitions
@@ -88,6 +92,24 @@ import {
 // ─── Tool Definitions (sent to the model) ─────────────────────
 
 export const AGENT_TOOLS: ToolDef[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'analyze_telemetry_csv',
+      description: 'Run deterministic vibration and temperature checks on the user-selected project-local CSV and return a persisted, verifiable evidence receipt.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sourcePath: {
+            type: 'string',
+            description: 'Relative project path to the selected CSV file.',
+          },
+        },
+        required: ['sourcePath'],
+        additionalProperties: false,
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -1167,6 +1189,70 @@ export interface OcrToolExecutionContext {
   allowedTools?: string[];
 }
 
+function executeAnalyzeTelemetryCsvTool(
+  args: Record<string, unknown>,
+  projectRoot: string,
+  scope: string[],
+): Record<string, unknown> {
+  if (!args || Object.keys(args).some((key) => key !== 'sourcePath')) {
+    throw new Error('Only the selected sourcePath argument is accepted.');
+  }
+  const sourcePath = typeof args.sourcePath === 'string' ? args.sourcePath : '';
+  if (!sourcePath || path.isAbsolute(sourcePath)) throw new Error('sourcePath must be a relative project path.');
+  const resolved = path.resolve(projectRoot, sourcePath);
+  const selected = scope.some((allowedPath) => path.resolve(projectRoot, allowedPath) === resolved);
+  if (!selected) throw new Error('sourcePath must match the user-selected analysis file.');
+
+  const realRoot = fs.realpathSync(projectRoot);
+  const realSource = fs.realpathSync(resolved);
+  const relative = path.relative(realRoot, realSource);
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('sourcePath must resolve to a file inside the project.');
+  }
+  const stat = fs.statSync(realSource);
+  if (!stat.isFile() || path.extname(realSource).toLowerCase() !== '.csv') {
+    throw new Error('sourcePath must identify a project-local CSV file.');
+  }
+  if (stat.size < 1 || stat.size > 5 * 1024 * 1024) throw new Error('CSV must be between 1 byte and 5 MB.');
+
+  const stored = storeTelemetryAnalysis(projectRoot, realSource, fs.readFileSync(realSource), 'project-local-file');
+  const verification = verifyTelemetryAnalysis(projectRoot, stored.receipt.analysisId);
+  if (!verification.valid) throw new Error(`Stored telemetry evidence failed verification: ${verification.errors.join('; ')}`);
+  const { result } = stored.receipt;
+  return {
+    ok: true,
+    analysisId: stored.receipt.analysisId,
+    receiptPath: stored.receiptPath,
+    receiptSha256: stored.receiptSha256,
+    source: {
+      selectedPath: relative.split(path.sep).join('/'),
+      evidencePath: stored.receipt.source.relativePath,
+      sha256: stored.receipt.source.sha256,
+      bytes: stored.receipt.source.bytes,
+    },
+    rulesetSha256: stored.receipt.rulesetSha256,
+    disclaimer: stored.receipt.disclaimer,
+    result: {
+      rowsAnalyzed: result.rowsAnalyzed,
+      overallVibrationRms: result.overallVibrationRms,
+      peakVibration: result.peakVibration,
+      peakTemperature: result.peakTemperature,
+      warningCount: result.warningCount,
+      criticalCount: result.criticalCount,
+      verdict: result.verdict,
+      findings: result.findings.slice(0, 30),
+      omittedFindingCount: Math.max(0, result.findings.length - 30),
+    },
+    verification: {
+      valid: verification.valid,
+      method: verification.method,
+      sourceHashMatched: verification.sourceHashMatched,
+      rulesetHashMatched: verification.rulesetHashMatched,
+      recomputationMatched: verification.recomputationMatched,
+    },
+  };
+}
+
 export function executeOcrDocumentTool(
   input: unknown,
   context: OcrToolExecutionContext,
@@ -2231,6 +2317,17 @@ export function executeTool(
 
   try {
     switch (toolName) {
+      case 'analyze_telemetry_csv': {
+        try {
+          return { result: jsonResult(executeAnalyzeTelemetryCsvTool(args, projectRoot, scope)), isComplete: false };
+        } catch (err: any) {
+          return {
+            result: jsonResult({ ok: false, error: 'TELEMETRY_ANALYSIS_FAILED', message: err.message }),
+            isComplete: false,
+          };
+        }
+      }
+
       case 'generate_docx': {
         try {
           const toolResult = executeGenerateDocxTool(args, {

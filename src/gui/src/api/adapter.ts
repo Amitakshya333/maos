@@ -11,6 +11,7 @@ import type {
   RequestOptions,
   JudgedRunResponse,
   IndustrialTelemetryAnalysisResponse,
+  IndustrialAnalysisAgentResponse,
 } from './rest-client';
 import { BrowserEventClient, ConnectionState, EventListener, StateListener } from './event-client';
 import type { Task, Artifact, ModelLease, AuditRecord, SequencedEvent, Project, Approval, Conversation, Message, MessageRole, AuditChainVerification } from '../../../domain/schemas';
@@ -163,7 +164,7 @@ export class GuiApiAdapter {
    */
   initializeFromLauncher(session: LauncherSessionBootstrap): void {
     this.rest.initializeFromLauncher(session);
-    this.events.setSessionToken(session.sessionToken);
+    this.events.initializeFromLauncher(session);
   }
 
   /**
@@ -355,7 +356,7 @@ export class GuiApiAdapter {
     model: string;
     deterministic: boolean;
   }> {
-    return this.rest.chatCompletion({ conversationId, messages });
+    return this.rest.chatCompletion({ conversationId, messages }, { timeoutMs: 120_000 });
   }
 
   async getChatHealth(): Promise<{ available: boolean; status: string }> {
@@ -374,8 +375,15 @@ export class GuiApiAdapter {
     name?: string;
     contentBase64?: string;
     useBundledSample?: boolean;
-  }): Promise<IndustrialTelemetryAnalysisResponse> {
-    return this.rest.analyzeIndustrialTelemetry(input);
+  }, options?: RequestOptions): Promise<IndustrialTelemetryAnalysisResponse> {
+    return this.rest.analyzeIndustrialTelemetry(input, options);
+  }
+
+  async analyzeIndustrialCsv(
+    input: { request: string; sourcePath: string },
+    options?: RequestOptions,
+  ): Promise<IndustrialAnalysisAgentResponse> {
+    return this.rest.analyzeIndustrialCsv(input, options);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -595,8 +603,20 @@ export class GuiApiAdapter {
     return this.rest.startIndustrialJudgedRun();
   }
 
+  async prepareIndustrialAgentReview(analysisId: string): Promise<JudgedRunResponse> {
+    return this.rest.prepareIndustrialAgentReview(analysisId);
+  }
+
   async getIndustrialJudgedRun(runId: string): Promise<JudgedRunResponse> {
     return this.rest.getIndustrialJudgedRun(runId);
+  }
+
+  async getIndustrialRunArtifacts(runId: string): Promise<Artifact[]> {
+    return this.rest.getArtifactsForRun(runId);
+  }
+
+  async downloadArtifactContent(id: string): Promise<Blob> {
+    return this.rest.downloadArtifactContent(id);
   }
 
   async listCockpitRuns(projectId?: string): Promise<CockpitRunSummary[]> {
@@ -798,5 +818,11 @@ export class GuiApiAdapter {
   }
 }
 
+// The dashboard host supplies this from its own canonical project root.
+const runtimeProjectRoot =
+  typeof document === 'undefined'
+    ? undefined
+    : document.querySelector<HTMLMetaElement>('meta[name="maos-project-root"]')?.content;
+
 // Global default adapter configured for loopback
-export const apiAdapter = new GuiApiAdapter();
+export const apiAdapter = new GuiApiAdapter(runtimeProjectRoot ? { projectRoot: runtimeProjectRoot } : {});

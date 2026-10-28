@@ -13,8 +13,10 @@
 import * as http from 'http';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import type { ApiErrorEnvelope } from './types';
 import { DurableIdempotencyStore } from '../core/idempotency-store';
+import type { IdempotencyRecord as DurableIdempotencyRecord } from '../domain/schemas';
 import { SECURITY_HEADERS, CONTENT_SECURITY_POLICY, applySecurityHeaders } from './security-headers';
 import { redactSensitive } from '../core/redaction';
 
@@ -196,7 +198,8 @@ export function checkIdempotency(
   durableStore?: DurableIdempotencyStore,
   operation?: string,
   projectId?: string,
-): { isReplay: boolean; idempotencyKey?: string; bodyHash?: string } {
+  onDurableReplay?: (record: DurableIdempotencyRecord) => boolean,
+): { isReplay: boolean; idempotencyKey?: string; bodyHash?: string; claimToken?: string } {
   const idempotencyKey = req.headers['idempotency-key'];
   if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
     return { isReplay: false };
@@ -221,21 +224,47 @@ export function checkIdempotency(
     return { isReplay: true };
   }
 
-  const bodyHash = crypto.createHash('sha256').update(rawBody).digest('hex');
+  let payload: unknown = rawBody;
+  try {
+    payload = rawBody.trim() ? canonicalizeJson(JSON.parse(rawBody)) : null;
+  } catch {
+    // readJsonBody rejects malformed JSON before this helper is called.
+  }
+  const requestHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  const requestPath = canonicalRequestPath(req.url || '/');
+  const headerRoot = req.headers['x-project-root'];
+  let projectIdentity = typeof headerRoot === 'string' ? path.resolve(headerRoot) : 'default';
+  try {
+    projectIdentity = durableStore?.getCanonicalProjectIdentity() || fs.realpathSync(projectIdentity);
+  } catch {
+    projectIdentity = process.platform === 'win32' ? projectIdentity.toLowerCase() : projectIdentity;
+  }
+  const requestIdentityHash = crypto.createHash('sha256').update(JSON.stringify({
+    projectIdentity,
+    method: (req.method || 'POST').toUpperCase(),
+    operation: operation || 'mutation',
+    resource: requestPath,
+    projectId: projectId || 'default',
+    requestHash,
+  })).digest('hex');
+  // The in-memory fallback uses the same complete identity as the durable store.
+  const bodyHash = requestIdentityHash;
 
   if (durableStore) {
     const authHeader = req.headers['authorization'];
     const authContext = typeof authHeader === 'string' ? authHeader : undefined;
     const claim = durableStore.claim({
       key,
-      requestHash: bodyHash,
+      requestHash,
       operation: operation || 'mutation',
       projectId: projectId || 'default',
+      requestIdentityHash,
       authContext,
     });
 
     if (claim.outcome === 'conflict') {
-      sendError(res, 409, 'IDEMPOTENCY_CONFLICT', claim.message, correlationId);
+      const code = claim.reason === 'IDEMPOTENCY_CONTEXT_UNAVAILABLE' ? 'IDEMPOTENCY_CONTEXT_UNAVAILABLE' : 'IDEMPOTENCY_CONFLICT';
+      sendError(res, 409, code, claim.message, correlationId);
       return { isReplay: true, idempotencyKey: key, bodyHash };
     }
 
@@ -250,13 +279,21 @@ export function checkIdempotency(
     }
 
     if (claim.outcome === 'replay') {
+      if (onDurableReplay?.(claim.record)) {
+        return { isReplay: true, idempotencyKey: key, bodyHash };
+      }
       sendJson(res, claim.record.responseStatus || 200, claim.record.responsePayload, correlationId, {
         'Idempotent-Replay': 'true',
       });
       return { isReplay: true, idempotencyKey: key, bodyHash };
     }
 
-    return { isReplay: false, idempotencyKey: key, bodyHash };
+    if (claim.outcome === 'failed') {
+      sendError(res, 409, 'IDEMPOTENCY_FAILED', `The prior operation for Idempotency-Key '${key}' failed and cannot be replayed as success. Start a new operation with a new key.`, correlationId);
+      return { isReplay: true, idempotencyKey: key, bodyHash };
+    }
+
+    return { isReplay: false, idempotencyKey: key, bodyHash, claimToken: claim.record.claimToken };
   }
 
   cleanIdempotencyCache();
@@ -282,6 +319,29 @@ export function checkIdempotency(
   }
 
   return { isReplay: false, idempotencyKey: key, bodyHash };
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value as Record<string, unknown>).sort().map((key) => [
+      key,
+      canonicalizeJson((value as Record<string, unknown>)[key]),
+    ]));
+  }
+  return value;
+}
+
+function canonicalRequestPath(requestUrl: string): string {
+  const url = new URL(requestUrl, 'http://localhost');
+  const pathname = url.pathname.split('/').map((segment) => {
+    try { return encodeURIComponent(decodeURIComponent(segment)); } catch { return segment; }
+  }).join('/');
+  const query = [...url.searchParams.entries()]
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue))
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 /**
@@ -369,6 +429,17 @@ export function checkOrigin(
 
   // If no Origin header:
   if (!origin || typeof origin !== 'string') {
+    if (allowedOrigins && allowedOrigins.size > 0) {
+      sendError(
+        res,
+        403,
+        'FORBIDDEN_ORIGIN',
+        'This authenticated desktop service requires its registered renderer Origin.',
+        correlationId,
+      );
+      return false;
+    }
+
     // Check if request is a browser fetch mutation when origin is required
     if (requireOriginOnMutation) {
       const fetchMode = req.headers['sec-fetch-mode'];
@@ -451,7 +522,7 @@ export function checkOrigin(
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Authorization, Content-Type, X-Project-Root, X-Correlation-ID, Idempotency-Key, Sec-WebSocket-Protocol',
+      'Authorization, Content-Type, X-Project-Root, X-Project-ID, X-Correlation-ID, Idempotency-Key, Sec-WebSocket-Protocol',
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');

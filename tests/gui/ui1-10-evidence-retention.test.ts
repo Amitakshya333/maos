@@ -74,6 +74,7 @@ import { ProjectServiceHost, createProjectServiceHost } from '../../src/service/
 import { BrowserRestClient } from '../../src/gui/src/api/rest-client';
 import { GuiApiAdapter } from '../../src/gui/src/api/adapter';
 import { Conversation, Message } from '../../src/domain/schemas';
+import { withJudgedRunOutputLock } from '../../src/industrial/judged-run-lock';
 
 const CANARY_PATH = path.resolve(__dirname, '../../rust/test.txt');
 const EXPECTED_CANARY_SHA256 = '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
@@ -137,6 +138,7 @@ describe('UI1-10: Evidence / Brainstorm Modes and Retention', () => {
     testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-10-'));
     auditDir = path.join(testRoot, '.maos', 'audit');
     fs.mkdirSync(auditDir, { recursive: true });
+    fs.writeFileSync(path.join(testRoot, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ui1-10-retention-test' }));
 
     // Initialize HTTP host
     projectHost = createProjectServiceHost(testRoot, { port: 0 });
@@ -488,6 +490,23 @@ describe('UI1-10: Evidence / Brainstorm Modes and Retention', () => {
       expect(fs.existsSync(docxPath)).toBe(true);
       expect(fs.existsSync(xlsxPath)).toBe(true);
       expect(fs.existsSync(pptxPath)).toBe(true);
+    });
+
+    it('reuses an already-held project output lock for artifact-preview purge', () => {
+      const previewDir = path.join(testRoot, 'artifacts', '.tmp');
+      fs.mkdirSync(previewDir, { recursive: true });
+      const previewPath = path.join(previewDir, 'preview-during-finalization.png');
+      fs.writeFileSync(previewPath, 'in-flight preview');
+      const oldTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(previewPath, oldTime, oldTime);
+
+      const result = withJudgedRunOutputLock(testRoot, () => retentionService.purge({
+          target: 'artifact_previews',
+          artifactPreviewDays: 1,
+          dryRun: false,
+        }));
+      expect(result.purgedArtifactPreviews).toBe(1);
+      expect(fs.existsSync(previewPath)).toBe(false);
     });
 
     it('SAFETY INVARIANT: directory traversal paths are strictly rejected', async () => {

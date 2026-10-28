@@ -59,6 +59,7 @@ describe('Industrial local telemetry analysis', () => {
     const verified = verifyTelemetryAnalysis(root, stored.receipt.analysisId);
 
     expect(verified.valid).toBe(true);
+    expect(verified.method).toBe('same-implementation-replay');
     expect(verified.sourceHashMatched).toBe(true);
     expect(verified.rulesetHashMatched).toBe(true);
     expect(verified.recomputationMatched).toBe(true);
