@@ -13,6 +13,7 @@ import { ProjectServiceHost } from '../../src/service/project-service/host';
 import { EndpointAllowlistService } from '../../src/service/endpoint-allowlist-service';
 import { INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
 import { RestApiServer } from '../../src/api/server';
+import { IndustrialAnalysisAgentError } from '../../src/industrial/analysis-agent-service';
 import { parseZipArchive } from '../../src/industrial/office/ooxml-packager';
 import { isAcceptedJudgedRun, readJudgedRunManifest, resumeJudgedRunAfterApproval } from '../../src/industrial/judged-run';
 import { executeDeterministicReset } from '../../src/industrial/deterministic-reset';
@@ -20,6 +21,7 @@ import { withJudgedRunOutputLock } from '../../src/industrial/judged-run-lock';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const ALLOWED_ORIGIN = 'http://127.0.0.1:41731';
+const META_API_URL = 'https://api.meta.ai/v1';
 const CSV = [
   'timestamp,vibration_rms_mm_s,bearing_temperature_c',
   '2026-04-01T08:00:00Z,2.1,70',
@@ -33,6 +35,10 @@ interface ModelBehavior {
   hangSecond?: boolean;
   toolName?: string;
   toolArguments?: (body: any) => string;
+  firstContent?: string;
+  secondContent?: string;
+  secondToolArguments?: (body: any) => string;
+  reportedModel?: string;
 }
 
 interface MockInference {
@@ -50,6 +56,7 @@ interface AgentSystem {
   baseURL: string;
   token: string;
   model: MockInference;
+  apiKeyEnv?: string;
 }
 
 function mockAudit(system: AgentSystem) {
@@ -175,18 +182,19 @@ function makeAuditRecord(params: AuditEventParams, sequence: number): AuditRecor
 
 const systems: AgentSystem[] = [];
 const extraDirectories: string[] = [];
+const environmentNames: string[] = [];
 
-function toolCompletion(toolName: string, argumentsJson: string) {
+function toolCompletion(toolName: string, argumentsJson: string, options: { content?: string | null; model?: string } = {}) {
   return {
     id: 'chatcmpl-agent-http',
     object: 'chat.completion',
     created: 1,
-    model: 'mock-returned-model-v2',
+    model: options.model || 'mock-returned-model-v2',
     choices: [{
       index: 0,
       message: {
         role: 'assistant',
-        content: null,
+        content: options.content ?? null,
         tool_calls: [{
           id: 'call-agent-http',
           type: 'function',
@@ -262,15 +270,23 @@ async function createMockInference(): Promise<MockInference> {
         if (isFirst) {
           const args = behavior.toolArguments?.(body) ?? JSON.stringify({ sourcePath: findSelectedPath(body) });
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(toolCompletion(behavior.toolName || 'analyze_telemetry_csv', args)));
+          res.end(JSON.stringify(toolCompletion(behavior.toolName || 'analyze_telemetry_csv', args, {
+            content: behavior.firstContent,
+            model: behavior.reportedModel,
+          })));
           return;
         }
         const toolMessage = [...body.messages].reverse().find((message: any) => message.role === 'tool');
         let result: any;
         try { result = toolMessage ? JSON.parse(toolMessage.content) : undefined; } catch { result = undefined; }
-        const summary = `The sample has ${result?.result?.rowsAnalyzed ?? 0} rows; receipt ${result?.analysisId ?? 'telemetry-0000000000-deadbeef'}.`;
+        const summary = behavior.secondToolArguments?.(body) ?? JSON.stringify({
+          summary: `The sample has ${result?.result?.rowsAnalyzed ?? 0} rows; receipt ${result?.analysisId ?? 'telemetry-0000000000-deadbeef'}.`,
+        });
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(toolCompletion('task_complete', JSON.stringify({ summary }))));
+        res.end(JSON.stringify(toolCompletion('task_complete', summary, {
+          content: behavior.secondContent,
+          model: behavior.reportedModel,
+        })));
       }
     }, delayMs);
     res.once('close', () => clearTimeout(timer));
@@ -285,10 +301,15 @@ async function createMockInference(): Promise<MockInference> {
   return model;
 }
 
-async function createSystem(options: { modelTimeoutMs?: number } = {}): Promise<AgentSystem> {
+async function createSystem(options: { modelTimeoutMs?: number; providerApiKey?: string } = {}): Promise<AgentSystem> {
   const model = await createMockInference();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-agent-auth-http-'));
-  systems.push({ root, host: null as any, baseURL: '', token: '', model });
+  const apiKeyEnv = options.providerApiKey ? `MAOS_AUTH_HTTP_META_${Math.random().toString(36).slice(2).toUpperCase()}` : undefined;
+  if (apiKeyEnv) {
+    environmentNames.push(apiKeyEnv);
+    process.env[apiKeyEnv] = options.providerApiKey;
+  }
+  systems.push({ root, host: null as any, baseURL: '', token: '', model, apiKeyEnv });
   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
   fs.copyFileSync(path.join(REPO_ROOT, 'demo', 'industrial', 'safety_thresholds.json'), path.join(root, 'demo', 'industrial', 'safety_thresholds.json'));
@@ -298,9 +319,11 @@ async function createSystem(options: { modelTimeoutMs?: number } = {}): Promise<
     schemaVersion: 1,
     projectName: 'agent-auth-http-test',
     routingMode: 'auto',
-    providers: { mock: { apiKey: 'local-test-only', baseURL: model.baseURL, costPerMillionTokens: 0 } },
-    agents: [{ id: 'ANALYST_AGENT', role: 'test analyst', provider: 'mock', model: 'configured-mock-model-v1', timeoutMs: options.modelTimeoutMs ?? 2000, capabilities: ['analysis'], scope: ['.'] }],
-    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: 'mock' },
+    providers: apiKeyEnv
+      ? { meta: { baseURL: 'https://api.meta.ai/v1', metaApiEnabled: true, apiKeyEnv, costPerMillionTokens: 0 } }
+      : { mock: { apiKey: 'local-test-only', baseURL: model.baseURL, costPerMillionTokens: 0 } },
+    agents: [{ id: 'ANALYST_AGENT', role: 'test analyst', provider: apiKeyEnv ? 'meta' : 'mock', model: apiKeyEnv ? 'muse-spark-1.3' : 'configured-mock-model-v1', timeoutMs: options.modelTimeoutMs ?? 2000, capabilities: ['analysis'], scope: ['.'] }],
+    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: apiKeyEnv ? 'meta' : 'mock' },
   }, null, 2));
 
   const modelPort = Number(new URL(model.baseURL).port);
@@ -348,6 +371,14 @@ async function post(system: AgentSystem, route: string, body: unknown, headers: 
   });
   const payload = await response.json();
   return { status: response.status, payload };
+}
+
+function installMetaApiBridge(system: AgentSystem) {
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).startsWith(META_API_URL)) return originalFetch(`${system.model.baseURL}/chat/completions`, init);
+    return originalFetch(input, init);
+  });
 }
 
 async function prepareReview(system: AgentSystem) {
@@ -440,6 +471,8 @@ afterEach(async () => {
     fs.rmSync(system.root, { recursive: true, force: true });
   }
   for (const directory of extraDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+  for (const name of environmentNames.splice(0)) delete process.env[name];
+  vi.unstubAllGlobals();
 });
 
 describe('authenticated Industrial analysis agent HTTP integration', () => {
@@ -650,6 +683,65 @@ describe('authenticated Industrial analysis agent HTTP integration', () => {
 
     expect(result.status).toBe(200);
     expect(result.payload.data.evidence.source.selectedPath).toBe('other.csv');
+  });
+
+  it('keeps a synthetic configured credential out of successful HTTP output, persisted evidence, reports, audits and logs', async () => {
+    const secret = 'synthetic-http-output-credential-not-real';
+    const system = await createSystem({ providerApiKey: secret });
+    system.model.behavior = {
+      firstContent: `Diagnostic prose ${secret}`,
+      secondContent: `Final prose ${secret}`,
+      reportedModel: secret,
+    };
+    installMetaApiBridge(system);
+    fs.mkdirSync(path.join(system.root, '.maos', 'logs'), { recursive: true });
+    const audit = mockAudit(system);
+    const response = await post(system, '/api/v1/industrial/analysis-agent', {
+      request: 'Review the selected synthetic CSV.', sourcePath: 'selected.csv',
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(response.payload)).not.toContain(secret);
+    expect(response.payload.data.reportedModel).toBeNull();
+    expect(response.payload.data.requestedModel).toBe('muse-spark-1.3');
+    const report = fs.readFileSync(path.join(system.root, response.payload.data.reportPath), 'utf8');
+    const receipt = fs.readFileSync(path.join(system.root, response.payload.data.evidence.receiptPath), 'utf8');
+    const logs = fs.existsSync(path.join(system.root, '.maos', 'logs', 'orchestrator.log'))
+      ? fs.readFileSync(path.join(system.root, '.maos', 'logs', 'orchestrator.log'), 'utf8')
+      : '';
+    expect(report).not.toContain(secret);
+    expect(receipt).not.toContain(secret);
+    expect(JSON.stringify(audit.events)).not.toContain(secret);
+    expect(logs).not.toContain(secret);
+    expect(system.model.requests[1].messages.find((message: any) => message.role === 'assistant')?.content).toContain('[REDACTED]');
+  });
+
+  it('rejects credential-contaminated completion arguments with a sanitized API error and no accepted report', async () => {
+    const secret = 'synthetic-http-tool-argument-credential-not-real';
+    const system = await createSystem({ providerApiKey: secret });
+    system.model.behavior = {
+      secondToolArguments(body) {
+        const tool = [...body.messages].reverse().find((message: any) => message.role === 'tool');
+        const evidence = tool ? JSON.parse(tool.content) : {};
+        return JSON.stringify({ summary: `Receipt ${evidence.analysisId}; ${secret}` });
+      },
+      reportedModel: secret,
+    };
+    installMetaApiBridge(system);
+    fs.mkdirSync(path.join(system.root, '.maos', 'logs'), { recursive: true });
+    const audit = mockAudit(system);
+    const response = await post(system, '/api/v1/industrial/analysis-agent', {
+      request: 'Review the selected synthetic CSV.', sourcePath: 'selected.csv',
+    });
+
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(response.payload)).not.toContain(secret);
+    expect(response.payload.error.code).toBe('PROVIDER_CREDENTIAL_CONTAMINATION');
+    const reportDirectory = path.join(system.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports');
+    expect(fs.existsSync(reportDirectory)).toBe(false);
+    expect(audit.events.some((event) => event.data.event === 'INDUSTRIAL_ANALYSIS_AGENT_COMPLETED')).toBe(false);
+    const logs = fs.readFileSync(path.join(system.root, '.maos', 'logs', 'orchestrator.log'), 'utf8');
+    expect(logs).not.toContain(secret);
   });
 
   it('carries the accepted agent receipt through one persisted review, DOCX, artifact and audit run', async () => {
@@ -1172,6 +1264,24 @@ describe('authenticated Industrial analysis agent HTTP integration', () => {
     expect(result.payload.error.code).toBe('AGENT_EXECUTION_FAILED');
     expect(telemetryReceiptFiles(system.root)).toHaveLength(1);
     expect(fs.existsSync(path.join(system.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports'))).toBe(false);
+  });
+
+  it('maps the overall agent deadline to an HTTP gateway timeout', async () => {
+    const system = await createSystem();
+    const agent = system.host.getServer()!.getServices().industrialAnalysisAgent;
+    vi.spyOn(agent, 'analyze').mockRejectedValue(new IndustrialAnalysisAgentError(
+      'AGENT_TIMEOUT',
+      'The analysis exceeded its 60-second deadline.',
+    ));
+
+    const result = await post(system, '/api/v1/industrial/analysis-agent', {
+      request: 'Review the selected synthetic CSV.',
+      sourcePath: 'selected.csv',
+    });
+
+    expect(result.status).toBe(504);
+    expect(result.payload.error.code).toBe('AGENT_TIMEOUT');
+    expect(system.model.requests).toHaveLength(0);
   });
 
   it('refuses destructive reset while DOCX finalization is active', async () => {

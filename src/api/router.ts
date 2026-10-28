@@ -619,7 +619,8 @@ export class RestApiRouter {
         const code = err instanceof IndustrialAnalysisAgentError ? err.code : 'INDUSTRIAL_AGENT_FAILED';
         const status = code === 'INVALID_REQUEST' || code === 'INVALID_SOURCE_PATH' ? 400
           : code === 'MODEL_ENDPOINT_BLOCKED' ? 403
-          : code === 'MODEL_NOT_CONFIGURED' || code === 'PROJECT_NOT_INITIALIZED' || code === 'PROJECT_CONFIG_INVALID' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
+          : code === 'MODEL_NOT_CONFIGURED' || code === 'MODEL_CREDENTIAL_MISSING' || code === 'PROJECT_NOT_INITIALIZED' || code === 'PROJECT_CONFIG_INVALID' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
+          : code === 'AGENT_TIMEOUT' ? 504
           : code === 'AGENT_EXECUTION_FAILED' ? 502
           : 422;
         if (!abortController.signal.aborted && !res.writableEnded && !res.destroyed) {

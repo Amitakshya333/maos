@@ -178,8 +178,12 @@ export interface ExtendedTaskRequirements {
 
 export interface ProviderEntry {
   readonly apiKey?: string;
+  readonly apiKeyEnv?: string;
   readonly baseURL?: string;
   readonly costPerMillionTokens?: number;
+  /** Exact opt-in required before using Meta's hosted Muse Spark endpoint. */
+  readonly metaApiEnabled?: boolean;
+  readonly temperature?: number;
 }
 
 export interface AgentEntry {

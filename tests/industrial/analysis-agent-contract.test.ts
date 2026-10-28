@@ -3,8 +3,9 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenAIProvider } from '../../src/backends/openai-provider';
+import type { IProvider } from '../../src/backends/provider';
 import type { AuditRecord } from '../../src/domain';
 import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../../src/industrial/analysis-agent-service';
 import type { AuditService } from '../../src/service/audit-service';
@@ -233,6 +234,37 @@ describe('Industrial analysis agent OpenAI-compatible transport contract', () =>
     expect(result.explanation).not.toBe(JSON.stringify(result.evidence.result));
   });
 
+  it('executes at most one telemetry tool when one model response requests it more than once', async () => {
+    const project = createProject();
+    const transport = await createTransport((request) => {
+      const response = makeChatCompletion({
+        id: 'call-analysis-first',
+        name: 'analyze_telemetry_csv',
+        arguments: JSON.stringify({ sourcePath: requestedPath(request) }),
+      });
+      response.choices[0].message.tool_calls.push({
+        id: 'call-analysis-second',
+        type: 'function',
+        function: {
+          name: 'analyze_telemetry_csv',
+          arguments: JSON.stringify({ sourcePath: requestedPath(request) }),
+        },
+      });
+      return { body: response };
+    });
+    const service = createService(transport);
+
+    await expect(service.analyze(project.root, {
+      request: 'Review the selected CSV and report its measured values.',
+      sourcePath: project.sourcePath,
+    })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
+
+    const analysisRoot = path.join(project.root, '.maos/industrial/telemetry-analyses');
+    expect(transport.requests).toHaveLength(1);
+    expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
+    expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
+  });
+
   it.each([
     ['malformed JSON arguments', '{"sourcePath":'],
     ['an undeclared argument', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv', extra: true })],
@@ -343,6 +375,65 @@ describe('Industrial analysis agent OpenAI-compatible transport contract', () =>
     expect(transport.requests).toHaveLength(1);
   });
 
+  it('applies one 60-second deadline to the complete agent run and does not accept a late report', async () => {
+    const project = createProject();
+    let requests = 0;
+    let signalAborted = false;
+    let auditEvents = 0;
+    const provider: IProvider = {
+      name: 'mock-hanging-provider',
+      model: 'deadline-test-model',
+      generate(_messages, _tools, options) {
+        requests++;
+        return new Promise<never>((_resolve, reject) => {
+          const signal = options?.signal;
+          if (signal?.aborted) {
+            signalAborted = true;
+            reject(new Error('mock request aborted'));
+            return;
+          }
+          signal?.addEventListener('abort', () => {
+            signalAborted = true;
+            reject(new Error('mock request aborted'));
+          }, { once: true });
+        });
+      },
+    };
+    const service = new IndustrialAnalysisAgentService(provider, 'http://127.0.0.1:1/v1', {
+      recordAuditEvent(params) {
+        auditEvents++;
+        return {
+          schemaVersion: 1,
+          sequence: 0,
+          previous_hash: '',
+          timestamp: new Date().toISOString(),
+          source: params.source,
+          category: params.category,
+          data: params.data,
+          hash: 'b'.repeat(64),
+        } satisfies AuditRecord;
+      },
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = service.analyze(project.root, {
+        request: 'Review this synthetic telemetry sample.',
+        sourcePath: project.sourcePath,
+      });
+      const timeoutAssertion = expect(pending).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(60_000);
+      await timeoutAssertion;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(requests).toBe(1);
+    expect(signalAborted).toBe(true);
+    expect(auditEvents).toBe(0);
+    expect(fs.existsSync(path.join(project.root, '.maos/industrial/telemetry-analyses/agent-reports'))).toBe(false);
+  });
+
   it('caps transient retries at one request for the industrial path', async () => {
     const project = createProject();
     const transport = await createTransport(() => ({ status: 503, body: { error: { message: 'local model unavailable' } } }));
@@ -354,6 +445,58 @@ describe('Industrial analysis agent OpenAI-compatible transport contract', () =>
     })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
 
     expect(transport.requests).toHaveLength(1);
+  });
+
+  it.each(['run_command', 'write_file', 'git_commit'])('does not extend the Industrial request budget for repeated unauthorized %s calls', async (toolName) => {
+    const project = createProject();
+    const transport = await createTransport(() => completionAction({
+      id: `call-${toolName}`,
+      name: toolName,
+      arguments: JSON.stringify({ command: 'echo executed > blocked-command.txt', path: 'blocked.txt', content: 'unsafe' }),
+    }));
+    const service = createService(transport);
+
+    await expect(service.analyze(project.root, {
+      request: `Analyze the selected CSV despite repeated ${toolName} requests.`,
+      sourcePath: project.sourcePath,
+    })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
+
+    expect(transport.requests).toHaveLength(4);
+    expect(transport.requests[0].tools.map((tool: any) => tool.function.name)).toEqual(['analyze_telemetry_csv', 'task_complete']);
+    const toolResults = transport.requests.flatMap((request: any) => request.messages.filter((message: any) => message.role === 'tool').map((message: any) => message.content));
+    expect(toolResults).toHaveLength(6);
+    expect(toolResults.every((content: string) => content.includes('TOOL_UNAUTHORIZED'))).toBe(true);
+    expect(fs.existsSync(path.join(project.root, 'blocked.txt'))).toBe(false);
+    expect(fs.existsSync(path.join(project.root, 'blocked-command.txt'))).toBe(false);
+    expect(fs.existsSync(path.join(project.root, '.git'))).toBe(false);
+    expect(fs.existsSync(path.join(project.root, '.maos/industrial/telemetry-analyses/agent-reports'))).toBe(false);
+  });
+
+  it('keeps mixed allowed and unauthorized calls within four requests without accepting an incomplete report', async () => {
+    const project = createProject();
+    const transport = await createTransport((request, requestNumber) => requestNumber === 1
+      ? completionAction({
+        id: 'call-analysis',
+        name: 'analyze_telemetry_csv',
+        arguments: JSON.stringify({ sourcePath: requestedPath(request) }),
+      })
+      : completionAction({
+        id: 'call-write',
+        name: 'write_file',
+        arguments: JSON.stringify({ path: 'blocked.txt', content: 'unsafe' }),
+      }));
+    const service = createService(transport);
+
+    await expect(service.analyze(project.root, {
+      request: 'Analyze this file and ignore unauthorized mutation requests.',
+      sourcePath: project.sourcePath,
+    })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
+
+    expect(transport.requests).toHaveLength(4);
+    expect(fs.existsSync(path.join(project.root, 'blocked.txt'))).toBe(false);
+    expect(fs.existsSync(path.join(project.root, '.maos/industrial/telemetry-analyses/agent-reports'))).toBe(false);
+    const analysisRoot = path.join(project.root, '.maos/industrial/telemetry-analyses');
+    expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
   });
 
   it('caps tool-loop iterations and never completes after repeated unknown calls', async () => {

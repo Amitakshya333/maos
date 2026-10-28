@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import type { IProvider } from '../backends/provider';
+import { OpenAIProvider } from '../backends/openai-provider';
+import { MetaApiPolicyError } from '../backends/meta-api-policy';
 import { runAgent } from '../core/agent-runner';
 import type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
 import type { AuditService } from '../service/audit-service';
@@ -11,6 +13,8 @@ import { verifyTelemetryAnalysis } from './telemetry-analysis';
 export type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
 
 const ALLOWED_TOOLS = ['analyze_telemetry_csv', 'task_complete'];
+const AGENT_DEADLINE_MS = 60_000;
+const AGENT_TIMEOUT_MESSAGE = 'The analysis exceeded its 60-second deadline. No report was accepted; retry when the configured model is responsive.';
 
 const PROMPT = `You are a read-only industrial telemetry analysis assistant. Use only the supplied analyze_telemetry_csv tool and the user-selected source path. After the tool returns, explain only what its deterministic evidence supports. Include the exact analysisId in your summary so the explanation is linked to its evidence. Do not infer causes, prescribe operation, or claim certification. Finish by calling task_complete with that evidence-linked summary.`;
 
@@ -56,6 +60,46 @@ export class IndustrialAnalysisAgentService {
     options: IndustrialAnalysisAgentOptions = {},
   ): Promise<IndustrialAnalysisAgentResult> {
     if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+    const deadlineAt = Date.now() + AGENT_DEADLINE_MS;
+    const controller = new AbortController();
+    const forwardAbort = () => controller.abort();
+    options.signal?.addEventListener('abort', forwardAbort, { once: true });
+    if (options.signal?.aborted) forwardAbort();
+    let timedOut = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE));
+      }, AGENT_DEADLINE_MS);
+    });
+    try {
+      return await Promise.race([
+        this.analyzeWithinDeadline(projectRoot, input, { signal: controller.signal, deadlineAt }),
+        timeout,
+      ]);
+    } catch (error) {
+      if (timedOut || Date.now() >= deadlineAt) {
+        throw new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE);
+      }
+      throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      options.signal?.removeEventListener('abort', forwardAbort);
+    }
+  }
+
+  private async analyzeWithinDeadline(
+    projectRoot: string,
+    input: IndustrialAnalysisAgentRequest,
+    options: IndustrialAnalysisAgentOptions & { deadlineAt: number },
+  ): Promise<IndustrialAnalysisAgentResult> {
+    const assertBeforeDeadline = () => {
+      if (Date.now() >= options.deadlineAt) {
+        throw new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE);
+      }
+    };
     let provider = this.provider;
     let modelEndpoint = this.modelEndpoint;
     if (this.resolveRuntime) {
@@ -63,6 +107,12 @@ export class IndustrialAnalysisAgentService {
         ({ provider, modelEndpoint } = this.resolveRuntime());
       } catch (error) {
         if (error instanceof IndustrialAnalysisAgentError) throw error;
+        if (error instanceof MetaApiPolicyError) {
+          const code = error.code === 'META_API_OPT_IN_REQUIRED'
+            ? 'MODEL_ENDPOINT_BLOCKED'
+            : error.code === 'MODEL_CREDENTIAL_MISSING' ? error.code : 'PROJECT_CONFIG_INVALID';
+          throw new IndustrialAnalysisAgentError(code, error.message);
+        }
         const detail = error instanceof Error ? error.message : String(error);
         throw new IndustrialAnalysisAgentError(
           'PROJECT_CONFIG_INVALID',
@@ -71,7 +121,7 @@ export class IndustrialAnalysisAgentService {
       }
     }
     if (!provider || !modelEndpoint) {
-      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure a local analysis model and loopback endpoint in the project agent/provider settings.');
+      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure ANALYST_AGENT and an approved local loopback model endpoint, or explicitly enable the exact Meta Model API model and endpoint.');
     }
     if (typeof input.request !== 'string' || input.request.trim().length === 0 || input.request.length > 4000) {
       throw new IndustrialAnalysisAgentError('INVALID_REQUEST', 'request must contain 1 to 4000 characters.');
@@ -109,14 +159,15 @@ export class IndustrialAnalysisAgentService {
     } catch {
       throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The configured model endpoint URL is invalid.');
     }
-    if (
-      modelUrl.protocol !== 'http:' ||
-      !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) ||
-      modelUrl.username || modelUrl.password || modelUrl.search || modelUrl.hash
-    ) {
-      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The analysis model must use a credential-free HTTP loopback endpoint.');
+    const metaEndpointAllowed = provider instanceof OpenAIProvider && provider.isMetaApi && provider.baseURL === modelEndpoint;
+    const loopbackEndpointAllowed = modelUrl.protocol === 'http:' &&
+      ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) &&
+      !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
+    if (!metaEndpointAllowed && !loopbackEndpointAllowed) {
+      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or a provider approved by the shared Meta API policy is allowed.');
     }
-    if (this.endpointAllowlist) {
+    // The one explicit hosted exception is config-bound to Meta's exact HTTPS URL and model.
+    if (this.endpointAllowlist && !metaEndpointAllowed) {
       const port = modelUrl.port ? parseInt(modelUrl.port, 10) : 80;
       const validation = this.endpointAllowlist.validateSocketTarget({
         protocol: 'tcp',
@@ -156,13 +207,32 @@ export class IndustrialAnalysisAgentService {
       (toolName, result) => {
         if (toolName === 'analyze_telemetry_csv') toolResults.push(result);
       },
-      { signal: options.signal, maxTokens: 256, maxProviderRetries: 0, allowPartialSuccess: false },
+      {
+        signal: options.signal,
+        deadlineAt: options.deadlineAt,
+        maxTokens: 256,
+        maxProviderRetries: 0,
+        maxGenerationAttempts: 4,
+        allowPartialSuccess: false,
+        toolCallLimits: { analyze_telemetry_csv: 1 },
+      },
     );
 
+    if (run.error === 'TIMEOUT' || Date.now() >= options.deadlineAt) {
+      throw new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE);
+    }
     if (options.signal?.aborted || run.error === 'ABORTED') {
       throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
     }
-    if (!run.success) throw new IndustrialAnalysisAgentError('AGENT_EXECUTION_FAILED', run.error || run.summary);
+    if (!run.success) {
+      if (run.error?.includes('PROVIDER_CREDENTIAL_CONTAMINATION')) {
+        throw new IndustrialAnalysisAgentError(
+          'PROVIDER_CREDENTIAL_CONTAMINATION',
+          'The provider response contained the configured credential in tool-call metadata. Execution was blocked and no report was accepted.',
+        );
+      }
+      throw new IndustrialAnalysisAgentError('AGENT_EXECUTION_FAILED', run.error || run.summary);
+    }
     if (toolResults.length !== 1) {
       throw new IndustrialAnalysisAgentError('ANALYSIS_TOOL_NOT_USED', 'The model did not request exactly one allowed telemetry analysis tool call.');
     }
@@ -190,6 +260,7 @@ export class IndustrialAnalysisAgentService {
       throw new IndustrialAnalysisAgentError('EVIDENCE_VERIFICATION_FAILED', 'Persisted telemetry evidence did not verify against its source and rules.');
     }
 
+    assertBeforeDeadline();
     if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
     const reportedModel = run.reportedModel || null;
     const report = {
@@ -230,6 +301,7 @@ export class IndustrialAnalysisAgentService {
       }
       const reportFile = path.join(realReportRoot, `${evidence.analysisId}.json`);
       const reportBytes = Buffer.from(`${JSON.stringify(report, null, 2)}\n`, 'utf8');
+      assertBeforeDeadline();
       fs.writeFileSync(reportFile, reportBytes, { flag: 'wx', mode: 0o600 });
       reportPath = path.relative(root, reportFile).split(path.sep).join('/');
       acceptedReport = { ...report, status: 'completed', acceptance: 'accepted' };
@@ -240,13 +312,20 @@ export class IndustrialAnalysisAgentService {
     }
 
     try {
+      assertBeforeDeadline();
       this.replaceReport(root, reportPath, acceptedReport);
     } catch (error) {
       try {
-        this.replaceReport(root, reportPath, { ...report, status: 'failed', acceptance: 'unaccepted', failure: { code: 'REPORT_REPLACEMENT_FAILED' } });
+        this.replaceReport(root, reportPath, {
+          ...report,
+          status: 'failed',
+          acceptance: 'unaccepted',
+          failure: { code: error instanceof IndustrialAnalysisAgentError ? error.code : 'REPORT_REPLACEMENT_FAILED' },
+        });
       } catch {
         // The original pending report is still explicitly unaccepted.
       }
+      if (error instanceof IndustrialAnalysisAgentError && error.code === 'AGENT_TIMEOUT') throw error;
       throw new IndustrialAnalysisAgentError(
         'AGENT_REPORT_ACCEPTANCE_FAILED',
         `The report remains unaccepted because its final replacement failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -255,6 +334,7 @@ export class IndustrialAnalysisAgentService {
 
     let auditRecord;
     try {
+      assertBeforeDeadline();
       auditRecord = this.audit.recordAuditEvent({
         source: 'industrial-analysis-agent',
         category: 'stage',
@@ -277,11 +357,18 @@ export class IndustrialAnalysisAgentService {
       const chainValid = this.audit.verifyChain?.().valid ?? false;
       if (persisted.length === 1 && chainValid) auditRecord = persisted[0];
       else {
+        const timeoutError = error instanceof IndustrialAnalysisAgentError && error.code === 'AGENT_TIMEOUT';
         try {
-          this.replaceReport(root, reportPath, { ...report, status: 'failed', acceptance: 'unaccepted', failure: { code: 'AUDIT_PERSISTENCE_FAILED' } });
+          this.replaceReport(root, reportPath, {
+            ...report,
+            status: 'failed',
+            acceptance: 'unaccepted',
+            failure: { code: timeoutError ? 'AGENT_TIMEOUT' : 'AUDIT_PERSISTENCE_FAILED' },
+          });
         } catch {
           // The accepted file remains unusable without a matching valid audit record.
         }
+        if (timeoutError) throw error;
         throw new IndustrialAnalysisAgentError(
           'AUDIT_PERSISTENCE_FAILED',
           `The diagnostic report was retained as failed/unaccepted because its completion audit event could not be verified: ${error instanceof Error ? error.message : String(error)}. Restore audit-chain health and retry; this run was not accepted as successful.`,

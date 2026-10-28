@@ -645,6 +645,7 @@ export const OPENAPI_SPEC: Record<string, unknown> = {
           '500': { description: 'Report acceptance/final replacement failed; no successful completion audit is recorded.' },
           '422': { description: 'Model did not use the allowlisted tool or source, rules, receipt hash, or replay checks failed.' },
           '502': { description: 'Local model provider failed.' },
+          '504': { description: 'The complete Industrial agent run exceeded its 60-second deadline; no successful report is accepted.' },
         },
       },
     },

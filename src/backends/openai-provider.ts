@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderRequestOptions, ProviderResponse } from './provider';
+import { resolveMetaApiPolicy } from './meta-api-policy';
 
 /**
  * OpenAI-Compatible Provider Adapter
@@ -23,18 +24,66 @@ import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderRequestOptions, Prov
 export class OpenAIProvider implements IProvider {
   readonly name: string;
   readonly model: string;
+  readonly baseURL?: string;
+  readonly isMetaApi: boolean;
+  readonly maxApplicationRetries?: number;
 
   private client: OpenAI;
+  private readonly apiKey: string;
+  private readonly credentialForRedaction: string;
+  private readonly temperature: number | null;
+  private readonly maxOutputTokens?: number;
 
-  constructor(opts: { name: string; apiKey: string; model: string; baseURL?: string; timeout?: number; maxRetries?: number }) {
+  constructor(opts: {
+    name: string;
+    apiKey: string;
+    model: string;
+    baseURL?: string;
+    timeout?: number;
+    maxRetries?: number;
+    temperature?: number | null;
+    maxOutputTokens?: number;
+    fetch?: typeof globalThis.fetch;
+    metaApiEnabled?: boolean;
+    apiKeyEnv?: string;
+  }) {
+    const baseURL = opts.baseURL || process.env.OPENAI_BASE_URL;
+    const metaPolicy = resolveMetaApiPolicy({
+      providerName: opts.name,
+      baseURL: opts.baseURL,
+      effectiveBaseURL: baseURL,
+      model: opts.model,
+      metaApiEnabled: opts.metaApiEnabled,
+      apiKeyEnv: opts.apiKeyEnv,
+      temperature: opts.temperature,
+    });
     this.name = opts.name;
     this.model = opts.model;
+    this.baseURL = baseURL;
+    this.isMetaApi = Boolean(metaPolicy);
+    this.maxApplicationRetries = metaPolicy ? 0 : undefined;
+    this.apiKey = metaPolicy?.apiKey ?? opts.apiKey;
+    this.credentialForRedaction = ['local', 'local-only', 'not-needed'].includes(this.apiKey) ? '' : this.apiKey;
+    if (this.credentialForRedaction && this.model.includes(this.credentialForRedaction)) {
+      throw new Error('The configured model identifier must not contain the API credential.');
+    }
+    this.temperature = metaPolicy
+      ? metaPolicy.temperature
+      : Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
+    this.maxOutputTokens = metaPolicy ? 256 : opts.maxOutputTokens;
+
+    const fetchImpl = opts.fetch ?? globalThis.fetch;
 
     this.client = new OpenAI({
-      apiKey: opts.apiKey,
-      baseURL: opts.baseURL,
-      timeout: opts.timeout || 180_000, // 3 min default timeout
-      maxRetries: opts.maxRetries ?? 2,
+      apiKey: this.apiKey,
+      baseURL,
+      timeout: metaPolicy ? 60_000 : opts.timeout || 180_000, // Meta's policy owns its fixed deadline.
+      maxRetries: metaPolicy ? 0 : opts.maxRetries ?? 2,
+      // SDK debug parsing can observe raw provider bodies before this adapter sanitizes them.
+      logLevel: 'off',
+      fetch: metaPolicy
+        ? (input, init) => fetchImpl(input, { ...init, redirect: 'error' })
+        : opts.fetch,
     });
   }
 
@@ -46,9 +95,12 @@ export class OpenAIProvider implements IProvider {
       const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
         model: this.model,
         messages: messages.map((m) => this.toOpenAIMessage(m)),
-        temperature: 0.2,
       };
-      const maxTokens = options?.maxTokens;
+      if (this.temperature !== null) requestBody.temperature = this.temperature;
+      const requestedMaxTokens = options?.maxTokens;
+      const maxTokens = this.maxOutputTokens === undefined
+        ? requestedMaxTokens
+        : Math.min(requestedMaxTokens ?? this.maxOutputTokens, this.maxOutputTokens);
       if (typeof maxTokens === 'number' && Number.isInteger(maxTokens) && maxTokens > 0) {
         requestBody.max_tokens = maxTokens;
       }
@@ -128,16 +180,30 @@ export class OpenAIProvider implements IProvider {
       else if (rawFinish === 'tool_calls') finishReason = 'tool_calls';
       else if (rawFinish === 'length') finishReason = 'length';
 
+      const content = this.redactOutput(message.content) as ProviderResponse['content'];
+      const providerModel = typeof response.model === 'string' && response.model.trim() ? response.model : undefined;
+      const safeReportedModel = providerModel && !this.containsCredential(providerModel) ? providerModel : undefined;
+      if (this.containsCredential(JSON.stringify(rawToolCalls)) || rawToolCalls.some((tc) => {
+        if (typeof tc?.function?.arguments !== 'string') return false;
+        try {
+          return this.containsCredential(JSON.stringify(JSON.parse(tc.function.arguments)));
+        } catch {
+          return false;
+        }
+      })) {
+        throw new Error('PROVIDER_CREDENTIAL_CONTAMINATION: configured credential found in provider tool-call metadata; execution was blocked.');
+      }
+
       return {
-        content: message.content,
+        content,
         toolCalls,
         usage: {
           promptTokens: response.usage?.prompt_tokens ?? 0,
           completionTokens: response.usage?.completion_tokens ?? 0,
           totalTokens: response.usage?.total_tokens ?? 0,
         },
-        model: response.model || this.model,
-        reportedModel: typeof response.model === 'string' && response.model.trim() ? response.model : undefined,
+        model: safeReportedModel || this.model,
+        reportedModel: safeReportedModel,
         latencyMs,
         finishReason,
       };
@@ -146,7 +212,7 @@ export class OpenAIProvider implements IProvider {
 
       // Provide helpful error messages for common failures
       if (err.status === 401 || err.status === 403) {
-        const rawBody = err.error ? JSON.stringify(err.error).substring(0, 200) : '';
+        const rawBody = err.error ? this.redact(JSON.stringify(err.error).substring(0, 200)) : '';
         throw new Error(
           `Authentication failed for ${this.name}. Check your API key.\n` +
             `Provider: ${this.name} | Model: ${this.model}` +
@@ -154,36 +220,53 @@ export class OpenAIProvider implements IProvider {
         );
       }
       if (err.status === 429) {
-        throw new Error(
+        throw new Error(this.redact(
           `Rate limit hit on ${this.name}. Wait and retry.\n` +
             `Provider: ${this.name} | Model: ${this.model} | Latency: ${latencyMs}ms`,
-        );
+        ));
       }
       if (err.status === 503 || err.status === 502 || err.status === 504) {
-        throw new Error(
+        throw new Error(this.redact(
           `${this.name} is temporarily unavailable (HTTP ${err.status}).\n` +
             `Provider: ${this.name} | Model: ${this.model} | This is a provider outage, not an auth issue.`,
-        );
+        ));
       }
       if (err.status === 404) {
-        throw new Error(
+        throw new Error(this.redact(
           `Model "${this.model}" not found on ${this.name}.\n` + `Check available models at your provider's dashboard.`,
-        );
+        ));
       }
       if (err.code === 'ECONNREFUSED') {
-        throw new Error(
+        throw new Error(this.redact(
           `Cannot connect to ${this.name} at ${this.client.baseURL}.\n` +
             `Is the server running? (Check Ollama/LM Studio if local)`,
-        );
+        ));
       }
 
       // Re-throw with context
-      const newErr = new Error(
+      const newErr = new Error(this.redact(
         `Provider error [${this.name}/${this.model}]: ${err.message}\n` + `Latency: ${latencyMs}ms`,
-      );
-      newErr.stack = err.stack;
+      ));
+      newErr.stack = this.redact(err.stack || newErr.stack || '');
       throw newErr;
     }
+  }
+
+  private redact(value: string): string {
+    return this.credentialForRedaction ? value.split(this.credentialForRedaction).join('[REDACTED]') : value;
+  }
+
+  private containsCredential(value: string): boolean {
+    return Boolean(this.credentialForRedaction && value.includes(this.credentialForRedaction));
+  }
+
+  private redactOutput(value: unknown): unknown {
+    if (typeof value === 'string') return this.redact(value);
+    if (Array.isArray(value)) return value.map((item) => this.redactOutput(item));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [this.redact(key), this.redactOutput(item)]));
+    }
+    return value;
   }
 
   /**

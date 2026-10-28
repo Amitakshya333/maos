@@ -130,6 +130,9 @@ export interface IRuntime {
   /** Model or CLI identifier (e.g., "gpt-5.4", "copilot", "codex") */
   readonly model: string;
 
+  /** Maximum whole-task retries allowed by the orchestrator, when provider policy constrains them. */
+  readonly maxTaskRetries?: number;
+
   /**
    * Execute a task and return the result.
    * This is the ONLY method the orchestrator calls.

@@ -300,11 +300,11 @@ function deadLetterUnderProjectLock(taskFile: TaskFile, taskContent: string, err
  *
  * Returns the number of tasks moved to pending.
  */
-export function drainRetryQueue(cwd?: string): number {
-  return withJudgedRunOutputLock(cwd || process.cwd(), () => drainRetryQueueUnderProjectLock(cwd));
+export function drainRetryQueue(cwd?: string, excludedAgentIds?: ReadonlySet<string>): number {
+  return withJudgedRunOutputLock(cwd || process.cwd(), () => drainRetryQueueUnderProjectLock(cwd, excludedAgentIds));
 }
 
-function drainRetryQueueUnderProjectLock(cwd?: string): number {
+function drainRetryQueueUnderProjectLock(cwd?: string, excludedAgentIds?: ReadonlySet<string>): number {
   ensureRetryDirs(cwd);
   const retryDir = getRetryDir(cwd);
   const pendingDir = getPendingDir(cwd);
@@ -325,6 +325,7 @@ function drainRetryQueueUnderProjectLock(cwd?: string): number {
     .filter((r): r is RetryRecord => r !== null);
 
   for (const record of records) {
+    if (excludedAgentIds?.has(record.agentId)) continue;
     if (now < record.retryAfterMs) continue; // Not ready yet
 
     const safe = record.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');

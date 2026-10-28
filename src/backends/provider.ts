@@ -82,6 +82,9 @@ export interface IProvider {
   /** Model identifier (e.g., "gpt-5.4", "deepseek-coder-v3") */
   readonly model: string;
 
+  /** Provider-owned ceiling for Core's transient request retries. */
+  readonly maxApplicationRetries?: number;
+
   /**
    * Send a chat completion request with optional tool definitions.
    * Returns the model's response including any tool calls.
@@ -97,8 +100,12 @@ export interface IProvider {
 
 export interface ProviderConfig {
   apiKey?: string;
+  /** Meta Model API keys are read only from this explicitly named environment variable. */
+  apiKeyEnv?: string;
   baseURL?: string;
   costPerMillionTokens?: number;
+  metaApiEnabled?: boolean;
+  temperature?: number;
 }
 
 // ─── Cost Calculation Helper ──────────────────────────────────

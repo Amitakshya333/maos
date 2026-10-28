@@ -41,6 +41,7 @@ import {
   runIndustrialRun,
   runIndustrialOpen,
 } from '../industrial/industrial-cli';
+import { runIndustrialRepl } from '../industrial/industrial-repl';
 import { createServiceContainer } from '../service';
 
 const VERSION = '0.3.0';
@@ -531,6 +532,15 @@ const standaloneIndustrialProgram = invokedAsIndustrial
   : undefined;
 const industrial = standaloneIndustrialProgram ||
   program.command('industrial').description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification');
+
+industrial
+  .description('MAOS Industrial commands and local operator REPL')
+  .action(() => runIndustrialRepl());
+
+industrial
+  .command('repl')
+  .description('Start the bounded local operator REPL')
+  .action(() => runIndustrialRepl());
 
 const bundleCmd = industrial
   .command('bundle')

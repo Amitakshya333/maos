@@ -40,6 +40,10 @@ export interface AgentRunOptions {
   maxTokens?: number;
   maxProviderRetries?: number;
   allowPartialSuccess?: boolean;
+  deadlineAt?: number;
+  toolCallLimits?: Readonly<Record<string, number>>;
+  /** Hard ceiling for provider.generate calls, including retries and adaptive iterations. */
+  maxGenerationAttempts?: number;
 }
 
 /**
@@ -169,8 +173,10 @@ export async function runAgent(
   let lastSnapshot = snapshotFilesystem(projectRoot);
   let hadMutatingToolCall = false;
   let bonusIterationsGranted = 0;
+  let generationAttempts = 0;
   let nudgeSent = false;
   const initialSnapshot = lastSnapshot;
+  const toolCallCounts = new Map<string, number>();
 
   // Semantic progress tracker -- smarter than blunt file-count diffing
   const progress = new ProgressTracker();
@@ -181,6 +187,29 @@ export async function runAgent(
     if (released > 0) {
       logger.debug(agent.id, `Released ${released} file lock(s)`);
     }
+  };
+
+  const assertActive = () => {
+    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+      throw new Error('Agent run timed out.');
+    }
+    if (options.signal?.aborted) throw new Error('Agent run cancelled.');
+  };
+
+  const executeLimitedTool = (
+    toolName: string,
+    args: Record<string, any>,
+  ): ReturnType<typeof executeTool> => {
+    assertActive();
+    const count = toolCallCounts.get(toolName) ?? 0;
+    const limit = options.toolCallLimits?.[toolName];
+    if (limit !== undefined && count >= limit) {
+      throw new Error(`Tool call limit exceeded for ${toolName} (maximum ${limit}).`);
+    }
+    toolCallCounts.set(toolName, count + 1);
+    const result = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id, agent.allowedTools);
+    assertActive();
+    return result;
   };
 
   // Build conversation
@@ -195,8 +224,16 @@ export async function runAgent(
 
   // Effective max = base + bonus for productive agents
   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
+  const providerRetryCeiling = provider.maxApplicationRetries;
+  const maxProviderRetries = providerRetryCeiling === undefined
+    ? options.maxProviderRetries ?? 3
+    : Math.min(options.maxProviderRetries ?? providerRetryCeiling, providerRetryCeiling);
   const generate = () => {
-    if (options.signal?.aborted) throw new Error('Agent run cancelled.');
+    assertActive();
+    if (options.maxGenerationAttempts !== undefined && generationAttempts >= options.maxGenerationAttempts) {
+      throw new Error(`Maximum model generation attempts (${options.maxGenerationAttempts}) reached.`);
+    }
+    generationAttempts++;
     return provider.generate(
       messages,
       filterTools(AGENT_TOOLS, agent.allowedTools, agent.id),
@@ -206,7 +243,7 @@ export async function runAgent(
 
   try {
     while (iterations < getEffectiveMax()) {
-      if (options.signal?.aborted) throw new Error('Agent run cancelled.');
+      assertActive();
       iterations++;
       onProgress?.(iterations, 'thinking');
 
@@ -248,10 +285,11 @@ export async function runAgent(
       // Call the model (with retry for transient errors including 504)
       const response = await retryOnTransient(
         generate,
-        options.maxProviderRetries ?? 3,
+        maxProviderRetries,
         logger,
         agent.id,
       );
+      assertActive();
       returnedModel = response.model || returnedModel;
       if (response.reportedModel) reportedModel = response.reportedModel;
       totalTokens += response.usage.totalTokens;
@@ -281,10 +319,11 @@ export async function runAgent(
 
           const retryResponse = await retryOnTransient(
             generate,
-            options.maxProviderRetries ?? 1,
+            maxProviderRetries,
             logger,
             agent.id,
           );
+          assertActive();
           returnedModel = retryResponse.model || returnedModel;
           if (retryResponse.reportedModel) reportedModel = retryResponse.reportedModel;
           totalTokens += retryResponse.usage.totalTokens;
@@ -298,25 +337,18 @@ export async function runAgent(
           // Check if it called task_complete this time
           if (retryResponse.toolCalls.length > 0) {
             for (const tc of retryResponse.toolCalls) {
-              if (options.signal?.aborted) throw new Error('Agent run cancelled.');
+              assertActive();
               let tcArgs: Record<string, any>;
               try {
                 tcArgs = JSON.parse(tc.function.arguments);
               } catch {
                 tcArgs = {};
               }
-              const { result, isComplete: done } = executeTool(
-                tc.function.name,
-                tcArgs,
-                projectRoot,
-                agent.scope,
-                agent.id,
-                task.id,
-                agent.allowedTools,
-              );
+              const { result, isComplete: done } = executeLimitedTool(tc.function.name, tcArgs);
               onToolResult?.(tc.function.name, result);
               messages.push({ role: 'tool', name: tc.function.name, content: result, tool_call_id: tc.id });
               if (done) {
+                assertActive();
                 logger.success(agent.id, `Task completed (after nudge): ${tcArgs.summary || 'Task completed'}`);
                 deleteCheckpoint(projectRoot, task.id);
                 return {
@@ -351,7 +383,7 @@ export async function runAgent(
       hadMutatingToolCall = false;
 
       for (const toolCall of response.toolCalls) {
-        if (options.signal?.aborted) throw new Error('Agent run cancelled.');
+        assertActive();
         let args: Record<string, any>;
         try {
           args = JSON.parse(toolCall.function.arguments);
@@ -363,30 +395,29 @@ export async function runAgent(
         onProgress?.(iterations, `tool:${toolName}`);
         logger.info(agent.id, `Tool: ${toolName}(${JSON.stringify(args).substring(0, 100)})`);
 
-        // Track mutating tool calls as progress signals (for bonus iterations)
-        if (toolName === 'write_file' || toolName === 'run_command' || toolName === 'git_commit') {
+        const { result, isComplete: done } = executeLimitedTool(toolName, args);
+        const authorized = !agent.allowedTools?.length || agent.allowedTools.includes(toolName);
+        const mutationSucceeded = toolName === 'write_file'
+          ? result.startsWith('Written: ')
+          : toolName === 'git_commit'
+            ? result.startsWith('Committed: ')
+            : toolName === 'run_command'
+              ? /^Command: [\s\S]*\nExit: 0\n/.test(result)
+              : false;
+        if (authorized && mutationSucceeded) {
           hadMutatingToolCall = true;
-          // Emit TASK_PROGRESS so HealthMonitor counts this as an implicit heartbeat
           try {
             getMessageBus().emit(
-              createEvent(
-                'TASK_PROGRESS',
-                agent.id,
-                {
-                  tool: toolName,
-                  iteration: iterations,
-                  file: args.path || args.command || undefined,
-                },
-                task.id,
-                'api',
-              ),
+              createEvent('TASK_PROGRESS', agent.id, {
+                tool: toolName,
+                iteration: iterations,
+                file: args.path || args.command || undefined,
+              }, task.id, 'api'),
             );
           } catch {
             /* non-fatal */
           }
         }
-
-        const { result, isComplete: done } = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id, agent.allowedTools);
         onToolResult?.(toolName, result);
 
         // Truncate huge tool results to prevent context bloat
@@ -410,6 +441,7 @@ export async function runAgent(
 
       // If task_complete was called, we're done
       if (isComplete) {
+        assertActive();
         logger.success(agent.id, `Task completed: ${completionSummary}`);
         deleteCheckpoint(projectRoot, task.id);
         return {
@@ -466,6 +498,7 @@ export async function runAgent(
       }
 
       // ---- CHECKPOINT SAVE (every iteration) ----
+      assertActive();
       // Snapshot current progress to disk so we can recover if MAOS crashes.
       try {
         const changedFiles = getChangedFiles(projectRoot, initialSnapshot);
@@ -539,8 +572,9 @@ export async function runAgent(
     // ---- GRACEFUL FAILURE WITH PARTIAL SUCCESS ----
     const crashSnapshot = snapshotFilesystem(projectRoot);
     const crashedButWorked = crashSnapshot !== initialSnapshot;
+    const timedOut = options.deadlineAt !== undefined && Date.now() >= options.deadlineAt;
 
-    if (crashedButWorked && options.allowPartialSuccess !== false && !options.signal?.aborted) {
+    if (crashedButWorked && options.allowPartialSuccess !== false && !options.signal?.aborted && !timedOut) {
       logger.warn(agent.id, `Agent crashed but DID modify files. Treating as partial success. Error: ${err.message}`);
       return {
         agentId: agent.id,
@@ -556,13 +590,13 @@ export async function runAgent(
     }
 
     logger.error(agent.id, `Agent error: ${err.stack || err.message}`);
-    const error = options.signal?.aborted ? 'ABORTED' : err.message;
+    const error = timedOut ? 'TIMEOUT' : options.signal?.aborted ? 'ABORTED' : err.message;
     return {
       agentId: agent.id,
       taskId: task.id,
       model: returnedModel,
       success: false,
-      summary: options.signal?.aborted ? 'Agent run cancelled.' : `Agent failed: ${err.message}`,
+      summary: timedOut ? 'Agent run timed out.' : options.signal?.aborted ? 'Agent run cancelled.' : `Agent failed: ${err.message}`,
       filesChanged: [],
       iterations,
       totalTokens,

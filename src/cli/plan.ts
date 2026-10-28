@@ -171,10 +171,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
   // Create provider — resolve key from credential store first
   let provider;
   try {
-    const { resolveCredential } = require('../core/credentials');
-    const resolved = resolveCredential(providerName, providerConfig.apiKey);
-    const enrichedConfig = resolved ? { ...providerConfig, apiKey: resolved.key } : providerConfig;
-    provider = createProviderDirect(providerName, enrichedConfig, plannerAgent?.model || '');
+    provider = createProviderDirect(providerName, providerConfig, plannerAgent?.model || '');
   } catch (err: any) {
     console.log(chalk.red(`❌ Failed to create provider: ${err.message}`));
     process.exit(1);

@@ -359,10 +359,7 @@ async function pingProvider(
     const model = agent?.model || 'gpt-4o-mini';
 
     const { createProviderDirect } = await import('../backends/factory');
-    const { resolveCredential } = require('../core/credentials');
-    const resolved = resolveCredential(providerName, providerConfig.apiKey);
-    const enrichedConfig = resolved ? { ...providerConfig, apiKey: resolved.key } : providerConfig;
-    const provider = createProviderDirect(providerName, enrichedConfig, model);
+    const provider = createProviderDirect(providerName, providerConfig, model);
 
     const startMs = Date.now();
     await provider.generate([{ role: 'user', content: 'Say OK' }]);

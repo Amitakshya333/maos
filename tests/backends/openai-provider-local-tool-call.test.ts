@@ -9,8 +9,11 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
 });
 
-describe('OpenAI-compatible local tool request', () => {
-  it('omits unsupported tool_choice, bounds output, and parses the returned tool call', async () => {
+describe('OpenAI-compatible loopback mock tool request', () => {
+  it.each([
+    ['local model', 'ollama-local', 'llama3.2:3b-instruct-q4_K_M'],
+    ['Meta Muse Spark protocol shape', 'meta-model-api-mock', 'muse-spark-1.3'],
+  ])('%s omits tool_choice, bounds output, and parses the returned tool call', async (_label, providerName, model) => {
     let requestBody: any;
     const server = http.createServer(async (req, res) => {
       const chunks: Buffer[] = [];
@@ -44,10 +47,10 @@ describe('OpenAI-compatible local tool request', () => {
     });
     const port = (server.address() as AddressInfo).port;
     const provider = new OpenAIProvider({
-      name: 'ollama-local',
+      name: providerName,
       apiKey: 'local-only',
       baseURL: `http://127.0.0.1:${port}/v1`,
-      model: 'llama3.2:3b-instruct-q4_K_M',
+      model,
       maxRetries: 0,
     });
 
@@ -57,8 +60,9 @@ describe('OpenAI-compatible local tool request', () => {
       { maxTokens: 256 },
     );
 
-    expect(requestBody.model).toBe('llama3.2:3b-instruct-q4_K_M');
+    expect(requestBody.model).toBe(model);
     expect(requestBody.max_tokens).toBe(256);
+    if (providerName === 'ollama-local') expect(requestBody.temperature).toBe(0.2);
     expect(requestBody.tools[0].function.name).toBe('analyze_telemetry_csv');
     expect(requestBody).not.toHaveProperty('tool_choice');
     expect(response.model).toBe('local-returned-model');
@@ -71,8 +75,31 @@ describe('OpenAI-compatible local tool request', () => {
     }]);
   });
 
+  it('rejects a successful HTTP response with no usable choices', async () => {
+    const server = http.createServer(async (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [] }));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = (server.address() as AddressInfo).port;
+    const provider = new OpenAIProvider({
+      name: 'malformed-response-mock',
+      apiKey: 'local-only',
+      baseURL: `http://127.0.0.1:${port}/v1`,
+      model: 'mock-model',
+      maxRetries: 0,
+    });
+
+    await expect(provider.generate([{ role: 'user', content: 'test' }])).rejects.toThrow(/Empty response.*no choices array/);
+  });
+
   it.each([
     ['provider confirms the requested ID', 'requested-model', 'requested-model'],
+    ['provider reports a different served ID', 'served-model', 'served-model'],
     ['provider omits its ID', undefined, undefined],
   ])('preserves provider identity when %s', async (_label, responseModel, expectedReported) => {
     const server = http.createServer(async (_req, res) => {

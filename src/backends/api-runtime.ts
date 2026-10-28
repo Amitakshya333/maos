@@ -42,6 +42,7 @@ export class ApiRuntime implements IRuntime {
   readonly type = 'api' as const;
   readonly name: string;
   readonly model: string;
+  readonly maxTaskRetries?: number;
 
   constructor(
     private config: ApiRuntimeConfig,
@@ -49,6 +50,7 @@ export class ApiRuntime implements IRuntime {
   ) {
     this.name = config.provider.name;
     this.model = config.provider.model;
+    this.maxTaskRetries = config.provider.maxApplicationRetries;
   }
 
   async execute(task: RuntimeTask): Promise<RuntimeResult> {

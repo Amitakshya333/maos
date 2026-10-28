@@ -315,10 +315,13 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
         provider: new OpenAIProvider({
           name: analysisModel.provider,
           apiKey: 'local-only',
+          apiKeyEnv: providerConfig.apiKeyEnv,
+          metaApiEnabled: providerConfig.metaApiEnabled,
           baseURL: providerConfig.baseURL,
           model: analysisModel.model,
           timeout,
           maxRetries: 0,
+          ...(typeof providerConfig.temperature === 'number' ? { temperature: providerConfig.temperature } : {}),
         }),
         modelEndpoint: providerConfig.baseURL,
       };

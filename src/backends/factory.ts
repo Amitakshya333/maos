@@ -7,6 +7,7 @@ import { IRuntime, AgentRuntimeConfig } from './runtime';
 import { ApiRuntime } from './api-runtime';
 import { CliRuntime } from './cli-runtime';
 import { MessageBus } from '../core/message-bus';
+import { isMetaApiConfigCandidate, MetaApiPolicyError, resolveMetaApiPolicy } from './meta-api-policy';
 
 /**
  * Known provider base URLs.
@@ -129,6 +130,31 @@ function createProvider(
 ): IProvider {
   const name = providerName.toLowerCase();
   const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
+  const metaCandidate = isMetaApiConfigCandidate({ providerName: name, baseURL, metaApiEnabled: config.metaApiEnabled });
+
+  // Apply the Meta policy before credential resolution or plugin construction.
+  if (metaCandidate) {
+    if (name === 'anthropic' || name === 'gemini' || name === 'google') {
+      throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'The Meta Model API requires the OpenAI-compatible Chat Completions provider.');
+    }
+    if (sovereignLocal) enforceLoopbackOnly(name, baseURL);
+    if (!(name in KNOWN_BASE_URLS) && name !== 'meta') {
+      const { getPluginRegistry } = require('./plugin-registry');
+      if (getPluginRegistry().hasProvider(name)) {
+        throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'The Meta Model API requires the built-in OpenAI-compatible provider.');
+      }
+    }
+    return new OpenAIProvider({
+      name,
+      apiKey: '',
+      model,
+      baseURL,
+      metaApiEnabled: config.metaApiEnabled,
+      apiKeyEnv: config.apiKeyEnv,
+      temperature: config.temperature,
+    });
+  }
+
   // Local runtimes are loopback services, even when the provider has a custom
   // name (for example huggingface-local). They must not require a cloud key.
   // The loopback check also keeps doctor/provider-direct probes consistent with
@@ -348,6 +374,27 @@ export class RuntimeFactory {
         continue;
       }
 
+      if (isMetaApiConfigCandidate({ providerName, baseURL: providerConfig.baseURL, metaApiEnabled: providerConfig.metaApiEnabled })) {
+        try {
+          const meta = resolveMetaApiPolicy({
+            providerName,
+            baseURL: providerConfig.baseURL,
+            model: agent.model || '',
+            metaApiEnabled: providerConfig.metaApiEnabled,
+            apiKeyEnv: providerConfig.apiKeyEnv,
+            temperature: providerConfig.temperature,
+          });
+          if (meta && isPlaceholder(meta.apiKey)) {
+            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'placeholder', message: 'The configured Meta environment variable contains a placeholder key.', source: 'environment' });
+          } else {
+            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'ok', message: `Meta API key loaded from ${providerConfig.apiKeyEnv}.`, source: 'environment' });
+          }
+        } catch (err: any) {
+          results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'missing', message: err.message });
+        }
+        continue;
+      }
+
       // Local runtimes use loopback services and never require a cloud key.
       // Keep the provider-name check for backwards-compatible keyless providers
       // used by API-configured agents as well.
@@ -443,7 +490,12 @@ export class RuntimeFactory {
 // Used by decomposer/plan.ts which needs raw IProvider.generate() access.
 
 export function createProviderDirect(providerName: string, config: ProviderConfig, model: string): IProvider {
-  return createProvider(providerName, config, model);
+  if (isMetaApiConfigCandidate({ providerName, baseURL: config.baseURL, metaApiEnabled: config.metaApiEnabled })) {
+    return createProvider(providerName, config, model);
+  }
+  const { resolveCredential } = require('../core/credentials');
+  const resolved = resolveCredential(providerName, config.apiKey);
+  return createProvider(providerName, resolved ? { ...config, apiKey: resolved.key } : config, model);
 }
 
 // ---- Backward Compatibility ----

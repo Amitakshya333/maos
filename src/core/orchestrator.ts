@@ -405,6 +405,9 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
         '  Run: maos configure\n',
     );
   }
+  const noAutomaticRetryAgentIds = new Set(
+    [...runtimeMap.entries()].filter(([, runtime]) => runtime.maxTaskRetries === 0).map(([agentId]) => agentId),
+  );
 
   // Create the router (with telemetry feedback for adaptive scoring)
   const router = createRouter(config.routing, cwd);
@@ -753,7 +756,7 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
         // Instead of permanently failing, try to enqueue for retry with backoff.
         const retryPolicy = {
           ...DEFAULT_RETRY_POLICY,
-          maxRetries: (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
+          maxRetries: runtime.maxTaskRetries ?? (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
         };
         const retryRecord = enqueueRetry(
           activeTask,
@@ -871,7 +874,18 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
 
       // Enqueue crashed tasks for retry too
       try {
-        enqueueRetry(activeTask, taskContent, err.message, [], 0, DEFAULT_RETRY_POLICY, cwd);
+        enqueueRetry(
+          activeTask,
+          taskContent,
+          err.message,
+          [],
+          0,
+          {
+            ...DEFAULT_RETRY_POLICY,
+            maxRetries: runtime.maxTaskRetries ?? (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
+          },
+          cwd,
+        );
       } catch (retryErr: any) {
         logger.error('ORCHESTRATOR', `Failed to enqueue crashed task ${task.id} for retry: ${retryErr.message}`);
       }
@@ -937,7 +951,7 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
     try {
       // ---- RETRY QUEUE DRAIN ----
       // Check if any retry-eligible tasks are ready to be re-queued.
-      const requeued = drainRetryQueue(cwd);
+      const requeued = drainRetryQueue(cwd, noAutomaticRetryAgentIds);
       if (requeued > 0) {
         logger.info('RETRY', `${requeued} task(s) moved from retry queue back to pending`);
       }
