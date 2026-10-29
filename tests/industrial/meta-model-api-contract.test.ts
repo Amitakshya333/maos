@@ -125,7 +125,7 @@ function makeProject(options: {
       [providerName]: {
         baseURL: options.baseURL,
         ...(providerName === 'meta'
-          ? { metaApiEnabled: options.omitOptIn ? undefined : options.enabled !== false, ...(options.enabled === false ? {} : { apiKeyEnv: keyEnv }) }
+          ? { metaApiEnabled: options.omitOptIn ? undefined : options.enabled !== false, apiKeyEnv: keyEnv }
           : { basetenApiEnabled: options.omitOptIn ? undefined : options.enabled !== false }),
         ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
       },
@@ -334,7 +334,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
     ['other model', META_URL, 'muse-spark-1.3-contributor', true, 'PROJECT_CONFIG_INVALID'],
     ['Meta endpoint with no opt-in field', META_URL, MODEL, true, 'MODEL_ENDPOINT_BLOCKED', true],
     ['Meta endpoint without opt-in', META_URL, MODEL, false, 'MODEL_ENDPOINT_BLOCKED'],
-    ['remote endpoint without opt-in', 'https://example.invalid/v1', MODEL, false, 'MODEL_ENDPOINT_BLOCKED'],
+    ['remote endpoint with reserved Meta credential', 'https://example.invalid/v1', MODEL, false, 'PROJECT_CONFIG_INVALID'],
   ])('rejects %s without a request', async (_label, baseURL, model, enabled, code, omitOptIn) => {
     const mock = await startServer(() => ({ body: completion('task_complete', '{}') }));
     const project = makeProject({ baseURL, model, enabled, omitOptIn });

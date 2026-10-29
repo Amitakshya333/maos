@@ -152,20 +152,13 @@ if (-not (Test-Path -LiteralPath $processTreeHelper -PathType Leaf)) {
   throw 'The task-owned process-tree helper is missing from this installation.'
 }
 . $processTreeHelper
-$cancelSource = [System.Threading.CancellationTokenSource]::new()
-$cancelHandler = [System.ConsoleCancelEventHandler] {
-  param($sender, $eventArgs)
-  $eventArgs.Cancel = $true
-  $cancelSource.Cancel()
-}
-[Console]::add_CancelKeyPress($cancelHandler)
+$cancelSource = [MaosPilotConsoleCancellation]::new()
 try {
   $applicationExitCode = Invoke-MaosOwnedProcessTree -FilePath $electron -ArgumentList $arguments -WorkingDirectory $projectRoot -CancellationToken $cancelSource.Token
 } catch [System.OperationCanceledException] {
   Write-Output 'Pilot cancelled; the task-owned application process tree was terminated and waited before releasing the launcher lock.'
   $applicationExitCode = 130
 } finally {
-  [Console]::remove_CancelKeyPress($cancelHandler)
   $cancelSource.Dispose()
 }
 } finally {

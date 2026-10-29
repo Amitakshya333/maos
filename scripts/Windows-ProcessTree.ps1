@@ -251,6 +251,128 @@ public static class MaosPilotProcessTree
         return result.ToString();
     }
 }
+public sealed class MaosPilotConsoleCancellation : IDisposable
+{
+    [ThreadStatic]
+    private static System.Collections.Generic.List<MaosPilotConsoleCancellation> callbackAdapters;
+    private readonly object lifetimeGate = new object();
+    private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
+    private readonly ConsoleCancelEventHandler handler;
+    private int activeCallbacks;
+    private bool disposeRequested;
+    private bool sourceDisposeStarted;
+    private bool sourceDisposed;
+
+    public CancellationToken Token { get { return cancellation.Token; } }
+
+    public MaosPilotConsoleCancellation()
+    {
+        handler = new ConsoleCancelEventHandler(HandleCancel);
+        Console.CancelKeyPress += handler;
+    }
+
+    private void HandleCancel(object sender, ConsoleCancelEventArgs eventArgs)
+    {
+        lock (lifetimeGate)
+        {
+            if (disposeRequested) return;
+            activeCallbacks++;
+        }
+
+        if (callbackAdapters == null) callbackAdapters = new System.Collections.Generic.List<MaosPilotConsoleCancellation>();
+        callbackAdapters.Add(this);
+        try
+        {
+            if (eventArgs != null) eventArgs.Cancel = true;
+            // Cancel invokes token callbacks synchronously; never hold lifetimeGate here.
+            cancellation.Cancel();
+        }
+        finally
+        {
+            callbackAdapters.RemoveAt(callbackAdapters.Count - 1);
+            CallbackExited();
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (lifetimeGate) disposeRequested = true;
+        try
+        {
+            Console.CancelKeyPress -= handler;
+        }
+        finally
+        {
+            if (callbackAdapters == null || !callbackAdapters.Contains(this)) DisposeAndWaitForCallbacks();
+            else DisposeSourceIfQuiescent();
+        }
+    }
+
+    private void CallbackExited()
+    {
+        bool dispose = false;
+        lock (lifetimeGate)
+        {
+            activeCallbacks--;
+            if (activeCallbacks == 0)
+            {
+                Monitor.PulseAll(lifetimeGate);
+                if (disposeRequested && !sourceDisposeStarted)
+                {
+                    sourceDisposeStarted = true;
+                    dispose = true;
+                }
+            }
+        }
+        if (dispose) DisposeCancellationSource();
+    }
+
+    private void DisposeAndWaitForCallbacks()
+    {
+        bool dispose = false;
+        lock (lifetimeGate)
+        {
+            while (activeCallbacks > 0) Monitor.Wait(lifetimeGate);
+            if (!sourceDisposeStarted)
+            {
+                sourceDisposeStarted = true;
+                dispose = true;
+            }
+            else
+            {
+                while (!sourceDisposed) Monitor.Wait(lifetimeGate);
+            }
+        }
+        if (dispose) DisposeCancellationSource();
+    }
+
+    private void DisposeSourceIfQuiescent()
+    {
+        bool dispose = false;
+        lock (lifetimeGate)
+        {
+            if (activeCallbacks == 0 && !sourceDisposeStarted)
+            {
+                sourceDisposeStarted = true;
+                dispose = true;
+            }
+        }
+        if (dispose) DisposeCancellationSource();
+    }
+
+    private void DisposeCancellationSource()
+    {
+        try { cancellation.Dispose(); }
+        finally
+        {
+            lock (lifetimeGate)
+            {
+                sourceDisposed = true;
+                Monitor.PulseAll(lifetimeGate);
+            }
+        }
+    }
+}
 '@ -Language CSharp
 }
 
