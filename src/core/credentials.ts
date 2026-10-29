@@ -16,6 +16,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getCredentialsPath, getMaosRoot } from '../utils/paths';
+import {
+  assertCredentialUsePolicy,
+  assertGenericCredentialUse,
+  collectReservedMetaApiKeyEnvVars,
+  isHostedApiConfigCandidate,
+  resolveHostedApiPolicy,
+} from '../backends/meta-api-policy';
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -166,11 +173,19 @@ export function resolveCredential(
   provider: string,
   configApiKey?: string,
   cwd?: string,
+  reservedMetaApiKeyEnvVars: readonly string[] = [],
 ): { key: string; source: CredentialCheckResult['source'] } | null {
+  const normalizedProvider = provider.toLowerCase();
+  if (normalizedProvider === 'baseten' || normalizedProvider === 'meta') {
+    throw new Error(`${provider} credentials must be resolved by the exact hosted-provider policy, not generic credential lookup.`);
+  }
+  assertGenericCredentialUse(configApiKey, reservedMetaApiKeyEnvVars);
+
   // 1. Credential store
   const store = loadStore(cwd);
   const storeEntry = store.providers[provider];
   if (storeEntry?.apiKey && !isPlaceholder(storeEntry.apiKey)) {
+    assertGenericCredentialUse(storeEntry.apiKey, reservedMetaApiKeyEnvVars);
     return { key: storeEntry.apiKey, source: 'credential_store' };
   }
 
@@ -179,6 +194,7 @@ export function resolveCredential(
   for (const envName of envVarNames) {
     const envVal = process.env[envName];
     if (envVal && !isPlaceholder(envVal)) {
+      assertGenericCredentialUse(envVal, reservedMetaApiKeyEnvVars);
       return { key: envVal, source: 'environment' };
     }
   }
@@ -189,6 +205,7 @@ export function resolveCredential(
       const envVar = configApiKey.slice(4);
       const resolved = process.env[envVar];
       if (resolved && !isPlaceholder(resolved)) {
+        assertGenericCredentialUse(resolved, reservedMetaApiKeyEnvVars);
         return { key: resolved, source: 'env_file' };
       }
     } else if (!isPlaceholder(configApiKey)) {
@@ -206,6 +223,19 @@ export function resolveCredential(
 export function getAllCredentialStatuses(config: any, cwd?: string): CredentialCheckResult[] {
   const results: CredentialCheckResult[] = [];
   const providers: Record<string, any> = config.providers || {};
+  let reservedMetaApiKeyEnvVars: string[];
+  try {
+    reservedMetaApiKeyEnvVars = collectReservedMetaApiKeyEnvVars(providers);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Invalid provider credential configuration.';
+    return (config.agents || []).map((agent: any) => ({
+      agentId: agent.id,
+      provider: agent.provider || 'unknown',
+      runtimeType: agent.runtime || 'api',
+      status: 'missing' as const,
+      detail,
+    }));
+  }
 
   for (const agent of config.agents || []) {
     const providerName = agent.provider;
@@ -224,6 +254,29 @@ export function getAllCredentialStatuses(config: any, cwd?: string): CredentialC
       continue;
     }
 
+    const providerConfig = providers[providerName];
+    const model = agent.model || '';
+    try {
+      assertCredentialUsePolicy({
+        providerName,
+        baseURL: providerConfig?.baseURL,
+        model,
+        metaApiEnabled: providerConfig?.metaApiEnabled,
+        basetenApiEnabled: providerConfig?.basetenApiEnabled,
+        apiKeyEnv: providerConfig?.apiKeyEnv,
+        apiKey: providerConfig?.apiKey,
+      }, reservedMetaApiKeyEnvVars);
+    } catch (error) {
+      results.push({
+        agentId: agent.id,
+        provider: providerName,
+        runtimeType,
+        status: 'missing',
+        detail: error instanceof Error ? error.message : 'Hosted credential policy rejected this configuration.',
+      });
+      continue;
+    }
+
     // Local providers (ollama, lmstudio)
     if (NO_KEY_PROVIDERS.has(providerName?.toLowerCase())) {
       results.push({
@@ -238,8 +291,59 @@ export function getAllCredentialStatuses(config: any, cwd?: string): CredentialC
     }
 
     // API providers — resolve credential
-    const providerConfig = providers[providerName];
-    const resolved = resolveCredential(providerName, providerConfig?.apiKey, cwd);
+    if (isHostedApiConfigCandidate({
+      providerName,
+      baseURL: providerConfig?.baseURL,
+      model,
+      metaApiEnabled: providerConfig?.metaApiEnabled,
+      basetenApiEnabled: providerConfig?.basetenApiEnabled,
+    })) {
+      try {
+        const hosted = resolveHostedApiPolicy({
+          providerName,
+          baseURL: providerConfig?.baseURL,
+          model,
+          metaApiEnabled: providerConfig?.metaApiEnabled,
+          basetenApiEnabled: providerConfig?.basetenApiEnabled,
+          apiKeyEnv: providerConfig?.apiKeyEnv,
+          temperature: providerConfig?.temperature,
+        });
+        if (!hosted) throw new Error('Hosted provider policy was not resolved.');
+        results.push({
+          agentId: agent.id,
+          provider: providerName,
+          runtimeType,
+          status: isPlaceholder(hosted.apiKey) ? 'placeholder' : 'valid',
+          detail: isPlaceholder(hosted.apiKey)
+            ? 'Configured credential environment reference contains a placeholder'
+            : 'Credential environment reference configured',
+          source: 'environment',
+        });
+      } catch (error) {
+        results.push({
+          agentId: agent.id,
+          provider: providerName,
+          runtimeType,
+          status: 'missing',
+          detail: error instanceof Error ? error.message : 'Hosted provider credential is unavailable.',
+        });
+      }
+      continue;
+    }
+
+    let resolved: { key: string; source: CredentialCheckResult['source'] } | null;
+    try {
+      resolved = resolveCredential(providerName, providerConfig?.apiKey, cwd, reservedMetaApiKeyEnvVars);
+    } catch (error) {
+      results.push({
+        agentId: agent.id,
+        provider: providerName,
+        runtimeType,
+        status: 'missing',
+        detail: error instanceof Error ? error.message : 'Credential policy rejected this configuration.',
+      });
+      continue;
+    }
 
     if (resolved) {
       const masked = maskKey(resolved.key);

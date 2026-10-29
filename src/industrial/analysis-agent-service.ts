@@ -3,7 +3,7 @@ import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import type { IProvider } from '../backends/provider';
 import { OpenAIProvider } from '../backends/openai-provider';
-import { MetaApiPolicyError } from '../backends/meta-api-policy';
+import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import { runAgent } from '../core/agent-runner';
 import type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
 import type { AuditService } from '../service/audit-service';
@@ -107,8 +107,8 @@ export class IndustrialAnalysisAgentService {
         ({ provider, modelEndpoint } = this.resolveRuntime());
       } catch (error) {
         if (error instanceof IndustrialAnalysisAgentError) throw error;
-        if (error instanceof MetaApiPolicyError) {
-          const code = error.code === 'META_API_OPT_IN_REQUIRED'
+        if (error instanceof ProviderApiPolicyError) {
+          const code = error.code === 'META_API_OPT_IN_REQUIRED' || error.code === 'BASETEN_API_OPT_IN_REQUIRED'
             ? 'MODEL_ENDPOINT_BLOCKED'
             : error.code === 'MODEL_CREDENTIAL_MISSING' ? error.code : 'PROJECT_CONFIG_INVALID';
           throw new IndustrialAnalysisAgentError(code, error.message);
@@ -121,7 +121,7 @@ export class IndustrialAnalysisAgentService {
       }
     }
     if (!provider || !modelEndpoint) {
-      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure ANALYST_AGENT and an approved local loopback model endpoint, or explicitly enable the exact Meta Model API model and endpoint.');
+      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure ANALYST_AGENT and an approved local loopback model endpoint, or explicitly opt in to the exact Meta or Baseten Model API endpoint and model.');
     }
     if (typeof input.request !== 'string' || input.request.trim().length === 0 || input.request.length > 4000) {
       throw new IndustrialAnalysisAgentError('INVALID_REQUEST', 'request must contain 1 to 4000 characters.');
@@ -159,15 +159,16 @@ export class IndustrialAnalysisAgentService {
     } catch {
       throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The configured model endpoint URL is invalid.');
     }
-    const metaEndpointAllowed = provider instanceof OpenAIProvider && provider.isMetaApi && provider.baseURL === modelEndpoint;
+    const hostedEndpointAllowed = provider instanceof OpenAIProvider &&
+      ((provider.isMetaApi && provider.baseURL === modelEndpoint) || (provider.isBasetenApi && provider.baseURL === modelEndpoint));
     const loopbackEndpointAllowed = modelUrl.protocol === 'http:' &&
       ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) &&
       !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
-    if (!metaEndpointAllowed && !loopbackEndpointAllowed) {
-      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or a provider approved by the shared Meta API policy is allowed.');
+    if (!hostedEndpointAllowed && !loopbackEndpointAllowed) {
+      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or an exact provider approved by shared Meta/Baseten policy is allowed.');
     }
-    // The one explicit hosted exception is config-bound to Meta's exact HTTPS URL and model.
-    if (this.endpointAllowlist && !metaEndpointAllowed) {
+    // Hosted exceptions are bound to one exact endpoint/model in shared provider policy.
+    if (this.endpointAllowlist && !hostedEndpointAllowed) {
       const port = modelUrl.port ? parseInt(modelUrl.port, 10) : 80;
       const validation = this.endpointAllowlist.validateSocketTarget({
         protocol: 'tcp',

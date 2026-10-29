@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { getConfigPath, isMaosInitialized } from '../utils/paths';
+import { assertMetaApiKeyEnvIdentifier, BASETEN_API_KEY_ENV, collectReservedMetaApiKeyEnvVars } from '../backends/meta-api-policy';
 import { renderPanel, getBrandBadge, icons } from '../utils/ui';
 import {
   getAllCredentialStatuses,
@@ -105,8 +106,29 @@ async function configureProvider(providerName: string, config: any): Promise<voi
     console.log(chalk.gray(`  Base URL: ${baseURL}`));
   }
 
+  if (providerName.toLowerCase() === 'meta') {
+    try {
+      assertMetaApiKeyEnvIdentifier(providerConfig?.apiKeyEnv);
+    } catch (error) {
+      console.log(chalk.red(`  ${error instanceof Error ? error.message : 'Invalid providers.<name>.apiKeyEnv.'}`));
+      return;
+    }
+    console.log(chalk.yellow('  This provider reads its key from the configured credential environment reference; this wizard does not store hosted-provider keys.'));
+    return;
+  }
+
+  if (providerName.toLowerCase() === 'baseten') {
+    console.log(chalk.yellow(`  This provider reads its key from ${BASETEN_API_KEY_ENV}; this wizard does not store hosted-provider keys.`));
+    return;
+  }
+
   // Show current key status
-  const existing = resolveCredential(providerName, providerConfig?.apiKey);
+  let existing;
+  try {
+    existing = resolveCredential(providerName, providerConfig?.apiKey, undefined, collectReservedMetaApiKeyEnvVars(config.providers));
+  } catch (error) {
+    console.log(chalk.yellow(`  Existing credential was not loaded: ${error instanceof Error ? error.message : 'reserved credential policy rejected it'}`));
+  }
   if (existing) {
     const masked =
       existing.key.length > 8

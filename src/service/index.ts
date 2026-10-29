@@ -79,6 +79,7 @@ import { SandboxRunnerService } from './sandbox-runner-service';
 import { ChatInferenceService } from './chat-inference-service';
 import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
 import { OpenAIProvider } from '../backends/openai-provider';
+import { collectReservedMetaApiKeyEnvVars } from '../backends/meta-api-policy';
 import { CalculationTraceService } from './calculation-trace-service';
 import { SovereigntyBoundaryService } from './sovereignty-boundary-service';
 import { EndpointAllowlistService } from './endpoint-allowlist-service';
@@ -316,7 +317,9 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
           name: analysisModel.provider,
           apiKey: 'local-only',
           apiKeyEnv: providerConfig.apiKeyEnv,
+          reservedMetaApiKeyEnvVars: collectReservedMetaApiKeyEnvVars(projectConfig.providers),
           metaApiEnabled: providerConfig.metaApiEnabled,
+          basetenApiEnabled: providerConfig.basetenApiEnabled,
           baseURL: providerConfig.baseURL,
           model: analysisModel.model,
           timeout,

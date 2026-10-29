@@ -360,15 +360,34 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
   // priority chain (credential store → env → config) and injecting it as a
   // direct string so the factory always receives a real key.
   const { resolveCredential } = require('./credentials');
+  const {
+    collectReservedMetaApiKeyEnvVars,
+    isHostedApiConfigCandidate,
+  } = require('../backends/meta-api-policy');
+  const reservedMetaApiKeyEnvVars = collectReservedMetaApiKeyEnvVars(config.providers);
   const enrichedProviders: Record<string, any> = {};
   for (const [providerName, providerConfig] of Object.entries(config.providers || {})) {
     const pc = providerConfig as any;
-    const resolved = resolveCredential(providerName, pc.apiKey, cwd);
-    if (resolved) {
-      enrichedProviders[providerName] = { ...pc, apiKey: resolved.key };
-      logger.info('CREDENTIALS', `${providerName}: credential source = ${resolved.source} (key configured)`);
-    } else {
-      enrichedProviders[providerName] = pc; // fallthrough — factory will throw
+    if (isHostedApiConfigCandidate({
+      providerName,
+      baseURL: pc.baseURL,
+      model: '',
+      metaApiEnabled: pc.metaApiEnabled,
+      basetenApiEnabled: pc.basetenApiEnabled,
+    })) {
+      enrichedProviders[providerName] = pc;
+      continue;
+    }
+    try {
+      const resolved = resolveCredential(providerName, pc.apiKey, cwd, reservedMetaApiKeyEnvVars);
+      if (resolved) {
+        enrichedProviders[providerName] = { ...pc, apiKey: resolved.key };
+        logger.info('CREDENTIALS', `${providerName}: credential source = ${resolved.source} (key configured)`);
+      } else {
+        enrichedProviders[providerName] = pc; // fallthrough — factory will throw
+      }
+    } catch {
+      enrichedProviders[providerName] = pc;
     }
   }
 

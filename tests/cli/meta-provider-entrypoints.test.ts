@@ -2,8 +2,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runConfigure } from '../../src/cli/configure';
 import { runDoctor } from '../../src/cli/doctor';
 import { runPlan } from '../../src/cli/plan';
+import { resolveHostedApiPolicy } from '../../src/backends/meta-api-policy';
+import { getAllCredentialStatuses } from '../../src/core/credentials';
 
 const META_URL = 'https://api.meta.ai/v1';
 const MODEL = 'muse-spark-1.3';
@@ -84,5 +87,137 @@ describe('Meta provider policy through plan and doctor entrypoints', () => {
     expect(requests).not.toHaveBeenCalled();
     expect(log.mock.calls.flat().join('\n')).not.toContain(key);
     expect(log.mock.calls.flat().join('\n')).toContain('never sends inference requests');
+  });
+
+  it('does not print malformed Meta apiKeyEnv values from configure, policy, doctor, or preflight', async () => {
+    const secretMarker = 'sk-test-SYNTHETIC_SECRET_MARKER';
+    const project = createProject({ apiKeyEnv: secretMarker, metaApiEnabled: true });
+    envNames.push(secretMarker);
+
+    const configureLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    originalCwds.push(process.cwd());
+    process.chdir(project.root);
+    await runConfigure(['meta']);
+    const configureOutput = configureLog.mock.calls.flat().join('\n');
+    expect(configureOutput).not.toContain(secretMarker);
+    expect(configureOutput).toContain('providers.<name>.apiKeyEnv');
+    configureLog.mockRestore();
+
+    let policyMessage = '';
+    try {
+      resolveHostedApiPolicy({ providerName: 'meta', baseURL: META_URL, model: MODEL, metaApiEnabled: true, apiKeyEnv: secretMarker });
+    } catch (error) {
+      policyMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(policyMessage).toContain('providers.<name>.apiKeyEnv');
+    expect(policyMessage).not.toContain(secretMarker);
+
+    const requests = vi.fn(async () => new Response());
+    vi.stubGlobal('fetch', requests);
+    const doctorLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const doctor = await runDoctor(project.root);
+    const doctorOutput = `${JSON.stringify(doctor)}\n${doctorLog.mock.calls.flat().join('\n')}`;
+    expect(doctor.exitCode).toBe(1);
+    expect(doctorOutput).toContain('providers.<name>.apiKeyEnv');
+    expect(doctorOutput).not.toContain(secretMarker);
+    expect(requests).not.toHaveBeenCalled();
+
+    const preflight = getAllCredentialStatuses({
+      providers: {
+        openai: { apiKey: 'synthetic-unrelated-provider-key-not-real' },
+        meta: { baseURL: META_URL, metaApiEnabled: true, apiKeyEnv: secretMarker },
+      },
+      agents: [
+        { id: 'OPENAI', provider: 'openai', model: 'synthetic-model' },
+        { id: 'PLANNER', provider: 'meta', model: MODEL },
+      ],
+    });
+    expect(preflight).toHaveLength(2);
+    expect(preflight[0]).toMatchObject({ status: 'missing', detail: expect.stringContaining('providers.<name>.apiKeyEnv') });
+    expect(JSON.stringify(preflight)).not.toContain(secretMarker);
+  });
+
+  it('keeps valid but secret-like environment identifiers out of configure and readiness diagnostics', async () => {
+    const secretMarker = 'SYNTHETIC_SECRET_MARKER_123';
+    envNames.push(secretMarker);
+    process.env[secretMarker] = 'synthetic-meta-key-not-real';
+    const project = createProject({ apiKeyEnv: secretMarker, metaApiEnabled: true });
+
+    const configureLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    originalCwds.push(process.cwd());
+    process.chdir(project.root);
+    await runConfigure(['meta']);
+    const configureOutput = configureLog.mock.calls.flat().join('\n');
+    expect(configureOutput).toContain('configured credential environment reference');
+    expect(configureOutput).not.toContain(secretMarker);
+    configureLog.mockRestore();
+
+    const policy = resolveHostedApiPolicy({ providerName: 'meta', baseURL: META_URL, model: MODEL, metaApiEnabled: true, apiKeyEnv: secretMarker });
+    expect(policy?.apiKeyEnv).toBe(secretMarker);
+
+    let disabledPolicyMessage = '';
+    try {
+      resolveHostedApiPolicy({ providerName: 'meta', baseURL: META_URL, model: MODEL, metaApiEnabled: false, apiKeyEnv: secretMarker });
+    } catch (error) {
+      disabledPolicyMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(disabledPolicyMessage).toContain('metaApiEnabled=true');
+    expect(disabledPolicyMessage).not.toContain(secretMarker);
+
+    const preflight = getAllCredentialStatuses({
+      providers: { meta: { baseURL: META_URL, metaApiEnabled: true, apiKeyEnv: secretMarker } },
+      agents: [{ id: 'PLANNER', provider: 'meta', model: MODEL }],
+    });
+    expect(preflight[0]).toMatchObject({ status: 'valid', detail: 'Credential environment reference configured' });
+    expect(JSON.stringify(preflight)).not.toContain(secretMarker);
+
+    const requests = vi.fn(async () => new Response());
+    vi.stubGlobal('fetch', requests);
+    const doctorLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const doctor = await runDoctor(project.root);
+    expect(doctor.exitCode).toBe(0);
+    expect(`${JSON.stringify(doctor)}\n${doctorLog.mock.calls.flat().join('\n')}`).not.toContain(secretMarker);
+    expect(requests).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', 'VALID_NAME\n'])('rejects missing or malformed Meta apiKeyEnv before environment lookup', (apiKeyEnv) => {
+    let message = '';
+    try {
+      resolveHostedApiPolicy({ providerName: 'meta', baseURL: META_URL, model: MODEL, metaApiEnabled: true, apiKeyEnv });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain('providers.<name>.apiKeyEnv');
+    expect(message).toContain('[A-Za-z_][A-Za-z0-9_]*');
+  });
+
+  it('does not echo a valid but unset Meta apiKeyEnv in policy, doctor, or preflight errors', async () => {
+    const secretMarker = 'SYNTHETIC_SECRET_MARKER_UNSET';
+    envNames.push(secretMarker);
+    delete process.env[secretMarker];
+    const project = createProject({ apiKeyEnv: secretMarker, metaApiEnabled: true });
+
+    let policyMessage = '';
+    try {
+      resolveHostedApiPolicy({ providerName: 'meta', baseURL: META_URL, model: MODEL, metaApiEnabled: true, apiKeyEnv: secretMarker });
+    } catch (error) {
+      policyMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(policyMessage).toContain('credential environment reference is empty');
+    expect(policyMessage).not.toContain(secretMarker);
+
+    const requests = vi.fn(async () => new Response());
+    vi.stubGlobal('fetch', requests);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const doctor = await runDoctor(project.root);
+    expect(doctor.exitCode).toBe(1);
+    expect(`${JSON.stringify(doctor)}\n${log.mock.calls.flat().join('\n')}`).not.toContain(secretMarker);
+    const preflight = getAllCredentialStatuses({
+      providers: { meta: { baseURL: META_URL, metaApiEnabled: true, apiKeyEnv: secretMarker } },
+      agents: [{ id: 'PLANNER', provider: 'meta', model: MODEL }],
+    });
+    expect(preflight[0]).toMatchObject({ status: 'missing', detail: 'The configured credential environment reference is empty. Set the configured environment variable before using the Meta Model API.' });
+    expect(JSON.stringify(preflight)).not.toContain(secretMarker);
+    expect(requests).not.toHaveBeenCalled();
   });
 });

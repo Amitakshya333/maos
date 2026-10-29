@@ -183,6 +183,8 @@ export interface ProviderEntry {
   readonly costPerMillionTokens?: number;
   /** Exact opt-in required before using Meta's hosted Muse Spark endpoint. */
   readonly metaApiEnabled?: boolean;
+  /** Exact opt-in required before using the approved Baseten hackathon model. */
+  readonly basetenApiEnabled?: boolean;
   readonly temperature?: number;
 }
 

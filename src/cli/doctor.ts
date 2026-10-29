@@ -18,6 +18,7 @@ import * as child_process from 'child_process';
 import chalk from 'chalk';
 import { getConfigPath, getMaosRoot } from '../utils/paths';
 import { RuntimeFactory, CredentialCheckResult } from '../backends/factory';
+import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import { AgentRuntimeConfig } from '../backends/runtime';
 import { ProviderConfig } from '../backends/provider';
 import { engineHealth, getDefaultEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
@@ -122,8 +123,13 @@ export async function runDoctor(projectRoot: string = process.cwd()): Promise<Do
   let credChecks: CredentialCheckResult[];
   try {
     credChecks = RuntimeFactory.validateCredentials(agents, providers);
-  } catch {
-    results.push({ label: 'Config', status: 'fail', required: true, detail: 'maos.config.json has invalid agent or provider entries.' });
+  } catch (error) {
+    results.push({
+      label: 'Config',
+      status: 'fail',
+      required: true,
+      detail: error instanceof ProviderApiPolicyError ? error.message : 'maos.config.json has invalid agent or provider entries.',
+    });
     return finish(results);
   }
   for (const check of credChecks) {
@@ -269,9 +275,12 @@ function finish(results: DiagnosticResult[]): DoctorReport {
 
 function safeCredentialMessage(check: CredentialCheckResult): string {
   if (check.status === 'placeholder') return 'Configured credential is a placeholder; replace it before running.';
-  if (check.message.includes('metaApiEnabled=true') || check.message.includes('apiKeyEnv')) return check.message;
-  const envName = check.message.match(/environment variable ([A-Za-z_][A-Za-z0-9_]*) is (?:not set|empty)/i)?.[1];
-  if (envName) return `Environment variable ${envName} is not set or is empty.`;
+  if (check.message.includes('metaApiEnabled=true')) return 'Meta Model API requires explicit opt-in via providers.<name>.metaApiEnabled=true.';
+  if (check.message.includes('basetenApiEnabled=true')) return 'Baseten Model API requires explicit opt-in via providers.<name>.basetenApiEnabled=true.';
+  if (check.message.includes('apiKeyEnv')) return 'Invalid credential environment reference; check providers.<name>.apiKeyEnv and set the referenced variable in this process.';
+  if (check.message.includes('reserved credential')) return 'Credential reference is reserved for the exact enabled hosted-provider destination.';
+  if (check.message.includes('credential environment reference')) return 'The configured credential environment reference is missing or empty.';
+  if (check.message.includes('BASETEN_API_KEY')) return 'BASETEN_API_KEY is missing or reserved for the exact enabled Baseten destination.';
   if (check.message.includes('not found in config')) return 'Required provider is missing from maos.config.json.';
   return 'Required credential or runtime configuration is missing. Configure the provider or run maos configure.';
 }

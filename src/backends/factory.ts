@@ -7,7 +7,14 @@ import { IRuntime, AgentRuntimeConfig } from './runtime';
 import { ApiRuntime } from './api-runtime';
 import { CliRuntime } from './cli-runtime';
 import { MessageBus } from '../core/message-bus';
-import { isMetaApiConfigCandidate, MetaApiPolicyError, resolveMetaApiPolicy } from './meta-api-policy';
+import { resolveCredential } from '../core/credentials';
+import {
+  assertCredentialUsePolicy,
+  collectReservedMetaApiKeyEnvVars,
+  isHostedApiConfigCandidate,
+  ProviderApiPolicyError,
+  resolveHostedApiPolicy,
+} from './meta-api-policy';
 
 /**
  * Known provider base URLs.
@@ -127,21 +134,48 @@ function createProvider(
   model: string,
   sovereignLocal?: boolean,
   localRuntime = false,
+  reservedMetaApiKeyEnvVars: readonly string[] = [],
 ): IProvider {
   const name = providerName.toLowerCase();
   const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
-  const metaCandidate = isMetaApiConfigCandidate({ providerName: name, baseURL, metaApiEnabled: config.metaApiEnabled });
+  assertCredentialUsePolicy({
+    providerName: name,
+    baseURL,
+    model,
+    metaApiEnabled: config.metaApiEnabled,
+    basetenApiEnabled: config.basetenApiEnabled,
+    apiKeyEnv: config.apiKeyEnv,
+    apiKey: config.apiKey,
+  }, reservedMetaApiKeyEnvVars);
+  const hostedCandidate = isHostedApiConfigCandidate({
+    providerName: name,
+    baseURL,
+    model,
+    metaApiEnabled: config.metaApiEnabled,
+    basetenApiEnabled: config.basetenApiEnabled,
+  });
 
-  // Apply the Meta policy before credential resolution or plugin construction.
-  if (metaCandidate) {
+  // Apply hosted-provider policy before credential resolution or plugin construction.
+  if (hostedCandidate) {
+    const hostedPolicy = resolveHostedApiPolicy({
+      providerName: name,
+      baseURL,
+      model,
+      metaApiEnabled: config.metaApiEnabled,
+      basetenApiEnabled: config.basetenApiEnabled,
+      apiKeyEnv: config.apiKeyEnv,
+      temperature: config.temperature,
+    });
+    if (!hostedPolicy) throw new Error('Hosted provider policy candidate was not resolved.');
+    const policyErrorCode = hostedPolicy.provider === 'meta' ? 'META_API_CONFIGURATION_INVALID' : 'BASETEN_API_CONFIGURATION_INVALID';
     if (name === 'anthropic' || name === 'gemini' || name === 'google') {
-      throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'The Meta Model API requires the OpenAI-compatible Chat Completions provider.');
+      throw new ProviderApiPolicyError(policyErrorCode, 'The selected hosted Model API requires the OpenAI-compatible Chat Completions provider.');
     }
     if (sovereignLocal) enforceLoopbackOnly(name, baseURL);
-    if (!(name in KNOWN_BASE_URLS) && name !== 'meta') {
+    if (!(name in KNOWN_BASE_URLS) && name !== hostedPolicy.provider) {
       const { getPluginRegistry } = require('./plugin-registry');
       if (getPluginRegistry().hasProvider(name)) {
-        throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'The Meta Model API requires the built-in OpenAI-compatible provider.');
+        throw new ProviderApiPolicyError(policyErrorCode, 'The selected hosted Model API requires the built-in OpenAI-compatible provider.');
       }
     }
     return new OpenAIProvider({
@@ -150,8 +184,10 @@ function createProvider(
       model,
       baseURL,
       metaApiEnabled: config.metaApiEnabled,
+      basetenApiEnabled: config.basetenApiEnabled,
       apiKeyEnv: config.apiKeyEnv,
       temperature: config.temperature,
+      reservedMetaApiKeyEnvVars,
     });
   }
 
@@ -163,6 +199,16 @@ function createProvider(
   const apiKey = (localRuntime || isLoopbackProvider || NO_KEY_PROVIDERS.has(name)) && (!config.apiKey || config.apiKey === '')
     ? 'not-needed'
     : resolveApiKey(config.apiKey, name);
+  assertCredentialUsePolicy({
+    providerName: name,
+    baseURL,
+    effectiveBaseURL: baseURL,
+    model,
+    metaApiEnabled: config.metaApiEnabled,
+    basetenApiEnabled: config.basetenApiEnabled,
+    apiKeyEnv: config.apiKeyEnv,
+    apiKey,
+  }, reservedMetaApiKeyEnvVars);
 
   // F1-07: Enforce loopback-only in sovereign-local mode
   if (sovereignLocal) {
@@ -179,7 +225,7 @@ function createProvider(
     case 'fireworks':
     case 'ollama':
     case 'lmstudio':
-      return new OpenAIProvider({ name, apiKey, model, baseURL });
+      return new OpenAIProvider({ name, apiKey, model, baseURL, reservedMetaApiKeyEnvVars });
 
     case 'anthropic':
       return new AnthropicProvider({ name, apiKey, model });
@@ -196,7 +242,7 @@ function createProvider(
         return registry.createProvider(name, { apiKey, model, baseURL });
       }
       // Unknown provider -> try OpenAI-compatible format as fallback
-      return new OpenAIProvider({ name, apiKey, model, baseURL });
+      return new OpenAIProvider({ name, apiKey, model, baseURL, reservedMetaApiKeyEnvVars });
     }
   }
 }
@@ -225,6 +271,7 @@ export class RuntimeFactory {
     sovereignLocal?: boolean,
   ): IRuntime {
     const runtimeType = agentConfig.runtime || 'api';
+    const reservedMetaApiKeyEnvVars = collectReservedMetaApiKeyEnvVars(providerConfigs);
 
     switch (runtimeType) {
       case 'api':
@@ -256,6 +303,7 @@ export class RuntimeFactory {
           model,
           sovereignLocal || runtimeType === 'local',
           runtimeType === 'local',
+          reservedMetaApiKeyEnvVars,
         );
         const costPerMillion = providerConfig.costPerMillionTokens ?? DEFAULT_COSTS[providerName.toLowerCase()] ?? 0.5;
 
@@ -323,7 +371,7 @@ export class RuntimeFactory {
    * List all known provider names for CLI help text.
    */
   static getKnownProviders(): string[] {
-    return Object.keys(KNOWN_BASE_URLS);
+    return [...Object.keys(KNOWN_BASE_URLS), 'baseten'];
   }
 
   /**
@@ -343,6 +391,7 @@ export class RuntimeFactory {
     providerConfigs: Record<string, ProviderConfig & { costPerMillionTokens?: number }>,
   ): CredentialCheckResult[] {
     const results: CredentialCheckResult[] = [];
+    const reservedMetaApiKeyEnvVars = collectReservedMetaApiKeyEnvVars(providerConfigs);
 
     for (const agent of agents) {
       const runtimeType = agent.runtime || 'api';
@@ -374,20 +423,42 @@ export class RuntimeFactory {
         continue;
       }
 
-      if (isMetaApiConfigCandidate({ providerName, baseURL: providerConfig.baseURL, metaApiEnabled: providerConfig.metaApiEnabled })) {
+      try {
+        assertCredentialUsePolicy({
+          providerName,
+          baseURL: providerConfig.baseURL,
+          model: agent.model || '',
+          metaApiEnabled: providerConfig.metaApiEnabled,
+          basetenApiEnabled: providerConfig.basetenApiEnabled,
+          apiKeyEnv: providerConfig.apiKeyEnv,
+          apiKey: providerConfig.apiKey,
+        }, reservedMetaApiKeyEnvVars);
+      } catch (err: any) {
+        results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'missing', message: err.message });
+        continue;
+      }
+
+      if (isHostedApiConfigCandidate({
+        providerName,
+        baseURL: providerConfig.baseURL,
+        model: agent.model || '',
+        metaApiEnabled: providerConfig.metaApiEnabled,
+        basetenApiEnabled: providerConfig.basetenApiEnabled,
+      })) {
         try {
-          const meta = resolveMetaApiPolicy({
+          const hosted = resolveHostedApiPolicy({
             providerName,
             baseURL: providerConfig.baseURL,
             model: agent.model || '',
             metaApiEnabled: providerConfig.metaApiEnabled,
+            basetenApiEnabled: providerConfig.basetenApiEnabled,
             apiKeyEnv: providerConfig.apiKeyEnv,
             temperature: providerConfig.temperature,
           });
-          if (meta && isPlaceholder(meta.apiKey)) {
-            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'placeholder', message: 'The configured Meta environment variable contains a placeholder key.', source: 'environment' });
+          if (hosted && isPlaceholder(hosted.apiKey)) {
+            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'placeholder', message: `The configured ${hosted.provider === 'meta' ? 'Meta' : 'Baseten'} credential environment reference contains a placeholder key.`, source: 'environment' });
           } else {
-            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'ok', message: `Meta API key loaded from ${providerConfig.apiKeyEnv}.`, source: 'environment' });
+            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'ok', message: `${hosted?.provider === 'meta' ? 'Meta' : 'Baseten'} credential environment reference configured.`, source: 'environment' });
           }
         } catch (err: any) {
           results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'missing', message: err.message });
@@ -489,13 +560,37 @@ export class RuntimeFactory {
 // ---- Direct Provider Creation ----
 // Used by decomposer/plan.ts which needs raw IProvider.generate() access.
 
-export function createProviderDirect(providerName: string, config: ProviderConfig, model: string): IProvider {
-  if (isMetaApiConfigCandidate({ providerName, baseURL: config.baseURL, metaApiEnabled: config.metaApiEnabled })) {
-    return createProvider(providerName, config, model);
+export function createProviderDirect(
+  providerName: string,
+  config: ProviderConfig,
+  model: string,
+  providerConfigs?: Record<string, ProviderConfig>,
+  projectRoot?: string,
+): IProvider {
+  const allProviderConfigs = { ...(providerConfigs || {}), [providerName]: config };
+  const reservedMetaApiKeyEnvVars = collectReservedMetaApiKeyEnvVars(allProviderConfigs);
+  assertCredentialUsePolicy({
+    providerName,
+    baseURL: config.baseURL,
+    model,
+    metaApiEnabled: config.metaApiEnabled,
+    basetenApiEnabled: config.basetenApiEnabled,
+    apiKeyEnv: config.apiKeyEnv,
+    apiKey: config.apiKey,
+  }, reservedMetaApiKeyEnvVars);
+  if (isHostedApiConfigCandidate({
+    providerName,
+    baseURL: config.baseURL,
+    model,
+    metaApiEnabled: config.metaApiEnabled,
+    basetenApiEnabled: config.basetenApiEnabled,
+  })) {
+    return createProvider(providerName, config, model, undefined, false, reservedMetaApiKeyEnvVars);
   }
-  const { resolveCredential } = require('../core/credentials');
-  const resolved = resolveCredential(providerName, config.apiKey);
-  return createProvider(providerName, resolved ? { ...config, apiKey: resolved.key } : config, model);
+  const resolved = projectRoot
+    ? resolveCredential(providerName, config.apiKey, projectRoot, reservedMetaApiKeyEnvVars)
+    : null;
+  return createProvider(providerName, resolved ? { ...config, apiKey: resolved.key } : config, model, undefined, false, reservedMetaApiKeyEnvVars);
 }
 
 // ---- Backward Compatibility ----

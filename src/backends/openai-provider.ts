@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderRequestOptions, ProviderResponse } from './provider';
-import { resolveMetaApiPolicy } from './meta-api-policy';
+import { assertCredentialUsePolicy, resolveHostedApiPolicy } from './meta-api-policy';
 
 /**
  * OpenAI-Compatible Provider Adapter
@@ -26,6 +26,7 @@ export class OpenAIProvider implements IProvider {
   readonly model: string;
   readonly baseURL?: string;
   readonly isMetaApi: boolean;
+  readonly isBasetenApi: boolean;
   readonly maxApplicationRetries?: number;
 
   private client: OpenAI;
@@ -45,43 +46,57 @@ export class OpenAIProvider implements IProvider {
     maxOutputTokens?: number;
     fetch?: typeof globalThis.fetch;
     metaApiEnabled?: boolean;
+    basetenApiEnabled?: boolean;
     apiKeyEnv?: string;
+    reservedMetaApiKeyEnvVars?: readonly string[];
   }) {
     const baseURL = opts.baseURL || process.env.OPENAI_BASE_URL;
-    const metaPolicy = resolveMetaApiPolicy({
+    assertCredentialUsePolicy({
       providerName: opts.name,
       baseURL: opts.baseURL,
       effectiveBaseURL: baseURL,
       model: opts.model,
       metaApiEnabled: opts.metaApiEnabled,
+      basetenApiEnabled: opts.basetenApiEnabled,
+      apiKeyEnv: opts.apiKeyEnv,
+      apiKey: opts.apiKey,
+    }, opts.reservedMetaApiKeyEnvVars);
+    const hostedPolicy = resolveHostedApiPolicy({
+      providerName: opts.name,
+      baseURL: opts.baseURL,
+      effectiveBaseURL: baseURL,
+      model: opts.model,
+      metaApiEnabled: opts.metaApiEnabled,
+      basetenApiEnabled: opts.basetenApiEnabled,
       apiKeyEnv: opts.apiKeyEnv,
       temperature: opts.temperature,
     });
     this.name = opts.name;
     this.model = opts.model;
     this.baseURL = baseURL;
-    this.isMetaApi = Boolean(metaPolicy);
-    this.maxApplicationRetries = metaPolicy ? 0 : undefined;
-    this.apiKey = metaPolicy?.apiKey ?? opts.apiKey;
+    this.isMetaApi = hostedPolicy?.provider === 'meta';
+    this.isBasetenApi = hostedPolicy?.provider === 'baseten';
+    this.maxApplicationRetries = hostedPolicy ? 0 : undefined;
+    this.apiKey = hostedPolicy?.apiKey ?? opts.apiKey;
     this.credentialForRedaction = ['local', 'local-only', 'not-needed'].includes(this.apiKey) ? '' : this.apiKey;
     if (this.credentialForRedaction && this.model.includes(this.credentialForRedaction)) {
       throw new Error('The configured model identifier must not contain the API credential.');
     }
-    this.temperature = metaPolicy
-      ? metaPolicy.temperature
+    this.temperature = hostedPolicy?.provider === 'meta'
+      ? hostedPolicy.temperature
       : Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
-    this.maxOutputTokens = metaPolicy ? 256 : opts.maxOutputTokens;
+    this.maxOutputTokens = hostedPolicy?.provider === 'meta' ? 256 : opts.maxOutputTokens;
 
     const fetchImpl = opts.fetch ?? globalThis.fetch;
 
     this.client = new OpenAI({
       apiKey: this.apiKey,
       baseURL,
-      timeout: metaPolicy ? 60_000 : opts.timeout || 180_000, // Meta's policy owns its fixed deadline.
-      maxRetries: metaPolicy ? 0 : opts.maxRetries ?? 2,
+      timeout: hostedPolicy?.provider === 'meta' ? 60_000 : opts.timeout || 180_000, // Meta's policy owns its fixed deadline.
+      maxRetries: hostedPolicy ? 0 : opts.maxRetries ?? 2,
       // SDK debug parsing can observe raw provider bodies before this adapter sanitizes them.
       logLevel: 'off',
-      fetch: metaPolicy
+      fetch: hostedPolicy
         ? (input, init) => fetchImpl(input, { ...init, redirect: 'error' })
         : opts.fetch,
     });

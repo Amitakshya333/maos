@@ -171,7 +171,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
   // Create provider — resolve key from credential store first
   let provider;
   try {
-    provider = createProviderDirect(providerName, providerConfig, plannerAgent?.model || '');
+    provider = createProviderDirect(providerName, providerConfig, plannerAgent?.model || '', config.providers, cwd);
   } catch (err: any) {
     console.log(chalk.red(`❌ Failed to create provider: ${err.message}`));
     process.exit(1);

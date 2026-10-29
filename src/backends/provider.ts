@@ -105,6 +105,8 @@ export interface ProviderConfig {
   baseURL?: string;
   costPerMillionTokens?: number;
   metaApiEnabled?: boolean;
+  /** Baseten access is opt-in and always reads BASETEN_API_KEY. */
+  basetenApiEnabled?: boolean;
   temperature?: number;
 }
 
