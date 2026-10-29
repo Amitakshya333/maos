@@ -18,6 +18,7 @@ import { EventStore } from '../core/event-store';
 import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
 import { MemoryStore } from '../core/context-memory';
 import { TaskService } from '../service/task-service';
+import { resolveProjectGitContext } from '../utils/project-git-context';
 
 const VERSION = '0.3.0';
 
@@ -57,9 +58,9 @@ interface ModelInfo {
   tier: string;
 }
 
-function getModelInfo(): ModelInfo {
+function getModelInfo(projectRoot: string = process.cwd()): ModelInfo {
   try {
-    const cfgPath = getConfigPath();
+    const cfgPath = getConfigPath(projectRoot);
     if (fs.existsSync(cfgPath)) {
       const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
       const agent = cfg.agents?.find((a: any) => a.role === 'planner') || cfg.agents?.[0];
@@ -77,18 +78,9 @@ function getModelInfo(): ModelInfo {
   return { provider: 'freemodel', model: 'gpt-5.4', tier: 'low' };
 }
 
-function getGitBranch(): string {
-  try {
-    const cp = require('child_process');
-    return cp
-      .execSync('git rev-parse --abbrev-ref HEAD', {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
-      .trim();
-  } catch {
-    return '';
-  }
+function getGitBranch(projectRoot: string): string {
+  const context = resolveProjectGitContext(projectRoot);
+  return context.kind === 'repository' ? context.branch : '';
 }
 
 interface FleetAgent {
@@ -99,9 +91,9 @@ interface FleetAgent {
   enabled: boolean;
 }
 
-function getFleetAgents(): FleetAgent[] {
+function getFleetAgents(projectRoot: string = process.cwd()): FleetAgent[] {
   try {
-    const cwd = process.cwd();
+    const cwd = projectRoot;
     const configPath = getConfigPath(cwd);
     if (!fs.existsSync(configPath)) return [];
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -150,14 +142,14 @@ function getFleetAgents(): FleetAgent[] {
 
 // ── Screen Renderers ─────────────────────────────────────────
 
-function drawWelcome(): void {
+function drawWelcome(projectRoot: string = process.cwd()): void {
   console.clear();
   const W = process.stdout.columns || 80;
   const H = process.stdout.rows || 24;
-  const info = getModelInfo();
-  const branch = getGitBranch();
-  const cwd = process.cwd();
-  const agents = getFleetAgents();
+  const info = getModelInfo(projectRoot);
+  const branch = getGitBranch(projectRoot);
+  const cwd = projectRoot;
+  const agents = getFleetAgents(projectRoot);
 
   // ── Color Palette ──
   const slate = chalk.hex('#64748B');
@@ -302,7 +294,7 @@ function drawWelcome(): void {
 // Shown after every command so MAOS identity never disappears.
 // Replaces the full welcome screen between commands.
 
-function drawCompactHeader(): void {
+function drawCompactHeader(projectRoot: string = process.cwd()): void {
   console.clear();
 
   const W = process.stdout.columns || 80;
@@ -311,9 +303,9 @@ function drawCompactHeader(): void {
   const emerald = chalk.hex('#10B981');
 
   // Collect live state
-  const info = getModelInfo();
-  const branch = getGitBranch();
-  const agents = getFleetAgents();
+  const info = getModelInfo(projectRoot);
+  const branch = getGitBranch(projectRoot);
+  const agents = getFleetAgents(projectRoot);
 
   // ── Row 1: Brand wordmark + context ──────────────────────
   // "MAOS" in two-tone, then separator dots and live context
@@ -340,8 +332,8 @@ function drawCompactHeader(): void {
   process.stdout.write('\n');
 }
 
-function drawOutput(cmd: string, lines: string[]): void {
-  drawCompactHeader();
+function drawOutput(cmd: string, lines: string[], projectRoot: string = process.cwd()): void {
+  drawCompactHeader(projectRoot);
   const pink = chalk.hex('#EC4899');
   process.stdout.write(`  ${pink('❯')} ${chalk.bold.white(cmd)}\n`);
   process.stdout.write('\n');
@@ -634,8 +626,9 @@ function parseArgs(input: string): { positional: string; flags: Record<string, s
 
 // ── Main REPL ────────────────────────────────────────────────
 
-export function runRepl(): void {
-  const cwd = process.cwd();
+export function runRepl(projectRoot: string = process.cwd()): void {
+  const cwd = path.resolve(projectRoot);
+  const showOutput = (cmd: string, lines: string[]) => drawOutput(cmd, lines, cwd);
 
   if (!isMaosInitialized(cwd)) {
     console.log(chalk.red('❌ MAOS is not initialized. Run `maos init` first.'));
@@ -643,7 +636,7 @@ export function runRepl(): void {
   }
 
   // Draw the beautiful welcome screen
-  drawWelcome();
+  drawWelcome(cwd);
 
   // All available commands for tab completion
   const ALL_COMMANDS = [
@@ -704,7 +697,7 @@ export function runRepl(): void {
     let raw = input.trim();
 
     if (!raw) {
-      drawWelcome();
+      drawWelcome(cwd);
       rl.prompt();
       return;
     }
@@ -731,7 +724,7 @@ export function runRepl(): void {
         // ── Navigation ──────────────────────────────────────
         case 'clear':
         case 'cls':
-          drawWelcome();
+          drawWelcome(cwd);
           break;
 
         case 'exit':
@@ -750,7 +743,7 @@ export function runRepl(): void {
           const a = chalk.hex('#F59E0B');
           const g = chalk.hex('#64748B');
 
-          drawOutput('help', [
+          showOutput('help', [
             `  ${v('━━━ Fleet Operations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')}`,
             '',
             `    ${chalk.bold.cyan('status')}                    ${g('Live fleet status grid & task counts')}`,
@@ -818,7 +811,7 @@ export function runRepl(): void {
         // ── Fleet Operations ────────────────────────────────
         case 'status':
         case 's':
-          drawOutput('status', await capture(() => runStatus()));
+          showOutput('status', await capture(() => runStatus()));
           break;
 
         case 'start': {
@@ -826,20 +819,20 @@ export function runRepl(): void {
           const { flags } = parseArgs(restOfInput);
           if (flags.provider || flags.p) opts.provider = flags.provider || flags.p;
           if (flags.force || flags.f) opts.force = true;
-          drawOutput('start', await capture(() => runStart(opts)));
+          showOutput('start', await capture(() => runStart(opts)));
           break;
         }
 
         case 'pool': {
           if (!restOfInput) {
             // No flags — show pool status
-            drawOutput('pool', await capture(() => runPool({} as PoolOptions)));
+            showOutput('pool', await capture(() => runPool({} as PoolOptions)));
           } else {
             const { flags } = parseArgs(restOfInput);
             const opts: PoolOptions = {};
             if (flags.enable) opts.enable = flags.enable;
             if (flags.disable) opts.disable = flags.disable;
-            drawOutput('pool', await capture(() => runPool(opts)));
+            showOutput('pool', await capture(() => runPool(opts)));
           }
           break;
         }
@@ -848,7 +841,7 @@ export function runRepl(): void {
         case 'task': {
           const { positional, flags } = parseArgs(restOfInput);
           if (!positional) {
-            drawOutput('task', [
+            showOutput('task', [
               chalk.yellow('  Usage: task "description" [--agent <id>] [--complexity <level>]'),
               '',
               chalk.gray('  Example: task "Add user authentication" --agent DEV --complexity high'),
@@ -861,21 +854,21 @@ export function runRepl(): void {
           if (flags.capabilities || flags.c) taskOpts.capabilities = flags.capabilities || flags.c;
           if (flags.complexity) taskOpts.complexity = flags.complexity;
           if (flags.category) taskOpts.category = flags.category;
-          drawOutput(`task "${positional}"`, await capture(() => runTask(positional, taskOpts)));
+          showOutput(`task "${positional}"`, await capture(() => runTask(positional, taskOpts)));
           break;
         }
 
         case 'plan': {
           const { positional } = parseArgs(restOfInput);
           if (!positional) {
-            drawOutput('plan', [
+            showOutput('plan', [
               chalk.yellow('  Usage: plan "goal"'),
               '',
               chalk.gray('  Example: plan "Build a REST API with authentication"'),
             ]);
             break;
           }
-          drawOutput(`plan "${positional}"`, await capture(() => runPlan(positional, { yes: true })));
+          showOutput(`plan "${positional}"`, await capture(() => runPlan(positional, { yes: true })));
           break;
         }
 
@@ -884,29 +877,29 @@ export function runRepl(): void {
         case 'obj': {
           const objArgs = restOfInput.split(/\s+/).filter(Boolean);
           const { runObjective } = require('./objective');
-          drawOutput('objective', await capture(() => runObjective(objArgs)));
+          showOutput('objective', await capture(() => runObjective(objArgs)));
           break;
         }
 
         case 'queue':
-          drawOutput('queue', await capture(() => runQueue()));
+          showOutput('queue', await capture(() => runQueue()));
           break;
 
         case 'clean':
-          drawOutput('clean', await capture(() => runClean()));
+          showOutput('clean', await capture(() => runClean()));
           break;
 
         // ── Intelligence ────────────────────────────────────
         case 'brain': {
           const action = restOfInput.split(/\s+/)[0] || 'status';
-          drawOutput(`brain ${action}`, await capture(() => runBrain(action)));
+          showOutput(`brain ${action}`, await capture(() => runBrain(action)));
           break;
         }
 
         case 'memory':
         case 'mem': {
           const memArgs = restOfInput.split(/\s+/).filter(Boolean);
-          drawOutput('memory', await capture(() => runMemory(memArgs)));
+          showOutput('memory', await capture(() => runMemory(memArgs)));
           break;
         }
 
@@ -917,20 +910,20 @@ export function runRepl(): void {
           const { flags } = parseArgs(restOfInput);
           if (flags.n || flags.lines) logsOpts.lines = flags.n || flags.lines;
           if (flags.agent || flags.a) (logsOpts as any).agent = flags.agent || flags.a;
-          drawOutput('logs', await capture(() => runLogs(logsOpts)));
+          showOutput('logs', await capture(() => runLogs(logsOpts)));
           break;
         }
 
         case 'replay': {
           const replayArgs = restOfInput.split(/\s+/).filter(Boolean);
-          drawOutput('replay', await capture(() => runReplay(replayArgs)));
+          showOutput('replay', await capture(() => runReplay(replayArgs)));
           break;
         }
 
         // ── System ──────────────────────────────────────────
         case 'doctor':
         case 'doc':
-          drawOutput('doctor', await capture(() => runDoctor()));
+          showOutput('doctor', await capture(async () => { await runDoctor(cwd); }));
           break;
 
         case 'login': {
@@ -942,7 +935,7 @@ export function runRepl(): void {
             // Allow shorthand: login copilot
             loginOpts.cli = restOfInput.trim();
           }
-          drawOutput('login', await capture(() => runLogin(loginOpts)));
+          showOutput('login', await capture(() => runLogin(loginOpts)));
           break;
         }
 
@@ -950,17 +943,17 @@ export function runRepl(): void {
         case 'config': {
           const configArgs = restOfInput.split(/\s+/).filter(Boolean);
           const { runConfigure } = require('./configure');
-          drawOutput('configure', await capture(() => runConfigure(configArgs)));
+          showOutput('configure', await capture(() => runConfigure(configArgs)));
           break;
         }
 
         case 'dashboard':
         case 'dash':
-          drawOutput('dashboard', await capture(() => runDashboard()));
+          showOutput('dashboard', await capture(() => runDashboard()));
           break;
 
         case 'init':
-          drawOutput('init', await capture(() => runInit()));
+          showOutput('init', await capture(() => runInit()));
           break;
 
         // ── Default: Natural Language Goal ──────────────────
@@ -971,9 +964,9 @@ export function runRepl(): void {
             const goal = quotedMatch[1];
             const amber = chalk.hex('#F59E0B');
             process.stdout.write(`\n  ${amber('⟳')} Decomposing: ${chalk.bold.white(`"${goal}"`)}\n\n`);
-            drawOutput(`plan "${goal}"`, await capture(() => runPlan(goal, { yes: true })));
+            showOutput(`plan "${goal}"`, await capture(() => runPlan(goal, { yes: true })));
           } else {
-            drawOutput(raw, [
+            showOutput(raw, [
               chalk.yellow(`  Unknown command: "${firstWord}"`),
               '',
               chalk.gray('  Type ') + chalk.bold.cyan('help') + chalk.gray(' to see all available commands.'),
@@ -984,7 +977,7 @@ export function runRepl(): void {
         }
       }
     } catch (err: any) {
-      drawOutput(raw, [chalk.red(`  Error: ${err.message}`)]);
+      showOutput(raw, [chalk.red(`  Error: ${err.message}`)]);
     }
 
     rl.prompt();

@@ -74,6 +74,40 @@ describe('Industrial npm runtime assets', () => {
     expect(packageFiles).not.toContain('rust/target/');
   });
 
+  it('ships the reproducible Windows installer and pins Electron as a runtime prerequisite', () => {
+    const desktop = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'desktop/package.json'), 'utf8'));
+    const desktopLock = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'desktop/package-lock.json'), 'utf8'));
+    const installGuide = fs.readFileSync(path.join(PROJECT_ROOT, 'docs/INSTALLATION.md'), 'utf8');
+    expect(packageFiles).toContain('scripts/');
+    expect(packageFiles).toContain('docs/INSTALLATION.md');
+    expect(installGuide).toContain('app\\dist\\cli\\index.js');
+    expect(installGuide).toContain('app\\dist\\industrial\\entrypoint.js');
+    expect(installGuide).not.toContain('node_modules\\.bin\\maos');
+    expect(fs.existsSync(path.join(PROJECT_ROOT, 'scripts/New-MaosIndustrialInstallBundle.ps1'))).toBe(true);
+    const installer = fs.readFileSync(path.join(PROJECT_ROOT, 'scripts/Install-MaosIndustrial.ps1'), 'utf8');
+    expect(installer).toContain("desktop/node_modules/electron/install.js");
+    expect(installer).toContain('Start-Process -FilePath $node.Source');
+    expect(installer).toContain('-RedirectStandardError');
+    expect(desktop.dependencies.electron).toBe('45.0.0');
+    expect(desktop.devDependencies.playwright).toBe('1.64.1');
+    expect(desktopLock.packages[''].dependencies.electron).toBe('45.0.0');
+    expect(desktopLock.packages[''].devDependencies.playwright).toBe('1.64.1');
+    expect(desktopLock.packages['node_modules/electron'].version).toBe('45.0.0');
+  });
+
+  it('skips the development-only Husky hook setup when installing outside a Git checkout', () => {
+    const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-prepare-hook-'));
+    try {
+      const script = path.join(PROJECT_ROOT, 'scripts', 'prepare-hooks.js');
+      const result = spawnSync(process.execPath, [script], { cwd: installRoot, encoding: 'utf8' });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+    } finally {
+      fs.rmSync(installRoot, { recursive: true, force: true });
+    }
+  });
+
   it('keeps a missing-engine run failure machine-readable and actionable', () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-package-cli-'));
     try {

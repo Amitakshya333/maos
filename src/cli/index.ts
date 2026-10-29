@@ -246,7 +246,8 @@ program
   .description('Run environment and connectivity diagnostics')
   .action(async () => {
     try {
-      await runDoctor();
+      const result = await runDoctor(process.cwd());
+      process.exitCode = result.exitCode;
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
       process.exit(1);
@@ -258,7 +259,7 @@ program
   .command('repl')
   .description('Launch the interactive MAOS REPL')
   .action(() => {
-    runRepl();
+    runRepl(process.cwd());
   });
 
 // ─── maos replay ─────────────────────────────────────────────
@@ -919,7 +920,7 @@ industrial
 
 // Default action: launch interactive REPL when no subcommand is provided
 program.action(() => {
-  runRepl();
+  runRepl(process.cwd());
 });
 
 // Parse

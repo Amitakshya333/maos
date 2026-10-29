@@ -20,15 +20,24 @@ import { getConfigPath, getMaosRoot } from '../utils/paths';
 import { RuntimeFactory, CredentialCheckResult } from '../backends/factory';
 import { AgentRuntimeConfig } from '../backends/runtime';
 import { ProviderConfig } from '../backends/provider';
+import { engineHealth, getDefaultEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
+import { resolveProjectGitContext } from '../utils/project-git-context';
 
 interface DiagnosticResult {
   label: string;
   status: 'pass' | 'warn' | 'fail';
+  required: boolean;
   detail: string;
 }
 
-export async function runDoctor(): Promise<void> {
-  const cwd = process.cwd();
+export interface DoctorReport {
+  readiness: 'ready' | 'ready_with_warnings' | 'not_ready';
+  exitCode: 0 | 1;
+  checks: DiagnosticResult[];
+}
+
+export async function runDoctor(projectRoot: string = process.cwd()): Promise<DoctorReport> {
+  const cwd = path.resolve(projectRoot);
   const results: DiagnosticResult[] = [];
 
   console.log(chalk.bold.cyan('\n🩺 MAOS Doctor — Environment Diagnostics'));
@@ -39,8 +48,9 @@ export async function runDoctor(): Promise<void> {
   const nodeMajor = parseInt(nodeVersion.split('.')[0], 10);
   results.push({
     label: 'Node.js',
-    status: nodeMajor >= 18 ? 'pass' : 'fail',
-    detail: `v${nodeVersion} (requires >=18.0.0)`,
+    status: nodeMajor >= 20 ? 'pass' : 'fail',
+    required: true,
+    detail: `v${nodeVersion} (requires >=20.0.0)`,
   });
 
   // ── 0b. Platform Check ──
@@ -62,88 +72,81 @@ export async function runDoctor(): Promise<void> {
     results.push({
       label: 'Platform',
       status: 'warn',
+      required: false,
       detail: `${platformLabel} — CLI runtimes (Copilot/Codex) require Windows. API runtimes work cross-platform.`,
     });
   } else {
     results.push({
       label: 'Platform',
       status: 'pass',
+      required: false,
       detail: platformLabel,
     });
   }
 
   // ── 1. Config Check ──
   const configPath = getConfigPath(cwd);
-  if (fs.existsSync(configPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      const agentCount = config.agents?.length ?? 0;
-      results.push({
-        label: 'Config',
-        status: 'pass',
-        detail: `maos.config.json found (${agentCount} agents)`,
-      });
-    } catch (err: any) {
-      results.push({
-        label: 'Config',
-        status: 'fail',
-        detail: `maos.config.json exists but failed to parse: ${err.message}`,
-      });
+  let config: any;
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    if (!config || typeof config !== 'object' || Array.isArray(config) ||
+        typeof config.projectName !== 'string' || !Array.isArray(config.agents) ||
+        !config.providers || typeof config.providers !== 'object' || Array.isArray(config.providers) ||
+        config.agents.some((agent: unknown) => !agent || typeof agent !== 'object' || Array.isArray(agent)) ||
+        Object.values(config.providers).some((provider: unknown) => !provider || typeof provider !== 'object' || Array.isArray(provider))) {
+      throw new Error('invalid config shape');
     }
-  } else {
+  } catch (err: any) {
+    const missing = err?.code === 'ENOENT';
     results.push({
       label: 'Config',
       status: 'fail',
-      detail: 'maos.config.json not found. Run: maos init',
+      required: true,
+      detail: missing
+        ? `maos.config.json not found at ${configPath}. Run: maos init`
+        : `maos.config.json is malformed, unreadable, or missing required fields at ${configPath}. Repair it or run: maos init`,
     });
-    // Can't continue without config
-    printResults(results);
-    return;
+    return finish(results);
   }
 
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   const agents: AgentRuntimeConfig[] = config.agents || [];
   const providers: Record<string, ProviderConfig & { costPerMillionTokens?: number }> = config.providers || {};
+  results.push({
+    label: 'Config',
+    status: 'pass',
+    required: true,
+    detail: `maos.config.json found (${agents.length} agents)`,
+  });
 
   // ── 2. Credential Validation ──
-  const credChecks = RuntimeFactory.validateCredentials(agents, providers);
+  let credChecks: CredentialCheckResult[];
+  try {
+    credChecks = RuntimeFactory.validateCredentials(agents, providers);
+  } catch {
+    results.push({ label: 'Config', status: 'fail', required: true, detail: 'maos.config.json has invalid agent or provider entries.' });
+    return finish(results);
+  }
   for (const check of credChecks) {
-    let detail = `[${check.agentId}] ${check.message}`;
-    if (check.status === 'placeholder' && check.source) {
-      detail = `[${check.agentId}] API key loaded from ${check.source} is a placeholder`;
-    } else if (check.status === 'ok' && check.source && check.source !== 'fallback') {
-      const maskedPart = check.message.match(/\(([^)]+)\)/)?.[1] || 'resolved';
-      detail = `[${check.agentId}] API key loaded from ${check.source} (${maskedPart})`;
-    }
+    const detail = check.status === 'ok'
+      ? `[${check.agentId}] Credential/runtime configuration resolved${check.source ? ` (${check.source})` : ''}`
+      : `[${check.agentId}] ${safeCredentialMessage(check)}`;
     results.push({
       label: check.provider,
-      status: check.status === 'ok' ? 'pass' : check.status === 'placeholder' ? 'warn' : 'fail',
+      status: check.status === 'ok' ? 'pass' : 'fail',
+      required: true,
       detail,
     });
   }
 
-  // ── 3. Provider Connectivity (API agents only) ──
-  const apiProviders = new Set<string>();
-  for (const agent of agents) {
-    const rt = agent.runtime || 'api';
-    if (rt === 'api' || rt === 'local') {
-      const p = agent.provider || 'freemodel';
-      // Only ping if credentials look OK
-      const credCheck = credChecks.find((c) => c.agentId === agent.id);
-      if (credCheck && credCheck.status === 'ok' && !apiProviders.has(p)) {
-        apiProviders.add(p);
-      }
-    }
-  }
-
-  for (const providerName of apiProviders) {
-    const result = await pingProvider(providerName, providers[providerName], config);
-    results.push(result);
-  }
+  // Doctor reports configuration only; no model request is made as a side effect.
+  results.push({ label: 'Connectivity', status: 'warn', required: false, detail: 'Not tested; doctor never sends inference requests.' });
 
   // ── 4. CLI Runtimes Available ──
   const cliAgents = agents.filter((a) => a.runtime === 'cli');
   const checkedClis = new Set<string>();
+  if (cliAgents.length === 0) {
+    results.push({ label: 'CLI runtimes', status: 'warn', required: false, detail: 'No optional CLI-agent runtimes are configured.' });
+  }
   for (const agent of cliAgents) {
     const cli = agent.cliCommand;
     if (!cli || checkedClis.has(cli)) continue;
@@ -152,8 +155,9 @@ export async function runDoctor(): Promise<void> {
     const found = isCommandAvailable(cli);
     results.push({
       label: `${cli}-cli`,
-      status: found ? 'pass' : 'warn',
-      detail: found ? `Found in PATH` : `Not found in PATH — install or add to PATH`,
+      status: found ? 'pass' : 'fail',
+      required: true,
+      detail: found ? `Found in PATH` : `Not found in PATH — install ${cli} or add it to PATH`,
     });
   }
 
@@ -173,118 +177,60 @@ export async function runDoctor(): Promise<void> {
   results.push({
     label: 'Directories',
     status: dirsMissing === 0 ? 'pass' : 'warn',
+    required: false,
     detail:
       dirsMissing === 0
         ? `All ${dirsOk} queue dirs exist`
         : `${dirsMissing}/${requiredDirs.length} dirs missing (run maos init)`,
   });
 
-  // ── 6. Git Status ──
-  try {
-    const isInsideWorkTree =
-      child_process
-        .execSync('git rev-parse --is-inside-work-tree', {
-          cwd,
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
-        .trim() === 'true';
-
-    if (isInsideWorkTree) {
-      let branch = 'unknown';
-      try {
-        // Try symbolic-ref first to support newborn repositories (no commits)
-        branch = child_process
-          .execSync('git symbolic-ref --short HEAD', {
-            cwd,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-          })
-          .trim();
-      } catch {
-        try {
-          branch = child_process
-            .execSync('git rev-parse --abbrev-ref HEAD', {
-              cwd,
-              encoding: 'utf-8',
-              stdio: ['pipe', 'pipe', 'pipe'],
-            })
-            .trim();
-        } catch {
-          branch = 'main (no commits yet)';
-        }
-      }
-
-      let gitStatus = 'clean';
-      let changedFiles = 0;
-      try {
-        const statusOutput = child_process
-          .execSync('git status --porcelain', {
-            cwd,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-          })
-          .trim();
-        if (statusOutput) {
-          changedFiles = statusOutput.split('\n').length;
-          gitStatus = `${changedFiles} uncommitted changes`;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      // Uncommitted changes are normal during development — not a warning.
-      // Only flag as warn if there is no git at all.
-      results.push({
-        label: 'Git',
-        status: 'pass',
-        detail:
-          gitStatus === 'clean'
-            ? `Branch: ${branch} — clean working tree`
-            : `Branch: ${branch} — ${changedFiles} file${changedFiles !== 1 ? 's' : ''} modified`,
-      });
-    } else {
-      results.push({
-        label: 'Git',
-        status: 'warn',
-        detail: 'Not inside a git worktree',
-      });
+  if (config.profile?.id === 'industrial' || config.profile?.mode === 'sovereign-local') {
+    const enginePath = getDefaultEnginePath(cwd);
+    try {
+      const manifest = verifyExecutable(enginePath);
+      const response = engineHealth(manifest);
+      const compatible = !('error' in response) &&
+        response.operation === 'health' &&
+        response.version === manifest.protocolVersion &&
+        response.data.status === 'ok' &&
+        response.data.engine === 'maos-industrial-engine' &&
+        response.data.version === manifest.engineVersion &&
+        response.data.protocol_version === manifest.protocolVersion &&
+        response.data.unsafe_code === false;
+      if (!compatible) throw new Error('identity or protocol mismatch');
+      results.push({ label: 'Rust engine', status: 'pass', required: true, detail: `${manifest.engineVersion}, protocol ${manifest.protocolVersion}, SHA-256 ${manifest.executableHash}` });
+    } catch (err: any) {
+      const detail = err?.category === 'missing_binary'
+        ? err.message
+        : 'Rust engine identity/protocol check failed. Replace it with the platform-matched MAOS engine.';
+      results.push({ label: 'Rust engine', status: 'fail', required: true, detail });
     }
-  } catch {
+  }
+
+  // ── 6. Git Status ──
+  const gitContext = resolveProjectGitContext(cwd);
+  if (gitContext.kind === 'repository') {
+    const { branch, changedFiles } = gitContext;
+    results.push({
+      label: 'Git',
+      status: 'pass',
+      required: false,
+      detail: changedFiles === 0
+        ? `Branch: ${branch} — clean working tree`
+        : `Branch: ${branch} — ${changedFiles} file${changedFiles !== 1 ? 's' : ''} modified`,
+    });
+  } else {
     results.push({
       label: 'Git',
       status: 'warn',
-      detail: 'Git not found — install git for branch isolation',
+      required: false,
+      detail: gitContext.kind === 'none'
+        ? 'No project repository'
+        : 'Git status unavailable — verify Git is installed and the project root is accessible',
     });
   }
 
-  // Print results
-  printResults(results);
-
-  // Summary
-  const passes = results.filter((r) => r.status === 'pass').length;
-  const warns = results.filter((r) => r.status === 'warn').length;
-  const fails = results.filter((r) => r.status === 'fail').length;
-
-  console.log(chalk.gray('─'.repeat(60)));
-  console.log(
-    `  ${chalk.green(passes + ' passed')}  ` +
-      `${warns > 0 ? chalk.yellow(warns + ' warnings') + '  ' : ''}` +
-      `${fails > 0 ? chalk.red(fails + ' failed') : ''}`,
-  );
-
-  if (fails > 0) {
-    console.log(chalk.red('\n  ❌ Critical issues found. Fix them before running maos start.'));
-  } else if (warns > 0) {
-    console.log(
-      chalk.yellow(
-        '\n  ⚠️  ' + warns + ' warning' + (warns > 1 ? 's' : '') + '. Review above before running maos start.',
-      ),
-    );
-  } else {
-    console.log(chalk.green('\n  ✅ All checks passed. Ready to orchestrate!'));
-  }
-  console.log('');
+  return finish(results);
 }
 
 // ── Helpers ──
@@ -293,8 +239,41 @@ function printResults(results: DiagnosticResult[]): void {
   for (const r of results) {
     const icon = r.status === 'pass' ? chalk.green('✅') : r.status === 'warn' ? chalk.yellow('⚠️ ') : chalk.red('❌');
     const label = r.label.padEnd(18);
-    console.log(`  ${icon} ${chalk.white(label)} ${chalk.gray(r.detail)}`);
+    console.log(`  ${icon} ${chalk.white(label)} ${chalk.gray(r.required ? '[required]' : '[optional]')} ${chalk.gray(r.detail)}`);
   }
+}
+
+function finish(results: DiagnosticResult[]): DoctorReport {
+  printResults(results);
+  const passes = results.filter((r) => r.status === 'pass').length;
+  const warns = results.filter((r) => r.status === 'warn').length;
+  const fails = results.filter((r) => r.required && r.status === 'fail').length;
+  const readiness = fails > 0 ? 'not_ready' : warns > 0 ? 'ready_with_warnings' : 'ready';
+
+  console.log(chalk.gray('─'.repeat(60)));
+  console.log(
+    `  ${chalk.green(passes + ' passed')}  ` +
+      `${warns > 0 ? chalk.yellow(warns + ' optional warnings') + '  ' : ''}` +
+      `${fails > 0 ? chalk.red(fails + ' required failures') : ''}`,
+  );
+  if (readiness === 'not_ready') {
+    console.log(chalk.red('\n  ❌ Required setup is incomplete. Fix the failures above before running this project.'));
+  } else if (readiness === 'ready_with_warnings') {
+    console.log(chalk.yellow('\n  ⚠️  Required checks passed; optional capabilities are unavailable or untested.'));
+  } else {
+    console.log(chalk.green('\n  ✅ Required checks passed.'));
+  }
+  console.log('');
+  return { readiness, exitCode: fails > 0 ? 1 : 0, checks: results };
+}
+
+function safeCredentialMessage(check: CredentialCheckResult): string {
+  if (check.status === 'placeholder') return 'Configured credential is a placeholder; replace it before running.';
+  if (check.message.includes('metaApiEnabled=true') || check.message.includes('apiKeyEnv')) return check.message;
+  const envName = check.message.match(/environment variable ([A-Za-z_][A-Za-z0-9_]*) is (?:not set|empty)/i)?.[1];
+  if (envName) return `Environment variable ${envName} is not set or is empty.`;
+  if (check.message.includes('not found in config')) return 'Required provider is missing from maos.config.json.';
+  return 'Required credential or runtime configuration is missing. Configure the provider or run maos configure.';
 }
 
 /**
@@ -336,55 +315,5 @@ function isCommandAvailable(command: string): boolean {
     } catch {
       return false;
     }
-  }
-}
-
-/**
- * Lightweight ping to an API provider.
- * Sends a minimal completion request (max_tokens=1) to test connectivity.
- */
-async function pingProvider(
-  providerName: string,
-  providerConfig: ProviderConfig & { costPerMillionTokens?: number },
-  fullConfig: any,
-): Promise<DiagnosticResult> {
-  const label = providerName;
-
-  try {
-    // Find first agent using this provider to determine the model
-    const agent = fullConfig.agents.find(
-      (a: any) =>
-        (a.provider || 'freemodel') === providerName && (!a.runtime || a.runtime === 'api' || a.runtime === 'local'),
-    );
-    const model = agent?.model || 'gpt-4o-mini';
-
-    const { createProviderDirect } = await import('../backends/factory');
-    const provider = createProviderDirect(providerName, providerConfig, model);
-
-    const startMs = Date.now();
-    await provider.generate([{ role: 'user', content: 'Say OK' }]);
-    const latencyMs = Date.now() - startMs;
-
-    return {
-      label,
-      status: 'pass',
-      detail: `Connected (${latencyMs}ms, ${model})`,
-    };
-  } catch (err: any) {
-    const msg = err.message || String(err);
-    const lowerMsg = msg.toLowerCase();
-
-    if (lowerMsg.includes('401') || lowerMsg.includes('authentication') || lowerMsg.includes('unauthorized')) {
-      return { label, status: 'fail', detail: `API key invalid (provider rejected authentication)` };
-    }
-    if (lowerMsg.includes('econnrefused') || lowerMsg.includes('enotfound')) {
-      return { label, status: 'fail', detail: `Cannot connect (provider unreachable): ${msg.substring(0, 80)}` };
-    }
-
-    return {
-      label,
-      status: 'warn',
-      detail: `Ping failed: ${msg.substring(0, 80)}`,
-    };
   }
 }

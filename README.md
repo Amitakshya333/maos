@@ -148,6 +148,8 @@ them. If the GUI says the model server is unavailable, first check
 npm install -g maosorch
 ```
 
+This generic npm install uses semver ranges. For the reproducible Windows Industrial desktop distribution, use the lockfile bootstrap in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+
 ### Or use directly with npx (no install needed)
 
 ```bash

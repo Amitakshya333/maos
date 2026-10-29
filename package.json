@@ -21,6 +21,7 @@
     "demo/industrial/maintenance_report.txt",
     "demo/industrial/turbine_inspection_scan.pdf",
     "docs/BOUNDARY_SCOPE.md",
+    "docs/INSTALLATION.md",
     "README.md",
     "LICENSE",
     "HACKATHON_SUBMISSION.md",
@@ -69,7 +70,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepublishOnly": "npm run build",
-    "prepare": "husky"
+    "prepare": "node scripts/prepare-hooks.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
