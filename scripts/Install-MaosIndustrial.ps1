@@ -20,6 +20,20 @@ function Assert-Hash([string]$Path, [string]$Expected, [string]$Label) {
   if ($actual -ne $Expected) { throw "$Label SHA-256 mismatch. Expected $Expected, found $actual." }
 }
 
+function Invoke-NpmCi([string]$WorkingDirectory, [string]$Component) {
+  $previousErrorActionPreference = $ErrorActionPreference
+  Push-Location $WorkingDirectory
+  try {
+    $ErrorActionPreference = 'Continue'
+    & $npm.Source ci --omit=dev --no-audit --no-fund
+    $npmExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+    Pop-Location
+  }
+  if ($npmExitCode -ne 0) { throw "Pinned $Component dependency install failed (exit $npmExitCode)." }
+}
+
 $archivePath = Join-Path $bundlePath $manifest.package.archive
 $lockPath = Join-Path $bundlePath $manifest.applicationLock.path
 $scriptPath = Join-Path $bundlePath $manifest.installer.path
@@ -102,17 +116,8 @@ if ($installedPackage.name -ne $manifest.package.name -or $installedPackage.vers
 }
 Assert-Hash (Join-Path $appRoot 'desktop/package-lock.json') $manifest.desktopLock.sha256 'Packaged desktop lockfile'
 
-Push-Location $appRoot
-try {
-  & $npm.Source ci --omit=dev --no-audit --no-fund
-  if ($LASTEXITCODE -ne 0) { throw "Pinned application dependency install failed (exit $LASTEXITCODE)." }
-} finally { Pop-Location }
-
-Push-Location (Join-Path $appRoot 'desktop')
-try {
-  & $npm.Source ci --omit=dev --no-audit --no-fund
-  if ($LASTEXITCODE -ne 0) { throw "Pinned Electron dependency install failed (exit $LASTEXITCODE)." }
-} finally { Pop-Location }
+Invoke-NpmCi $appRoot 'application'
+Invoke-NpmCi (Join-Path $appRoot 'desktop') 'Electron'
 
 $electronInstall = Join-Path $appRoot 'desktop/node_modules/electron/install.js'
 if (-not (Test-Path -LiteralPath $electronInstall -PathType Leaf)) { throw 'Pinned Electron package is missing its install script.' }

@@ -9,6 +9,9 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'));
 const packageFiles = packageJson.files as string[];
 const npmIgnore = fs.readFileSync(path.join(PROJECT_ROOT, '.npmignore'), 'utf8');
+const pwshPath = process.platform === 'win32'
+  ? spawnSync('where.exe', ['pwsh.exe'], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0]
+  : undefined;
 
 describe('Industrial npm runtime assets', () => {
   it('ships all four T-07 demo inputs needed by the judged workflow', () => {
@@ -93,6 +96,40 @@ describe('Industrial npm runtime assets', () => {
     expect(desktopLock.packages[''].dependencies.electron).toBe('45.0.0');
     expect(desktopLock.packages[''].devDependencies.playwright).toBe('1.64.1');
     expect(desktopLock.packages['node_modules/electron'].version).toBe('45.0.0');
+  });
+
+  it.skipIf(!pwshPath)('uses npm exit codes when native npm output includes stderr notices', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-installer-native-stderr-'));
+    try {
+      const fakeNpm = path.join(tempRoot, 'npm.cmd');
+      const harness = path.join(tempRoot, 'invoke-npm-ci.ps1');
+      fs.writeFileSync(fakeNpm, '@echo off\r\necho npm notice: synthetic stderr 1>&2\r\nexit /b %FAKE_NPM_EXIT%\r\n');
+      fs.writeFileSync(harness, String.raw`
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count) { throw 'Could not parse the shipped installer.' }
+$definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-NpmCi' }, $true)
+if (-not $definition) { throw 'Invoke-NpmCi is missing from the shipped installer.' }
+$npm = Get-Command $args[1] -ErrorAction Stop
+Invoke-Expression $definition.Extent.Text
+$env:FAKE_NPM_EXIT = '0'
+Invoke-NpmCi $args[2] 'application'
+$env:FAKE_NPM_EXIT = '23'
+try { Invoke-NpmCi $args[2] 'application'; throw 'A failing npm exit code was accepted.' }
+catch { if ($_.Exception.Message -notmatch 'exit 23') { throw } }
+`);
+
+      const result = spawnSync(pwshPath!, [
+        '-NoProfile', '-NonInteractive', '-File', harness,
+        path.join(PROJECT_ROOT, 'scripts/Install-MaosIndustrial.ps1'), fakeNpm, tempRoot,
+      ], { encoding: 'utf8' });
+      expect(result.error).toBeUndefined();
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(result.stderr).toContain('npm notice: synthetic stderr');
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('skips the development-only Husky hook setup when installing outside a Git checkout', () => {
