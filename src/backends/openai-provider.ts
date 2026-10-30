@@ -85,7 +85,7 @@ export class OpenAIProvider implements IProvider {
     this.temperature = hostedPolicy?.provider === 'meta'
       ? hostedPolicy.temperature
       : Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
-    this.maxOutputTokens = hostedPolicy?.provider === 'meta' ? 256 : opts.maxOutputTokens;
+    this.maxOutputTokens = hostedPolicy?.provider === 'baseten' ? 1500 : hostedPolicy?.provider === 'meta' ? 256 : opts.maxOutputTokens;
 
     const fetchImpl = opts.fetch ?? globalThis.fetch;
 
@@ -107,15 +107,18 @@ export class OpenAIProvider implements IProvider {
 
     try {
       // Build the request — only include tools if we have them
-      const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
+      const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & { reasoning_effort?: 'low' } = {
         model: this.model,
         messages: messages.map((m) => this.toOpenAIMessage(m)),
       };
+      if (this.isBasetenApi) requestBody.reasoning_effort = 'low';
       if (this.temperature !== null) requestBody.temperature = this.temperature;
       const requestedMaxTokens = options?.maxTokens;
-      const maxTokens = this.maxOutputTokens === undefined
-        ? requestedMaxTokens
-        : Math.min(requestedMaxTokens ?? this.maxOutputTokens, this.maxOutputTokens);
+      const maxTokens = this.isBasetenApi
+        ? this.maxOutputTokens
+        : this.maxOutputTokens === undefined
+          ? requestedMaxTokens
+          : Math.min(requestedMaxTokens ?? this.maxOutputTokens, this.maxOutputTokens);
       if (typeof maxTokens === 'number' && Number.isInteger(maxTokens) && maxTokens > 0) {
         requestBody.max_tokens = maxTokens;
       }
@@ -207,6 +210,12 @@ export class OpenAIProvider implements IProvider {
         }
       })) {
         throw new Error('PROVIDER_CREDENTIAL_CONTAMINATION: configured credential found in provider tool-call metadata; execution was blocked.');
+      }
+      if (this.isBasetenApi && finishReason === 'length') {
+        throw new Error('BASETEN_INCOMPLETE_GENERATION: response ended at the configured output-token limit; partial output was discarded and no report was accepted.');
+      }
+      if (this.isBasetenApi && toolCalls.length === 0 && (typeof content !== 'string' || content.trim().length === 0)) {
+        throw new Error('BASETEN_EMPTY_GENERATION: response contained no usable content or tool call; reasoning metadata was discarded and no report was accepted.');
       }
 
       return {

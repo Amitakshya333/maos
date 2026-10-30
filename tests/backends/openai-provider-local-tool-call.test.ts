@@ -62,6 +62,7 @@ describe('OpenAI-compatible loopback mock tool request', () => {
 
     expect(requestBody.model).toBe(model);
     expect(requestBody.max_tokens).toBe(256);
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
     if (providerName === 'ollama-local') expect(requestBody.temperature).toBe(0.2);
     expect(requestBody.tools[0].function.name).toBe('analyze_telemetry_csv');
     expect(requestBody).not.toHaveProperty('tool_choice');

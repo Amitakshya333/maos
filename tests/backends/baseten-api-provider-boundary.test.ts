@@ -308,7 +308,7 @@ describe('Baseten exact opt-in provider policy (loopback/injected transport only
     }
   });
 
-  it('uses the documented structured Chat Completions tool-call shape and caller token limit', async () => {
+  it('uses the structured tool-call shape with the fixed hackathon reasoning and output budget', async () => {
     process.env[BASETEN_API_KEY_ENV] = apiKey;
     const mock = await listen((_request, res, _body) => response(toolCompletion())(_request, res));
     const originalFetch = globalThis.fetch.bind(globalThis);
@@ -320,12 +320,12 @@ describe('Baseten exact opt-in provider policy (loopback/injected transport only
     const result = await provider.generate(
       [{ role: 'user', content: 'Analyze the selected synthetic CSV.' }],
       [{ type: 'function', function: { name: 'analyze_telemetry_csv', description: 'Analyze CSV', parameters: { type: 'object' } } }],
-      { maxTokens: 1024 },
+      { maxTokens: 256 },
     );
 
     expect(mock.requests).toHaveLength(1);
     expect(mock.requests[0].headers.authorization).toBe(`Bearer ${apiKey}`);
-    expect(mock.requests[0].body).toMatchObject({ model: BASETEN_API_MODEL, max_tokens: 1024 });
+    expect(mock.requests[0].body).toMatchObject({ model: BASETEN_API_MODEL, max_tokens: 1500, reasoning_effort: 'low' });
     expect(mock.requests[0].body).not.toHaveProperty('tool_choice');
     expect(result.reportedModel).toBe(BASETEN_API_MODEL);
     expect(result.toolCalls[0].function).toEqual({ name: 'analyze_telemetry_csv', arguments: '{"sourcePath":"selected.csv"}' });

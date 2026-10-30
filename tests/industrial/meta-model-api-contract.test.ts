@@ -27,6 +27,8 @@ function completion(toolName: string, args: string, options: {
   content?: string | null;
   reasoning?: string;
   reasoning_content?: string;
+  finishReason?: string;
+  omitToolCalls?: boolean;
 } = {}) {
   return {
     id: 'chatcmpl-meta-contract',
@@ -40,9 +42,9 @@ function completion(toolName: string, args: string, options: {
         content: options.content ?? null,
         ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
         ...(options.reasoning_content === undefined ? {} : { reasoning_content: options.reasoning_content }),
-        tool_calls: [{ id: 'call-meta-tool', type: 'function', function: { name: toolName, arguments: args } }],
+        ...(options.omitToolCalls ? {} : { tool_calls: [{ id: 'call-meta-tool', type: 'function', function: { name: toolName, arguments: args } }] }),
       },
-      finish_reason: 'tool_calls',
+      finish_reason: options.finishReason ?? 'tool_calls',
     }],
     usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
   };
@@ -182,6 +184,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
       count++;
       expect(body.model).toBe(MODEL);
       expect(body.max_tokens).toBe(256);
+      expect(body).not.toHaveProperty('reasoning_effort');
       expect(Object.prototype.hasOwnProperty.call(body, 'temperature')).toBe(hasTemperature);
       if (hasTemperature) expect(body.temperature).toBe(1);
       expect(Object.prototype.hasOwnProperty.call(body, 'tool_choice')).toBe(false);
@@ -520,7 +523,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
       expect(outbound).toHaveLength(2);
       expect(outbound.every((request) => request.url === `${BASETEN_API_BASE_URL}/chat/completions`)).toBe(true);
       expect(outbound.every((request) => new Headers(request.init?.headers).get('authorization') === `Bearer ${apiKey}`)).toBe(true);
-      expect(mock.requests.every((request) => request.body.max_tokens === 256)).toBe(true);
+      expect(mock.requests.every((request) => request.body.max_tokens === 1500 && request.body.reasoning_effort === 'low')).toBe(true);
       expect(result.requestedModel).toBe(BASETEN_API_MODEL);
       expect(result.reportedModel).toBeNull();
       expect(result.evidence.verification.valid).toBe(true);
@@ -536,6 +539,53 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
       restoreFetch();
       consoleLog.mockRestore();
       auditSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    { label: 'truncated reasoning-only response', finishReason: 'length', diagnostic: 'BASETEN_INCOMPLETE_GENERATION' },
+    { label: 'empty reasoning-only response', finishReason: 'stop', diagnostic: 'BASETEN_EMPTY_GENERATION' },
+  ])('does not accept a Baseten $label', async ({ finishReason, diagnostic }) => {
+    const reasoning = 'SYNTHETIC_PRIVATE_REASONING_NOT_FOR_STORAGE';
+    const mock = await startServer(() => ({ body: completion('unused', '{}', {
+      omitToolCalls: true,
+      finishReason,
+      content: null,
+      reasoning,
+      reasoning_content: `${reasoning}_CONTENT`,
+    }) }));
+    const project = makeProject({ baseURL: BASETEN_API_BASE_URL, providerName: 'baseten' });
+    const apiKey = 'synthetic-baseten-empty-response-key-not-real';
+    process.env[project.keyEnv] = apiKey;
+    const outbound: Array<{ url: string; init?: RequestInit }> = [];
+    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound, BASETEN_API_BASE_URL);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const failure = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
+        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
+      }).then(
+        () => { throw new Error('Expected the incomplete Baseten response to fail.'); },
+        (error: Error) => error,
+      );
+      expect(failure).toMatchObject<Partial<IndustrialAnalysisAgentError>>({
+        code: 'AGENT_EXECUTION_FAILED',
+        message: expect.stringContaining(diagnostic),
+      });
+      expect(failure.message).not.toContain(apiKey);
+      expect(failure.message).not.toContain(reasoning);
+      const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
+      const logPath = path.join(project.root, '.maos', 'logs', 'orchestrator.log');
+      expect(mock.requests).toHaveLength(1);
+      expect(outbound).toHaveLength(1);
+      expect(mock.requests[0].body).toMatchObject({ max_tokens: 1500, reasoning_effort: 'low' });
+      expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
+      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords())).not.toContain('INDUSTRIAL_ANALYSIS_AGENT_COMPLETED');
+      expect(fs.existsSync(analysisRoot)).toBe(false);
+      expect(consoleLog.mock.calls.flat().join('\n')).not.toContain(reasoning);
+      expect(fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '').not.toContain(reasoning);
+    } finally {
+      restoreFetch();
+      consoleLog.mockRestore();
     }
   });
 
@@ -596,7 +646,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
       })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
       const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
       expect(mock.requests).toHaveLength(4);
-      expect(mock.requests.every((request) => request.body.max_tokens === 256)).toBe(true);
+      expect(mock.requests.every((request) => request.body.max_tokens === 1500 && request.body.reasoning_effort === 'low')).toBe(true);
       expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
       expect(fs.existsSync(path.join(project.root, 'should-not-run'))).toBe(false);
       expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
