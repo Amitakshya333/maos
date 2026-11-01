@@ -39,7 +39,12 @@ import {
   validateCockpitState,
   validateCockpitRunsList,
 } from './runtime-validation';
-import type { CockpitState, CockpitRunSummary, WorkflowProjection, WorkflowRunProjection } from '../../../domain/cockpit';
+import type {
+  CockpitState,
+  CockpitRunSummary,
+  WorkflowProjection,
+  WorkflowRunProjection,
+} from '../../../domain/cockpit';
 export type { WorkflowProjection, WorkflowRunProjection };
 import type {
   ApprovalRecord,
@@ -245,9 +250,7 @@ export class BrowserRestClient {
       }
     } catch (err: any) {
       if (err instanceof ForbiddenLoopbackError) throw err;
-      throw new ForbiddenLoopbackError(
-        `Invalid loopback URL '${this.baseUrl}': ${err?.message || String(err)}`,
-      );
+      throw new ForbiddenLoopbackError(`Invalid loopback URL '${this.baseUrl}': ${err?.message || String(err)}`);
     }
   }
 
@@ -281,7 +284,49 @@ export class BrowserRestClient {
   }
 
   /**
+   * Shared caller-cancellation scope (COMPLETION-FIX-12/14). Every outbound
+   * request creates its own deadline timer and forwards caller aborts, and
+   * always detaches the forwarding listener on settle. A pre-aborted caller
+   * signal throws before any fetch starts. Callers distinguish their own
+   * cancellation (signal.aborted) from the client deadline (TimeoutError).
+   */
+  private createAbortScope(options: RequestOptions, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const callerSignal = options.signal;
+    const forwardAbort = () => controller.abort(callerSignal?.reason);
+    const dispose = () => {
+      clearTimeout(timeoutId);
+      callerSignal?.removeEventListener('abort', forwardAbort);
+    };
+    if (callerSignal) {
+      if (callerSignal.aborted) {
+        dispose();
+        throw callerSignal.reason instanceof Error
+          ? callerSignal.reason
+          : new DOMException('The operation was aborted before the request started.', 'AbortError');
+      }
+      callerSignal.addEventListener('abort', forwardAbort);
+    }
+    return { signal: controller.signal, dispose };
+  }
+
+  // Error abort reasons propagate verbatim; non-Error reasons (string,
+  // undefined, …) are normalized to an AbortError DOMException so callers
+  // always observe a cancellation — never a TimeoutError — for their abort.
+  private callerAbortError(signal: AbortSignal | undefined): Error | null {
+    if (!signal?.aborted) return null;
+    const reason = signal.reason;
+    return reason instanceof Error
+      ? reason
+      : new DOMException('The operation was aborted by the caller.', 'AbortError');
+  }
+  /**
    * Internal HTTP execution helper with timeout, headers, and error handling.
+   * Caller cancellation stays an abort outcome: an Error abort reason
+   * propagates verbatim; a non-Error reason (string, undefined, …) is
+   * normalized to an AbortError DOMException. Only the client's own
+   * deadline maps to TimeoutError.
    */
   async request<T>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -289,16 +334,11 @@ export class BrowserRestClient {
     body?: unknown,
     options: RequestOptions = {},
   ): Promise<RestResponse<T>> {
-    const correlationId =
-      options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const correlationId = options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    if (options.signal) {
-      options.signal.addEventListener('abort', () => controller.abort());
-    }
+    const callerSignal = options.signal;
+    const abortScope = this.createAbortScope(options, timeoutMs);
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -331,7 +371,7 @@ export class BrowserRestClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
+        signal: abortScope.signal,
       });
 
       const isReplay = response.headers.get('Idempotent-Replay') === 'true';
@@ -362,15 +402,14 @@ export class BrowserRestClient {
       if (err instanceof ApiError) {
         throw err;
       }
+      const callerAbort = this.callerAbortError(callerSignal);
+      if (callerAbort) throw callerAbort;
       if (err instanceof Error && err.name === 'AbortError') {
         throw new TimeoutError(`Request timed out after ${timeoutMs}ms for ${endpoint}`);
       }
-      throw new NetworkError(
-        `Failed to execute ${method} ${endpoint}: ${(err as Error)?.message || String(err)}`,
-        err,
-      );
+      throw new NetworkError(`Failed to execute ${method} ${endpoint}: ${(err as Error)?.message || String(err)}`, err);
     } finally {
-      clearTimeout(timeoutId);
+      abortScope.dispose();
     }
   }
 
@@ -399,7 +438,12 @@ export class BrowserRestClient {
 
   async getSettings(options?: RequestOptions, projectId?: string): Promise<Record<string, unknown> & BasicSettings> {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-    const res = await this.request<Record<string, unknown> & BasicSettings>('GET', `/api/v1/settings${query}`, undefined, options);
+    const res = await this.request<Record<string, unknown> & BasicSettings>(
+      'GET',
+      `/api/v1/settings${query}`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
@@ -409,9 +453,18 @@ export class BrowserRestClient {
     return res.data;
   }
 
-  async updateSettings(patch: Record<string, unknown>, options?: RequestOptions, projectId?: string): Promise<Record<string, unknown> & BasicSettings> {
+  async updateSettings(
+    patch: Record<string, unknown>,
+    options?: RequestOptions,
+    projectId?: string,
+  ): Promise<Record<string, unknown> & BasicSettings> {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-    const res = await this.request<Record<string, unknown> & BasicSettings>('PATCH', `/api/v1/settings${query}`, patch, options);
+    const res = await this.request<Record<string, unknown> & BasicSettings>(
+      'PATCH',
+      `/api/v1/settings${query}`,
+      patch,
+      options,
+    );
     return res.data;
   }
 
@@ -437,16 +490,23 @@ export class BrowserRestClient {
 
   async getRetentionStatus(projectId?: string, options?: RequestOptions): Promise<RetentionStatus> {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-    const res = await this.request<{ status: RetentionStatus } | RetentionStatus>('GET', `/api/v1/retention/status${query}`, undefined, options);
+    const res = await this.request<{ status: RetentionStatus } | RetentionStatus>(
+      'GET',
+      `/api/v1/retention/status${query}`,
+      undefined,
+      options,
+    );
     const data = res.data as any;
     return data.status || data;
   }
 
-  async executeRetentionPurge(
-    purgeOptions: PurgeOptions,
-    options?: RequestOptions,
-  ): Promise<PurgeResult> {
-    const res = await this.request<{ result: PurgeResult } | PurgeResult>('POST', '/api/v1/retention/purge', purgeOptions, options);
+  async executeRetentionPurge(purgeOptions: PurgeOptions, options?: RequestOptions): Promise<PurgeResult> {
+    const res = await this.request<{ result: PurgeResult } | PurgeResult>(
+      'POST',
+      '/api/v1/retention/purge',
+      purgeOptions,
+      options,
+    );
     const data = res.data as any;
     return data.result || data;
   }
@@ -456,7 +516,12 @@ export class BrowserRestClient {
     mode?: OperationalMode,
     options?: RequestOptions,
   ): Promise<EvidenceValidationResult> {
-    const res = await this.request<EvidenceValidationResult>('POST', '/api/v1/mode/validate-claim', { claim, mode }, options);
+    const res = await this.request<EvidenceValidationResult>(
+      'POST',
+      '/api/v1/mode/validate-claim',
+      { claim, mode },
+      options,
+    );
     return res.data;
   }
 
@@ -494,7 +559,12 @@ export class BrowserRestClient {
   }
 
   async cleanupOrphans(payload?: { maxAgeMs?: number }, options?: RequestOptions): Promise<OrphanCleanupResponse> {
-    const res = await this.request<OrphanCleanupResponse>('POST', '/api/v1/service/orphan-cleanup', payload || {}, options);
+    const res = await this.request<OrphanCleanupResponse>(
+      'POST',
+      '/api/v1/service/orphan-cleanup',
+      payload || {},
+      options,
+    );
     return res.data;
   }
 
@@ -507,27 +577,18 @@ export class BrowserRestClient {
   // Workspace Layout & Role Presets (UI1-07)
   // ══════════════════════════════════════════════════════════════
 
-  async getLayout(
-    role?: string,
-    options?: RequestOptions,
-  ): Promise<{ layout: WorkspaceLayout; exists: boolean }> {
+  async getLayout(role?: string, options?: RequestOptions): Promise<{ layout: WorkspaceLayout; exists: boolean }> {
     const query = role ? `?role=${encodeURIComponent(role)}` : '';
     const res = await this.request<WorkspaceLayout>('GET', `/api/v1/layout${query}`, undefined, options);
     return { layout: res.data, exists: (res as any).exists ?? true };
   }
 
-  async updateLayout(
-    layout: WorkspaceLayout,
-    options?: RequestOptions,
-  ): Promise<WorkspaceLayout> {
+  async updateLayout(layout: WorkspaceLayout, options?: RequestOptions): Promise<WorkspaceLayout> {
     const res = await this.request<WorkspaceLayout>('PUT', '/api/v1/layout', layout, options);
     return res.data;
   }
 
-  async resetLayout(
-    role?: string,
-    options?: RequestOptions,
-  ): Promise<WorkspaceLayout> {
+  async resetLayout(role?: string, options?: RequestOptions): Promise<WorkspaceLayout> {
     const res = await this.request<WorkspaceLayout>('POST', '/api/v1/layout/reset', { role }, options);
     return res.data;
   }
@@ -543,12 +604,24 @@ export class BrowserRestClient {
   }
 
   async getConversation(id: string, options?: RequestOptions): Promise<Conversation> {
-    const res = await this.request<Conversation>('GET', `/api/v1/conversations/${encodeURIComponent(id)}`, undefined, options);
+    const res = await this.request<Conversation>(
+      'GET',
+      `/api/v1/conversations/${encodeURIComponent(id)}`,
+      undefined,
+      options,
+    );
     return validateConversation(res.data);
   }
 
   async createConversation(
-    data: { id?: string; projectId: string; agentId: string; taskId?: string; mode?: OperationalMode; pinned?: boolean },
+    data: {
+      id?: string;
+      projectId: string;
+      agentId: string;
+      taskId?: string;
+      mode?: OperationalMode;
+      pinned?: boolean;
+    },
     options?: RequestOptions,
   ): Promise<Conversation> {
     const res = await this.request<Conversation>('POST', '/api/v1/conversations', data, options);
@@ -667,11 +740,14 @@ export class BrowserRestClient {
     return res.data;
   }
 
-  async analyzeIndustrialTelemetry(input: {
-    name?: string;
-    contentBase64?: string;
-    useBundledSample?: boolean;
-  }, options: RequestOptions = {}): Promise<IndustrialTelemetryAnalysisResponse> {
+  async analyzeIndustrialTelemetry(
+    input: {
+      name?: string;
+      contentBase64?: string;
+      useBundledSample?: boolean;
+    },
+    options: RequestOptions = {},
+  ): Promise<IndustrialTelemetryAnalysisResponse> {
     const res = await this.request<IndustrialTelemetryAnalysisResponse>(
       'POST',
       '/api/v1/industrial/telemetry/analyze',
@@ -742,7 +818,10 @@ export class BrowserRestClient {
     return res.data;
   }
 
-  async getWorkflowProjection(id: string, options?: RequestOptions): Promise<WorkflowProjection | WorkflowRunProjection> {
+  async getWorkflowProjection(
+    id: string,
+    options?: RequestOptions,
+  ): Promise<WorkflowProjection | WorkflowRunProjection> {
     const res = await this.request<WorkflowProjection | WorkflowRunProjection>(
       'GET',
       `/api/v1/workflows/${encodeURIComponent(id)}/projection`,
@@ -766,7 +845,9 @@ export class BrowserRestClient {
   // Models & Leases
   // ══════════════════════════════════════════════════════════════
 
-  async getModels(options?: RequestOptions): Promise<{ models?: any[]; registeredModels?: ModelRegistration[] } | any[]> {
+  async getModels(
+    options?: RequestOptions,
+  ): Promise<{ models?: any[]; registeredModels?: ModelRegistration[] } | any[]> {
     const res = await this.request<{ models?: any[]; registeredModels?: ModelRegistration[] } | any[]>(
       'GET',
       '/api/v1/models',
@@ -788,7 +869,8 @@ export class BrowserRestClient {
   }
 
   async acquireModelLease(
-    data: AcquireModelLeaseInput | { modelId: string; purpose?: string; runId?: string; agentId?: string; port?: number },
+    data:
+      AcquireModelLeaseInput | { modelId: string; purpose?: string; runId?: string; agentId?: string; port?: number },
     options?: RequestOptions,
   ): Promise<ModelLease> {
     const payload: AcquireModelLeaseInput = {
@@ -840,22 +922,12 @@ export class BrowserRestClient {
   }
 
   async reapStaleModelLeases(options?: RequestOptions): Promise<{ reapedCount: number }> {
-    const res = await this.request<{ reapedCount: number }>(
-      'POST',
-      '/api/v1/models/leases/reap',
-      undefined,
-      options,
-    );
+    const res = await this.request<{ reapedCount: number }>('POST', '/api/v1/models/leases/reap', undefined, options);
     return res.data;
   }
 
   async releaseAllModelLeases(options?: RequestOptions): Promise<{ releasedCount: number }> {
-    const res = await this.request<{ releasedCount: number }>(
-      'DELETE',
-      '/api/v1/models/leases',
-      undefined,
-      options,
-    );
+    const res = await this.request<{ releasedCount: number }>('DELETE', '/api/v1/models/leases', undefined, options);
     return res.data;
   }
 
@@ -874,8 +946,15 @@ export class BrowserRestClient {
     return res.data;
   }
 
-  async exportAuditTrail(options?: RequestOptions): Promise<{ records: AuditRecord[]; verification: AuditChainVerification }> {
-    const res = await this.request<{ records: AuditRecord[]; verification: AuditChainVerification }>('GET', '/api/v1/audit/export', undefined, options);
+  async exportAuditTrail(
+    options?: RequestOptions,
+  ): Promise<{ records: AuditRecord[]; verification: AuditChainVerification }> {
+    const res = await this.request<{ records: AuditRecord[]; verification: AuditChainVerification }>(
+      'GET',
+      '/api/v1/audit/export',
+      undefined,
+      options,
+    );
     return res.data;
   }
 
@@ -896,7 +975,12 @@ export class BrowserRestClient {
   }
 
   async getArtifactsForRun(runId: string, options?: RequestOptions): Promise<Artifact[]> {
-    const res = await this.request<Artifact[]>('GET', `/api/v1/artifacts?runId=${encodeURIComponent(runId)}`, undefined, options);
+    const res = await this.request<Artifact[]>(
+      'GET',
+      `/api/v1/artifacts?runId=${encodeURIComponent(runId)}`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
@@ -918,9 +1002,8 @@ export class BrowserRestClient {
   async downloadArtifactContent(id: string, options: RequestOptions = {}): Promise<Blob> {
     const correlationId = options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    if (options.signal) options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    const callerSignal = options.signal;
+    const abortScope = this.createAbortScope(options, timeoutMs);
 
     const headers: Record<string, string> = {
       Accept: 'application/octet-stream',
@@ -932,10 +1015,11 @@ export class BrowserRestClient {
     if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
 
     try {
-      const response = await this.fetch(
-        `${this.baseUrl}/api/v1/artifacts/${encodeURIComponent(id)}/content`,
-        { method: 'GET', headers, signal: controller.signal },
-      );
+      const response = await this.fetch(`${this.baseUrl}/api/v1/artifacts/${encodeURIComponent(id)}/content`, {
+        method: 'GET',
+        headers,
+        signal: abortScope.signal,
+      });
       if (!response.ok) {
         const text = await response.text();
         let body: unknown = { message: text };
@@ -949,12 +1033,14 @@ export class BrowserRestClient {
       return await response.blob();
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
+      const callerAbort = this.callerAbortError(callerSignal);
+      if (callerAbort) throw callerAbort;
       if (err instanceof Error && err.name === 'AbortError') {
         throw new TimeoutError(`Request timed out after ${timeoutMs}ms for artifact '${id}'`);
       }
       throw new NetworkError(`Failed to download artifact '${id}': ${(err as Error)?.message || String(err)}`, err);
     } finally {
-      clearTimeout(timeoutId);
+      abortScope.dispose();
     }
   }
 
@@ -1004,11 +1090,7 @@ export class BrowserRestClient {
     return validateApprovalRecord(res.data);
   }
 
-  async reviewApproval(
-    id: string,
-    decision: ReviewApprovalInput,
-    options?: RequestOptions,
-  ): Promise<ApprovalRecord> {
+  async reviewApproval(id: string, decision: ReviewApprovalInput, options?: RequestOptions): Promise<ApprovalRecord> {
     const res = await this.request<ApprovalRecord>(
       'POST',
       `/api/v1/approvals/${encodeURIComponent(id)}/review`,
@@ -1020,7 +1102,13 @@ export class BrowserRestClient {
 
   async resolveApproval(
     id: string,
-    decision: { status: 'approved' | 'rejected'; reviewedBy: string; notes?: string; role?: string; conditions?: string[] },
+    decision: {
+      status: 'approved' | 'rejected';
+      reviewedBy: string;
+      notes?: string;
+      role?: string;
+      conditions?: string[];
+    },
     options?: RequestOptions,
   ): Promise<ApprovalRecord> {
     const res = await this.request<ApprovalRecord>(
@@ -1071,7 +1159,6 @@ export class BrowserRestClient {
     return validateForceStopResult(res.data);
   }
 
-
   // ══════════════════════════════════════════════════════════════
   // Verifier Endpoints
   // ══════════════════════════════════════════════════════════════
@@ -1082,7 +1169,12 @@ export class BrowserRestClient {
   }
 
   async verifyArtifact(artifactId: string, options?: RequestOptions): Promise<ArtifactVerificationResult> {
-    const res = await this.request<ArtifactVerificationResult>('POST', '/api/v1/verify/artifact', { artifactId }, options);
+    const res = await this.request<ArtifactVerificationResult>(
+      'POST',
+      '/api/v1/verify/artifact',
+      { artifactId },
+      options,
+    );
     return res.data;
   }
 
@@ -1091,7 +1183,11 @@ export class BrowserRestClient {
     return res.data;
   }
 
-  async verifyRelationship(childId: string, parentId: string, options?: RequestOptions): Promise<RunVerificationResult> {
+  async verifyRelationship(
+    childId: string,
+    parentId: string,
+    options?: RequestOptions,
+  ): Promise<RunVerificationResult> {
     const res = await this.request<RunVerificationResult>(
       'POST',
       '/api/v1/verify/relationship',
@@ -1114,24 +1210,13 @@ export class BrowserRestClient {
    * Rotate an existing launcher-issued session. This is not an initial login:
    * the server rejects this call until a trusted bootstrap token is installed.
    */
-  async handshake(
-    windowId?: string,
-    options?: RequestOptions,
-  ): Promise<LauncherSessionBootstrap> {
-    const res = await this.request<LauncherSessionBootstrap>(
-      'POST',
-      '/api/v1/auth/handshake',
-      { windowId },
-      options,
-    );
+  async handshake(windowId?: string, options?: RequestOptions): Promise<LauncherSessionBootstrap> {
+    const res = await this.request<LauncherSessionBootstrap>('POST', '/api/v1/auth/handshake', { windowId }, options);
     this.sessionToken = res.data.sessionToken;
     return res.data;
   }
 
-  async revokeSession(
-    sessionId?: string,
-    options?: RequestOptions,
-  ): Promise<{ revoked: boolean; sessionId?: string }> {
+  async revokeSession(sessionId?: string, options?: RequestOptions): Promise<{ revoked: boolean; sessionId?: string }> {
     const res = await this.request<{ revoked: boolean; sessionId?: string }>(
       'POST',
       '/api/v1/auth/revoke',
@@ -1194,10 +1279,7 @@ export class BrowserRestClient {
     return validateQueueEntriesList(res.data);
   }
 
-  async getQueueStatus(
-    projectId?: string,
-    reqOptions?: RequestOptions,
-  ): Promise<QueueStatusSummary> {
+  async getQueueStatus(projectId?: string, reqOptions?: RequestOptions): Promise<QueueStatusSummary> {
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
     const res = await this.request<QueueStatusSummary>('GET', `/api/v1/queue/status${qs}`, undefined, reqOptions);
     return validateQueueStatusSummary(res.data);
@@ -1213,13 +1295,14 @@ export class BrowserRestClient {
     return validateQueueEntry(res.data);
   }
 
-  async getQueueEntry(
-    id: string,
-    projectId?: string,
-    reqOptions?: RequestOptions,
-  ): Promise<QueueEntry> {
+  async getQueueEntry(id: string, projectId?: string, reqOptions?: RequestOptions): Promise<QueueEntry> {
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-    const res = await this.request<QueueEntry>('GET', `/api/v1/queue/${encodeURIComponent(id)}${qs}`, undefined, reqOptions);
+    const res = await this.request<QueueEntry>(
+      'GET',
+      `/api/v1/queue/${encodeURIComponent(id)}${qs}`,
+      undefined,
+      reqOptions,
+    );
     return validateQueueEntry(res.data);
   }
 
@@ -1238,7 +1321,12 @@ export class BrowserRestClient {
   }
 
   async recoverQueueState(reqOptions?: RequestOptions): Promise<{ interruptedCount: number }> {
-    const res = await this.request<{ interruptedCount: number }>('POST', '/api/v1/queue/recover', undefined, reqOptions);
+    const res = await this.request<{ interruptedCount: number }>(
+      'POST',
+      '/api/v1/queue/recover',
+      undefined,
+      reqOptions,
+    );
     return res.data;
   }
 
@@ -1263,12 +1351,7 @@ export class BrowserRestClient {
   // ── Agent Cockpit (UI1-15) ────────────────────────────────────
 
   async startIndustrialJudgedRun(reqOptions?: RequestOptions): Promise<JudgedRunResponse> {
-    const res = await this.request<JudgedRunResponse>(
-      'POST',
-      '/api/v1/industrial/judged-runs',
-      {},
-      reqOptions,
-    );
+    const res = await this.request<JudgedRunResponse>('POST', '/api/v1/industrial/judged-runs', {}, reqOptions);
     return res.data;
   }
 
@@ -1472,7 +1555,12 @@ export class BrowserRestClient {
 
   async getResolvedObservations(projectId?: string, reqOptions?: RequestOptions): Promise<ResolvedObservation[]> {
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-    const res = await this.request<ResolvedObservation[]>('GET', `/api/v1/evidence/resolved${qs}`, undefined, reqOptions);
+    const res = await this.request<ResolvedObservation[]>(
+      'GET',
+      `/api/v1/evidence/resolved${qs}`,
+      undefined,
+      reqOptions,
+    );
     return res.data;
   }
 
@@ -1517,12 +1605,7 @@ export class BrowserRestClient {
     payload: GenerateDocumentPayload,
     reqOptions?: RequestOptions,
   ): Promise<GenerateDocumentResponse> {
-    const res = await this.request<GenerateDocumentResponse>(
-      'POST',
-      '/api/v1/generator/generate',
-      payload,
-      reqOptions,
-    );
+    const res = await this.request<GenerateDocumentResponse>('POST', '/api/v1/generator/generate', payload, reqOptions);
     return res.data;
   }
 
@@ -1530,12 +1613,7 @@ export class BrowserRestClient {
     payload: { artifactId?: string; relativePath?: string },
     reqOptions?: RequestOptions,
   ): Promise<LaunchDocumentResponse> {
-    const res = await this.request<LaunchDocumentResponse>(
-      'POST',
-      '/api/v1/generator/launch',
-      payload,
-      reqOptions,
-    );
+    const res = await this.request<LaunchDocumentResponse>('POST', '/api/v1/generator/launch', payload, reqOptions);
     return res.data;
   }
 
@@ -1546,18 +1624,12 @@ export class BrowserRestClient {
 
   // ── Knowledge Base Search (UI1-18) ──────────────────────────────
 
-  async searchKb(
-    payload: KbSearchPayload,
-    reqOptions?: RequestOptions,
-  ): Promise<KbSearchResultResponse> {
+  async searchKb(payload: KbSearchPayload, reqOptions?: RequestOptions): Promise<KbSearchResultResponse> {
     const res = await this.request<KbSearchResultResponse>('POST', '/api/v1/kb/search', payload, reqOptions);
     return res.data;
   }
 
-  async getKbStatus(
-    projectId?: string,
-    reqOptions?: RequestOptions,
-  ): Promise<any> {
+  async getKbStatus(projectId?: string, reqOptions?: RequestOptions): Promise<any> {
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
     const res = await this.request<any>('GET', `/api/v1/kb/status${qs}`, undefined, reqOptions);
     return res.data;

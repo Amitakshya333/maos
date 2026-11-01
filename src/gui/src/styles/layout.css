@@ -90,6 +90,10 @@
   background-color: var(--status-red);
 }
 
+.status-dot.muted {
+  background-color: var(--text-dim);
+}
+
 .header-actions {
   display: flex;
   align-items: center;

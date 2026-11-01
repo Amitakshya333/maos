@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { apiAdapter } from '../api';
 import type { IndustrialAnalysisAgentResponse, IndustrialTelemetryAnalysisResponse, JudgedRunResponse } from '../api/rest-client';
+import { TelemetryReviewCoordinator, type TelemetryReviewViewState } from './telemetryReviewCoordinator';
+import { applyReviewPatch, SelectionBinding } from './telemetryReviewState';
 
 function fileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -30,81 +32,102 @@ export const TelemetryReviewPanel: React.FC = () => {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const agentController = useRef<AbortController | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  // The bound selection: the exact {file, key} pair created at selection
+  // time, held by the tested SelectionBinding. Async callbacks close over
+  // the pair object — never a separately re-read file or key — so a stale
+  // callback cannot act for a newer source.
+  const selectionBindingRef = useRef<SelectionBinding<File> | null>(null);
+  if (!selectionBindingRef.current) selectionBindingRef.current = new SelectionBinding<File>();
+  const selectionBinding = selectionBindingRef.current;
+  // All review side effects are delegated to the coordinator, which owns the
+  // source binding and staleness guards (COMPLETION-FIX-06/08). This component
+  // only mirrors the view snapshot into React state (via the tested
+  // applyReviewPatch interpreter) and performs DOM-only file handling.
+  const coordinatorRef = useRef<TelemetryReviewCoordinator | null>(null);
+  if (!coordinatorRef.current) {
+    const apply = (patch: Partial<TelemetryReviewViewState>) => {
+      applyReviewPatch(
+        {
+          setAnalysis, setAgentResult, setAgentPhase, setAgentError, setError,
+          setReviewRun, setReviewError, setBusy, setBusySource, setReviewBusy,
+          setSelectedFile, bumpFileInputKey: () => setFileInputKey((key) => key + 1),
+        },
+        patch,
+      );
+    };
+    coordinatorRef.current = new TelemetryReviewCoordinator(
+      {
+        analyzeTelemetry: (input, options) => apiAdapter.analyzeIndustrialTelemetry(input, options),
+        analyzeCsv: (input, options) => apiAdapter.analyzeIndustrialCsv(input, options),
+        prepareReview: (analysisId) => apiAdapter.prepareIndustrialAgentReview(analysisId),
+        getJudgedRun: (runId) => apiAdapter.getIndustrialJudgedRun(runId),
+      },
+      {
+        apply,
+        readSavedRunId: () => window.localStorage.getItem('maos:last-industrial-judged-run'),
+        writeSavedRunId: (runId) => window.localStorage.setItem('maos:last-industrial-judged-run', runId),
+        navigateToApprovals: () => { window.location.hash = '#/approvals'; },
+      },
+    );
+  }
+  // Source binding and staleness guards live in the coordinator (COMPLETION-FIX-06);
+  // cancellation supplements those guards but never replaces them.
 
   useEffect(() => {
-    const runId = window.localStorage.getItem('maos:last-industrial-judged-run');
-    if (!runId?.startsWith('judged-run-agent-')) return;
-    let active = true;
-    void apiAdapter.getIndustrialJudgedRun(runId).then((run) => {
-      if (active) setReviewRun(run);
-    }).catch(() => {
-      if (active) setReviewError('Could not reconnect to the saved review run. Check the authenticated service and approvals queue.');
-    });
-    return () => { active = false; };
+    void coordinatorRef.current?.reconnect();
+    return () => {
+      // Unmount: cancel in-flight panel work and invalidate pending
+      // coordinator operations so late resolves never touch a detached
+      // component, storage, or navigation. Remount-safe: invalidation is
+      // sequence-based, so a fresh mount reconnects normally.
+      agentController.current?.abort();
+      coordinatorRef.current?.dispose();
+    };
   }, []);
 
   const runAnalysis = async (useSample: boolean) => {
-    setBusy(true);
-    setBusySource(useSample ? 'sample' : 'file');
-    setError(null);
-    setAnalysis(null);
-    setAgentResult(null);
-    setAgentPhase('idle');
-    setAgentError(null);
-    try {
-      const response = useSample
-        ? await apiAdapter.analyzeIndustrialTelemetry({ useBundledSample: true })
-        : selectedFile
-          ? await apiAdapter.analyzeIndustrialTelemetry({
-              name: selectedFile.name,
-              contentBase64: await fileAsBase64(selectedFile),
-            })
-          : null;
-      if (!response) throw new Error('Choose a CSV file first, or use the bundled synthetic sample.');
-      setAnalysis(response);
-    } catch (err: unknown) {
-      setError((err as Error).message || 'Telemetry analysis failed.');
-    } finally {
-      setBusy(false);
-      setBusySource(null);
+    const coordinator = coordinatorRef.current;
+    if (!coordinator || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
+    if (useSample) {
+      // Single atomic sample action: the coordinator binds the sample,
+      // clears the old file/input, invalidates priors, and analyzes.
+      // The local selection pair is dropped at the same time.
+      selectionBinding.clear();
+      setSelectedFile(null);
+      setFileInputKey((key) => key + 1);
+      await coordinator.runSampleAnalysis();
+      return;
     }
+    const pair = selectionBinding.current();
+    if (!pair || pair.file !== selectedFile) {
+      setError('Choose a CSV file first, or use the bundled synthetic sample.');
+      return;
+    }
+    const { file, key } = pair;
+    await coordinator.runFileAnalysis(key, async () => ({
+      name: file.name,
+      size: file.size,
+      lastModified: file.lastModified,
+      contentBase64: await fileAsBase64(file),
+    }));
   };
 
   const askAboutSelectedCsv = async () => {
-    if (!selectedFile || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
+    const coordinator = coordinatorRef.current;
+    if (!coordinator || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
+    const pair = selectionBinding.current();
+    if (!pair || pair.file !== selectedFile) return;
     const controller = new AbortController();
     agentController.current = controller;
-    setAgentResult(null);
-    setReviewRun(null);
-    setReviewError(null);
-    setAnalysis(null);
-    setAgentError(null);
-    setAgentPhase('uploading');
+    const { file, key } = pair;
     try {
-      const selectedReceipt = await apiAdapter.analyzeIndustrialTelemetry({
-        name: selectedFile.name,
-        contentBase64: await fileAsBase64(selectedFile),
-      }, { signal: controller.signal, timeoutMs: 30_000 });
-      if (controller.signal.aborted) return;
-      setAnalysis(selectedReceipt);
-      setAgentPhase('requesting');
-      const result = await apiAdapter.analyzeIndustrialCsv({
-        request: agentRequest,
-        sourcePath: selectedReceipt.source.relativePath,
-      }, { signal: controller.signal, timeoutMs: 65_000 });
-      if (controller.signal.aborted) return;
-      setAgentResult(result);
-      setAgentPhase('completed');
-    } catch (err: unknown) {
-      if (controller.signal.aborted) {
-        setAgentPhase('cancelled');
-        setAgentError('Cancelled. No successful model result was returned; retry to start a new run.');
-      } else {
-        const message = (err as Error).message || 'The analysis request failed.';
-        const timedOut = /timed out|timeout/i.test(message);
-        setAgentPhase('failed');
-        setAgentError(`${timedOut ? 'Timed out' : 'Failed'}: ${message} Retry is available.`);
-      }
+      await coordinator.askAboutCsv(agentRequest, key, async () => ({
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified,
+        contentBase64: await fileAsBase64(file),
+      }), { signal: controller.signal });
     } finally {
       if (agentController.current === controller) agentController.current = null;
     }
@@ -118,18 +141,7 @@ export const TelemetryReviewPanel: React.FC = () => {
       window.location.hash = '#/approvals';
       return;
     }
-    setReviewBusy(true);
-    setReviewError(null);
-    try {
-      const run = await apiAdapter.prepareIndustrialAgentReview(agentResult.evidence.analysisId);
-      setReviewRun(run);
-      window.localStorage.setItem('maos:last-industrial-judged-run', run.runId);
-      if (run.status === 'pending_approval') window.location.hash = '#/approvals';
-    } catch (err: unknown) {
-      setReviewError((err as Error).message || 'Could not prepare the persisted review package.');
-    } finally {
-      setReviewBusy(false);
-    }
+    await coordinatorRef.current?.prepareReview(agentResult.evidence.analysisId);
   };
 
   const verdictColor = analysis?.result.verdict === 'CRITICAL'
@@ -164,15 +176,17 @@ export const TelemetryReviewPanel: React.FC = () => {
           <span style={{ fontWeight: 600 }}>Choose CSV from this device</span>
           <input
             aria-label="Choose telemetry CSV from this device"
+            key={fileInputKey}
             type="file"
             accept=".csv,text/csv"
             onChange={(event) => {
-              setSelectedFile(event.target.files?.[0] || null);
-              setAnalysis(null);
-              setAgentResult(null);
-              setAgentPhase('idle');
-              setAgentError(null);
-              setError(null);
+              const file = event.target.files?.[0] || null;
+              setSelectedFile(file);
+              const key = coordinatorRef.current?.selectFile(
+                file === null ? null : { name: file.name, size: file.size, lastModified: file.lastModified },
+              );
+              if (file === null || key == null) selectionBinding.clear();
+              else selectionBinding.bind(file, key);
             }}
             disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
             style={{ maxWidth: 230, fontSize: 11 }}
@@ -232,7 +246,7 @@ export const TelemetryReviewPanel: React.FC = () => {
 
       {agentPhase !== 'idle' && (
         <div role="status" aria-live="polite" style={{ marginTop: 10, color: agentPhase === 'failed' || agentPhase === 'cancelled' ? '#ff7b72' : '#8b949e', fontSize: 11 }}>
-          Request: {agentPhase} · Tool execution: {agentResult ? 'completed' : agentPhase === 'requesting' ? 'awaiting model tool call' : agentPhase === 'failed' || agentPhase === 'cancelled' ? 'not confirmed' : 'not started'}
+          Request: {agentPhase} · {agentResult ? 'Tool execution: completed' : agentPhase === 'requesting' ? 'Tool execution: awaiting model tool call' : agentPhase === 'failed' ? 'Agent completion: failed · report not accepted' : agentPhase === 'cancelled' ? 'Agent completion: not completed · report not accepted' : 'Tool execution: not started'}
         </div>
       )}
       {agentError && <div role="alert" style={{ marginTop: 8, color: '#ff7b72', fontSize: 11 }}>{agentError}</div>}
@@ -290,6 +304,11 @@ export const TelemetryReviewPanel: React.FC = () => {
             <span style={{ color: '#8b949e', fontSize: 11 }}>{analysis.result.rowsAnalyzed} rows · {analysis.source.kind === 'bundled-synthetic-sample' ? 'bundled synthetic data' : analysis.source.kind === 'project-local-file' ? 'project-local file' : 'device upload'}</span>
             <code style={{ color: '#c9d1d9', fontSize: 11 }}>ID {analysis.analysisId}</code>
           </div>
+          {agentPhase === 'failed' && (
+            <div role="status" style={{ marginTop: 10, border: '1px solid #da3633', borderRadius: 6, padding: '9px 11px', fontSize: 11, color: '#ff7b72' }}>
+              Agent completion failed — no agent report was accepted and no model explanation is shown. The result above is the deterministic local telemetry analysis (upload receipt <code>{analysis.analysisId}</code>), replayable from the CLI below — not an accepted agent report.
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 8, marginTop: 12 }}>
             {[

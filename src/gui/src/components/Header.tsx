@@ -12,6 +12,7 @@ interface HeaderProps {
 
 function statusDotTone(status: string): string {
   if (status.endsWith('HEALTHY') || status.endsWith('AVAILABLE')) return '';
+  if (status.endsWith('NOT REPORTED')) return 'muted';
   return status.endsWith('UNAVAILABLE') || status.endsWith('UNHEALTHY') ? 'red' : 'amber';
 }
 

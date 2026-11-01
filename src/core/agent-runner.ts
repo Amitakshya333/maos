@@ -196,10 +196,7 @@ export async function runAgent(
     if (options.signal?.aborted) throw new Error('Agent run cancelled.');
   };
 
-  const executeLimitedTool = (
-    toolName: string,
-    args: Record<string, any>,
-  ): ReturnType<typeof executeTool> => {
+  const executeLimitedTool = (toolName: string, args: Record<string, any>): ReturnType<typeof executeTool> => {
     assertActive();
     const count = toolCallCounts.get(toolName) ?? 0;
     const limit = options.toolCallLimits?.[toolName];
@@ -224,10 +221,33 @@ export async function runAgent(
 
   // Effective max = base + bonus for productive agents
   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
+  // Completion-reminder classification (COMPLETION-FIX-04 finding 1).
+  // Uses the effective authorized tool definitions after filtering — the same
+  // set offered to the model via getToolsForAgent — not the raw allow-list.
+  // Only positively known project-file-non-mutating tools qualify; anything
+  // else (file generators, executors, mutators, memory/coordination tools,
+  // external services, or names dropped by filtering) keeps the existing
+  // reminder. analyze_telemetry_csv persists receipts only under .maos/
+  // evidence storage (excluded from change snapshots); it cannot mutate
+  // project files, so files_changed: [] stays correct for it. Unrestricted
+  // agents (no allow-list) always keep the existing reminder.
+  const KNOWN_READONLY_TOOLS = new Set([
+    'analyze_telemetry_csv',
+    'check_compliance',
+    'ingest_document',
+    'list_dir',
+    'read_file',
+    'search_code',
+    'task_complete',
+  ]);
+  const effectiveToolNames = getToolsForAgent(agent.allowedTools, agent.id).map((tool) => tool.function.name);
+  const readOnlyAgent =
+    effectiveToolNames.length > 0 && effectiveToolNames.every((name) => KNOWN_READONLY_TOOLS.has(name));
   const providerRetryCeiling = provider.maxApplicationRetries;
-  const maxProviderRetries = providerRetryCeiling === undefined
-    ? options.maxProviderRetries ?? 3
-    : Math.min(options.maxProviderRetries ?? providerRetryCeiling, providerRetryCeiling);
+  const maxProviderRetries =
+    providerRetryCeiling === undefined
+      ? (options.maxProviderRetries ?? 3)
+      : Math.min(options.maxProviderRetries ?? providerRetryCeiling, providerRetryCeiling);
   const generate = () => {
     assertActive();
     if (options.maxGenerationAttempts !== undefined && generationAttempts >= options.maxGenerationAttempts) {
@@ -283,12 +303,7 @@ export async function runAgent(
       }
 
       // Call the model (with retry for transient errors including 504)
-      const response = await retryOnTransient(
-        generate,
-        maxProviderRetries,
-        logger,
-        agent.id,
-      );
+      const response = await retryOnTransient(generate, maxProviderRetries, logger, agent.id);
       assertActive();
       returnedModel = response.model || returnedModel;
       if (response.reportedModel) reportedModel = response.reportedModel;
@@ -313,16 +328,12 @@ export async function runAgent(
           logger.warn(agent.id, 'Model stopped without calling task_complete -- nudging to finalize');
           messages.push({
             role: 'user',
-            content:
-              'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
+            content: readOnlyAgent
+              ? 'You stopped without calling task_complete. This task requires no repository/project deliverable changes: call task_complete now with a summary of what you accomplished and files_changed: [] (an empty list is valid for read-only work; the field may also be omitted). Do not start new work.'
+              : 'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
           });
 
-          const retryResponse = await retryOnTransient(
-            generate,
-            maxProviderRetries,
-            logger,
-            agent.id,
-          );
+          const retryResponse = await retryOnTransient(generate, maxProviderRetries, logger, agent.id);
           assertActive();
           returnedModel = retryResponse.model || returnedModel;
           if (retryResponse.reportedModel) reportedModel = retryResponse.reportedModel;
@@ -397,22 +408,29 @@ export async function runAgent(
 
         const { result, isComplete: done } = executeLimitedTool(toolName, args);
         const authorized = !agent.allowedTools?.length || agent.allowedTools.includes(toolName);
-        const mutationSucceeded = toolName === 'write_file'
-          ? result.startsWith('Written: ')
-          : toolName === 'git_commit'
-            ? result.startsWith('Committed: ')
-            : toolName === 'run_command'
-              ? /^Command: [\s\S]*\nExit: 0\n/.test(result)
-              : false;
+        const mutationSucceeded =
+          toolName === 'write_file'
+            ? result.startsWith('Written: ')
+            : toolName === 'git_commit'
+              ? result.startsWith('Committed: ')
+              : toolName === 'run_command'
+                ? /^Command: [\s\S]*\nExit: 0\n/.test(result)
+                : false;
         if (authorized && mutationSucceeded) {
           hadMutatingToolCall = true;
           try {
             getMessageBus().emit(
-              createEvent('TASK_PROGRESS', agent.id, {
-                tool: toolName,
-                iteration: iterations,
-                file: args.path || args.command || undefined,
-              }, task.id, 'api'),
+              createEvent(
+                'TASK_PROGRESS',
+                agent.id,
+                {
+                  tool: toolName,
+                  iteration: iterations,
+                  file: args.path || args.command || undefined,
+                },
+                task.id,
+                'api',
+              ),
             );
           } catch {
             /* non-fatal */
@@ -596,7 +614,11 @@ export async function runAgent(
       taskId: task.id,
       model: returnedModel,
       success: false,
-      summary: timedOut ? 'Agent run timed out.' : options.signal?.aborted ? 'Agent run cancelled.' : `Agent failed: ${err.message}`,
+      summary: timedOut
+        ? 'Agent run timed out.'
+        : options.signal?.aborted
+          ? 'Agent run cancelled.'
+          : `Agent failed: ${err.message}`,
       filesChanged: [],
       iterations,
       totalTokens,
