@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatIcon, TasksIcon } from '../components/icons';
 import { apiAdapter } from '../api';
+import type { RingAskResult } from '../api/ring-types';
+import { RingAskPanel, RingEvidenceOnlyBanner, RingHostedBanner, ringBadgeText, ringRoleLabel } from '../components/RingAskPanel';
 import type { Conversation, Message } from '../../../domain/schemas';
 import type { ChatAttachment, PromoteToTaskInput } from '../../../domain/conversation';
 import type { OperationalMode, CitedClaim } from '../../../domain/evidence-mode';
@@ -39,6 +41,9 @@ export const ChatView: React.FC = () => {
   });
   const [promotionNotice, setPromotionNotice] = useState<{ taskId: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // TASK RING-IMPL-01: latest Ring ask result drives the badge + state
+  // banner. Null until the first ask; sovereign chat state is untouched.
+  const [ringResult, setRingResult] = useState<RingAskResult | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -288,14 +293,14 @@ export const ChatView: React.FC = () => {
     <div
       className="view-container"
       role="tabpanel"
-      aria-label="Chat & Conversations View"
+      aria-label="Ring View"
       style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}
     >
       {/* Top Header */}
       <div className="view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <div>
           <h1 className="view-title" style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>
-            Chat & Interactive Exploration
+            Ring & Interactive Exploration
           </h1>
           <p className="view-desc" style={{ fontSize: '13px', color: 'var(--text-dim, #888888)', margin: '4px 0 0 0' }}>
             Local interactive sessions with open-weight models. Exploration remains purely conversational until explicitly promoted to a tracked task.
@@ -393,6 +398,15 @@ export const ChatView: React.FC = () => {
           {error}
         </div>
       )}
+
+      {/* TASK RING-IMPL-01: state banner reflects the latest Ring result only.
+          No result yet renders no banner; sovereign chat below is unchanged. */}
+      {ringResult?.mode === 'hosted' && <RingHostedBanner result={ringResult} />}
+      {ringResult?.mode === 'evidence-only' && <RingEvidenceOnlyBanner />}
+
+      {/* TASK RING-IMPL-01: Ring ask panel (NEW hosted path). The sovereign
+          conversation workspace below is unchanged. */}
+      <RingAskPanel onResult={setRingResult} />
 
       {/* Main Chat Workspace */}
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden' }}>
@@ -528,7 +542,7 @@ export const ChatView: React.FC = () => {
                 }}
                 data-testid="chat-active-model-badge"
               >
-                {activeModel?.device ? activeModel.device.toUpperCase() : 'LOCAL'}: {activeModel?.modelId || 'None'}
+                {ringBadgeText(ringResult, `${activeModel?.device ? activeModel.device.toUpperCase() : 'LOCAL'}: ${activeModel?.modelId || 'None'}`)}
               </span>
 
               {availableModels.length > 0 && (
@@ -679,7 +693,7 @@ export const ChatView: React.FC = () => {
                         color: m.role === 'user' ? 'var(--accent, #3b82f6)' : 'var(--status-green, #4ade80)',
                       }}
                     >
-                      {m.role}
+                      {ringRoleLabel(m.role)}
                     </span>
                     <span>{new Date(m.timestamp).toLocaleTimeString()}</span>
                   </div>

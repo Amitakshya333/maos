@@ -27,6 +27,7 @@ export type ActiveView =
   | 'agents';
 
 export const INDUSTRIAL_DEMO_VIEWS = [
+  'chat',
   'cockpit',
   'evidence',
   'approvals',
@@ -46,7 +47,7 @@ interface NavConfig {
 }
 
 const MODULE_REGISTRY: Record<string, NavConfig> = {
-  chat: { label: 'Chat & Sessions', icon: <ChatIcon size={20} /> },
+  chat: { label: 'Ring', icon: <ChatIcon size={20} /> },
   tasks: { label: 'Tasks & Runs', icon: <TasksIcon size={20} /> },
   code: { label: 'Code & Sandbox', icon: <CodeIcon size={20} /> },
   terminal: { label: 'Terminal / Shell', icon: <TerminalIcon size={20} /> },

@@ -110,6 +110,8 @@ import type {
   ModelSwitchResult,
   ActiveModelIdentity,
 } from '../../../domain/model-switch';
+import type { RingAskRequest, RingAskResult } from './ring-types';
+import { validateRingAskResult } from './ring-types';
 import type {
   ComparableObservation,
   ConflictItem,
@@ -715,6 +717,20 @@ export class BrowserRestClient {
       options,
     );
     return res.data;
+  }
+
+  /**
+   * TASK RING-IMPL-01: ask Ring (POST /api/v1/ring/ask). This is the NEW
+   * hosted path beside the sovereign chat path; the sovereign
+   * chatCompletion route is untouched. The response is validated at
+   * runtime and identity fields are never invented client-side.
+   */
+  async ringAsk(input: RingAskRequest, options?: RequestOptions): Promise<RingAskResult> {
+    const res = await this.request<RingAskResult>('POST', '/api/v1/ring/ask', input, {
+      timeoutMs: 120_000,
+      ...options,
+    });
+    return validateRingAskResult(res.data);
   }
 
   async promoteToTask(

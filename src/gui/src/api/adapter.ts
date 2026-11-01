@@ -13,6 +13,7 @@ import type {
   IndustrialTelemetryAnalysisResponse,
   IndustrialAnalysisAgentResponse,
 } from './rest-client';
+import type { RingAskRequest, RingAskResult } from './ring-types';
 import { BrowserEventClient, ConnectionState, EventListener, StateListener } from './event-client';
 import type { Task, Artifact, ModelLease, AuditRecord, SequencedEvent, Project, Approval, Conversation, Message, MessageRole, AuditChainVerification } from '../../../domain/schemas';
 import type {
@@ -361,6 +362,14 @@ export class GuiApiAdapter {
 
   async getChatHealth(): Promise<{ available: boolean; status: string }> {
     return this.rest.getChatHealth();
+  }
+
+  /**
+   * TASK RING-IMPL-01: Ring ask (NEW hosted path). Consumes the exact
+   * RING-SVC-01 contract; the sovereign chatCompletion path is unchanged.
+   */
+  async ringAsk(input: RingAskRequest): Promise<RingAskResult> {
+    return this.rest.ringAsk(input, { timeoutMs: 120_000 });
   }
 
   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {

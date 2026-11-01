@@ -5,5 +5,6 @@
 export * from './errors';
 export * from './runtime-validation';
 export * from './rest-client';
+export * from './ring-types';
 export * from './event-client';
 export * from './adapter';
