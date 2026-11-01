@@ -14,6 +14,7 @@ import type {
   IndustrialAnalysisAgentResponse,
 } from './rest-client';
 import type { RingAskRequest, RingAskResult } from './ring-types';
+import type { RingRunRequest, RingRunStartResult, RingRunState, RingApprovalDecision } from './ring-run-types';
 import { BrowserEventClient, ConnectionState, EventListener, StateListener } from './event-client';
 import type { Task, Artifact, ModelLease, AuditRecord, SequencedEvent, Project, Approval, Conversation, Message, MessageRole, AuditChainVerification } from '../../../domain/schemas';
 import type {
@@ -370,6 +371,23 @@ export class GuiApiAdapter {
    */
   async ringAsk(input: RingAskRequest): Promise<RingAskResult> {
     return this.rest.ringAsk(input, { timeoutMs: 120_000 });
+  }
+
+  /** TASK RING-UI-01: Ring agent-run lifecycle (start/poll/cancel/approve). */
+  async startRingRun(input: RingRunRequest): Promise<RingRunStartResult> {
+    return this.rest.startRingRun(input);
+  }
+
+  async getRingRun(runId: string): Promise<RingRunState> {
+    return this.rest.getRingRun(runId);
+  }
+
+  async cancelRingRun(runId: string): Promise<void> {
+    return this.rest.cancelRingRun(runId);
+  }
+
+  async decideRingApproval(runId: string, approvalId: string, decision: RingApprovalDecision): Promise<void> {
+    return this.rest.decideRingApproval(runId, approvalId, decision);
   }
 
   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {

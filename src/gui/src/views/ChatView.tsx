@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChatIcon, TasksIcon } from '../components/icons';
+import { TasksIcon } from '../components/icons';
 import { apiAdapter } from '../api';
-import type { RingAskResult } from '../api/ring-types';
-import { RingAskPanel, RingEvidenceOnlyBanner, RingHostedBanner, ringBadgeText, ringRoleLabel } from '../components/RingAskPanel';
+import type { RingRunState } from '../api/ring-run-types';
+import { RingWorkspace, ringRunBadgeText } from '../components/RingWorkspace';
 import type { Conversation, Message } from '../../../domain/schemas';
 import type { ChatAttachment, PromoteToTaskInput } from '../../../domain/conversation';
 import type { OperationalMode, CitedClaim } from '../../../domain/evidence-mode';
@@ -41,9 +41,9 @@ export const ChatView: React.FC = () => {
   });
   const [promotionNotice, setPromotionNotice] = useState<{ taskId: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // TASK RING-IMPL-01: latest Ring ask result drives the badge + state
-  // banner. Null until the first ask; sovereign chat state is untouched.
-  const [ringResult, setRingResult] = useState<RingAskResult | null>(null);
+  // TASK RING-UI-01: latest Ring run state drives the badge. Null until
+  // the first run; the sovereign conversation state below is untouched.
+  const [ringRunState, setRingRunState] = useState<RingRunState | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -310,6 +310,15 @@ export const ChatView: React.FC = () => {
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             className="btn-secondary"
+            onClick={() => { window.location.hash = '#/cockpit'; }}
+            aria-label="Open Cockpit"
+            data-testid="ring-open-cockpit-header"
+            style={{ padding: '6px 14px', fontSize: '13px' }}
+          >
+            Open Cockpit
+          </button>
+          <button
+            className="btn-secondary"
             onClick={handleCreateSession}
             aria-label="New Session"
             style={{ padding: '6px 14px', fontSize: '13px' }}
@@ -399,59 +408,14 @@ export const ChatView: React.FC = () => {
         </div>
       )}
 
-      {/* TASK RING-IMPL-01: state banner reflects the latest Ring result only.
-          No result yet renders no banner; sovereign chat below is unchanged. */}
-      {ringResult?.mode === 'hosted' && <RingHostedBanner result={ringResult} />}
-      {ringResult?.mode === 'evidence-only' && <RingEvidenceOnlyBanner />}
+      {/* TASK RING-UI-01: Ring agent workspace (roster + streaming run
+          transcript + inline approvals). Replaces the one-shot ask panel;
+          mode banners render inside the workspace from the run payload. */}
+      <RingWorkspace onRunState={setRingRunState} />
 
-      {/* TASK RING-IMPL-01: Ring ask panel (NEW hosted path). The sovereign
-          conversation workspace below is unchanged. */}
-      <RingAskPanel onResult={setRingResult} />
-
-      {/* Main Chat Workspace */}
-      <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden' }}>
-        {/* Session Selector Sidebar */}
-        <div
-          style={{
-            width: '240px',
-            backgroundColor: 'var(--bg-secondary, #1a1a1a)',
-            borderRadius: '6px',
-            border: '1px solid var(--border-color, #333333)',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color, #333333)', fontWeight: 600, fontSize: '13px' }}>
-            Sessions ({conversations.length})
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
-            {conversations.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => setActiveConvId(c.id)}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  marginBottom: '4px',
-                  backgroundColor: c.id === activeConvId ? 'var(--accent-dim, rgba(59, 130, 246, 0.2))' : 'transparent',
-                  border: c.id === activeConvId ? '1px solid var(--accent, #3b82f6)' : '1px solid transparent',
-                }}
-              >
-                <div style={{ fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{c.messages.length > 0 ? (c.messages[0].content?.substring(0, 24) || 'Interactive Session') : 'New Session'}</span>
-                  {c.pinned && <span title="Pinned session" style={{ fontSize: '12px' }}>📌</span>}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-dim, #888888)', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                  <span>{c.mode === 'brainstorm' ? '💡 Brainstorm' : '🛡️ Industrial'} • {c.messages.length} msgs</span>
-                  <span>{new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Conversation Thread & Input Area */}
+      {/* TASK RING-UI-01: sovereign session/model controls stay available
+          beside the workspace; the transcript itself is the workspace's. */}
+      <div style={{ display: 'flex', gap: '16px', overflow: 'hidden', marginBottom: '12px' }}>
         <div
           style={{
             flex: 1,
@@ -463,74 +427,15 @@ export const ChatView: React.FC = () => {
             overflow: 'hidden',
           }}
         >
-          {/* Thread Header */}
-          <div
-            style={{
-              padding: '10px 16px',
-              borderBottom: '1px solid var(--border-color, #333333)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>
-                {activeConv ? activeConv.id : 'No Session Selected'}
-              </span>
-              {activeConv && (
-                <>
-                  <span
-                    style={{
-                      marginLeft: '10px',
-                      fontSize: '11px',
-                      backgroundColor: 'var(--bg-tertiary, #2c2c2c)',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      color: 'var(--text-dim, #aaaaaa)',
-                    }}
-                  >
-                    Agent: {activeConv.agentId}
-                  </span>
-
-                  <button
-                    onClick={() => handleModeSelect(activeConv.mode === 'brainstorm' ? 'evidence' : 'brainstorm')}
-                    data-testid="mode-toggle-btn"
-                    title="Click to toggle between Industrial Evidence Mode and Brainstorm Mode"
-                    style={{
-                      fontSize: '11px',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      border: '1px solid',
-                      cursor: 'pointer',
-                      backgroundColor: activeConv.mode === 'brainstorm' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                      borderColor: activeConv.mode === 'brainstorm' ? '#eab308' : '#3b82f6',
-                      color: activeConv.mode === 'brainstorm' ? '#eab308' : '#3b82f6',
-                      fontWeight: 600,
-                      marginLeft: '10px',
-                    }}
-                  >
-                    {activeConv.mode === 'brainstorm' ? '💡 Brainstorm Mode' : '🛡️ Industrial Evidence Mode'}
-                  </button>
-
-                  <button
-                    onClick={handleTogglePin}
-                    data-testid="conv-pin-btn"
-                    title={activeConv.pinned ? 'Pinned (Protected from retention purge)' : 'Unpinned (Subject to retention purge)'}
-                    style={{
-                      fontSize: '13px',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      marginLeft: '8px',
-                      padding: '2px 4px',
-                    }}
-                  >
-                    {activeConv.pinned ? '📌' : '📍'}
-                  </button>
-                </>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* TASK RING-UI-01: the Ring transcript above is the message
+              surface; the sovereign message list was removed so runs are
+              watched, not re-asked. Model/session controls live below.
+              (state-box styles the workspace empty state the same way.) */}
+          <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-dim, #888888)' }}>
+              {activeConv ? `Session ${activeConv.id} · Agent: ${activeConv.agentId}` : 'No Session Selected'}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span
                 style={{
                   fontSize: '11px',
@@ -540,11 +445,10 @@ export const ChatView: React.FC = () => {
                   padding: '2px 8px',
                   borderRadius: '4px',
                 }}
-                data-testid="chat-active-model-badge"
+                data-testid='chat-active-model-badge'
               >
-                {ringBadgeText(ringResult, `${activeModel?.device ? activeModel.device.toUpperCase() : 'LOCAL'}: ${activeModel?.modelId || 'None'}`)}
+                {ringRunBadgeText(ringRunState, `${activeModel?.device ? activeModel.device.toUpperCase() : 'LOCAL'}: ${activeModel?.modelId || 'None'}`)}
               </span>
-
               {availableModels.length > 0 && (
                 <select
                   value={activeModel?.modelId || ''}
@@ -558,8 +462,8 @@ export const ChatView: React.FC = () => {
                     color: 'var(--text-main, #ffffff)',
                     cursor: 'pointer',
                   }}
-                  data-testid="chat-model-selector"
-                  aria-label="Select Model"
+                  data-testid='chat-model-selector'
+                  aria-label='Select Model'
                 >
                   {availableModels.map((m) => (
                     <option key={m.modelId} value={m.modelId}>
@@ -568,253 +472,38 @@ export const ChatView: React.FC = () => {
                   ))}
                 </select>
               )}
-            </div>
-          </div>
-
-          {/* Error Banner */}
-          {error && (
-            <div
-              style={{
-                padding: '8px 14px',
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                borderBottom: '1px solid var(--status-red, #ef4444)',
-                color: 'var(--status-red, #ef4444)',
-                fontSize: '12px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              data-testid="chat-error-banner"
-            >
-              <span>✗ {error}</span>
-              <button
-                onClick={() => setError(null)}
-                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '11px' }}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Model Switch Error / Confirmation Banners in Chat */}
-          {chatSwitchError && (
-            <div
-              style={{
-                padding: '8px 14px',
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                borderBottom: '1px solid var(--status-red, #ef4444)',
-                color: 'var(--status-red, #ef4444)',
-                fontSize: '12px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              data-testid="chat-switch-error-banner"
-            >
-              <span>✗ {chatSwitchError}</span>
-              <button
-                onClick={() => setChatSwitchError(null)}
-                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '11px' }}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {chatConfirmPrompt && (
-            <div
-              style={{
-                padding: '10px 14px',
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                borderBottom: '1px solid var(--status-amber, #f59e0b)',
-                fontSize: '12px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              data-testid="chat-confirm-prompt-banner"
-            >
-              <span>⚠️ {chatConfirmPrompt.message}</span>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  className="btn-primary"
-                  onClick={() => handleChatModelSelect(chatConfirmPrompt.targetModelId, true)}
-                  style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: 'var(--status-amber, #f59e0b)', color: '#000' }}
-                  data-testid="chat-confirm-switch-btn"
-                >
-                  Confirm & Unload
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() => setChatConfirmPrompt(null)}
-                  style={{ fontSize: '11px', padding: '3px 8px' }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Message List */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {!activeConv || activeConv.messages.length === 0 ? (
-              <div className="state-box" style={{ margin: 'auto', padding: '60px 20px', textAlign: 'center', color: 'var(--text-dim, #888888)' }}>
-                <div style={{ opacity: 0.4, marginBottom: '12px' }}><ChatIcon size={44} /></div>
-                <div className="state-title" style={{ fontSize: '15px', fontWeight: 500 }}>Sovereign Local Chat Ready</div>
-                <p className="state-message" style={{ fontSize: '13px', maxWidth: '420px', margin: '6px auto 0 auto' }}>
-                  Ask questions, explore ideas, or attach confidential files from the project root. Messages will not create tasks until you click Promote.
-                </p>
-              </div>
-            ) : (
-              activeConv.messages.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                    maxWidth: '80%',
-                  }}
-                >
-                  <div
+              {activeConv && (
+                <>
+                  <button
+                    onClick={() => handleModeSelect(activeConv.mode === 'brainstorm' ? 'evidence' : 'brainstorm')}
+                    data-testid='mode-toggle-btn'
+                    title='Click to toggle between Industrial Evidence Mode and Brainstorm Mode'
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      marginBottom: '4px',
                       fontSize: '11px',
-                      color: 'var(--text-dim, #888888)',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      backgroundColor: activeConv.mode === 'brainstorm' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                      borderColor: activeConv.mode === 'brainstorm' ? '#eab308' : '#3b82f6',
+                      color: activeConv.mode === 'brainstorm' ? '#eab308' : '#3b82f6',
+                      fontWeight: 600,
                     }}
                   >
-                    <span
-                      style={{
-                        textTransform: 'uppercase',
-                        fontWeight: 600,
-                        color: m.role === 'user' ? 'var(--accent, #3b82f6)' : 'var(--status-green, #4ade80)',
-                      }}
-                    >
-                      {ringRoleLabel(m.role)}
-                    </span>
-                    <span>{new Date(m.timestamp).toLocaleTimeString()}</span>
-                  </div>
-
-                  <div
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      backgroundColor: m.role === 'user' ? 'var(--accent-dim, rgba(59, 130, 246, 0.15))' : 'var(--bg-tertiary, #262626)',
-                      border: m.role === 'user' ? '1px solid var(--accent, #3b82f6)' : '1px solid var(--border-color, #3a3a3a)',
-                      fontSize: '13px',
-                      lineHeight: '1.5',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                    }}
+                    {activeConv.mode === 'brainstorm' ? '💡 Brainstorm Mode' : '🛡️ Industrial Evidence Mode'}
+                  </button>
+                  <button
+                    onClick={handleTogglePin}
+                    data-testid='conv-pin-btn'
+                    title={activeConv.pinned ? 'Pinned (Protected from retention purge)' : 'Unpinned (Subject to retention purge)'}
+                    style={{ fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
                   >
-                    {/* UI1-10: Unverified Model Prose Warning Badge */}
-                    {m.isModelGenerated && !m.verifiedAgainstData && (
-                      <div
-                        data-testid="unverified-prose-badge"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          backgroundColor: 'rgba(234, 179, 8, 0.15)',
-                          color: '#eab308',
-                          border: '1px solid rgba(234, 179, 8, 0.35)',
-                          marginBottom: '8px',
-                          fontWeight: 500,
-                        }}
-                      >
-                        <span>⚠️</span>
-                        <span>Unverified Model Prose — Citation Required in Industrial Mode</span>
-                      </div>
-                    )}
-
-                    <div>{m.content}</div>
-
-                    {/* UI1-10: Cryptographic Cited Claims Display */}
-                    {m.claims && Array.isArray(m.claims) && m.claims.length > 0 && (
-                      <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#60a5fa', marginBottom: '6px' }}>
-                          Verified Evidence Claims ({m.claims.length}):
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {m.claims.map((claim: any) => (
-                            <div
-                              key={claim.id}
-                              data-testid="cited-claim-item"
-                              style={{
-                                fontSize: '11px',
-                                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                                padding: '6px 8px',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                              }}
-                            >
-                              <div style={{ fontWeight: 500 }}>{claim.statement}</div>
-                              {claim.citations && Array.isArray(claim.citations) && claim.citations.map((c: any, cIdx: number) => (
-                                <div key={cIdx} style={{ fontSize: '10px', color: 'var(--text-dim, #888)', marginTop: '4px' }}>
-                                  <span>📎 {c.sourcePath}</span>
-                                  <span style={{ marginLeft: '6px' }}>SHA-256: <code>{c.sourceHash?.substring(0, 8)}...</code></span>
-                                  {c.snippet && <div style={{ fontStyle: 'italic', marginTop: '2px', color: '#ccc' }}>"{c.snippet}"</div>}
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {m.attachments && m.attachments.length > 0 && (
-                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px' }}>Attached Project Evidence:</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {m.attachments.map((att) => (
-                            <span
-                              key={att.id}
-                              style={{
-                                fontSize: '11px',
-                                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(255, 255, 255, 0.15)',
-                              }}
-                            >
-                              📄 {att.name} ({(att.sizeBytes / 1024).toFixed(0)} KB)
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {m.role === 'user' && (
-                    <button
-                      onClick={() => openPromoteModal(m)}
-                      style={{
-                        alignSelf: 'flex-end',
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-dim, #888888)',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        marginTop: '4px',
-                        padding: '2px 6px',
-                      }}
-                      title="Promote this message into a tracked task"
-                    >
-                      ⚡ Promote to Task
-                    </button>
-                  )}
-                </div>
-              ))
-            )}
-            <div ref={messagesEndRef} />
+                    {activeConv.pinned ? '📌' : '📍'}
+                  </button>
+                </>
+              )}
+            </span>
           </div>
-
           {/* Attachment Tray */}
           {attachments.length > 0 && (
             <div
@@ -854,6 +543,90 @@ export const ChatView: React.FC = () => {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Model Switch Error / Confirmation Banners in Chat */}
+          {chatSwitchError && (
+            <div
+              style={{
+                padding: '8px 14px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                borderTop: '1px solid var(--status-red, #ef4444)',
+                color: 'var(--status-red, #ef4444)',
+                fontSize: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+              data-testid="chat-switch-error-banner"
+            >
+              <span>✗ {chatSwitchError}</span>
+              <button
+                onClick={() => setChatSwitchError(null)}
+                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '11px' }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {chatConfirmPrompt && (
+            <div
+              style={{
+                padding: '10px 14px',
+                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                borderTop: '1px solid var(--status-amber, #f59e0b)',
+                fontSize: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+              data-testid="chat-confirm-prompt-banner"
+            >
+              <span>⚠️ {chatConfirmPrompt.message}</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn-primary"
+                  onClick={() => handleChatModelSelect(chatConfirmPrompt.targetModelId, true)}
+                  style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: 'var(--status-amber, #f59e0b)', color: '#000' }}
+                  data-testid="chat-confirm-switch-btn"
+                >
+                  Confirm & Unload
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setChatConfirmPrompt(null)}
+                  style={{ fontSize: '11px', padding: '3px 8px' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Error Banner */}
+          {error && (
+            <div
+              style={{
+                padding: '8px 14px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                borderTop: '1px solid var(--status-red, #ef4444)',
+                color: 'var(--status-red, #ef4444)',
+                fontSize: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+              data-testid="chat-error-banner"
+            >
+              <span>✗ {error}</span>
+              <button
+                onClick={() => setError(null)}
+                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '11px' }}
+              >
+                ✕
+              </button>
             </div>
           )}
 

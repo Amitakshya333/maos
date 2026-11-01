@@ -112,6 +112,8 @@ import type {
 } from '../../../domain/model-switch';
 import type { RingAskRequest, RingAskResult } from './ring-types';
 import { validateRingAskResult } from './ring-types';
+import type { RingRunRequest, RingRunStartResult, RingRunState, RingApprovalDecision } from './ring-run-types';
+import { validateRingRunStart, validateRingRunState } from './ring-run-types';
 import type {
   ComparableObservation,
   ConflictItem,
@@ -731,6 +733,39 @@ export class BrowserRestClient {
       ...options,
     });
     return validateRingAskResult(res.data);
+  }
+
+  /**
+   * TASK RING-UI-01: Ring agent runs (RING-AGENT-LOOP-01 contract). The
+   * workspace polls getRingRun for live progress; there is no per-run
+   * event stream in the existing app, so polling is the honest live path.
+   */
+  async startRingRun(input: RingRunRequest, options?: RequestOptions): Promise<RingRunStartResult> {
+    const res = await this.request<RingRunStartResult>('POST', '/api/v1/ring/runs', input, options);
+    return validateRingRunStart(res.data);
+  }
+
+  async getRingRun(runId: string, options?: RequestOptions): Promise<RingRunState> {
+    const res = await this.request<RingRunState>('GET', `/api/v1/ring/runs/${encodeURIComponent(runId)}`, undefined, options);
+    return validateRingRunState(res.data);
+  }
+
+  async cancelRingRun(runId: string, options?: RequestOptions): Promise<void> {
+    await this.request('POST', `/api/v1/ring/runs/${encodeURIComponent(runId)}/cancel`, {}, options);
+  }
+
+  async decideRingApproval(
+    runId: string,
+    approvalId: string,
+    decision: RingApprovalDecision,
+    options?: RequestOptions,
+  ): Promise<void> {
+    await this.request(
+      'POST',
+      `/api/v1/ring/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`,
+      { decision },
+      options,
+    );
   }
 
   async promoteToTask(

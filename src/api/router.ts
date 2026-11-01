@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as child_process from 'child_process';
-import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError } from '../service';
+import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError, RingAgentError } from '../service';
 import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import {
   getCorrelationId,
@@ -1312,6 +1312,103 @@ export class RestApiRouter {
           sendError(res, 400, err.code, err.message, correlationId);
         } else {
           sendError(res, 500, 'RING_ASK_FAILED', err.message || 'Ring ask failed', correlationId);
+        }
+      }
+      return true;
+    }
+
+    // ── Ring Agent (TASK RING-AGENT-LOOP-01) ─────────────────
+
+    if (method === 'POST' && pathname === '/api/v1/ring/runs') {
+      // TASK RING-ADAPTER-01 (A6): `agentId` is accepted-and-ignored for this
+      // release (per-agent execution is post-hackathon). The Ring lead always
+      // executes; the id is recorded as run.started metadata only so the wire
+      // never claims a roster agent ran the work.
+      const bodyResult = await readJsonBody<{ instruction?: string; agentId?: string; csvPath?: string; exportPath?: string; evidenceRoot?: string; analysisId?: string; documentPath?: string }>(req, res, correlationId);
+      if (!bodyResult) return true;
+      const payload = bodyResult.parsed;
+      if (!payload || typeof payload !== 'object' || typeof payload.instruction !== 'string' || !payload.instruction.trim()) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'instruction is required and must be a non-empty string.', correlationId);
+        return true;
+      }
+      const stringFields = ['agentId', 'csvPath', 'exportPath', 'evidenceRoot', 'analysisId', 'documentPath'] as const;
+      for (const field of stringFields) {
+        const value = (payload as Record<string, unknown>)[field];
+        if (value !== undefined && (typeof value !== 'string' || !value.trim())) {
+          sendError(res, 400, 'VALIDATION_FAILED', field + ' must be a non-empty string when provided.', correlationId);
+          return true;
+        }
+      }
+      try {
+        const runId = this.services.ringAgent.startRun(payload.instruction.trim(), {
+          agentId: payload.agentId?.trim(),
+          csvPath: payload.csvPath?.trim(),
+          exportPath: payload.exportPath?.trim(),
+          evidenceRoot: payload.evidenceRoot?.trim(),
+          analysisId: payload.analysisId?.trim(),
+          documentPath: payload.documentPath?.trim(),
+        });
+        const snapshot = this.services.ringAgent.getRun(runId);
+        sendJson(res, 201, { data: snapshot ?? { runId } }, correlationId);
+      } catch (err: any) {
+        if (err instanceof RingAgentError || err instanceof ProviderApiPolicyError) {
+          sendError(res, 400, err.code, err.message, correlationId);
+        } else {
+          sendError(res, 500, 'RING_AGENT_START_FAILED', err.message || 'Ring agent start failed', correlationId);
+        }
+      }
+      return true;
+    }
+
+    const ringRunMatch = pathname.match(new RegExp('^/api/v1/ring/runs/([^/]+)$'));
+    if (method === 'GET' && ringRunMatch) {
+      const runId = decodeURIComponent(ringRunMatch[1]);
+      const snapshot = this.services.ringAgent.getRun(runId);
+      if (!snapshot) {
+        sendError(res, 404, 'NOT_FOUND', 'Ring run not found.', correlationId);
+        return true;
+      }
+      sendJson(res, 200, { data: snapshot }, correlationId);
+      return true;
+    }
+
+    const ringCancelMatch = pathname.match(new RegExp('^/api/v1/ring/runs/([^/]+)/cancel$'));
+    if (method === 'POST' && ringCancelMatch) {
+      const bodyResult = await readJsonBody(req, res, correlationId);
+      if (!bodyResult) return true;
+      const runId = decodeURIComponent(ringCancelMatch[1]);
+      const existing = this.services.ringAgent.getRun(runId);
+      if (!existing) {
+        sendError(res, 404, 'NOT_FOUND', 'Ring run not found.', correlationId);
+        return true;
+      }
+      this.services.ringAgent.cancelRun(runId);
+      sendJson(res, 200, { data: this.services.ringAgent.getRun(runId) }, correlationId);
+      return true;
+    }
+
+    const ringApprovalMatch = pathname.match(new RegExp('^/api/v1/ring/runs/([^/]+)/approvals/([^/]+)$'));
+    if (method === 'POST' && ringApprovalMatch) {
+      const bodyResult = await readJsonBody<{ decision?: string }>(req, res, correlationId);
+      if (!bodyResult) return true;
+      const runId = decodeURIComponent(ringApprovalMatch[1]);
+      const approvalId = decodeURIComponent(ringApprovalMatch[2]);
+      const payload = bodyResult.parsed;
+      if (!payload || typeof payload.decision !== 'string' || (payload.decision !== 'approved' && payload.decision !== 'denied')) {
+        sendError(res, 400, 'VALIDATION_FAILED', "decision is required and must be 'approved' or 'denied'.", correlationId);
+        return true;
+      }
+      try {
+        const snapshot = this.services.ringAgent.resolveApproval(runId, approvalId, payload.decision);
+        sendJson(res, 200, { data: snapshot }, correlationId);
+      } catch (err: any) {
+        if (err instanceof RingAgentError) {
+          const status = err.code === 'RING_RUN_NOT_FOUND' || err.code === 'APPROVAL_NOT_FOUND' ? 404 : 400;
+          sendError(res, status, err.code, err.message, correlationId);
+        } else if (err instanceof ProviderApiPolicyError) {
+          sendError(res, 400, err.code, err.message, correlationId);
+        } else {
+          sendError(res, 500, 'RING_AGENT_APPROVAL_FAILED', err.message || 'Ring agent approval failed', correlationId);
         }
       }
       return true;

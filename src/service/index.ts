@@ -78,6 +78,7 @@ import { SandboxImageService } from './sandbox-image-service';
 import { SandboxRunnerService } from './sandbox-runner-service';
 import { ChatInferenceService } from './chat-inference-service';
 import { RingInferenceService } from './ring-inference-service';
+import { RingAgentService } from './ring-agent-service';
 import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
 import { OpenAIProvider } from '../backends/openai-provider';
 import { collectReservedMetaApiKeyEnvVars } from '../backends/meta-api-policy';
@@ -144,6 +145,7 @@ export interface ServiceContainer {
   readonly sandboxRunner: SandboxRunnerService;
   readonly chatInference: ChatInferenceService;
   readonly ringInference: RingInferenceService;
+  readonly ringAgent: RingAgentService;
   readonly industrialAnalysisAgent: IndustrialAnalysisAgentService;
   readonly calculationTrace: CalculationTraceService;
   readonly sovereigntyBoundary: SovereigntyBoundaryService;
@@ -283,6 +285,20 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
     projectRoot,
     auditService: audit,
     endpointAllowlist,
+    loadProjectConfig: () => {
+      if (!project.isInitialized()) return undefined;
+      try {
+        return project.loadConfig();
+      } catch {
+        return undefined;
+      }
+    },
+  });
+  const ringAgent = new RingAgentService({
+    projectRoot,
+    auditService: audit,
+    endpointAllowlist,
+    kbSearch: kbSearch as unknown as import('./ring-agent-service').RingKbSearchLike,
     loadProjectConfig: () => {
       if (!project.isInitialized()) return undefined;
       try {
@@ -449,6 +465,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
     sandboxRunner,
     chatInference,
     ringInference,
+    ringAgent,
     industrialAnalysisAgent,
     calculationTrace,
     sovereigntyBoundary,
@@ -467,6 +484,8 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
 export { CalculationTraceService } from './calculation-trace-service';
 export { ChatInferenceService, ChatInferenceError } from './chat-inference-service';
 export { RingInferenceService } from './ring-inference-service';
+export { RingAgentService, RingAgentError, RING_AGENT_TOOLS } from './ring-agent-service';
+export type { RingAgentRunStatus, RingAgentMode, RingAgentApprovalDecision, RingAgentRunContext, RingAgentRunSnapshot, RingAgentTranscriptEntry, RingAgentPendingApproval } from './ring-agent-service';
 export { IndustrialAnalysisAgentService, IndustrialAnalysisAgentError } from '../industrial/analysis-agent-service';
 export { SandboxImageService } from './sandbox-image-service';
 export { SandboxRunnerService } from './sandbox-runner-service';

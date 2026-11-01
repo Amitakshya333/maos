@@ -1,13 +1,13 @@
 /**
- * TASK RING-IMPL-01: Ring hero surface (GUI consumer side).
- * Static-markup tests in the established ui1-25 pattern
- * (renderToStaticMarkup; no DOM interaction harness exists).
+ * TASK RING-IMPL-01 (updated by RING-UI-01): Ring hero surface.
+ * Static-markup tests in the established ui1-25 pattern.
  *
  * Proves: chat is in INDUSTRIAL_DEMO_VIEWS; ActivityBar labels it Ring;
- * badge/banner copy is verbatim; Ring results render sources +
- * deterministic line + refusal in both modes; the verify card never
- * invents output; the contract validator fails closed and never invents
- * served-model identity.
+ * badge/banner copy is verbatim; the workspace shell renders the roster +
+ * empty state instead of the deleted one-shot ask panel; the verify card
+ * never invents output; the ask contract validator fails closed and never
+ * invents served-model identity. Dynamic run/approval coverage lives in
+ * tests/gui/ring-workspace.test.ts.
  */
 import { describe, expect, it } from 'vitest';
 import React from 'react';
@@ -20,14 +20,12 @@ import {
   RING_HOSTED_BANNER,
   RING_NO_EXPORT_VERIFIED,
   RING_TELEMETRY_BOUNDARY,
-  RingAskPanel,
   RingEvidenceOnlyBanner,
-  RingHostedBanner,
-  RingResultCard,
   RingVerifyCard,
+  RingWorkspace,
   ringBadgeText,
   ringRoleLabel,
-} from '../../src/gui/src/components/RingAskPanel';
+} from '../../src/gui/src/components/RingWorkspace';
 import type { RingAskResult } from '../../src/gui/src/api/ring-types';
 import { validateRingAskResult } from '../../src/gui/src/api/ring-types';
 
@@ -108,14 +106,10 @@ describe('ring identity copy', () => {
     expect(ringBadgeText(null, 'CUDA: qwen2.5-3b-instruct-local')).toBe('CUDA: qwen2.5-3b-instruct-local');
   });
 
-  it('renders the exact hosted banner with identity and telemetry boundary', () => {
-    const html = renderToStaticMarkup(React.createElement(RingHostedBanner, { result: HOSTED_RESULT }));
-
-    expect(html).toContain(RING_HOSTED_BANNER);
+  it('keeps the exact hosted banner and telemetry-boundary copy (rendered dynamically by the workspace)', () => {
     expect(RING_HOSTED_BANNER).toBe('Meta model reasoning via Baseten. Company evidence stays in MAOS.');
-    expect(html).toContain('Baseten');
-    expect(html).toContain('meta-models/muse-spark-open-1026');
-    expect(html).toContain(RING_TELEMETRY_BOUNDARY);
+    expect(RING_HOSTED_BANNER).toContain('Baseten');
+    expect(RING_HOSTED_BADGE).toContain('meta-models/muse-spark-open-1026');
     expect(RING_TELEMETRY_BOUNDARY).toBe('raw telemetry never leaves MAOS; only the summary is sent');
   });
 
@@ -125,63 +119,6 @@ describe('ring identity copy', () => {
     expect(html).toContain('no model wrote this answer');
     expect(html).toContain('no model ran');
     expect(html).toContain('evidence-only mode');
-  });
-});
-
-describe('ring result rendering', () => {
-  function renderCard(result: RingAskResult, extra?: { reviewError?: string | null }) {
-    return renderToStaticMarkup(
-      React.createElement(RingResultCard, {
-        result,
-        reviewBusy: false,
-        reviewError: extra?.reviewError ?? null,
-        reviewRun: null,
-        onClaim: () => {},
-        verifyTranscript: {},
-      }),
-    );
-  }
-
-  it('renders hosted answers with sources, deterministic line, and the refusal action', () => {
-    const html = renderCard(HOSTED_RESULT);
-
-    expect(html).toContain('Turbine 7 exceeded its demo vibration limit');
-    expect(html).toContain('SOP-TURBINE-VIB-DEMO-V1 §4');
-    expect(html).toContain('demo/industrial/sop_turbine_vibration_monitoring.md');
-    expect(html).toContain('MR-T07-2026-0822');
-    expect(html).toContain('demo/industrial/turbine_vibration_log.csv');
-    expect(html).toContain('ring-source-item');
-    expect(html).toContain('Deterministic: WARNING · RMS 4.125 · telemetry-1793000000000-abcdef12');
-    expect(html).toContain('Try to claim completion without the required tool');
-    expect(html).toContain(RING_TELEMETRY_BOUNDARY);
-  });
-
-  it('renders evidence-only answers as-is with the no-model note and deterministic line', () => {
-    const html = renderCard(EVIDENCE_ONLY_RESULT);
-
-    expect(html).toContain('Local evidence summary: WARNING verdict, RMS 4.125 mm/s. No model ran.');
-    expect(html).toContain('No model wrote this answer and no model ran');
-    expect(html).toContain('Deterministic: WARNING · RMS 4.125 · telemetry-1793000000000-abcdef12');
-    expect(html).toContain('T-07 vibration log');
-  });
-
-  it('shows the gate refusal text verbatim when the Ring claim is refused', () => {
-    const reason = 'Accepted agent report was not found inside the active project.';
-    const html = renderCard(HOSTED_RESULT, { reviewError: reason });
-
-    expect(html).toContain('role="alert"');
-    expect(html).toContain(reason);
-  });
-
-  it('offers no refusal action when no deterministic analysis id exists', () => {
-    const noAnalysis: RingAskResult = {
-      ...HOSTED_RESULT,
-      deterministic: { attempted: false },
-    };
-    const html = renderCard(noAnalysis);
-
-    expect(html).not.toContain('Try to claim completion without the required tool');
-    expect(html).toContain('Deterministic: not attempted');
   });
 });
 
@@ -214,12 +151,14 @@ describe('ring verify card', () => {
   });
 });
 
-describe('ring ask panel shell', () => {
-  it('renders the ask control with no result card before any ask', () => {
-    const html = renderToStaticMarkup(React.createElement(RingAskPanel));
+describe('ring workspace shell', () => {
+  it('renders the agent workspace (not the deleted one-shot ask panel)', () => {
+    const html = renderToStaticMarkup(React.createElement(RingWorkspace, { pollIntervalMs: 60000 }));
 
-    expect(html).toContain('data-testid="ring-ask-panel"');
-    expect(html).toContain('Ask Ring');
+    expect(html).toContain('data-testid="ring-workspace"');
+    expect(html).toContain('data-testid="ring-agent-roster"');
+    expect(html).toContain('data-testid="ring-empty-state"');
+    expect(html).not.toContain('data-testid="ring-ask-panel"');
     expect(html).not.toContain('data-testid="ring-result-card"');
   });
 });
