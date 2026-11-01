@@ -6,7 +6,7 @@
 
 **Core story:** A shift engineer has 500 synthetic turbine readings and a short maintenance note. The overall vibration average looks ordinary, but a few individual readings cross the demonstration limits and line up with field observations. MAOS makes the exception easy to inspect, runs the chosen audit path, produces a local record, and lets the operator check that record. The software supports a decision; it does not authorize a real turbine to operate.
 
-> **Recording status:** the T-07 GUI start, real approval pause, after-approval report, and same-run CLI verification are implemented. The production build and GUI typecheck pass, and the local dashboard is running. The end-to-end reviewer click-through still needs two manual rehearsals before the judged take.
+> **Release status (2026-10-27):** The installed-package CLI and supported Windows Electron/private-IPC browser path passed three consecutive rehearsals on one tarball. See `RECORDING_READINESS.md` and `docs/MAOS_INDUSTRIAL_EXECUTION_CHECKLIST.md` for exact run IDs and evidence. A truthful local/synthetic recording script is prepared, but no video has been recorded. The public Meta waiver/form remains unavailable; confirm selected-participant rules and the Meta-use requirement before using a video for submission.
 
 ---
 
@@ -52,7 +52,7 @@ All expected findings and thresholds are in the repository's synthetic demo pack
 
 ## 3. Readiness and known GUI boundaries
 
-The demo path is implemented and the current production build is serving at `127.0.0.1:3847`. Reload the browser tab before rehearsal. The full journey has not yet been manually clicked through from start to approval to report to CLI verification; a successful build alone is not a recording pass.
+The supported package path is the native Electron shell using private launcher IPC for the authenticated project session. Three installed-package browser rehearsals on one tarball covered approval, explicit rejection, source/rule staleness, refresh/resume, authenticated DOCX download, same-run audit linkage, and exact-ID CLI verification. Each completed run kept the engineering verdict `FAIL`; failed/stale/rejected runs did not create reports. The historical direct CLI dashboard workflow and the Computer Use URL-identification attempt are not counted toward this gate. See `RECORDING_READINESS.md` for package hash, run IDs, and evidence location.
 
 - The Agent Cockpit now starts the judged T-07 path and keeps its run ID in the browser so status survives switching to Approvals and back.
 - Approvals shows the run-bound anomaly rows and source hashes. Deciding that approval resumes only that run. The report uses a run-specific filename and is not generated on the pending path.
@@ -62,111 +62,33 @@ The demo path is implemented and the current production build is serving at `127
 - **Code & Sandbox**, **Terminal**, **Findings**, and **Drawing & Viewer** remain Preview; keep them out of the primary story.
 - The Evidence Workbench conflict fixture is scripted benchmark data, not fresh OCR/VLM extraction. Keep it outside the T-07 narrative.
 - UI labels now identify synthetic demo data and the local API; they do not claim that the whole host is air-gapped or report unmeasured GPU/model/latency values.
-- The one targeted GUI test mentioned in the prior readiness snapshot is still an existing stale assertion. Do not claim a green test suite based on this change. The selected path still needs a current build and two manual rehearsals.
+- Focused bridge tests and GUI typecheck passed; the installed-package browser gate now establishes the Windows test-shell topology. The desktop shell is not a signed installer, Rust remains a separately staged prerequisite, and no live Meta call was made.
 
 ---
 
-## 4. Recommended 4:45 recording script — one GUI decision, one CLI proof
+## 4. Current recording script
 
-**Demo title:** **The average passes. The decision doesn’t.**
-
-**Story:** At shift handover, an engineer sees an ordinary overall vibration RMS. Four short excursions and a maintenance note change the picture. MAOS prepares the evidence, pauses for the human reviewer, and creates a report only after approval. The CLI then verifies the exact same run ID and artifact hash.
-
-This is deliberately a narrow story, not a tour of every menu. Use slow cuts, generous pauses, quiet audio, one cursor action at a time, and readable type. Let the evidence reveal itself. Avoid generic AI theatrics and do not claim that an AI model made the threshold decision.
-
-### 0:00–0:18 — Cold open
-
-**Picture:** Black screen. One clean caption fades in: `SHIFT HANDOVER / T-07 / 500 SAMPLES`. Hold for two beats, then cut to the MAOS Agent Cockpit.
-
-**Say:**
-
-> “At shift change, the summary says the vibration average is normal. Before anyone signs off, let’s see what the average left out.”
-
-### 0:18–0:55 — GUI: prepare one real run
-
-**Screen:** Open `http://127.0.0.1:3847/#/cockpit`. Pause on **Run T-07 Safety Audit**. Click once and let the prepared T-07 run return its run ID, verdict, anomaly count, and pending-review state.
-
-**Say:**
-
-> “This uses the bundled synthetic T-07 evidence. The analysis checks the telemetry against the demo thresholds, then stops at a human approval gate. No report exists for this run yet.”
-
-**Action:** Copy the displayed run ID to a notes window or clipboard for the CLI step. Keep it out of the audience-facing narration if the interface already shows it.
-
-### 0:55–1:55 — GUI: reveal the evidence and make the decision
-
-**Screen:** Open **Approvals**. Select the pending approval with the same run ID. Read the prepared findings slowly: row 121 vibration warning at 5.2 mm/s; row 238 temperature warning at 88.4 °C; row 367 critical vibration at 8.3 mm/s; row 442 critical temperature at 97.2 °C. Show overall vibration RMS of about 2.637 mm/s and the attached source hashes.
-
-**Say:**
-
-> “Here is the tension: the overall RMS is about 2.64, below the demo warning threshold of 4.5. But row 367 reaches 8.3, above the critical limit of 7.1, and row 442 reaches 97.2 degrees, above the 95 degree limit. The maintenance note also describes heat, a metallic sound, and dark lubricant residue.”
-
-> “These are synthetic inputs and demonstration limits, not certified operating rules. MAOS has not made an operating decision. A human reviewer must decide whether to authorize the report.”
-
-**Action:** Inspect the run ID, four findings, source-hash count, and approval payload hash. Enter a short reviewer note, then approve. Do not use an automated or pre-approved CLI path in this story.
-
-### 1:55–2:35 — GUI: show the consequence of approval
-
-**Screen:** Return to Cockpit. The run panel should refresh to `COMPLETED` and show the run-specific DOCX path and exact CLI verification command. If it still says pending, stop the take and resolve the service or approval issue instead of narrating past it.
-
-**Say:**
-
-> “Only after that review did MAOS create this run’s report. The approval identity and decision are attached to the same run record.”
-
-**Action:** Hold on the run ID, completed state, and report path. The report is uniquely named for this run so an older file cannot masquerade as a fresh output.
-
-### 2:35–3:40 — CLI: verify the same run
-
-**Screen:** Switch to a terminal in `C:\maos`. Paste the run ID copied from the GUI.
-
-```powershell
-$runId = 'PASTE_THE_GUI_RUN_ID_HERE'
-node .\dist\cli\index.js industrial verify audit --run-id $runId --json
-```
-
-**Say:**
-
-> “Now the command line checks the audit chain and this run’s evidence together. The run ID is identical to the one we reviewed in the GUI. The command also checks the report and audit-export hashes stored for that run.”
-
-**Action:** Keep the run ID, `valid: true`, report path, and report SHA-256 visible. If the check fails, stop and diagnose the exact run; do not switch to an unrelated green result.
-
-### 3:40–4:15 — CLI: open the exact report
-
-Read the run-specific report path from the GUI panel or manifest, then run:
-
-```powershell
-node .\dist\cli\index.js industrial open artifacts/generated/PASTE_THE_GUI_RUN_ID_HERE-turbine_safety_approval_note.docx
-```
-
-Show the executive summary, the human approval, its citations, and the demonstration-only limitation. If no office viewer is available, use `--dry-run --json` and describe it as a validated launch plan, not an opened document.
-
-### 4:15–4:45 — Close
-
-**Say:**
-
-> “The average looked ordinary. The events did not. MAOS kept the evidence inspectable, paused for a human decision, and let us verify the resulting report by the same run ID. This is a synthetic demonstration, not a certified safety system or permission to operate equipment.”
-
-**Picture:** Return to the GUI run ID and report hash. Hold one second, cut to black.
-
+Use [`PRESENTATION_SCRIPT.md`](PRESENTATION_SCRIPT.md) as the authoritative timed script. It covers the supported Electron/private-IPC launch, pending-review refresh/resume, approval, artifact download and exact-run verification, separate source/rules stale failures, explicit rejection, and truthful limitations. This older master plan is the story and claim reference; do not use the legacy `127.0.0.1:3847` launch steps previously shown here.
 ## 5. Capture setup
 
-### Build and start the GUI/API
+### Install and start the supported desktop shell
 
-Run before recording, from the repository root:
+Use a temporary project with its fixtures, profile, and separately staged Rust
+engine from `RUNBOOK.md`. Install the final local tarball and the pinned
+Electron runtime in that project:
 
 ```powershell
-cd C:\maos
-npm run build
-node .\dist\cli\index.js dashboard
+$packageTarball = 'C:\path\to\maosorch-0.3.0.tgz'
+$projectRoot = (Get-Location).Path
+npm install --save-exact electron@45.0.0 $packageTarball
+npx install-electron --no
+npx electron .\node_modules\maosorch\desktop\main.cjs --project-root $projectRoot --allow-temp
 ```
 
-Open:
-
-- Industrial mission-control page: `http://127.0.0.1:3847/dashboard`
-- Primary demo surface: `http://127.0.0.1:3847/#/cockpit`
-- Human review: `http://127.0.0.1:3847/#/approvals`
-- Optional evidence/audit views: `http://127.0.0.1:3847/#/evidence` and `#/audit`
-
-The server listens on `127.0.0.1:3847`. Keep the dashboard terminal open. Avoid starting a second service on port 3847.
+For a project outside the system temp directory, omit `--allow-temp`. The
+desktop shell chooses runtime loopback ports and initializes the renderer from
+private launcher IPC; do not navigate to a hard-coded browser URL or use the
+legacy direct dashboard for the supported recording.
 
 ### Optional local model
 
@@ -184,24 +106,29 @@ The primary story does not require a model response; avoiding a chat detour keep
 
 ## 6. Manual rehearsal and recording checks
 
-Do not call the demo record-ready until the full browser journey has been rehearsed twice from a clean browser session and a known project state.
+The supported Windows test-shell path has passed three consecutive clean
+installed-package browser rehearsals on one tarball. The exact IDs and evidence
+location are in `RECORDING_READINESS.md`. This is not a signed installer or a
+captured video. Do not call the hackathon submission ready until the owner has
+reviewed participant rules and confirmed the Meta-use requirement.
 
 ### GUI checks
 
-- [ ] Rebuild and restart the dashboard so the browser serves the current code.
-- [ ] Open `/#/cockpit`; start exactly one T-07 run and copy its run ID.
-- [ ] Confirm the result is `pending_approval`, the approval queue has the same run ID, and it shows all expected anomaly rows, RMS, and source hashes.
-- [ ] Confirm the report with this run's unique filename does not exist before approval.
-- [ ] Approve once with a reviewer note. Confirm the queue records that identity, note, and decision.
-- [ ] Return to Cockpit; confirm the same run ID changes to `COMPLETED` and reports its run-specific DOCX path.
-- [ ] Inspect the DOCX and confirm its verdict, reviewer sign-off, citations, disclaimer, and expected content.
+- [x] Launch the installed Electron shell against an isolated Industrial project.
+- [x] Open `/#/cockpit`; start a synthetic T-07 run and match its run ID in Approvals.
+- [x] Confirm four expected anomaly rows, RMS, source hashes, and no report before approval.
+- [x] Approve with a reviewer note; confirm Cockpit shows the same completed run and run-specific DOCX path.
+- [x] Download the DOCX and compare its byte hash with the generated artifact.
+- [x] Verify the same run ID with the installed CLI and verify the browser audit chain.
+- [x] Reload and resume the pending run; test source/rules stale refusal and explicit rejection in isolated project state.
+- [x] Pass three consecutive installed-package browser rehearsals on the same tarball, including approve/download/verify.
 
 ### CLI checks
 
-- [ ] Run `industrial verify audit --run-id <same-run-id> --json` from `C:\maos`.
-- [ ] Confirm the chain is valid, the run is completed, the DOCX hash matches, the audit-export hash matches, and the output includes the same run ID.
-- [ ] Open the report using the exact run-specific path shown by Cockpit. Do not substitute an older fixed-name DOCX.
-- [ ] Keep a text note with the known-good GUI URL, command, current run ID, output path, and one recovery action for each failure.
+- [x] Run `maos-industrial verify audit --project-root <project-root> --run-id <same-run-id> --json` against the installed package.
+- [x] Confirm the run is completed and valid, the report hash matches the download, and output includes the same run ID.
+- [ ] Open the report in an office viewer during the final recording. Do not substitute an older fixed-name DOCX.
+- [x] Record the supported Electron launch command and same-run CLI verification in `PRESENTATION_SCRIPT.md`.
 
 ### Fresh-state discipline
 
@@ -267,15 +194,17 @@ Use a restrained monochrome palette, large readable measurements, one highlighte
 “The Rust engine appends and verifies the tamper-evident audit chain. The current judged-run RMS loop is implemented in JavaScript, so I do not attribute that calculation to Rust.”
 
 **What is the clearest next milestone?**  
-“Rehearse the new single-run GUI approval and same-run CLI verification twice, then add direct links from each anomaly to its maintenance-note evidence and include all four rows in the report.”
+“Confirm the participant rules and Meta-use requirement, then capture the reviewed local/synthetic demo without claiming a live Meta integration.”
 
 ---
 
 ## 10. Repository references for the demo operator
 
 - `demo/industrial/RECORDING_READINESS.md` — current readiness and open gates.
-- `demo/industrial/RECORDING_SCRIPT_DRAFT.md` — tested local model setup notes and safe wording.
-- `demo/industrial/RUNBOOK.md` — CLI setup and lifecycle commands; its old GUI click path should not be followed without rechecking it against the current source.
+- `demo/industrial/PRESENTATION_SCRIPT.md` — current timed recording script for the supported launcher and verified local flow.
+- `demo/industrial/RECORDING_SCRIPT_DRAFT.md` — local model setup notes and safe wording.
+- `HACKATHON_SUBMISSION.md` — draft summary and evidence inventory; adapt it to official fields before submission.
+- `demo/industrial/RUNBOOK.md` — source-checkout and installed-package setup plus the exercised GUI flow.
 - `demo/industrial/turbine_vibration_log.csv` — synthetic T-07 data.
 - `demo/industrial/maintenance_report.txt` — synthetic inspection notes.
 - `demo/industrial/safety_thresholds.json` — demo thresholds and mandatory disclaimer.
