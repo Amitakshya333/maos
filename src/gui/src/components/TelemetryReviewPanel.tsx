@@ -3,6 +3,7 @@ import { apiAdapter } from '../api';
 import type { IndustrialAnalysisAgentResponse, IndustrialTelemetryAnalysisResponse, JudgedRunResponse } from '../api/rest-client';
 import { TelemetryReviewCoordinator, type TelemetryReviewViewState } from './telemetryReviewCoordinator';
 import { applyReviewPatch, SelectionBinding } from './telemetryReviewState';
+import { CompletionRefusalDemo } from './CompletionRefusalDemo';
 
 function fileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -308,6 +309,15 @@ export const TelemetryReviewPanel: React.FC = () => {
             <div role="status" style={{ marginTop: 10, border: '1px solid #da3633', borderRadius: 6, padding: '9px 11px', fontSize: 11, color: '#ff7b72' }}>
               Agent completion failed — no agent report was accepted and no model explanation is shown. The result above is the deterministic local telemetry analysis (upload receipt <code>{analysis.analysisId}</code>), replayable from the CLI below — not an accepted agent report.
             </div>
+          )}
+          {!agentResult && (
+            <CompletionRefusalDemo
+              analysisId={analysis.analysisId}
+              reviewBusy={reviewBusy}
+              reviewError={reviewError}
+              actionsDisabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
+              onClaim={(id) => void coordinatorRef.current?.prepareReview(id)}
+            />
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 8, marginTop: 12 }}>
