@@ -508,9 +508,79 @@ export class AuditService {
       throw new Error('RUST_VERIFY_FAILED: Simulated Rust engine failure for chain verification');
     }
 
-    // Prepare the chain once, then send it to Rust in byte-bounded windows.
-    // Each window is anchored to the preceding persisted hash; Rust verifies
-    // both that boundary link and every record's absolute sequence/hash.
+    const chainRes = this.verifyChainRecords(records);
+    const errors = [...headErrors, ...chainRes.errors];
+
+    return {
+      valid: chainRes.valid && headErrors.length === 0,
+      recordCount: records.length,
+      errors,
+      verifiedAt: chainRes.verifiedAt,
+      latestHash: records[records.length - 1].hash,
+      executableHash: manifest.executableHash,
+    };
+  }
+
+  /**
+   * Authoritative Rust-backed chain verification for an arbitrary list of audit records.
+   * Validates structural continuity, schema integrity, and cryptographic record hashes.
+   */
+  public verifyChainRecords(records: AuditRecord[]): AuditChainVerification {
+    const manifest = this.getEngineManifest();
+    const verifiedAt = new Date().toISOString();
+
+    if (!Array.isArray(records) || records.length === 0) {
+      return {
+        valid: false,
+        recordCount: 0,
+        errors: ['Audit record list is empty or not an array.'],
+        verifiedAt,
+        latestHash: '',
+        executableHash: manifest.executableHash,
+      };
+    }
+
+    const structureErrors: string[] = [];
+    for (let i = 0; i < records.length; i++) {
+      const r = records[i];
+      if (typeof r !== 'object' || r === null) {
+        structureErrors.push(`Record at index ${i} is not a valid object.`);
+        continue;
+      }
+      if (r.sequence !== i) {
+        structureErrors.push(`Sequence continuity break at index ${i}: expected sequence ${i}, found ${r.sequence}.`);
+      }
+      if (i === 0) {
+        if (r.previous_hash !== '') {
+          structureErrors.push(`Genesis record 0 has non-empty previous_hash: '${r.previous_hash}'.`);
+        }
+      } else {
+        const expectedPrev = records[i - 1]?.hash;
+        if (r.previous_hash !== expectedPrev) {
+          structureErrors.push(
+            `Hash chain link break at sequence ${i}: previous_hash '${r.previous_hash}' does not match record ${i - 1} hash '${expectedPrev}'.`,
+          );
+        }
+      }
+      if (!validateAuditCategory(r.category)) {
+        structureErrors.push(`Record at sequence ${i} has invalid audit category: '${r.category}'.`);
+      }
+      if (typeof r.hash !== 'string' || !/^[a-f0-9]{64}$/i.test(r.hash)) {
+        structureErrors.push(`Record at sequence ${i} has malformed hash: '${r.hash}'.`);
+      }
+    }
+
+    if (structureErrors.length > 0) {
+      return {
+        valid: false,
+        recordCount: records.length,
+        errors: structureErrors,
+        verifiedAt,
+        latestHash: records[records.length - 1]?.hash ?? '',
+        executableHash: manifest.executableHash,
+      };
+    }
+
     const engineChain = records.map((r) => ({
       sequence: r.sequence,
       previous_hash: r.previous_hash,
@@ -526,9 +596,6 @@ export class AuditService {
     while (start < engineChain.length) {
       const previousHash = start === 0 ? '' : engineChain[start - 1].hash;
       const options = { startSequence: start, previousHash };
-      // The empty-chain envelope has the same fixed request fields. Add each
-      // serialized record and its comma incrementally to avoid repeatedly
-      // serializing the growing candidate window while packing it.
       let requestBytes = engineChainVerifyRequestSizeBytes([], options);
       const window: typeof engineChain = [];
 
@@ -570,12 +637,10 @@ export class AuditService {
       start += window.length;
     }
 
-    const errors = [...headErrors, ...engineErrors];
-
     return {
-      valid: engineErrors.length === 0 && errors.length === 0,
+      valid: engineErrors.length === 0,
       recordCount: records.length,
-      errors,
+      errors: engineErrors,
       verifiedAt,
       latestHash: records[records.length - 1].hash,
       executableHash: manifest.executableHash,

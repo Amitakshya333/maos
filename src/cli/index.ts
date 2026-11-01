@@ -818,16 +818,20 @@ industrial
 
 // ─── maos industrial verify ─────────────────────────────────
 industrial
-  .command('verify [target]')
-  .description('Verify industrial state: audit, boundary, service, or telemetry analysis')
+  .command('verify [target] [exportPath]')
+  .description('Verify industrial state: audit, boundary, service, telemetry analysis, or audit export')
   .option('-p, --project-root <path>', 'Project root directory', process.cwd())
   .option('--run-id <runId>', 'Verify one completed judged run and its report/export hashes')
+  .option('--export <path>', 'Verify an audit export JSON file and its linked run evidence')
   .option('--analysis-id <analysisId>', 'Replay one local telemetry analysis against its source CSV')
   .option('--json', 'Output machine-readable JSON')
-  .action(async (target, opts) => {
+  .action(async (target, exportPath, opts) => {
+    const effectiveExport = opts.export || (target === 'export' ? exportPath : (target && (target.endsWith('.json') || target.includes('audit-export')) ? target : undefined));
+    const effectiveTarget = effectiveExport && (!target || target === 'export' || target.endsWith('.json') || target.includes('audit-export')) ? 'export' : (target || 'audit');
     const result = await runIndustrialVerify({
-      target: target || 'audit',
+      target: effectiveTarget,
       runId: opts.runId,
+      exportPath: effectiveExport,
       analysisId: opts.analysisId,
       projectRoot: opts.projectRoot,
       json: opts.json,

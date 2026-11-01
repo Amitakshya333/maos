@@ -23,6 +23,7 @@ import chalk from 'chalk';
 import { createServiceContainer, ServiceContainer } from '../service';
 import { INDUSTRIAL_CLI_EXIT, IndustrialCliExitCode } from './industrial-cli';
 import type { ApprovalRecord, ReviewApprovalInput } from '../domain/approval';
+import type { AuditRecord } from '../domain';
 import { withJudgedRunLock, withJudgedRunOutputLock } from './judged-run-lock';
 import {
   OfficeDocxInput,
@@ -1657,4 +1658,303 @@ async function resumeJudgedRunAfterApprovalLocked(
     markJudgedRunFailed(projectRoot, services, latest, error instanceof Error ? error.message : String(error));
     throw error;
   }
+}
+
+export interface AuditExportVerificationResult {
+  readonly valid: boolean;
+  readonly runId?: string;
+  readonly recordCount: number;
+  readonly latestHash: string;
+  readonly exportPath: string;
+  readonly exportSha256: string;
+  readonly deliverablePath?: string;
+  readonly deliverableSha256?: string;
+  readonly deliverableVerified?: boolean;
+  readonly manifestVerified?: boolean;
+  readonly errors: readonly string[];
+  readonly details?: Record<string, unknown>;
+}
+
+/**
+ * Verify an audit export JSON file and its linked judged run evidence.
+ *
+ * Requirements:
+ * 1. Read-only: never modifies the original artifact or evidence files.
+ * 2. Fail closed: fails immediately on missing file, malformed JSON, altered numeric values,
+ *    broken sequence numbers, altered hashes, or mismatched deliverables.
+ * 3. Authoritative: reuses the Rust-backed cryptographic chain verifier (engineChainVerify).
+ */
+export function verifyAuditExport(
+  exportPathInput: string,
+  options: {
+    projectRoot?: string;
+    services?: ServiceContainer;
+  } = {},
+): AuditExportVerificationResult {
+  const projectRoot = path.resolve(options.projectRoot || process.cwd());
+  const resolvedExportPath = path.isAbsolute(exportPathInput)
+    ? exportPathInput
+    : path.resolve(projectRoot, exportPathInput);
+
+  if (!fs.existsSync(resolvedExportPath)) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256: '',
+      errors: [`Audit export file not found: ${exportPathInput}`],
+    };
+  }
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolvedExportPath);
+  } catch (err: any) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256: '',
+      errors: [`Cannot read audit export file: ${err.message}`],
+    };
+  }
+
+  if (!stat.isFile()) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256: '',
+      errors: [`Audit export path is not a file: ${exportPathInput}`],
+    };
+  }
+
+  const fileBytes = fs.readFileSync(resolvedExportPath);
+  const exportSha256 = crypto.createHash('sha256').update(fileBytes).digest('hex');
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(fileBytes.toString('utf8'));
+  } catch (err: any) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256,
+      errors: [`Audit export is not valid JSON: ${err.message}`],
+    };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256,
+      errors: ['Audit export top-level structure must be a JSON object.'],
+    };
+  }
+
+  if (!Array.isArray(parsed.records)) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256,
+      errors: ['Audit export missing "records" array.'],
+    };
+  }
+
+  if (parsed.records.length === 0) {
+    return {
+      valid: false,
+      recordCount: 0,
+      latestHash: '',
+      exportPath: exportPathInput,
+      exportSha256,
+      errors: ['Audit export contains zero records.'],
+    };
+  }
+
+  const errors: string[] = [];
+  const records = parsed.records as AuditRecord[];
+  const declaredVerification = parsed.verification;
+
+  if (declaredVerification) {
+    if (declaredVerification.recordCount !== undefined && declaredVerification.recordCount !== records.length) {
+      errors.push(
+        `Declared verification recordCount (${declaredVerification.recordCount}) does not match actual records array length (${records.length}).`,
+      );
+    }
+    const lastRecord = records[records.length - 1];
+    if (declaredVerification.latestHash && lastRecord && declaredVerification.latestHash !== lastRecord.hash) {
+      errors.push(
+        `Declared verification latestHash mismatch: declared '${declaredVerification.latestHash}', actual '${lastRecord.hash}'.`,
+      );
+    }
+  }
+
+  const services = options.services ?? createServiceContainer(projectRoot);
+  const chainVerification = services.audit.verifyChainRecords(records);
+  if (!chainVerification.valid) {
+    errors.push(...chainVerification.errors);
+  }
+
+  // Identify runId and deliverable from export records
+  let runId: string | undefined;
+  let docxArtifactId: string | undefined;
+  let docxArtifactHash: string | undefined;
+  let docxInputHash: string | undefined;
+  let docxRelativePath: string | undefined;
+
+  for (const record of records) {
+    const data = record.data as Record<string, unknown> | undefined;
+    if (!data) continue;
+    if (!runId && typeof data.runId === 'string' && data.runId.startsWith('judged-run-')) {
+      runId = data.runId;
+    }
+    if (data.event === 'DOCX_GENERATED') {
+      docxArtifactId = data.artifactId as string | undefined;
+      docxArtifactHash = data.artifactHash as string | undefined;
+      docxInputHash = data.inputHash as string | undefined;
+      docxRelativePath = data.relativePath as string | undefined;
+    }
+  }
+
+  let deliverableVerified: boolean | undefined;
+  let manifestVerified: boolean | undefined;
+  let deliverablePathFound: string | undefined = docxRelativePath;
+  let deliverableShaFound: string | undefined = docxArtifactHash;
+
+  // Run evidence check: if runId exists, check manifest and artifacts
+  if (runId) {
+    const manifest = readJudgedRunManifest(projectRoot, runId);
+    if (manifest) {
+      if (manifest.status !== 'completed') {
+        errors.push(`Judged run '${runId}' status is '${manifest.status}', expected 'completed'.`);
+      }
+      if (manifest.auditExportLatestHash && manifest.auditExportLatestHash !== chainVerification.latestHash) {
+        errors.push(
+          `Manifest auditExportLatestHash ('${manifest.auditExportLatestHash}') does not match verified latestHash ('${chainVerification.latestHash}').`,
+        );
+      }
+      if (
+        Number.isSafeInteger(manifest.auditExportThroughSequence) &&
+        manifest.auditExportThroughSequence !== records.length - 1
+      ) {
+        errors.push(
+          `Manifest auditExportThroughSequence (${manifest.auditExportThroughSequence}) does not match last record sequence (${records.length - 1}).`,
+        );
+      }
+
+      // If the export file matches the manifest's declared export path:
+      const manifestExportRel = manifest.auditExportPath;
+      if (manifestExportRel) {
+        const manifestExportAbs = path.resolve(projectRoot, manifestExportRel);
+        if (manifestExportAbs === path.resolve(resolvedExportPath)) {
+          if (manifest.auditExportSha256 && manifest.auditExportSha256 !== exportSha256) {
+            errors.push(
+              `Export file SHA-256 ('${exportSha256}') does not match manifest auditExportSha256 ('${manifest.auditExportSha256}').`,
+            );
+          }
+        }
+      }
+
+      // Check deliverable
+      if (manifest.deliverablePath) {
+        deliverablePathFound = manifest.deliverablePath;
+        deliverableShaFound = manifest.deliverableSha256;
+        const deliverableAbs = path.resolve(projectRoot, manifest.deliverablePath);
+        if (!fs.existsSync(deliverableAbs)) {
+          errors.push(`Associated deliverable file missing: ${manifest.deliverablePath}`);
+          deliverableVerified = false;
+        } else {
+          const actualDeliverableSha = crypto
+            .createHash('sha256')
+            .update(fs.readFileSync(deliverableAbs))
+            .digest('hex');
+          if (manifest.deliverableSha256 && actualDeliverableSha !== manifest.deliverableSha256) {
+            errors.push(
+              `Deliverable hash mismatch: expected '${manifest.deliverableSha256}', got '${actualDeliverableSha}'.`,
+            );
+            deliverableVerified = false;
+          } else if (docxArtifactHash && actualDeliverableSha !== docxArtifactHash) {
+            errors.push(
+              `Deliverable hash mismatch with DOCX_GENERATED record: expected '${docxArtifactHash}', got '${actualDeliverableSha}'.`,
+            );
+            deliverableVerified = false;
+          } else {
+            deliverableVerified = true;
+          }
+        }
+      }
+
+      // Check source files in manifest
+      if (manifest.sourceHashes) {
+        for (const [relPath, expectedHash] of Object.entries(manifest.sourceHashes)) {
+          const sourceAbs = path.resolve(projectRoot, relPath);
+          if (fs.existsSync(sourceAbs)) {
+            const actualSourceHash = crypto
+              .createHash('sha256')
+              .update(fs.readFileSync(sourceAbs))
+              .digest('hex');
+            if (actualSourceHash !== expectedHash) {
+              errors.push(
+                `Source evidence file '${relPath}' hash altered: expected '${expectedHash}', got '${actualSourceHash}'.`,
+              );
+            }
+          }
+        }
+      }
+
+      manifestVerified = errors.length === 0;
+    } else {
+      // Manifest not found in this projectRoot (could be standalone export file)
+      if (docxRelativePath && docxArtifactHash) {
+        const candidatePaths = [
+          path.resolve(projectRoot, docxRelativePath),
+          path.resolve(path.dirname(resolvedExportPath), path.basename(docxRelativePath)),
+        ];
+        const existingPath = candidatePaths.find((p) => fs.existsSync(p));
+        if (existingPath) {
+          const actualSha = crypto.createHash('sha256').update(fs.readFileSync(existingPath)).digest('hex');
+          if (actualSha === docxArtifactHash) {
+            deliverableVerified = true;
+          } else {
+            errors.push(
+              `Standalone deliverable at '${existingPath}' hash mismatch: expected '${docxArtifactHash}', got '${actualSha}'.`,
+            );
+            deliverableVerified = false;
+          }
+        }
+      }
+    }
+  }
+
+  const valid = errors.length === 0 && chainVerification.valid;
+
+  return {
+    valid,
+    runId,
+    recordCount: records.length,
+    latestHash: chainVerification.latestHash || (records[records.length - 1]?.hash ?? ''),
+    exportPath: exportPathInput,
+    exportSha256,
+    deliverablePath: deliverablePathFound,
+    deliverableSha256: deliverableShaFound,
+    deliverableVerified,
+    manifestVerified,
+    errors,
+    details: {
+      executableHash: chainVerification.executableHash,
+      docxArtifactId,
+      docxInputHash,
+    },
+  };
 }

@@ -38,6 +38,8 @@ import {
   JudgedRunOptions,
   JudgedRunResult,
   readJudgedRunManifest,
+  verifyAuditExport,
+  AuditExportVerificationResult,
 } from './judged-run';
 import {
   openLocalArtifact,
@@ -615,11 +617,13 @@ export async function runIndustrialDemo(
 // ── 4. Verify ──────────────────────────────────────────────────────
 
 export interface VerifyCliOptions {
-  readonly target?: 'audit' | 'boundary' | 'service' | 'telemetry';
+  readonly target?: 'audit' | 'boundary' | 'service' | 'telemetry' | 'export';
   readonly runId?: string;
+  readonly exportPath?: string;
   readonly analysisId?: string;
   readonly projectRoot?: string;
   readonly json?: boolean;
+  readonly services?: ServiceContainer;
 }
 
 export async function runIndustrialVerify(
@@ -629,6 +633,53 @@ export async function runIndustrialVerify(
   const target = options.target || 'audit';
 
   try {
+    const exportFile = options.exportPath || (target === 'export' ? undefined : (target && (target.endsWith('.json') || target.includes('audit-export')) ? target : undefined));
+    if (target === 'export' || exportFile) {
+      const targetExport = exportFile || (target !== 'export' ? target : undefined);
+      if (!targetExport) {
+        const msg = 'Export verification requires an export path via --export <path> or "maos industrial verify export <path>".';
+        if (!options.json) console.error(chalk.red(msg));
+        return { exitCode: INDUSTRIAL_CLI_EXIT.INVALID_ARGS, message: msg };
+      }
+      const services = options.services ?? createServiceContainer(projectRoot);
+      const verification = verifyAuditExport(targetExport, { projectRoot, services });
+      const exitCode = verification.valid ? INDUSTRIAL_CLI_EXIT.SUCCESS : INDUSTRIAL_CLI_EXIT.VERIFY_FAILED;
+      const data = { target: 'export', verification };
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+      } else {
+        console.log(chalk.bold.blue('\n🔍 MAOS Industrial — Audit Export Verification\n'));
+        console.log(`Status:          ${verification.valid ? chalk.green('PASS') : chalk.red('FAIL (Closed)')}`);
+        if (verification.runId) console.log(`Run ID:          ${verification.runId}`);
+        console.log(`Record Count:    ${verification.recordCount}`);
+        console.log(`Latest Hash:     ${verification.latestHash}`);
+        console.log(`Export SHA-256:  ${verification.exportSha256}`);
+        if (verification.deliverablePath) {
+          const delivStatus = verification.deliverableVerified === true
+            ? chalk.green('VERIFIED')
+            : verification.deliverableVerified === false
+              ? chalk.red('MISMATCH/MISSING')
+              : chalk.gray('UNCHECKED');
+          console.log(`Deliverable:     ${verification.deliverablePath} (${delivStatus})`);
+          if (verification.deliverableSha256) console.log(`Deliverable SHA: ${verification.deliverableSha256}`);
+        }
+        if (verification.manifestVerified !== undefined) {
+          console.log(`Manifest:        ${verification.manifestVerified ? chalk.green('VERIFIED') : chalk.red('MISMATCH/MISSING')}`);
+        }
+        if (verification.errors.length > 0) {
+          console.log(chalk.red('\nErrors:'));
+          for (const err of verification.errors) console.log(chalk.red(`  ✗ ${err}`));
+        }
+      }
+
+      return {
+        exitCode,
+        message: verification.valid ? 'Audit export and run evidence verified.' : 'Audit export verification failed.',
+        data,
+      };
+    }
+
     if (target === 'telemetry') {
       if (!options.analysisId) {
         const msg = "Telemetry verification requires --analysis-id <id>.";
@@ -1047,3 +1098,5 @@ export async function runIndustrialOpen(
     data,
   };
 }
+
+export { verifyAuditExport, AuditExportVerificationResult } from './judged-run';
