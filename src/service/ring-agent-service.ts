@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL, ProviderApiPolicyError } from '../backends/meta-api-policy';
+import { RING_STREAM_EVENT_TYPES } from './ring-contract';
 import { OpenAIProvider } from '../backends/openai-provider';
 import type { ChatMessage, IProvider, ToolDef } from '../backends/provider';
 import type { Project } from '../domain/schemas';
@@ -47,7 +48,14 @@ export interface RingAgentTranscriptEntry {
  * validator (src/gui/src/api/ring-run-types.ts). This is a mapped projection
  * of a JSONL transcript entry; the JSONL entry itself is never rewritten.
  */
-export interface RingAgentWireEvent {
+export interface RingStreamWireFields {
+  delta?: string;
+  plan?: Array<{ step: string; status: 'pending' | 'in_progress' | 'done' }>;
+  artifact?: { path: string; kind: string; size: number; sha256: string };
+  memory?: { noteId: string; summary: string };
+}
+
+export interface RingAgentWireEvent extends RingStreamWireFields {
   type: string;
   ts: string;
   /**
@@ -387,6 +395,12 @@ export class RingAgentService {
       default:
         break;
     }
+    if ((RING_STREAM_EVENT_TYPES as readonly string[]).includes(entry.type)) {
+      if (entry.type === 'model.delta' && typeof entry.delta === 'string') wire.delta = entry.delta;
+      if (entry.type === 'plan.updated' && Array.isArray(entry.plan)) wire.plan = entry.plan as RingStreamWireFields['plan'];
+      if (entry.type === 'artifact.created' && entry.artifact && typeof entry.artifact === 'object') wire.artifact = entry.artifact as RingStreamWireFields['artifact'];
+      if (entry.type === 'memory.saved' && entry.memory && typeof entry.memory === 'object') wire.memory = entry.memory as RingStreamWireFields['memory'];
+    }
     return wire;
   }
 
@@ -420,12 +434,37 @@ export class RingAgentService {
     return out;
   }
 
+  private readonly streamListeners = new Set<(runId: string, event: RingAgentWireEvent) => void>();
+
+  /**
+   * TASK RING-CONTRACT-01 (Dev B hook): subscribe to mapped wire events for
+   * the live streaming path. The Dev B lane persists each event as a
+   * SequencedEvent (`eventType: ring.run.<type>`, `runId` set) via
+   * EventService.recordEvent so the existing WS /api/v1/events channel
+   * (runId-scoped, sequenced + replay) delivers it; GET /ring/runs/:id stays
+   * the documented snapshot fallback. Listener exceptions never break the
+   * run; the JSONL transcript on disk is untouched.
+   */
+  onStreamEvent(listener: (runId: string, event: RingAgentWireEvent) => void): () => void {
+    this.streamListeners.add(listener);
+    return () => this.streamListeners.delete(listener);
+  }
+
+  private emitStreamEvent(run: InternalRun, entry: RingAgentTranscriptEntry): void {
+    if (this.streamListeners.size === 0) return;
+    let wire: RingAgentWireEvent | null = null;
+    try { wire = this.toWireEvent(run, entry); } catch { return; }
+    if (!wire) return;
+    for (const l of this.streamListeners) { try { l(run.runId, wire); } catch {} }
+  }
+
   private record(run: InternalRun, entry: Omit<RingAgentTranscriptEntry, 'ts' | 'runId'> & { type: string }): void {
     const full: RingAgentTranscriptEntry = { ts: new Date().toISOString(), runId: run.runId, mode: run.mode, status: run.status, ...entry };
     run.transcript.push(full);
     run.updatedAt = full.ts as string;
     try { fs.appendFileSync(run.transcriptPath, `${JSON.stringify(full)}\n`, 'utf-8'); } catch {}
     for (const l of this.listeners) { try { l(full); } catch {} }
+    this.emitStreamEvent(run, full);
   }
 
   private checkBasetenArming(): { isArmed: boolean; apiKey?: string } {

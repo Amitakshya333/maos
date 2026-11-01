@@ -26,7 +26,34 @@ export type RingRunEventType =
   | 'approval.resolved'
   | 'run.completed'
   | 'run.failed'
-  | 'run.cancelled';
+  | 'run.cancelled'
+  | 'model.delta'
+  | 'plan.updated'
+  | 'artifact.created'
+  | 'memory.saved';
+
+/**
+ * TASK RING-CONTRACT-01: frozen streaming extension (additive; existing
+ * event types unchanged). `model.delta` carries token text; `plan.updated`
+ * carries the ordered todo list; `artifact.created` carries the stored
+ * artifact descriptor; `memory.saved` carries the stored note summary.
+ */
+export interface RingPlanStep {
+  step: string;
+  status: 'pending' | 'in_progress' | 'done';
+}
+
+export interface RingArtifactDescriptor {
+  path: string;
+  kind: string;
+  size: number;
+  sha256: string;
+}
+
+export interface RingMemoryRecord {
+  noteId: string;
+  summary: string;
+}
 
 export type RingApprovalDecision = 'approved' | 'denied';
 
@@ -60,6 +87,14 @@ export interface RingRunEvent {
   decision?: RingApprovalDecision;
   /** run.failed: failure message, rendered verbatim. */
   message?: string;
+  /** model.delta: token text streamed from the model. */
+  delta?: string;
+  /** plan.updated: ordered todo list, rendered verbatim. */
+  plan?: RingPlanStep[];
+  /** artifact.created: stored artifact descriptor. */
+  artifact?: RingArtifactDescriptor;
+  /** memory.saved: stored note summary. */
+  memory?: RingMemoryRecord;
 }
 
 export interface RingRunState {
@@ -92,6 +127,10 @@ const EVENT_TYPES: readonly string[] = [
   'run.completed',
   'run.failed',
   'run.cancelled',
+  'model.delta',
+  'plan.updated',
+  'artifact.created',
+  'memory.saved',
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -147,7 +186,56 @@ export function validateRingRunEvent(value: unknown): RingRunEvent {
     }
     event.decision = value.decision;
   }
+  // TASK RING-CONTRACT-01: streaming extension (pass-through only when
+  // correctly typed; nothing defaulted or invented).
+  if (value.delta !== undefined) {
+    if (typeof value.delta !== 'string') {
+      throw new Error('RING_RUN_INVALID: event.delta must be a string when present.');
+    }
+    event.delta = value.delta;
+  }
+  if (value.plan !== undefined) {
+    if (!Array.isArray(value.plan) || value.plan.some((p) => !isRecord(p) || typeof p.step !== 'string' || (p.status !== 'pending' && p.status !== 'in_progress' && p.status !== 'done'))) {
+      throw new Error('RING_RUN_INVALID: event.plan must be an array of { step, status } when present.');
+    }
+    event.plan = (value.plan as Array<Record<string, unknown>>).map((p) => ({ step: p.step as string, status: p.status as RingPlanStep['status'] }));
+  }
+  if (value.artifact !== undefined) {
+    if (!isRecord(value.artifact) || typeof value.artifact.path !== 'string' || typeof value.artifact.kind !== 'string' || typeof value.artifact.size !== 'number' || typeof value.artifact.sha256 !== 'string') {
+      throw new Error('RING_RUN_INVALID: event.artifact must be { path, kind, size, sha256 } when present.');
+    }
+    const artifact = value.artifact as Record<string, unknown>;
+    event.artifact = { path: artifact.path as string, kind: artifact.kind as string, size: artifact.size as number, sha256: artifact.sha256 as string };
+  }
+  if (value.memory !== undefined) {
+    if (!isRecord(value.memory) || typeof value.memory.noteId !== 'string' || typeof value.memory.summary !== 'string') {
+      throw new Error('RING_RUN_INVALID: event.memory must be { noteId, summary } when present.');
+    }
+    const memory = value.memory as Record<string, unknown>;
+    event.memory = { noteId: memory.noteId as string, summary: memory.summary as string };
+  }
   return event;
+}
+
+/** Runtime validator for GET /api/v1/ring/threads/:id (reuses the run state shape per run). */
+export function validateRingThreadState(value: unknown): { threadId: string; title: string; role: string; createdAt: string; runs: string[] } {
+  if (!isRecord(value)) throw new Error('RING_RUN_INVALID: thread state must be an object.');
+  if (typeof value.threadId !== 'string' || !value.threadId.trim()) {
+    throw new Error('RING_RUN_INVALID: threadId must be a non-empty string.');
+  }
+  if (typeof value.title !== 'string') {
+    throw new Error('RING_RUN_INVALID: title must be a string.');
+  }
+  if (typeof value.role !== 'string' || !['operator', 'maintenance', 'safety', 'manager'].includes(value.role)) {
+    throw new Error('RING_RUN_INVALID: role must be operator, maintenance, safety, or manager.');
+  }
+  if (typeof value.createdAt !== 'string' || !value.createdAt) {
+    throw new Error('RING_RUN_INVALID: createdAt must be a non-empty string.');
+  }
+  if (!Array.isArray(value.runs) || value.runs.some((r) => typeof r !== 'string')) {
+    throw new Error('RING_RUN_INVALID: runs must be an array of strings.');
+  }
+  return { threadId: value.threadId, title: value.title, role: value.role, createdAt: value.createdAt, runs: value.runs as string[] };
 }
 
 /** Runtime validator for GET /api/v1/ring/runs/:id. Fails closed. */

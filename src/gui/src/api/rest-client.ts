@@ -754,6 +754,43 @@ export class BrowserRestClient {
     await this.request('POST', `/api/v1/ring/runs/${encodeURIComponent(runId)}/cancel`, {}, options);
   }
 
+  /**
+   * TASK RING-CONTRACT-01: thread routes (Dev A lane implements the service;
+   * client shape frozen here so Dev B/C compile against it). Existing
+   * /ring/runs routes above stay working unchanged.
+   */
+  async createRingThread(input: { title?: string; role?: string }, options?: RequestOptions): Promise<{ threadId: string }> {
+    const res = await this.request<{ threadId: string }>('POST', '/api/v1/ring/threads', input, options);
+    if (!res.data || typeof (res.data as { threadId?: unknown }).threadId !== 'string') {
+      throw new Error('RING_RUN_INVALID: threadId must be a non-empty string.');
+    }
+    return { threadId: (res.data as { threadId: string }).threadId };
+  }
+
+  async getRingThread(threadId: string, options?: RequestOptions): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
+    const res = await this.request<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }>('GET', `/api/v1/ring/threads/${encodeURIComponent(threadId)}`, undefined, options);
+    const { validateRingThreadState } = await import('./ring-run-types');
+    return validateRingThreadState(res.data);
+  }
+
+  async postRingThreadMessage(threadId: string, instruction: string, options?: RequestOptions): Promise<RingRunStartResult> {
+    const res = await this.request<RingRunStartResult>('POST', `/api/v1/ring/threads/${encodeURIComponent(threadId)}/messages`, { instruction }, options);
+    return validateRingRunStart(res.data);
+  }
+
+  async getRingRunEvents(runId: string, options?: RequestOptions): Promise<RingRunState> {
+    // TASK RING-CONTRACT-01: snapshot fallback for the streaming transport.
+    // Polling GET /api/v1/ring/runs/:id stays the documented fallback; the
+    // live path is the existing WS /api/v1/events channel (runId-scoped).
+    return this.getRingRun(runId, options);
+  }
+
+  async downloadRingArtifact(runId: string, filename: string, options?: RequestOptions): Promise<unknown> {
+    // TASK RING-CONTRACT-01: artifact download (Dev C lane serves it with
+    // path checks reusing the isWithin/isStrictlyWithin patterns).
+    return this.request('GET', `/api/v1/ring/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}`, undefined, options);
+  }
+
   async decideRingApproval(
     runId: string,
     approvalId: string,
