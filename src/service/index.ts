@@ -77,6 +77,7 @@ import { CockpitService } from './cockpit-service';
 import { SandboxImageService } from './sandbox-image-service';
 import { SandboxRunnerService } from './sandbox-runner-service';
 import { ChatInferenceService } from './chat-inference-service';
+import { RingInferenceService } from './ring-inference-service';
 import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
 import { OpenAIProvider } from '../backends/openai-provider';
 import { collectReservedMetaApiKeyEnvVars } from '../backends/meta-api-policy';
@@ -142,6 +143,7 @@ export interface ServiceContainer {
   readonly sandboxImage: SandboxImageService;
   readonly sandboxRunner: SandboxRunnerService;
   readonly chatInference: ChatInferenceService;
+  readonly ringInference: RingInferenceService;
   readonly industrialAnalysisAgent: IndustrialAnalysisAgentService;
   readonly calculationTrace: CalculationTraceService;
   readonly sovereigntyBoundary: SovereigntyBoundaryService;
@@ -276,6 +278,19 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
   const chatInference = new ChatInferenceService({
     auditService: audit,
     endpointAllowlist,
+  });
+  const ringInference = new RingInferenceService({
+    projectRoot,
+    auditService: audit,
+    endpointAllowlist,
+    loadProjectConfig: () => {
+      if (!project.isInitialized()) return undefined;
+      try {
+        return project.loadConfig();
+      } catch {
+        return undefined;
+      }
+    },
   });
   const industrialAnalysisAgent = new IndustrialAnalysisAgentService(
     undefined,
@@ -433,6 +448,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
     sandboxImage,
     sandboxRunner,
     chatInference,
+    ringInference,
     industrialAnalysisAgent,
     calculationTrace,
     sovereigntyBoundary,
@@ -450,6 +466,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
 // Re-export individual services for direct import
 export { CalculationTraceService } from './calculation-trace-service';
 export { ChatInferenceService, ChatInferenceError } from './chat-inference-service';
+export { RingInferenceService } from './ring-inference-service';
 export { IndustrialAnalysisAgentService, IndustrialAnalysisAgentError } from '../industrial/analysis-agent-service';
 export { SandboxImageService } from './sandbox-image-service';
 export { SandboxRunnerService } from './sandbox-runner-service';

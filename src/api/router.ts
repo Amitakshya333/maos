@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as child_process from 'child_process';
 import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError } from '../service';
+import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import {
   getCorrelationId,
   checkLoopback,
@@ -1277,6 +1278,42 @@ export class RestApiRouter {
     if (method === 'GET' && pathname === '/api/v1/chat/health') {
       const available = await this.services.chatInference.isModelServerAvailable();
       sendJson(res, 200, { data: { available, status: available ? 'available' : 'unavailable' } }, correlationId);
+      return true;
+    }
+
+    // ── Ring Inference (TASK RING-SVC-01) ─────────────────────────
+
+    if (method === 'POST' && pathname === '/api/v1/ring/ask') {
+      const bodyResult = await readJsonBody<{
+        question?: string;
+        analysisId?: string;
+      }>(req, res, correlationId);
+      if (!bodyResult) return true;
+
+      const payload = bodyResult.parsed;
+      if (!payload || typeof payload !== 'object' || typeof payload.question !== 'string' || !payload.question.trim()) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'question is required and must be a non-empty string.', correlationId);
+        return true;
+      }
+
+      if (payload.analysisId !== undefined && (typeof payload.analysisId !== 'string' || !payload.analysisId.trim())) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'analysisId must be a non-empty string when provided.', correlationId);
+        return true;
+      }
+
+      try {
+        const result = await this.services.ringInference.ask({
+          question: payload.question.trim(),
+          analysisId: payload.analysisId?.trim(),
+        });
+        sendJson(res, 200, { data: result }, correlationId);
+      } catch (err: any) {
+        if (err instanceof ProviderApiPolicyError) {
+          sendError(res, 400, err.code, err.message, correlationId);
+        } else {
+          sendError(res, 500, 'RING_ASK_FAILED', err.message || 'Ring ask failed', correlationId);
+        }
+      }
       return true;
     }
 
