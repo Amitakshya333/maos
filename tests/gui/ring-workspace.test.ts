@@ -166,6 +166,36 @@ async function sendInstruction(container: HTMLElement, text: string) {
   });
 }
 
+describe('TASK DEV-C-FEEL-01: bottom-line-first in the full view', () => {
+  it('renders the verdict line with units before tool evidence, details collapsed', async () => {
+    const { client } = makeClient([EVIDENCE_ONLY_DONE]);
+    const view = await mountWorkspace({
+      agents: buildRingRoster(CONFIG_AGENTS),
+      runClient: client,
+      pollIntervalMs: 60000,
+    });
+    try {
+      await sendInstruction(view.container, 'Summarize telemetry');
+      const line = view.container.querySelector('[data-testid="ring-bottom-line"]');
+      expect(line, 'bottom line renders').toBeTruthy();
+      expect(line.textContent).toContain('WARNING');
+      expect(line.textContent).toContain('4.125 mm/s');
+      const transcript = view.container.querySelector('[data-testid="ring-transcript"]') ?? view.container;
+      const order = [...transcript.querySelectorAll('[data-testid]')].map((el) => el.getAttribute('data-testid'));
+      expect(order.indexOf('ring-bottom-line')).toBeLessThan(order.indexOf('ring-tool-chip'));
+      // tool details stay collapsed until expanded: no expanded result row by default
+      expect(view.container.querySelector('[data-testid="ring-tool-result"]')).toBeNull();
+      // RMS is shown with units in the expanded tool result
+      await act(async () => {
+        view.container.querySelector('[data-testid="ring-tool-chip"] button')?.dispatchEvent(new window.Event('click', { bubbles: true }));
+      });
+      expect(view.container.querySelector('[data-testid="ring-tool-rms"]')?.textContent).toContain('mm/s');
+    } finally {
+      view.unmount();
+    }
+  });
+});
+
 describe('ring roster', () => {
   it('renders agents from a config fixture with Ring as lead, ids, roles, and status dots', () => {
     const roster = buildRingRoster(CONFIG_AGENTS);

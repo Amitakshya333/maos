@@ -117,6 +117,20 @@ function toggleOverlay(ui, options) {
   return 'shown';
 }
 
+/**
+ * TASK DEV-C-FEEL-01 (feel 1: keyboard-first): Escape in the overlay
+ * hides the window through the SAME toggle path as the hotkey (hide, not
+ * close/destroy). Pure helper — the Electron IPC binding lives in
+ * desktop/main.cjs (maos:hide-ring-overlay).
+ */
+function hideRingOverlay() {
+  const win = overlayState.window;
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return false;
+  if (typeof win.isVisible === 'function' && !win.isVisible()) return false;
+  if (typeof win.hide === 'function') win.hide();
+  return true;
+}
+
 function focusMainWindow(mainWindow) {
   if (!mainWindow || (typeof mainWindow.isDestroyed === 'function' && mainWindow.isDestroyed())) return false;
   if (typeof mainWindow.show === 'function' && typeof mainWindow.isVisible === 'function' && !mainWindow.isVisible()) {
@@ -241,6 +255,7 @@ module.exports = {
   ringHotkey,
   createOverlayWindow,
   toggleOverlay,
+  hideRingOverlay,
   focusMainWindow,
   registerRingHotkey,
   createRingTray,

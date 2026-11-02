@@ -45,6 +45,7 @@ import {
   allMemories,
   latestPlan,
   RingArtifactCard,
+  RingBottomLine,
   RingLiveText,
   RingMemoryNote,
   RingPlanChecklist,
@@ -90,6 +91,8 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
   if (runClient) clientRef.current = runClient;
 
   const [instruction, setInstruction] = useState('');
+  const [lastPrompt, setLastPrompt] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [runId, setRunId] = useState<string | null>(null);
   // TASK RING-DEV-B-01 (Day 1a): overlay shares thread ids with the full
   // view. When the run client carries a thread client (same REST routes as
@@ -101,6 +104,11 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  // TASK DEV-C-FEEL-01 (feel 2: first output <1s). sendPending flips true the
+  // same tick as send: the transcript shows an honest pending line
+  // immediately (no invented plan/tools — just the submitted prompt echoed),
+  // then real polled events replace it. starting already gates the input.
+  const [sendPending, setSendPending] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -119,6 +127,21 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
   // view) and appends csvPath:/documentPath: references to the next send.
   const [overlayAttachments, setOverlayAttachments] = useState<RingAttachment[]>([]);
   const [overlayAttachError, setOverlayAttachError] = useState<string | null>(null);
+
+  // TASK DEV-C-FEEL-01 (feel 1: keyboard-first). The overlay is summoned
+  // for quick asks: focus lands in the input on mount and on every show
+  // (the global hotkey re-shows the window via overlayState.window.show(),
+  // which fires a window focus event — refocus there too). Escape hides the
+  // overlay through the same toggle path (no new close semantics); ArrowUp
+  // in an empty input recalls the last submitted prompt.
+  useEffect(() => {
+    inputRef.current?.focus();
+    const refocus = () => {
+      if (document.hasFocus()) inputRef.current?.focus();
+    };
+    window.addEventListener('focus', refocus);
+    return () => window.removeEventListener('focus', refocus);
+  }, []);
 
   // TASK OVERLAY-FIX-01 (defect 1: overlay was opaque). The native side sets
   // transparent:true + zero-alpha backgroundColor, but that alone is NOT
@@ -182,6 +205,7 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
     const suffix = attachmentInstructionSuffix(overlayAttachments);
     const text = suffix ? rawText + suffix : rawText;
     setStarting(true);
+    setSendPending(true);
     setStartError(null);
     try {
       let nextRunId: string;
@@ -205,6 +229,7 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
         nextRunId = (await clientRef.current.startRun({ instruction: text })).runId;
       }
       setRunId(nextRunId);
+      setLastPrompt(rawText);
       setInstruction('');
       try {
         setState(await clientRef.current.getRun(nextRunId));
@@ -215,6 +240,7 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
       setStartError((err as Error).message || 'Ring run service unavailable.');
     } finally {
       setStarting(false);
+      setSendPending(false);
     }
   };
 
@@ -487,15 +513,48 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
         )}
       </div>
 
+      {/* TASK DEV-C-FEEL-01 (feel 4): distinct needs-you state. The ring
+          stops pulsing (see RingMark) and this amber banner names the
+          pending approval action instead — no spinning while waiting on
+          the human. */}
+      {visual === 'needs-you' && (
+        <div
+          data-testid="ring-overlay-needs-you"
+          role="status"
+          style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: 'var(--status-amber, #eab308)',
+            border: '1px solid var(--status-amber, #eab308)',
+            borderRadius: '6px',
+            padding: '6px 10px',
+            backgroundColor: 'rgba(234, 179, 8, 0.08)',
+          }}
+        >
+          Needs you — an approval below is waiting for your decision.
+        </div>
+      )}
+
       <div
         data-testid="ring-overlay-transcript"
         style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}
       >
-        {!runId && (
+        {(sendPending || starting) && events.length === 0 && (
+          <div data-testid="ring-overlay-thinking" role="status" style={{ fontSize: '12px', color: 'var(--text-secondary, #cccccc)' }}>
+            Working on it — fetching the live plan…
+          </div>
+        )}
+        {!runId && !sendPending && (
           <div data-testid="ring-overlay-empty" style={{ color: 'var(--text-dim, #888888)', fontSize: '12px' }}>
             Ask Ring anything — the plan, tools, approvals, and files stream here.
             {!threadsAvailable && ' Runs are unscoped: the thread service is unreachable.'}
           </div>
+        )}
+        {/* TASK DEV-C-FEEL-01 (feel 3): bottom-line-first. The one-line
+            verdict (numbers with units) renders before evidence and the
+            collapsed tool details below. Verbatim from polled events. */}
+        {state && (events.length > 0 || state.finalAnswer) && (
+          <RingBottomLine events={events} finalAnswer={state.finalAnswer} mode={state.mode} />
         )}
         {events.map(renderEvent)}
         {approvedArtifactsPending(events, isLive) && (
@@ -555,8 +614,24 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
         <input
           aria-label="Ask Ring"
           data-testid="ring-overlay-input"
+          ref={inputRef}
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              const bridge = (window as unknown as { maosNative?: { hideRingOverlay?: () => void } }).maosNative;
+              if (bridge?.hideRingOverlay) {
+                try { bridge.hideRingOverlay(); } catch { /* hiding is best-effort */ }
+              }
+              (event.target as HTMLInputElement).blur();
+              return;
+            }
+            if (event.key === 'ArrowUp' && instruction === '' && lastPrompt) {
+              event.preventDefault();
+              setInstruction(lastPrompt);
+            }
+          }}
           disabled={starting}
           placeholder="Ask Ring…"
           style={{

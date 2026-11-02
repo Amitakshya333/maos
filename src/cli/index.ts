@@ -42,6 +42,7 @@ import {
   runIndustrialOpen,
 } from '../industrial/industrial-cli';
 import { runIndustrialRepl } from '../industrial/industrial-repl';
+import { RING_CLI_EXIT, runRingHeadless, runRingRepl } from '../industrial/ring-cli';
 import { createServiceContainer } from '../service';
 
 const VERSION = '0.3.0';
@@ -542,6 +543,44 @@ industrial
   .command('repl')
   .description('Start the bounded local operator REPL')
   .action(() => runIndustrialRepl());
+
+// ─── maos industrial ring ─────────────────────────────────────
+// Ring agent CLI: interactive REPL (default) or headless run with -p.
+// Calls RingAgentService in-process — no new agent engine — sharing the
+// same .maos/ring-runs store, threads, skills, approvals, and streaming
+// events as the GUI. Headless mode never auto-approves: consequential
+// steps end as awaiting_approval (exit 3) with a resume hint. There is
+// deliberately NO --yes flag for consequential tools.
+industrial
+  .command('ring')
+  .description('Ring agent: interactive REPL (default) or headless run with -p')
+  .option('-p, --prompt <instruction>', 'Headless instruction; omit for interactive REPL')
+  .option('--thread <id>', 'Run inside an existing thread (headless only)')
+  .option('--yes-to <scope>', "Only 'none' is accepted; there is no --yes for consequential tools")
+  .option('--json', 'Headless: print wire events as JSONL')
+  .action(async (opts) => {
+    try {
+      if (opts.prompt) {
+        const result = await runRingHeadless({
+          projectRoot: process.cwd(),
+          instruction: opts.prompt,
+          thread: opts.thread,
+          yesTo: opts.yesTo,
+          json: opts.json,
+        });
+        process.exit(result.exitCode);
+      }
+      if (opts.json || opts.thread || opts.yesTo) {
+        console.error(chalk.red('Error: --json/--thread/--yes-to require -p <instruction>.'));
+        process.exit(RING_CLI_EXIT.FAILED);
+      }
+      await runRingRepl({ projectRoot: process.cwd() });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`Error: ${message}`));
+      process.exit(RING_CLI_EXIT.FAILED);
+    }
+  });
 
 const bundleCmd = industrial
   .command('bundle')

@@ -40,6 +40,18 @@ screen — never replay a saved model response while showing it as live.
 
 ## Timed arc
 
+> Spine (TASK DEV-C-FEEL-01): Linux CLI starts the thread → Windows overlay
+> continues the SAME thread → refusal beat → audit verify. Platform truth:
+> the CLI leg is TO-RECORD on Linux (distro/version TO-FILL — no VM result
+> was available for this pass); the GUI legs (full app + overlay) are
+> Windows; Electron is NOT claimed on Linux. The thread handoff is the
+> overlay→workspace Expand path on the same thread id
+> (`src/gui/src/components/RingOverlay.tsx`, `RING_EXPAND_KEY`); a
+> CLI-started Ring thread appearing in the GUI sidebar is CUT (no Ring
+> thread command exists in `src/cli/`, no thread-list route) and is NOT
+> shown on camera. One fresh temporary project per run; keep run and thread
+> IDs visible throughout.
+
 ### 0:00–0:30 — The plant can't use ChatGPT (TO-RECORD)
 
 **Show:** The plant context and why generic chat is not an option (sovereignty:
@@ -51,12 +63,16 @@ stays in MAOS; the T-07 calculation is deterministic local code using
 synthetic turbine data and demonstration thresholds. This is decision
 support, not an operating decision."
 
-### 0:30–1:00 — Ask Ring the turbine question (TO-RECORD)
+### 0:30–1:00 — Start the thread, continue it in the overlay (TO-RECORD)
 
-**Action:** In the full app, ask Ring the T-07 turbine question (example: "Analyze
-turbine vibration telemetry for T-07 and summarize the verdict, citing the
-deterministic overall RMS."). Watch streamed fragments arrive as `model.delta`
-events (`src/service/ring-agent-service.ts:890-908`).
+**Action:** Start the T-07 thread on the Linux CLI (distro/version TO-FILL),
+then continue the SAME thread in the Windows overlay: summon with
+**Ctrl+Shift+Space** (focus lands in the input), press Enter to send, and
+watch the first honest output land immediately ("Working on it — fetching
+the live plan…", then real polled events — never invented plan text). The
+CLI leg is TO-RECORD; if the CLI thread entry is unavailable on camera,
+start the thread in the full app instead and say so — do not present the
+GUI-started thread as CLI-started.
 
 **Say:** "I'm asking Ring — wired to meta-models/muse-spark-open-1026 via
 Baseten — the turbine question. Tokens stream live; the verdict and RMS come

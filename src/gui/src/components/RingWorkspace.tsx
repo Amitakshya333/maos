@@ -31,7 +31,7 @@ import type {
   RingRunState,
 } from '../api/ring-run-types';
 import { CompletionRefusalDemo } from './CompletionRefusalDemo';
-import { RingArtifactCard, RingLiveText, RingMemoryNote, RingPlanChecklist } from './RingStreamPanels';
+import { RingArtifactCard, RingBottomLine, RingLiveText, RingMemoryNote, RingPlanChecklist } from './RingStreamPanels';
 import { DEFAULT_RING_ROLE, RING_EXPAND_KEY, RingRolePicker, RingThreadSidebar, toThreadSummary, type RingThreadClient } from './RingThreads';
 import { attachmentInstructionSuffix, RingAttachmentBar, type RingAttachment, type RingAttachmentClient } from './RingAttachments';
 import { TelemetryReviewCoordinator } from './telemetryReviewCoordinator';
@@ -303,7 +303,7 @@ export const RingToolChip: React.FC<{ call: RingRunEvent; result?: RingRunEvent 
           {!result && <div>Running…</div>}
           {result?.resultSummary && <div>{result.resultSummary}</div>}
           {result?.verdict && <div>Verdict: {result.verdict}</div>}
-          {typeof result?.overallRms === 'number' && <div>RMS: {result.overallRms}</div>}
+          {typeof result?.overallRms === 'number' && <div data-testid="ring-tool-rms">RMS: {result.overallRms} mm/s</div>}
           {result?.sources && result.sources.length > 0 && (
             <div>
               Sources:{' '}
@@ -1305,6 +1305,10 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
             {runs.map((run) => (
               <React.Fragment key={run.runId}>
                 <RingUserMessage text={run.instruction} agentId={run.agentId} />
+                {/* TASK DEV-C-FEEL-01 (feel 3): bottom-line-first. The one-line
+                    verdict (numbers with units) renders before the evidence
+                    and collapsed tool details below. Verbatim from polled events. */}
+                {run.state && <RingBottomLine events={run.state.events} finalAnswer={run.state.finalAnswer} mode={run.state.mode} />}
                 {(run.state?.events ?? []).map((entry, index) => renderTranscriptEvent(run, entry, index))}
                 {run.state?.finalAnswer && <RingFinalAnswer answer={run.state.finalAnswer} mode={run.state.mode} />}
                 {run.state?.status === 'failed' && !failureEvent && (

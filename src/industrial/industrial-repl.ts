@@ -21,7 +21,7 @@ function write(output: Writable, value: string): void {
   output.write(`${value}\n`);
 }
 
-function safeTerminalText(value: unknown): string {
+export function safeTerminalText(value: unknown): string {
   return String(value).replace(/[\u0000-\u001f\u007f]/g, ' ');
 }
 

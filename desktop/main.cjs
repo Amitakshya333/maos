@@ -231,6 +231,15 @@ async function runElectron() {
       }
       ringOverlay.focusMainWindow(browserWindow);
     });
+    // TASK DEV-C-FEEL-01 (feel 1: keyboard-first): Escape in the overlay
+    // hides the window through the same toggle path (hide, not close).
+    // Sender + origin checks mirror maos:expand-ring exactly.
+    ipcMain.handle('maos:hide-ring-overlay', (event) => {
+      if (!browserWindow || event.sender !== overlayWebContents()) {
+        throw new Error('UNTRUSTED_RENDERER: hide is restricted to the active Ring overlay.');
+      }
+      ringOverlay.hideRingOverlay();
+    });
     // TASK RING-DEV-B-01 (Day 1 fix): the overlay is a SECOND window with
     // its OWN main frame. The old check compared every sender against the
     // main window's mainFrame, so the overlay could never complete the

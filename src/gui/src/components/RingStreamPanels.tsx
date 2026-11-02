@@ -27,12 +27,20 @@ import type {
   RingRunEvent,
 } from '../api/ring-run-types';
 
-/** Ring run lifecycle states for the animated ring (Day 1b). */
+/**
+ * TASK DEV-C-FEEL-01 (feel 4): ring animation states match the real run
+ * state. `needs-you` is a distinct stop state for an UNRESOLVED
+ * approval — the ring stops pulsing (no spinning while waiting on the
+ * human) and the amber "Needs you" label/banner takes over instead. The
+ * `waiting-for-approval` union member is preserved verbatim for the
+ * frozen contract and existing callers/tests.
+ */
 export type RingVisualState =
   | 'idle'
   | 'thinking'
   | 'using-tool'
   | 'waiting-for-approval'
+  | 'needs-you'
   | 'done'
   | 'error';
 
@@ -47,9 +55,19 @@ export function ringVisualStateForRun(
   if (!status) return 'idle';
   if (status === 'failed' || status === 'cancelled') return 'error';
   if (status === 'completed') return 'done';
-  if (status === 'awaiting_approval') return 'waiting-for-approval';
-  const pendingApproval = events.some((e) => e.type === 'approval.pending');
-  if (pendingApproval) return 'waiting-for-approval';
+  if (status === 'awaiting_approval') return 'needs-you';
+  // TASK DEV-C-FEEL-01 (feel 4): an unresolved approval.pending on a
+  // still-running run is the needs-you state — distinct from in-flight
+  // thinking/using-tool, which keep pulsing.
+  const pendingIds = new Set(
+    events.filter((e) => e.type === 'approval.pending' && e.approvalId).map((e) => e.approvalId as string),
+  );
+  const resolvedIds = new Set(
+    events.filter((e) => e.type === 'approval.resolved' && e.approvalId).map((e) => e.approvalId as string),
+  );
+  for (const id of pendingIds) {
+    if (!resolvedIds.has(id)) return 'needs-you';
+  }
   const toolCalls = events.filter((e) => e.type === 'tool.call').length;
   const pairedResults = events.filter((e) => e.type === 'tool.result').length;
   if (toolCalls > 0 && pairedResults < toolCalls) return 'using-tool';
@@ -62,6 +80,7 @@ const RING_STATE_COLOR: Record<RingVisualState, string> = {
   thinking: 'var(--accent, #3b82f6)',
   'using-tool': 'var(--status-green, #4ade80)',
   'waiting-for-approval': 'var(--status-amber, #eab308)',
+  'needs-you': 'var(--status-amber, #eab308)',
   done: 'var(--status-green, #4ade80)',
   error: 'var(--status-red, #ef4444)',
 };
@@ -71,21 +90,23 @@ const RING_STATE_LABEL: Record<RingVisualState, string> = {
   thinking: 'Thinking',
   'using-tool': 'Using tool',
   'waiting-for-approval': 'Waiting for approval',
+  'needs-you': 'Needs you',
   done: 'Done',
   error: 'Needs attention',
 };
 
 /**
  * Animated Ring mark. SVG pulse animation (no JS timers, no fake typing):
- * the animation runs only while `state` is thinking/using-tool/
- * waiting-for-approval; all other states render a static ring.
+ * the animation runs only while `state` is thinking/using-tool. The
+ * needs-you and waiting-for-approval states render a STATIC amber ring —
+ * no spinning while waiting on the human (TASK DEV-C-FEEL-01 feel 4); the
+ * distinct "Needs you" label/banner carries the call to act instead.
  */
 export const RingMark: React.FC<{ state: RingVisualState; size?: number }> = ({
   state,
   size = 44,
 }) => {
-  const animated =
-    state === 'thinking' || state === 'using-tool' || state === 'waiting-for-approval';
+  const animated = state === 'thinking' || state === 'using-tool';
   const color = RING_STATE_COLOR[state];
   return (
     <span
@@ -288,6 +309,74 @@ export const RingArtifactCard: React.FC<{
       {error && (
         <div role="alert" style={{ marginTop: '6px', color: '#ff7b72', fontSize: '12px' }}>
           {error}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * TASK DEV-C-FEEL-01 (feel 3): bottom-line-first answer layout. The first
+ * thing a run shows is one verdict line (preferred: verdict + RMS with
+ * units from the latest paired tool.result; fallback: the first model
+ * text / final answer truncated to one line), then evidence and sources
+ * render below in the normal transcript. Everything is verbatim from
+ * polled events — no invented numbers, units always attached.
+ */
+export function bottomLineForEvents(
+  events: readonly RingRunEvent[],
+  finalAnswer?: string,
+): { line: string; verdict?: string; overallRms?: number; sources: string[] } | null {
+  let verdict: string | undefined;
+  let overallRms: number | undefined;
+  let sources: string[] = [];
+  for (const event of events) {
+    if (event.type === 'tool.result') {
+      if (typeof event.verdict === 'string' && event.verdict) verdict = event.verdict;
+      if (typeof event.overallRms === 'number') overallRms = event.overallRms;
+      if (Array.isArray(event.sources) && event.sources.length > 0) sources = [...event.sources];
+    }
+  }
+  if (verdict !== undefined || overallRms !== undefined) {
+    const parts: string[] = [];
+    if (verdict) parts.push(verdict);
+    if (overallRms !== undefined) parts.push('RMS ' + overallRms + ' mm/s');
+    return { line: parts.join(' · ') || 'Result', verdict, overallRms, sources };
+  }
+  for (const event of events) {
+    if ((event.type === 'model.turn' || event.type === 'model.delta') && typeof (event.text ?? event.delta) === 'string') {
+      const raw = String(event.text ?? event.delta).trim().split('\n')[0].trim();
+      if (raw) return { line: raw, sources: [] };
+    }
+  }
+  if (typeof finalAnswer === 'string' && finalAnswer.trim()) {
+    return { line: finalAnswer.trim().split('\n')[0].trim(), sources: [] };
+  }
+  return null;
+}
+
+export const RingBottomLine: React.FC<{
+  events: readonly RingRunEvent[];
+  finalAnswer?: string;
+  mode?: string;
+}> = ({ events, finalAnswer, mode }) => {
+  const bottom = bottomLineForEvents(events, finalAnswer);
+  if (!bottom) return null;
+  return (
+    <div data-testid="ring-bottom-line" style={{ alignSelf: 'flex-start', maxWidth: '90%' }}>
+      <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary, #cccccc)', marginBottom: '4px' }}>
+        BOTTOM LINE{mode === 'evidence-only' ? ' · EVIDENCE-ONLY' : ''}
+      </div>
+      <div style={{ fontSize: '14px', fontWeight: 700, lineHeight: '1.4' }}>{bottom.line}</div>
+      {bottom.sources.length > 0 && (
+        <div data-testid="ring-bottom-line-sources" style={{ fontSize: '11px', color: 'var(--text-dim, #888888)', marginTop: '4px' }}>
+          Evidence:{' '}
+          {bottom.sources.map((source, index) => (
+            <span key={index}>
+              {index > 0 ? ', ' : ''}
+              <code>{source}</code>
+            </span>
+          ))}
         </div>
       )}
     </div>

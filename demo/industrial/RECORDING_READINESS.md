@@ -16,6 +16,18 @@ On-screen identity (identical everywhere):
 `EVIDENCE-ONLY · no model configured`
 (`tests/gui/ring-impl-01.test.ts:105`).
 
+## Spine and platform truth (TASK DEV-C-FEEL-01)
+
+- Spine: Linux CLI starts the thread → Windows overlay continues the same
+  thread → refusal beat → audit verify. The overlay continuation is the
+  Expand handoff on the same thread id (`RING_EXPAND_KEY`); it is covered
+  by GUI tests, not by a recording yet.
+- Linux CLI leg: TO-RECORD. Distro/version TO-FILL — no Linux VM result
+  was available for this pass, so no Linux claim is made here.
+- GUI legs (full app + overlay): Windows. Electron is NOT claimed on Linux.
+- CUT, not on camera: a CLI-started thread appearing in the GUI thread
+  sidebar (no Ring thread command in `src/cli/`, no thread-list route).
+
 ## Verified evidence
 
 - Hosted wiring: exact provider/endpoint/model triple plus

@@ -105,7 +105,7 @@ describe('ringVisualStateForRun', () => {
         { type: 'tool.result', ts: 't', tool: 'x', toolCallId: 'c1' },
       ]),
     ).toBe('thinking');
-    expect(ringVisualStateForRun('awaiting_approval', [])).toBe('waiting-for-approval');
+    expect(ringVisualStateForRun('awaiting_approval', [])).toBe('needs-you');
     expect(ringVisualStateForRun('completed', [])).toBe('done');
     expect(ringVisualStateForRun('failed', [])).toBe('error');
     expect(ringVisualStateForRun('cancelled', [])).toBe('error');
@@ -114,12 +114,12 @@ describe('ringVisualStateForRun', () => {
 
 describe('RingMark', () => {
   it('renders one mark per state with an honest label, no fake progress', async () => {
-    for (const state of ['idle', 'thinking', 'using-tool', 'waiting-for-approval', 'done', 'error'] as const) {
+    for (const state of ['idle', 'thinking', 'using-tool', 'waiting-for-approval', 'needs-you', 'done', 'error'] as const) {
       const view = mount(React.createElement(RingMark, { state }));
       await view.render();
       const mark = view.container.querySelector('[data-testid="ring-mark"]');
       expect(mark?.getAttribute('data-state')).toBe(state);
-      expect(mark?.getAttribute(String("aria-label"))).toBe("Ring: " + ({idle:"Idle",thinking:"Thinking","using-tool":"Using tool","waiting-for-approval":"Waiting for approval",done:"Done",error:"Needs attention"}[state]));
+      expect(mark?.getAttribute(String("aria-label"))).toBe("Ring: " + ({idle:"Idle",thinking:"Thinking","using-tool":"Using tool","waiting-for-approval":"Waiting for approval","needs-you":"Needs you",done:"Done",error:"Needs attention"}[state]));
       view.unmount();
     }
   });
@@ -456,7 +456,7 @@ describe('RingOverlay', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(view.container.querySelector('[data-testid="ring-approval-card"]')).toBeTruthy();
-    expect(view.container.querySelector('[data-testid="ring-mark"]')?.getAttribute('data-state')).toBe('waiting-for-approval');
+    expect(view.container.querySelector('[data-testid="ring-mark"]')?.getAttribute('data-state')).toBe('needs-you');
     await act(async () => {
       view.container.querySelector<HTMLButtonElement>('[data-testid="ring-approval-allow"]')?.click();
       await new Promise((r) => setTimeout(r, 0));
@@ -617,6 +617,197 @@ describe('RingOverlay', () => {
     });
     expect(view2.container.querySelector('[data-testid="ring-overlay-generating"]')?.textContent).toContain('Generating approved artifacts');
     view2.unmount();
+  });
+
+  it('TASK DEV-C-FEEL-01 (feel 1): overlay input is focused on summon; Enter sends, Escape hides, ArrowUp recalls', async () => {
+    let hidden = 0;
+    window.maosNative = {
+      initialize: async () => ({}),
+      expandRing: () => {},
+      hideRingOverlay: () => { hidden += 1; },
+    };
+    const seen = [];
+    const client = {
+      startRun: async (input) => { seen.push(input.instruction); return { runId: 'run-1' }; },
+      getRun: async () => ({ status: 'completed', mode: 'hosted', events: [] }),
+      cancelRun: async () => {},
+      decideApproval: async () => {},
+      downloadArtifact: async () => {},
+    };
+    const view = mount(React.createElement(RingOverlay, { runClient: client, pollIntervalMs: 60000 }));
+    await view.render();
+    const input = () => view.container.querySelector('[data-testid="ring-overlay-input"]');
+    // focus lands in the input on summon
+    expect(document.activeElement).toBe(input());
+    // Enter sends (form submit via React onSubmit)
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter?.call(input(), 'check turbine seven');
+      input().dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      view.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(seen).toEqual(['check turbine seven']);
+    // ArrowUp in an empty input recalls the last prompt
+    expect(input().value).toBe('');
+    await act(async () => {
+      input().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    });
+    expect(input().value).toBe('check turbine seven');
+    // Escape hides the overlay through the toggle path (no close semantics)
+    await act(async () => {
+      input().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(hidden).toBe(1);
+    expect(document.activeElement).not.toBe(input());
+    delete window.maosNative;
+    view.unmount();
+  });
+
+  it('TASK DEV-C-FEEL-01 (feel 2): first visible output lands immediately on send (honest pending line, no invented plan)', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const client = {
+      startRun: async () => { await gate; return { runId: 'run-1' }; },
+      getRun: async () => ({ status: 'running', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }] }),
+      cancelRun: async () => {},
+      decideApproval: async () => {},
+      downloadArtifact: async () => {},
+    };
+    const view = mount(React.createElement(RingOverlay, { runClient: client, pollIntervalMs: 60000 }));
+    await view.render();
+    const input = view.container.querySelector('[data-testid="ring-overlay-input"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter?.call(input, 'summarize');
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      view.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    // the honest pending line is visible while the run start is still in flight
+    const thinking = view.container.querySelector('[data-testid="ring-overlay-thinking"]');
+    expect(thinking).toBeTruthy();
+    expect(thinking.textContent).toContain('Working on it');
+    // no invented plan/tools: the pending transcript carries no plan checklist, tool chip, or live text
+    expect(view.container.querySelector('[data-testid="ring-plan-checklist"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="ring-tool-chip"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="ring-live-text"]')).toBeNull();
+    release();
+    await view.flush();
+    view.unmount();
+  });
+
+  it('TASK DEV-C-FEEL-01 (feel 3): bottom-line-first with units; tool details collapsed', async () => {
+    const completed = {
+      status: 'completed',
+      mode: 'hosted',
+      events: [],
+      finalAnswer: 'Local evidence summary: WARNING verdict, RMS 4.125 mm/s. No model ran.',
+    };
+    const bview = mount(React.createElement(RingOverlay, { runClient: overlayClient(completed), pollIntervalMs: 60000 }));
+    await bview.render();
+    const binput = bview.container.querySelector('[data-testid="ring-overlay-input"]');
+    const bsetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      bsetter?.call(binput, 'summarize');
+      binput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      bview.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const bline = bview.container.querySelector('[data-testid="ring-bottom-line"]');
+    expect(bline).toBeTruthy();
+    expect(bline.textContent).toContain('WARNING');
+    expect(bline.textContent).toContain('4.125 mm/s');
+    bview.unmount();
+    const state = {
+      status: 'completed',
+      mode: 'hosted',
+      events: [
+        { type: 'run.started', ts: 't0' },
+        {
+          type: 'tool.result',
+          ts: 't1',
+          tool: 'analyze_telemetry',
+          toolCallId: 'c1',
+          resultSummary: 'WARNING: RMS 4.125 mm/s above the demo limit',
+          verdict: 'WARNING',
+          overallRms: 4.125,
+          sources: ['demo/industrial/turbine_vibration_log.csv'],
+        },
+      ],
+    };
+    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60000 }));
+    await view.render();
+    const vinput = view.container.querySelector('[data-testid="ring-overlay-input"]');
+    const vsetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      vsetter?.call(vinput, 'check vibration');
+      vinput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      view.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const line = view.container.querySelector('[data-testid="ring-bottom-line"]');
+    expect(line).toBeTruthy();
+    expect(line.textContent).toContain('WARNING');
+    expect(line.textContent).toContain('4.125 mm/s');
+    // bottom line renders before the transcript evidence rows
+    const transcript = view.container.querySelector('[data-testid="ring-overlay-transcript"]');
+    const order = [...transcript.querySelectorAll('[data-testid]')].map((el) => el.getAttribute('data-testid'));
+    expect(order.indexOf('ring-bottom-line')).toBeLessThan(order.indexOf('ring-tool-chip'));
+    view.unmount();
+  });
+
+  it('TASK DEV-C-FEEL-01 (feel 4): needs-you state is distinct and static (no pulse while waiting)', async () => {
+    expect(ringVisualStateForRun('awaiting_approval', [])).toBe('needs-you');
+    expect(
+      ringVisualStateForRun('running', [
+        { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write note' },
+      ]),
+    ).toBe('needs-you');
+    // resolved approvals fall back to thinking, not needs-you
+    expect(
+      ringVisualStateForRun('running', [
+        { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write note' },
+        { type: 'approval.resolved', ts: 't', approvalId: 'a1', decision: 'approved' },
+      ]),
+    ).toBe('thinking');
+    const view = mount(React.createElement(RingMark, { state: 'needs-you' }));
+    await view.render();
+    const mark = view.container.querySelector('[data-testid="ring-mark"]');
+    expect(mark?.getAttribute('data-state')).toBe('needs-you');
+    expect(mark?.getAttribute('aria-label')).toBe('Ring: Needs you');
+    // static ring while waiting: no SVG pulse animation
+    expect(mark?.querySelector('animate')).toBeNull();
+    view.unmount();
+    // overlay shows the needs-you banner above the transcript
+    const pending = {
+      status: 'awaiting_approval',
+      mode: 'hosted',
+      events: [{ type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write safety note' }],
+    };
+    const ov = mount(React.createElement(RingOverlay, { runClient: overlayClient(pending), pollIntervalMs: 60000 }));
+    await ov.render();
+    const oinput = ov.container.querySelector('[data-testid="ring-overlay-input"]');
+    const osetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      osetter?.call(oinput, 'check vibration');
+      oinput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      ov.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(ov.container.querySelector('[data-testid="ring-overlay-needs-you"]')?.textContent).toContain('Needs you');
+    expect(ov.container.querySelector('[data-testid="ring-mark"]')?.getAttribute('data-state')).toBe('needs-you');
+    ov.unmount();
   });
 
   it('evidence-only badge stays exact in the overlay', async () => {
@@ -813,6 +1004,29 @@ describe('desktop overlay host (plain node)', () => {
     expect(seenOpts[0].backgroundColor).toBe('#00000000');
     const second = host.toggleOverlay(ui, { BrowserWindow: OptsBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
     expect(second).toBe('hidden');
+    host.overlayState.window = null;
+  });
+
+  it('TASK DEV-C-FEEL-01 (feel 1): hideRingOverlay hides through the same toggle path (no close semantics)', async () => {
+    const host = require('../../desktop/ring-overlay-host.cjs') as typeof import('../../desktop/ring-overlay-host.cjs');
+    // no window: returns false, never throws
+    host.overlayState.window = null;
+    expect(host.hideRingOverlay()).toBe(false);
+    // visible window: hide() is called, window is not destroyed/closed
+    const calls: string[] = [];
+    host.overlayState.window = {
+      isDestroyed: () => false,
+      isVisible: () => true,
+      hide: () => { calls.push('hide'); },
+      destroy: () => { calls.push('destroy'); },
+      close: () => { calls.push('close'); },
+    };
+    expect(host.hideRingOverlay()).toBe(true);
+    expect(calls).toEqual(['hide']);
+    // already-hidden window: no-op
+    host.overlayState.window = { isDestroyed: () => false, isVisible: () => false, hide: () => { calls.push('hide2'); } };
+    expect(host.hideRingOverlay()).toBe(false);
+    expect(calls).toEqual(['hide']);
     host.overlayState.window = null;
   });
 });

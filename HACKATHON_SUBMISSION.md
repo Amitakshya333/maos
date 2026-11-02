@@ -157,6 +157,14 @@ deterministic verdict `CRITICAL` with overall RMS `2.637 mm/s`
 | Demo video link | **Not recorded** | Add only after the actual rules/form specify the required hosting/visibility |
 | Public repository link | `https://github.com/Amitakshya333/MAOS-industrial-` from package metadata | Verify access, submitted revision, and disclosure expectations before use |
 
+Demo spine (TASK DEV-C-FEEL-01): Linux CLI starts the thread (TO-RECORD;
+Linux distro/version TO-FILL — no VM result available for this pass) →
+Windows overlay continues the same thread (Expand handoff, same thread id) →
+refusal beat → audit verify. GUI/Electron claims are Windows-only; Electron
+is not claimed on Linux. A CLI-started thread appearing in the GUI sidebar
+is CUT (no Ring thread CLI command, no thread-list route) and is not
+presented. No video has been recorded.
+
 The full Electron/browser gate used one Windows tarball containing four
 synthetic fixtures, four Python sources, three GUI assets, five desktop assets,
 and the Industrial profile; the Rust engine was separate. After updating the

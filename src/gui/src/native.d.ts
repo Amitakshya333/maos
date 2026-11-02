@@ -6,6 +6,8 @@ declare global {
       initialize(): Promise<LauncherSessionBootstrap>;
       /** TASK RING-DEV-B-01: overlay asks the main window to focus the full Ring view on the same thread. Absent outside Electron. */
       expandRing?(): void;
+      /** TASK DEV-C-FEEL-01: Escape in the overlay hides it via the toggle path. Absent outside Electron. */
+      hideRingOverlay?(): void;
       /**
        * TASK RING-DEV-B-01 (Day 2c): explicit screenshot trigger. Resolves
        * with PNG base64 held in memory (nothing written, nothing sent) or a
