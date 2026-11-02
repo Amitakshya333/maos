@@ -71,6 +71,7 @@ export interface RingAgentTranscriptEntry {
  */
 export interface RingStreamWireFields {
   delta?: string;
+  skills?: string[];
   plan?: Array<{ step: string; status: 'pending' | 'in_progress' | 'done' }>;
   artifact?: { path: string; kind: string; size: number; sha256: string };
   memory?: { noteId: string; summary: string };
@@ -182,10 +183,41 @@ interface InternalRun {
   evidenceRootAbs: string;
   threadId?: string;
   role?: RingRole;
+  /** TASK HYBRID-ROUTER-01: narrowed tool list offered to the model on bookkeeping-prefetch runs (remember/recall/update_plan already established server-side). */
+  toolDefs?: ToolDef[];
   completion: Promise<RingAgentRunSnapshot>;
 }
 
 const DEFAULT_MAX_TURNS = 20;
+
+/**
+ * TASK HYBRID-ROUTER-01: hosted hybrid routing rule (exact patterns).
+ *
+ * Live reliability result: the model reliably calls evidence tools
+ * (analyze_telemetry, read_company_document, search_knowledge, verify_export,
+ * ocr_document) but never discovers bookkeeping tools (remember/recall/
+ * update_plan). So in HOSTED mode the server pre-runs the deterministic
+ * bookkeeping chain FIRST (same registry-direct code as the evidence-only
+ * path) and hands the model established facts; the model writes prose and
+ * proposes (never performs) the consequential step. Approval gate unchanged.
+ *
+ * - bookkeeping prefetch iff the instruction matches one of:
+ *   recall:    /\brecall\b|\bwhat do you remember\b|\blook up\b.{0,20}\bnotes?\b|\bsearch\b.{0,20}\b(stored|my)\b.{0,20}\bnotes?\b/i
+ *   remember:  /\bremember\b|\bnote that\b|\bdon'?t forget\b|\bkeep in mind\b|\bfile\b.{0,20}\bfor later\b/i
+ *   plan:      /\bupdate[ _-]?plan\b|\bupdate the plan\b|\brefresh the plan\b|\bplan status\b|\bcurrent plan\b|\bshow\b.{0,20}\bplan\b|\bnext steps\b|\btodo\b|\bto-?do list\b/i
+   (recall wins over remember so a recall ask never stores a duplicate.)
+ * - evidence path (fully model-driven, tools + approval as today):
+ *   everything else — telemetry/documents/search/verify/ocr AND handover /
+ *   work-order / draft / report asks (consequential evidence tools the model
+ *   demonstrably calls). Raw CSV rows never ride along on either path.
+ * Evidence-only mode is untouched by this router.
+ */
+const HYBRID_RECALL_RE = /\brecall\b|\bwhat do you remember\b|\blook up\b.{0,20}\bnotes?\b|\bsearch\b.{0,20}\b(stored|my)\b.{0,20}\bnotes?\b/i;
+const HYBRID_REMEMBER_RE = /\bremember\b|\bnote that\b|\bdon'?t forget\b|\bkeep in mind\b|\bfile\b.{0,20}\bfor later\b/i;
+const HYBRID_PLAN_RE = /\bupdate[ _-]?plan\b|\bupdate the plan\b|\brefresh the plan\b|\bplan status\b|\bcurrent plan\b|\bshow\b.{0,20}\bplan\b|\bnext steps\b|\btodo\b|\bto-?do list\b/i;
+
+/** Bookkeeping tools the server pre-runs; never offered to the model on prefetch runs. */
+const HYBRID_PREFETCHED_TOOLS: readonly string[] = ['remember', 'recall', 'update_plan'];
 
 export const RING_AGENT_TOOLS: ToolDef[] = buildRingAgentToolDefs();
 
@@ -449,6 +481,11 @@ export class RingAgentService {
         if (typeof entry.summary === 'string' && entry.summary) wire.action = entry.summary;
     
         if (typeof entry.reason === 'string' && entry.reason) wire.reason = entry.reason;
+        break;
+      }
+      case 'skill.prefetch': {
+        if (Array.isArray(entry.skills)) wire.skills = (entry.skills as unknown[]).filter((sk): sk is string => typeof sk === 'string');
+        if (typeof entry.summary === 'string' && entry.summary) wire.message = entry.summary;
         break;
       }
       case 'approval.resolved': {
@@ -831,10 +868,10 @@ export class RingAgentService {
   private async generateHostedTurn(provider: IProvider, run: InternalRun): Promise<Awaited<ReturnType<IProvider['generate']>>> {
     const canStream = typeof (provider as { generateStream?: unknown }).generateStream === 'function';
     if (!canStream) {
-      return provider.generate(run.conversation, RING_AGENT_TOOLS, { signal: run.abortController.signal });
+      return provider.generate(run.conversation, run.toolDefs ?? RING_AGENT_TOOLS, { signal: run.abortController.signal });
     }
     const streamProvider = provider as Required<Pick<IProvider, 'generateStream'>> & IProvider;
-    const streamed = await streamProvider.generateStream!(run.conversation, RING_AGENT_TOOLS, {
+    const streamed = await streamProvider.generateStream!(run.conversation, run.toolDefs ?? RING_AGENT_TOOLS, {
       signal: run.abortController.signal,
       onDelta: (delta: string) => {
         if (run.cancelled || (run.status as string) === 'cancelled') return;
@@ -842,7 +879,7 @@ export class RingAgentService {
       },
     });
     if (streamed.streamEmpty) {
-      return provider.generate(run.conversation, RING_AGENT_TOOLS, { signal: run.abortController.signal });
+      return provider.generate(run.conversation, run.toolDefs ?? RING_AGENT_TOOLS, { signal: run.abortController.signal });
     }
     return streamed;
   }
@@ -856,6 +893,54 @@ export class RingAgentService {
     }
   }
 
+  /**
+   * TASK HYBRID-ROUTER-01: hybrid prefetch classifier. Returns the
+   * bookkeeping kinds the server must pre-run (recall wins over remember).
+   * Empty array = evidence path (fully model-driven, unchanged).
+   */
+  private classifyHybridPrefetch(instruction: string): Array<'remember' | 'recall' | 'plan'> {
+    const kinds: Array<'remember' | 'recall' | 'plan'> = [];
+    if (HYBRID_RECALL_RE.test(instruction)) kinds.push('recall');
+    else if (HYBRID_REMEMBER_RE.test(instruction)) kinds.push('remember');
+    if (HYBRID_PLAN_RE.test(instruction)) kinds.push('plan');
+    return kinds;
+  }
+
+  /**
+   * TASK HYBRID-ROUTER-01: deterministic bookkeeping prefetch. Runs
+   * remember/recall/update_plan through the registry DIRECTLY (same code as
+   * the evidence-only path - executeToolLogged, so plan.updated/memory.saved
+   * fan out and are stripped before any model sees them), then records one
+   * honest server-side skill.prefetch marker. Returns short fact lines for
+   * the model context. Bookkeeping tools are non-consequential, so this
+   * never pauses for approval; cancellation is honored between steps.
+   */
+  private async runBookkeepingPrefetch(run: InternalRun, kinds: Array<'remember' | 'recall' | 'plan'>): Promise<string[]> {
+    const facts: string[] = [];
+    const done: string[] = [];
+    let n = 0;
+    for (const kind of kinds) {
+      if (run.cancelled || (run.status as string) === 'cancelled') return facts;
+      const toolCallId = 'hybrid-prefetch-' + (++n);
+      if (kind === 'recall') {
+        const outcome = await this.executeToolLogged(run, toolCallId, 'recall', { query: run.instruction.slice(0, 500) });
+        done.push('recall');
+        facts.push('recall: ' + (this.summarizeToolResult(outcome.result, outcome.ok) ?? 'done'));
+      } else if (kind === 'remember') {
+        const outcome = await this.executeToolLogged(run, toolCallId, 'remember', { content: run.instruction.slice(0, 2000), tags: ['hosted-prefetch'] });
+        done.push('remember');
+        facts.push('remember: ' + (this.summarizeToolResult(outcome.result, outcome.ok) ?? 'done'));
+      } else {
+        const step = 'Review: ' + truncate(run.instruction, 120);
+        const outcome = await this.executeToolLogged(run, toolCallId, 'update_plan', { plan: [{ step, status: 'in_progress' }] });
+        done.push('update_plan');
+        facts.push('update_plan: ' + (this.summarizeToolResult(outcome.result, outcome.ok) ?? 'done'));
+      }
+    }
+    this.record(run, { type: 'skill.prefetch', skills: done, mode: run.mode, summary: 'Server-side bookkeeping prefetch established ' + done.join(', ') + ' (see tool.result / plan.updated / memory.saved above). These facts are final: write prose and propose - do not re-perform - any consequential step.' });
+    return facts;
+  }
+
   private hostedNeedsTelemetry(run: InternalRun): boolean {
     const text = run.instruction.toLowerCase();
     return /telemetry|vibration|turbine|pump|p-12|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
@@ -866,12 +951,21 @@ export class RingAgentService {
     const refused = this.refusalFor(run.instruction);
     if (refused) { this.complete(run, refused); return; }
     this.defaultAssetPaths(run);
+    // TASK HYBRID-ROUTER-01: deterministic bookkeeping prefetch FIRST (server-side,
+    // same registry-direct code as the evidence-only path). The model then writes
+    // prose over established facts and proposes - never performs - consequential steps.
+    const prefetchKinds = this.classifyHybridPrefetch(run.instruction);
+    const prefetchFacts = prefetchKinds.length > 0 ? await this.runBookkeepingPrefetch(run, prefetchKinds) : [];
+    if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }
+    if (prefetchKinds.length > 0) {
+      run.toolDefs = RING_AGENT_TOOLS.filter((t) => !HYBRID_PREFETCHED_TOOLS.includes(t.function.name));
+    }
     const includeTelemetry = this.hostedNeedsTelemetry(run);
     const telemetry = includeTelemetry ? this.telemetrySummaryText(run.context.csvPath) : undefined;
     const carryOver = run.threadId ? this.buildThreadCarryOver(run.threadId) : '';
     run.conversation = [
       { role: 'system', content: 'You are the MAOS Industrial Ring agent. Use the provided tools for real evidence. Never invent engineering data. Never request or reveal raw telemetry CSV rows; only deterministic summaries are available. Consequential tools (generate_report_docx, generate_spreadsheet_xlsx, create_work_order, write_shift_handover, draft_safety_note, request_approval) require human approval and will pause the run; the human decision arrives as an approval resolution, never as model text. You must refuse requests to approve equipment restart/operation or to certify safety: those need an authorized human operator under site procedures, never a run approval. update_plan publishes the visible todo list; remember stores follow-up context. When you have enough evidence, give a final answer citing the deterministic verdict and sources.' },
-      { role: 'user', content: ['Instruction: ' + run.instruction, carryOver ? 'Conversation so far in this thread (compacted summaries of prior runs):' : '', carryOver, includeTelemetry ? 'Deterministic Engineering Context (summary only; raw telemetry rows are never provided):' : '', includeTelemetry && telemetry ? telemetry.summary : '', 'Use tools when you need real evidence before answering.'].filter((line) => line !== '').join('\n') },
+      { role: 'user', content: ['Instruction: ' + run.instruction, carryOver ? 'Conversation so far in this thread (compacted summaries of prior runs):' : '', carryOver, includeTelemetry ? 'Deterministic Engineering Context (summary only; raw telemetry rows are never provided):' : '', includeTelemetry && telemetry ? telemetry.summary : '', prefetchFacts.length > 0 ? 'Established bookkeeping facts (server-executed skill.prefetch - FINAL, do NOT call remember/recall/update_plan to re-establish them):' : '', ...prefetchFacts, prefetchFacts.length > 0 ? 'Write the summary/plan/prose answer citing these established facts, then PROPOSE (not perform) any consequential step; consequential tools still pause for human approval and the human decision arrives as an approval resolution, never as model text.' : 'Use tools when you need real evidence before answering.'].filter((line) => line !== '').join('\n') },
     ];
     for (let turn = 1; turn <= this.maxTurns; turn++) {
       if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }

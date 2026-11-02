@@ -72,7 +72,7 @@ export interface RingRunCreateContractRequest {
 }
 
 /** Frozen streaming extension: the four new event types. */
-export type RingStreamEventType = 'model.delta' | 'plan.updated' | 'artifact.created' | 'memory.saved';
+export type RingStreamEventType = 'model.delta' | 'plan.updated' | 'artifact.created' | 'memory.saved' | 'skill.prefetch';
 
 /** plan.updated: the agent's current todo list (ordered steps). */
 export interface RingPlanStep {
@@ -123,12 +123,22 @@ export const RING_ARTIFACT_DIR_PREFIX = '.maos/ring-runs/artifacts';
 /** Thread storage layout (frozen). */
 export const RING_THREAD_DIR = '.maos/ring-runs/threads';
 
-/** New streaming event types, for validators and the WS fan-out. */
+/**
+ * New streaming event types, for validators and the WS fan-out.
+ *
+ * TASK HYBRID-ROUTER-01: 'skill.prefetch' marks the deterministic
+ * server-side bookkeeping prefetch in hosted mode (remember/recall/
+ * update_plan executed by the server BEFORE the first model turn, same
+ * registry-direct code as the evidence-only path). It is recorded as a
+ * server event — never as a model tool call — so the transcript stays
+ * honest about who did the bookkeeping.
+ */
 export const RING_STREAM_EVENT_TYPES: readonly RingStreamEventType[] = [
   'model.delta',
   'plan.updated',
   'artifact.created',
   'memory.saved',
+  'skill.prefetch',
 ];
 
 /**

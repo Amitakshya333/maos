@@ -30,7 +30,8 @@ export type RingRunEventType =
   | 'model.delta'
   | 'plan.updated'
   | 'artifact.created'
-  | 'memory.saved';
+  | 'memory.saved'
+  | 'skill.prefetch';
 
 /**
  * TASK RING-CONTRACT-01: frozen streaming extension (additive; existing
@@ -95,6 +96,8 @@ export interface RingRunEvent {
   artifact?: RingArtifactDescriptor;
   /** memory.saved: stored note summary. */
   memory?: RingMemoryRecord;
+  /** skill.prefetch: bookkeeping tools the server pre-ran (never model tool calls). */
+  skills?: string[];
 }
 
 export interface RingRunState {
@@ -131,6 +134,7 @@ const EVENT_TYPES: readonly string[] = [
   'plan.updated',
   'artifact.created',
   'memory.saved',
+  'skill.prefetch',
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -213,6 +217,14 @@ export function validateRingRunEvent(value: unknown): RingRunEvent {
     }
     const memory = value.memory as Record<string, unknown>;
     event.memory = { noteId: memory.noteId as string, summary: memory.summary as string };
+  }
+  // TASK HYBRID-ROUTER-01: skill.prefetch payload (pass-through only when
+  // correctly typed; nothing defaulted or invented).
+  if (value.skills !== undefined) {
+    if (!Array.isArray(value.skills) || value.skills.some((sk) => typeof sk !== 'string')) {
+      throw new Error('RING_RUN_INVALID: event.skills must be an array of strings when present.');
+    }
+    event.skills = value.skills as string[];
   }
   return event;
 }
