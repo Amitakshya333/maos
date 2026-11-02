@@ -1,124 +1,161 @@
-# MAOS Industrial — 3–5 Minute Recording Script
+# MAOS Industrial — 5-Minute Ring Stage Arc (Recording Script)
 
-**Status:** Script prepared for a truthful local/synthetic capture. No video has
-been recorded. Before using it as a hackathon submission, check the actual
-participant rules and confirm that a local demo with no live Meta request is
-eligible.
+**Status:** Script prepared for a Ring-centered capture. No video has been
+recorded — every segment below is TO-RECORD. Before using it as a hackathon
+submission, check the actual participant rules and confirm the demonstrated
+hosted Meta use satisfies them. Ring on camera is the hosted agent surface
+(`ring-agent-service` + `ring-inference-service`) wired to
+`meta-models/muse-spark-open-1026` via `https://inference.baseten.co/v1`
+(policy-pinned: `src/backends/meta-api-policy.ts:3-5`). Synthetic data only.
+Decision support, not operating authority.
 
-## Capture setup
+## Capture setup (staging recipe)
 
-Use the final installed package from the same release rehearsal gate, a fresh
-temporary project, the bundled synthetic T-07 fixtures/profile, and the
-separately staged Rust engine. Follow the authenticated-shell setup in
-[`RUNBOOK.md`](RUNBOOK.md). The Windows launch command is:
+Stage a packaged build exactly as the recording checklist requires: fresh
+scratch at current main HEAD, `npm ci`, build, source-built Rust engine with
+matching SHA, Baseten config from the redacted template (`providers.baseten`
+with `baseURL https://inference.baseten.co/v1`, model
+`meta-models/muse-spark-open-1026`, `basetenApiEnabled: true`) **plus the
+`schemaVersion` template rule** (config must carry the required schema
+version field), and the `BASETEN_API_KEY` in the launcher shell ONLY — never
+pasted, never in a file. Follow the authenticated-shell setup in
+[`RUNBOOK.md`](RUNBOOK.md) and the full go/no-go in
+[`RECORDING_READINESS.md`](RECORDING_READINESS.md). Use one fresh temporary
+project per run so approval, stale-source failure, stale-rules failure, and
+rejection cannot be confused as one run. Record the real windows (full app +
+overlay). Keep run and thread IDs visible; never show session tokens, API
+keys, personal browser profiles, unrelated files, or unsanitized terminal
+output. Use brief cuts for waits and clearly signal each new run; do not
+imply skipped time was instantaneous. Rebuilding before recording is
+mandatory: the staging tree must match current main (this rule was
+bitten twice before — do not record from a stale tree).
 
-```powershell
-$projectRoot = (Resolve-Path .\demo-project).Path
-npx electron .\node_modules\maosorch\desktop\main.cjs --project-root $projectRoot --allow-temp
-```
+On-screen identity (identical everywhere):
+`HOSTED · meta-models/muse-spark-open-1026 via Baseten`
+(`tests/gui/ring-impl-01.test.ts:94`); fallback badge
+`EVIDENCE-ONLY · no model configured`
+(`tests/gui/ring-impl-01.test.ts:105`). If the hosted path is unavailable on
+camera, run the evidence-only fallback path instead and label it as such on
+screen — never replay a saved model response while showing it as live.
 
-Record the real Electron window. Keep run IDs visible; never show session
-tokens, API keys, personal browser profiles, unrelated files, or unsanitized
-terminal output. Use four isolated runs so approval, stale-source failure,
-stale-rules failure, and rejection cannot be confused as one run. Use brief
-cuts for waits and clearly signal each new run; do not imply skipped time was
-instantaneous.
+## Timed arc
 
-## Timed script
+### 0:00–0:30 — The plant can't use ChatGPT (TO-RECORD)
 
-### 0:00–0:25 — Explain the boundary
+**Show:** The plant context and why generic chat is not an option (sovereignty:
+company evidence stays in MAOS; telemetry/RMS math is deterministic local
+code, never model prose).
 
-**Show:** The Cockpit running in the native shell and the synthetic T-07 input.
+**Say:** "A plant can't paste turbine telemetry into ChatGPT. Company evidence
+stays in MAOS; the T-07 calculation is deterministic local code using
+synthetic turbine data and demonstration thresholds. This is decision
+support, not an operating decision."
 
-**Say:** “This is a local industrial evidence workflow using synthetic turbine
-data and demonstration thresholds. The T-07 calculation is deterministic. This
-capture makes no hosted Meta Model API call and is not an operating decision.”
+### 0:30–1:00 — Ask Ring the turbine question (TO-RECORD)
 
-### 0:25–1:10 — Analyze and resume the pending review
+**Action:** In the full app, ask Ring the T-07 turbine question (example: "Analyze
+turbine vibration telemetry for T-07 and summarize the verdict, citing the
+deterministic overall RMS."). Watch streamed fragments arrive as `model.delta`
+events (`src/service/ring-agent-service.ts:890-908`).
 
-**Action:** In a fresh project, click **Run T-07 Safety Audit**. Copy the run ID
-shown in the T-07 judged-run panel. Show the pending approval and that no report
-exists yet. Open **Review the evidence**, reload the window, click **Refresh**
-in approvals, return to **Cockpit** and show the same pending run ID, then open
-**Review the evidence** again.
+**Say:** "I'm asking Ring — wired to meta-models/muse-spark-open-1026 via
+Baseten — the turbine question. Tokens stream live; the verdict and RMS come
+from the deterministic summary, never from model invention."
 
-**Say:** “The workflow pauses for review. Refresh reconnects to the same
-project-scoped run; it does not silently approve it.”
+### 1:00–1:45 — Sources shown (TO-RECORD)
 
-### 1:10–2:05 — Review and approve that run
+**Action:** Show the cited sources: SOP
+(`demo/industrial/sop_turbine_vibration_monitoring.md`), maintenance report
+(`demo/industrial/maintenance_report.txt`), safety thresholds
+(`demo/industrial/safety_thresholds.json`), and the T-07 telemetry log
+(`demo/industrial/turbine_vibration_log.csv`). Show the deterministic verdict
+`CRITICAL` with overall RMS `2.637 mm/s`
+(`tests/industrial/ring-inference.test.ts:184-185,223-224`).
 
-**Action:** Open the approval for the same ID. Inspect the evidence and
-source/rule hashes. Click **Review & Approve**, enter reviewer
-`release-reviewer`, and note “Reviewed synthetic T-07 evidence; not operational
-authorization.” Confirm approval. Return to the Cockpit and show the completed
-report for that run.
+**Say:** "Every number on screen is cited to one of these sources. Raw CSV
+rows never ride along to the model — only the deterministic summary does."
 
-**Say:** “This approval is bound to the reviewed evidence and rules. A later
-change invalidates it.”
+### 1:45–2:45 — Deterministic verdict FAIL, RMS 2.637 (TO-RECORD)
 
-### 2:05–2:55 — Download and verify the exact run
+**Action:** Show the deterministic verdict FAIL (engineering `CRITICAL`,
+overall RMS `2.637 mm/s`, critical excursion `8.3 mm/s` row 367) and the
+hybrid routing on a bookkeeping ask: the server pre-runs the deterministic
+bookkeeping chain first and records a `skill.prefetch` marker, then the model
+writes prose over established facts
+(`src/service/ring-agent-service.ts:194-230`;
+`tests/industrial/ring-hybrid.test.ts:1-60`).
 
-**Action:** Open **Deliverables**, download that run’s DOCX, then in the
-project-root terminal run:
+**Say:** "The verdict is FAIL — RMS 2.637 against demo limits. Bookkeeping
+stays deterministic: the server establishes facts first, the model only
+writes prose and proposes the consequential step."
 
-```powershell
-$runId = '<the exact run ID shown in the Cockpit>'
-& .\node_modules\.bin\maos-industrial.cmd verify audit --run-id $runId --json
-```
+### 2:45–3:15 — Refusal beat (TO-RECORD)
 
-Open the Audit view, click **Verify Cryptographic Chain**, and show
-`CHAIN: VERIFIED`. Keep the same run ID visible in the report, download, audit
-export, and verifier output.
+**Action:** Ask Ring to approve a turbine restart. Show the calm refusal
+verbatim — "I can't approve a restart or operation … This is decision
+support, not operating authority. Synthetic demo data only."
+(`src/service/ring-safety.ts:68-78`). No tools run, no files are written.
 
-**Say:** “The software workflow completed and the artifacts verify. Its
-engineering verdict is still **FAIL** because the synthetic measurements cross
-the configured demo limits.”
+**Say:** "Ring refuses to approve a restart. That refusal is the trust
+moment: the authorized engineer decides, not the model."
 
-### 2:55–3:40 — Show source and rules stale-approval failures
+### 3:15–4:00 — Cockpit approvals and audit (TO-RECORD)
 
-**Action:** In a separate fresh project, start a new run and change one byte in
-`demo/industrial/turbine_vibration_log.csv` after analysis but before approval.
-Attempt approval/resume; show the failed state and absence of a report. In
-another fresh project, repeat but change
-`demo/industrial/safety_thresholds.json` after analysis. Show the failed state
-and absence of a report. Keep the different run IDs visible between cuts.
+**Action:** Open the approval for the run ID, review evidence and hashes, and
+approve as reviewer `release-reviewer`. Then open the Audit view and verify
+the chain (`CHAIN: VERIFIED` in `src/gui/src/views/AuditView.tsx:186`).
+Keep the same run ID visible in the report, download, audit export, and
+verifier output. Show the overlay hotkey moment: press **Ctrl+Shift+Space**
+(`desktop/ring-overlay-host.cjs:20`; `desktop/ring-smoke.cjs:29`) to summon
+the overlay, and approve via the inline approval card in the overlay
+(`src/gui/src/components/RingOverlay.tsx:10,366-374`).
 
-**Say:** “Both source evidence and the safety-rule input are checked again at
-resume. A stale review fails closed; no report is created.”
+**Say:** "Approval is bound to the reviewed evidence and rules. The overlay —
+summoned with Ctrl+Shift+Space — carries the same approval card, and the
+audit chain verifies."
 
-### 3:40–4:10 — Show explicit rejection
+### 4:00–4:40 — Judge verifier tamper moment (TO-RECORD)
 
-**Action:** In a third fresh project, analyze a new run, open its approval,
-choose **Reject**, enter a concise reason, and confirm. Show the persisted
-rejected state and that no report is listed for that run.
+**Action:** Re-verify the completed run by its exact returned run ID, then
+demonstrate the tamper beat on a copy: altering one record hash fails closed
+(`tests/industrial/judge-verifier.test.ts:177-185` — "fails closed when a
+record hash is tampered"). Show the failed state; never splice a negative
+case into the approved run.
 
-**Say:** “A reviewer can reject the evidence. Rejection is persisted, and the
-system does not present it as a successful report.”
+**Say:** "Same run ID, verified artifacts — and a tampered copy fails closed.
+The chain catches modification; nothing is presented as a successful report."
 
-### 4:10–4:35 — Close with limitations
+### 4:40–5:00 — One-person close (TO-RECORD)
 
-**Say:** “The fixtures and limits are synthetic and not safety certification.
-TypeScript performs the T-07 analysis; a separately installed Rust engine
-provides audit hashing and verification. No live Meta integration is shown.
-Loopback binding does not prove the whole workstation is offline.”
+**Say:** "Synthetic data only. Voice and P-12 vision are not included —
+voice is stretch-only and cut
+(`docs/product/RING_AGENT_PM_BRIEF.md:119,169`), and the P-12 scan PNG and
+photo are not wired into Ring evidence paths in this packet
+(`demo/industrial/DEMO_PACK_PROVENANCE.json:278,292`). Evidence-only mode is
+the honest fallback, labelled as such. Decision support, not operating
+authority."
 
 ## Capture checks
 
-- Confirm each segment uses the correct, distinct run ID. Never splice a
-  negative case into the approved run.
-- Keep the engineering `FAIL` verdict visible after report generation; do not
-  describe it as a passing safety result.
-- Make sure the DOCX download, report hash, audit export, and CLI verification
-  all refer to the approved run ID.
-- If any action fails, show the failure state or retake the full segment in a
-  fresh project. Do not edit the video to imply a failed operation succeeded.
-- The earlier three rehearsals used a separate browser context and temporary
-  project on one installed Windows package. They are test evidence, not a
-  recording, submission, safety certification, or live Meta integration.
+- Confirm each segment uses the correct, distinct run/thread ID. Never splice
+a negative case into the approved run.
+- Keep the engineering `FAIL`/`CRITICAL` verdict visible after report
+generation; do not describe it as a passing safety result.
+- Make sure the report, its hash, the audit export, and the verifier
+output all refer to the approved run ID.
+- Keep the model/endpoint identical everywhere:
+`meta-models/muse-spark-open-1026` via `https://inference.baseten.co/v1`.
+- If any action fails, show the failure state or retake the full segment in
+a fresh project. Do not edit the video to imply a failed operation
+succeeded.
+- If hosted mode is unavailable, record the evidence-only fallback path and
+label it EVIDENCE-ONLY on screen (the evidence-only answer contains the
+deterministic summary with zero model wording;
+`src/service/ring-inference-service.ts:320-328`).
 
 ## Headless fallback
 
-If the Cockpit cannot be shown, a separate CLI capture may demonstrate package
+If the app windows cannot be shown, a CLI capture may demonstrate package
 execution and verification, but it cannot stand in for the human-review flow:
 
 ```powershell

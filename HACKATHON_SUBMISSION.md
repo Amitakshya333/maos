@@ -2,8 +2,9 @@
 
 **Status:** Local packet prepared; **not submitted**. No video has been recorded.
 Confirm selected-participant eligibility and inspect the actual participant
-rules/form before using this draft. Meta credits are not active, so no hosted
-request was made and no live Meta integration is claimed.
+rules/form before using this draft. Ring is wired to the hosted Meta model
+(see "Ring hosted integration" below); the demo video is not recorded, so no
+submitted video claims a recorded live run yet.
 
 ## Project summary
 
@@ -15,8 +16,9 @@ same returned run ID. A changed source or threshold file invalidates approval;
 an explicit rejection persists without generating a report.
 
 The verified T-07 analysis is deterministic TypeScript. A separately installed
-Rust engine provides audit-chain hashing and verification. No Meta Model API
-request is part of the verified run. Loopback service binding does not prove
+Rust engine provides audit-chain hashing and verification. The T-07
+judged-run path itself makes no hosted call; Ring (the agent surface) is
+separately wired to the Meta Model API — see "Ring hosted integration". Loopback service binding does not prove
 that the whole workstation is offline.
 
 ## Confirmed public event information
@@ -42,7 +44,8 @@ government-affiliated participants and certain family/household members; the
 entrant's personal eligibility and acceptance are not verified here.
 
 The public page's model-use language is promotional/theme language, not enough
-to confirm a mandatory live Meta runtime call. The following remain
+to confirm a mandatory live Meta runtime call. Integration status (wired vs.
+recorded) is stated under "Ring hosted integration"; the following remain
 **unconfirmed** until the current participant rules/form are inspected:
 
 - whether a live Meta model call is mandatory at runtime;
@@ -54,9 +57,92 @@ to confirm a mandatory live Meta runtime call. The following remain
 Do not submit on the assumption that the pasted waiver or public promotional
 copy is the current complete rule set. The user's approved spending/data
 envelope is synthetic data only, active hackathon credits only, and no paid
-overage. Before any hosted request, confirm an active, unexpired positive
-credit balance in the intended account and provider-side hard no-overage
-protection. No API key is needed for that confirmation.
+overage. The two retained live reliability reports each record 4 hosted
+instruction-runs (8 total; see "Ring hosted integration"); the packet
+history holds no provider-side spend records, so that count is TO-FILL
+against authoritative usage if available. Before any further hosted request,
+confirm an active, unexpired positive credit balance in the intended account
+and provider-side hard no-overage protection. No API key is needed for that
+confirmation.
+
+## Ring hosted integration
+
+Ring (`ring-agent-service` + `ring-inference-service`) is wired to the
+hosted Meta model `meta-models/muse-spark-open-1026` served via
+`https://inference.baseten.co/v1`. The endpoint and model are policy-pinned
+in one place (`src/backends/meta-api-policy.ts:3-5`): any other
+endpoint/model is refused with `BASETEN_API_CONFIGURATION_INVALID`
+(`src/backends/meta-api-policy.ts:211-224`), use requires explicit
+`providers.<name>.basetenApiEnabled=true` opt-in with the exact
+provider/endpoint/model triple, and the credential is read only from the
+`BASETEN_API_KEY` environment variable in the launching shell — never from a
+file (`src/service/ring-inference-service.ts:97-135`).
+
+Arming and fallback (`src/service/ring-inference-service.ts:300-398`):
+armed config + present key returns `mode: 'hosted'` with
+`modelId: meta-models/muse-spark-open-1026` and `servedModelId` only when
+the provider echoes its own model id
+(`src/service/ring-inference-service.ts:360-369`); anything else returns
+`mode: 'evidence-only'` with the deterministic summary and zero model
+wording. Hosted inference errors fall back to evidence-only and are
+recorded as `RING_HOSTED_INFERENCE_FAILED`, never thrown in a way that takes
+Ring down (`src/service/ring-inference-service.ts:376-398`). On-screen
+badges: `HOSTED · meta-models/muse-spark-open-1026 via Baseten` vs
+`EVIDENCE-ONLY · no model configured`
+(`tests/gui/ring-impl-01.test.ts:94,105`).
+
+Loopback-proven streaming: in hosted mode each streamed model fragment is
+recorded as a `model.delta` transcript entry and fanned out over the
+existing event-bus/wire projection
+(`src/service/ring-agent-service.ts:890-908`). A provider without
+streaming completes via one non-streamed call with NO fabricated deltas
+(`src/service/ring-agent-service.ts:903-908`;
+`tests/industrial/ring-dev-a.test.ts:173-177`). Evidence-only mode never
+touches a provider, so no `model.delta` is fabricated there
+(`tests/industrial/ring-dev-a.test.ts:109`).
+
+Live reliability result (both retained live reports agree at 3/4):
+evidence tools (`analyze_telemetry`, `read_company_document`,
+`search_knowledge`, `verify_export`) are called reliably, while the
+`memory-and-plan` instruction fails its expectation both times — the model
+calls only `analyze_telemetry` and never calls `remember`/`update_plan`
+(`missingTools: ["remember", "update_plan"]`, `pass: false` in each retained
+`live-report.json`). The decided hybrid routing is the consequence:
+in HOSTED mode the server pre-runs the deterministic bookkeeping chain FIRST
+(same registry-direct code as the evidence-only path), records an honest
+server-side `skill.prefetch` marker (never a model tool call), then hands
+the model established facts; the model writes prose and proposes (never
+performs) the consequential step, with the approval gate unchanged
+(`src/service/ring-agent-service.ts:194-230`;
+`tests/industrial/ring-hybrid.test.ts:1-60`). Bookkeeping prefetch fires
+iff the instruction matches one of the exact recall/remember/plan patterns
+(`src/service/ring-agent-service.ts:215-220`); everything else —
+telemetry/documents/search/verify/OCR AND handover/work-order/draft/report
+asks — stays fully model-driven. Evidence-only mode is untouched by the
+router. All automated tests are evidence-only/mocks-only with zero live
+calls: `BASETEN_API_KEY` is deleted in `beforeEach`/`afterEach` and asserted
+unset (`tests/industrial/ring-hybrid.test.ts:52-59`).
+
+Day-2 surface: the six frozen slash-command skills are prompt templates
+with required tool lists (`src/service/ring-skills.ts:42+`); matching
+workflows run deterministically evidence-first server-side
+(`src/service/ring-skill-workflows.ts:245+`). The overlay hotkey defaults to
+`Ctrl+Shift+Space` (`desktop/ring-overlay-host.cjs:20`; smoke-checked in
+`desktop/ring-smoke.cjs:29`) and the overlay renders inline Allow/Deny
+approval cards for `approval.pending` events
+(`src/gui/src/components/RingOverlay.tsx:10,366-374`).
+
+What is NOT included: voice is stretch-only and cut
+(`docs/product/RING_AGENT_PM_BRIEF.md:119,169`); the P-12 scan PNG and
+equipment photo are explicitly NOT wired into Ring evidence paths in this
+packet (scan needs OCR, photo needs vision weights — both unavailable, so
+Ring reports them unavailable rather than fabricate text)
+(`demo/industrial/DEMO_PACK_PROVENANCE.json:278,292`). This packet states
+decision support, not operating authority — the shared refusal wording ends
+"This is decision support, not operating authority. Synthetic demo data
+only." (`src/service/ring-safety.ts:77`). T-07 numbers for camera are the
+deterministic verdict `CRITICAL` with overall RMS `2.637 mm/s`
+(`tests/industrial/ring-inference.test.ts:184-185,223-224`).
 
 ## Demo and evidence package
 
@@ -121,7 +207,7 @@ engine is unknown. T-07 does not call the packaged Python assets.
    Rules and final submission form; confirm the appropriate track and personal
    eligibility.
 2. Resolve the live Meta requirement from those rules. If a hosted call is
-   required, keep this packet blocked until active hackathon credits and
+   required, confirm active hackathon credits and provider-side no-overage
    provider-side no-overage protection are confirmed.
 3. Confirm exact disclosure, repository/media fields, recording requirements,
    and entrant-work license terms; review the MIT project license together
