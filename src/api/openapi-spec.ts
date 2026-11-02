@@ -1057,6 +1057,58 @@ export const OPENAPI_SPEC: Record<string, unknown> = {
         },
       },
     },
+    '/api/v1/ring/skills': {
+      get: {
+        summary: 'List Ring slash-command skills (static / menu manifest)',
+        responses: {
+          '200': { description: 'Skill menu: name, title, description, consequential flag.' },
+        },
+      },
+    },
+    '/api/v1/ring/roles': {
+      get: {
+        summary: 'List Ring role personas with allowed tools and skills',
+        responses: {
+          '200': { description: 'Roles: operator, maintenance, safety, manager.' },
+        },
+      },
+    },
+    '/api/v1/ring/skill-runs': {
+      post: {
+        summary: 'Run a Ring skill workflow (consequential skills pause for approval)',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['skill'],
+                properties: {
+                  skill: { type: 'string', description: 'handover | rca | permit | loto | sop | report' },
+                  role: { type: 'string', description: 'operator | maintenance | safety | manager' },
+                  arg: { type: 'string', description: 'Trailing text, e.g. equipment id' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Skill result (non-consequential) or refusal.' },
+          '202': { description: 'Consequential skill awaiting approval (runId + approvalId).' },
+          '400': { description: 'Unknown skill or invalid evidence path.' },
+        },
+      },
+    },
+    '/api/v1/ring/runs/{runId}/artifacts/{filename}': {
+      get: {
+        summary: 'Download a Ring run artifact (path-checked to the run dir)',
+        responses: {
+          '200': { description: 'Artifact bytes.' },
+          '400': { description: 'Path escape refused.' },
+          '404': { description: 'Artifact not found.' },
+        },
+      },
+    },
     '/api/v1/verify/service': {
       post: {
         summary: 'Verify Service Identity Manifest and Executable Hash',

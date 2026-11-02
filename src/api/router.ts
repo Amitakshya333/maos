@@ -12,6 +12,10 @@ import * as crypto from 'crypto';
 import * as child_process from 'child_process';
 import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError, RingAgentError } from '../service';
 import { isRingRole, isRingThreadId } from '../service/ring-contract';
+import { RING_SKILLS_MANIFEST, listRingSkills } from '../service/ring-skills';
+import { listRingRolePersonas, getRingRolePersona } from '../service/ring-roles';
+import { isRestartAuthorizationRequest, ringRestartRefusal } from '../service/ring-safety';
+import { RingArtifactService } from '../service/ring-artifact-store';
 import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import {
   getCorrelationId,
@@ -1481,6 +1485,99 @@ export class RestApiRouter {
         }
       }
       return true;
+    }
+
+    // ── Ring Skills (TASK DEV-C-01: prompt-template menu + workflows) ──
+    // Placed after the Dev A threads block; additive only. The Tasks
+    // block below (incl. GET /api/v1/tasks) is preserved verbatim.
+
+    if (method === 'GET' && pathname === '/api/v1/ring/skills') {
+      sendJson(res, 200, { data: { skills: RING_SKILLS_MANIFEST } }, correlationId);
+      return true;
+    }
+
+    if (method === 'GET' && pathname === '/api/v1/ring/roles') {
+      const roles = listRingRolePersonas().map((p) => ({
+        role: p.role, label: p.label, tools: p.tools,
+        skills: listRingSkills().filter((sk) => !sk.roles || (sk.roles as string[]).includes(p.role)).map((sk) => sk.name),
+      }));
+      sendJson(res, 200, { data: { roles } }, correlationId);
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v1/ring/skill-runs') {
+      const bodyResult = await readJsonBody<{ skill?: string; role?: string; arg?: string; instruction?: string }>(req, res, correlationId);
+      if (!bodyResult) return true;
+      const payload = bodyResult.parsed;
+      const rawSkill = typeof payload?.skill === 'string' ? payload.skill.trim().replace(/^\//, '').toLowerCase() : '';
+      const skill = listRingSkills().find((sk) => sk.name === rawSkill);
+      if (!skill) {
+        sendError(res, 400, 'VALIDATION_FAILED', `skill must be one of: ${listRingSkills().map((sk) => sk.name).join(', ')}.`, correlationId);
+        return true;
+      }
+      const role = typeof payload?.role === 'string' && getRingRolePersona(payload.role) ? payload.role : 'operator';
+      const arg = typeof payload?.arg === 'string' ? payload.arg : (typeof payload?.instruction === 'string' ? payload.instruction : '');
+      try {
+        if (isRestartAuthorizationRequest(arg)) {
+          const refusal = ringRestartRefusal('this asset', 'The request asks for restart/operation approval.');
+          try { this.services.audit.recordAuditEvent({ category: 'approval', source: 'ring-skills', data: { event: 'RING_SKILL_REFUSED', skill: skill.name, role, runId: 'ring-skill-refused', reason: 'restart-authorization-request' } }); } catch { /* audit must not break the refusal */ }
+          sendJson(res, 200, { data: { skill: skill.name, role, status: 'refused', finalAnswer: refusal } }, correlationId);
+          return true;
+        }
+        const instruction = `/${skill.name}${arg ? ` ${arg}` : ''}`.trim();
+        const runId = this.services.ringAgent.startRun(instruction, { skillName: skill.name, skillArg: arg, skillRole: role });
+        const snapshot = this.services.ringAgent.getRun(runId);
+        if (!snapshot) {
+          sendError(res, 500, 'RING_SKILL_RUN_FAILED', 'Ring skill run did not start.', correlationId);
+          return true;
+        }
+        if (snapshot.status === 'awaiting_approval') {
+          sendJson(res, 202, { data: { runId, approvalId: snapshot.pendingApproval?.approvalId, skill: skill.name, role, status: 'awaiting_approval', summary: `/${skill.name} draft is ready for review. Approve to write the artifact.` } }, correlationId);
+          return true;
+        }
+        const terminal = await this.services.ringAgent.waitForCompletion(runId, 30000);
+        if (terminal.status === 'completed') {
+          sendJson(res, 200, { data: { runId, skill: skill.name, role, status: 'completed', finalAnswer: terminal.finalAnswer, events: terminal.events } }, correlationId);
+        } else {
+          sendJson(res, 200, { data: { runId, skill: skill.name, role, status: terminal.status, finalAnswer: terminal.finalAnswer, error: terminal.error } }, correlationId);
+        }
+        return true;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.startsWith('UNKNOWN_SKILL') || message.startsWith('EVIDENCE_') || message.startsWith('PATH_OUTSIDE_')) {
+          sendError(res, 400, 'VALIDATION_FAILED', message, correlationId);
+        } else {
+          sendError(res, 500, 'RING_SKILL_RUN_FAILED', message || 'Ring skill run failed', correlationId);
+        }
+        return true;
+      }
+    }
+
+    const ringArtifactMatch = pathname.match(new RegExp('^/api/v1/ring/runs/([^/]+)/artifacts/(.+)$'));
+    if (method === 'GET' && ringArtifactMatch) {
+      const runId = decodeURIComponent(ringArtifactMatch[1]);
+      const filename = decodeURIComponent(ringArtifactMatch[2]);
+      try {
+        const abs = new RingArtifactService(this.projectRoot).resolveArtifactPath(runId, filename);
+        if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+          sendError(res, 404, 'NOT_FOUND', 'Ring artifact not found.', correlationId);
+          return true;
+        }
+        const buf = fs.readFileSync(abs);
+        const ext = path.extname(abs).toLowerCase();
+        const contentType = ext === '.md' || ext === '.txt' ? 'text/markdown; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : 'application/octet-stream';
+        res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': contentType, 'X-Correlation-ID': correlationId });
+        res.end(buf);
+        return true;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.startsWith('ARTIFACT_PATH_ESCAPE')) {
+          sendError(res, 400, 'PATH_TRAVERSAL', message, correlationId);
+        } else {
+          sendError(res, 500, 'RING_ARTIFACT_READ_FAILED', message || 'Ring artifact read failed', correlationId);
+        }
+        return true;
+      }
     }
 
     // ── Tasks ─────────────────────────────────────────────────────

@@ -18,6 +18,11 @@ import type { ChatMessage, IProvider, ToolDef } from '../backends/provider';
 import type { Project } from '../domain/schemas';
 import type { AuditService } from './audit-service';
 import type { EventService } from './event-service';
+import { getRingRolePersona } from './ring-roles';
+import { isRestartAuthorizationRequest, ringRestartRefusal } from './ring-safety';
+import { listRingSkills } from './ring-skills';
+import { runRingSkillWorkflow } from './ring-skill-workflows';
+import { RingArtifactService } from './ring-artifact-store';
 import type { EndpointAllowlistService } from './endpoint-allowlist-service';
 
 export type RingAgentRunStatus = 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
@@ -37,6 +42,10 @@ export interface RingAgentRunContext {
   documentPath?: string;
   threadId?: string;
   role?: string;
+  /** TASK DEV-C-01: skill-run intent (server-side skill workflow). */
+  skillName?: string;
+  skillArg?: string;
+  skillRole?: string;
 }
 
 export interface RingAgentPendingApproval {
@@ -213,6 +222,8 @@ export class RingAgentService {
   private readonly evidenceRootOption?: string;
   private readonly registry: RingToolRegistry;
   private readonly toolDeps: RingToolDeps;
+  /** TASK DEV-C-01: skill-run approval intents (runId -> intent). Completed synchronously on approval; no dangling promises. */
+  public readonly pendingSkillRuns = new Map<string, { approvalId: string; outcomeBody: string; skill: string; role: string; arg: string }>();
   private readonly runs = new Map<string, InternalRun>();
   private readonly listeners = new Set<(entry: RingAgentTranscriptEntry) => void>();
 
@@ -302,6 +313,30 @@ export class RingAgentService {
     if (decision !== 'approved' && decision !== 'denied') throw new RingAgentError('VALIDATION_FAILED', "decision must be 'approved' or 'denied'.");
     const run = this.runs.get(runId);
     if (!run) throw new RingAgentError('RING_RUN_NOT_FOUND', `Ring run '${runId}' was not found.`);
+    const skillIntent = this.pendingSkillRuns.get(runId);
+    if (skillIntent && run.pending && run.pending.toolName === skillIntent.skill) {
+      const skillPending = run.pending;
+      if (run.pending.approvalId !== approvalId) throw new RingAgentError('APPROVAL_NOT_FOUND', `Approval '${approvalId}' was not found for ring run '${runId}'.`);
+      this.pendingSkillRuns.delete(runId);
+      run.pending = undefined;
+      this.record(run, { type: 'approval.resolved', approvalId, toolName: skillPending.toolName, decision });
+      if (this.auditService) {
+        try { this.auditService.recordAuditEvent({ category: 'approval', source: 'ring-agent', data: { event: 'RING_SKILL_APPROVAL_RESOLVED', runId, approvalId, toolName: skillPending.toolName, decision } }); } catch { /* audit must not break approval resolution */ }
+      }
+      if (decision === 'denied') {
+        this.complete(run, `Approval denied for ${skillPending.toolName}: the requested action was not performed. No file was written.`);
+        return this.snapshot(run);
+      }
+      try {
+        const descriptor = new RingArtifactService(this.projectRoot).saveArtifact(runId, `${skillIntent.skill}-${skillIntent.arg || 'asset'}.md`, skillIntent.outcomeBody, 'markdown');
+        this.record(run, { type: 'artifact.created', artifact: { path: descriptor.path, kind: descriptor.kind, size: descriptor.size, sha256: descriptor.sha256 } });
+        try { this.auditService?.recordAuditEvent({ category: 'approval', source: 'ring-agent', data: { event: 'RING_SKILL_ARTIFACT_WRITTEN', runId, path: descriptor.path, sha256: descriptor.sha256 } }); } catch { /* best effort */ }
+        this.complete(run, skillIntent.outcomeBody);
+      } catch (err) {
+        this.fail(run, err);
+      }
+      return this.snapshot(run);
+    }
     if (!run.pending || run.status !== 'awaiting_approval') throw new RingAgentError('APPROVAL_NOT_PENDING', `Ring run '${runId}' has no pending approval.`);
     if (run.pending.approvalId !== approvalId) throw new RingAgentError('APPROVAL_NOT_FOUND', `Approval '${approvalId}' was not found for ring run '${runId}'.`);
     const pending = run.pending;
@@ -581,7 +616,60 @@ export class RingAgentService {
     return { isArmed: true, apiKey: apiKey.trim() };
   }
 
+  /**
+   * TASK DEV-C-01: server-side skill execution. Runs the deterministic
+   * workflow (evidence-first, no model call), records tool.result entries
+   * for the transcript, and — for consequential skills — pauses for human
+   * approval WITHOUT writing anything. The artifact is written only in
+   * resolveApproval after a human approves. Restart/operation requests are
+   * refused with no tools and no files.
+   */
+  private async executeSkillRun(run: InternalRun, skillName: string, arg: string, role: string): Promise<void> {
+    try {
+      const skill = listRingSkills().find((s) => s.name === skillName);
+      if (!skill) { this.fail(run, new Error(`UNKNOWN_SKILL: no Ring skill named '${skillName}'.`)); return; }
+      const resolvedRole = getRingRolePersona(role) ? role : 'operator';
+      const refusal = isRestartAuthorizationRequest(arg) ? ringRestartRefusal('this asset', 'The request asks for restart/operation approval.') : undefined;
+      if (refusal) {
+        try { this.auditService?.recordAuditEvent({ category: 'approval', source: 'ring-agent', data: { event: 'RING_SKILL_REFUSED', skill: skillName, role: resolvedRole, runId: run.runId } }); } catch { /* best effort */ }
+        this.complete(run, refusal);
+        return;
+      }
+      let outcome: ReturnType<typeof runRingSkillWorkflow>;
+      try {
+        outcome = runRingSkillWorkflow({ skillName, arg, role: resolvedRole as never, projectRoot: this.projectRoot, runId: run.runId });
+      } catch (err) {
+        this.fail(run, err);
+        return;
+      }
+      this.record(run, { type: 'tool.call', toolCallId: `skill-${skill.name}`, toolName: skill.name, argsSummary: { arg } });
+      this.record(run, { type: 'tool.result', toolCallId: `skill-${skill.name}`, toolName: skill.name, ok: true, summary: outcome.body.slice(0, 1000) });
+      try { this.auditService?.recordAuditEvent({ category: 'approval', source: 'ring-agent', data: { event: outcome.audit.event, skill: outcome.audit.skill, role: outcome.audit.role, runId: run.runId, evidencePaths: outcome.audit.evidencePaths, needsApproval: outcome.audit.needsApproval } }); } catch { /* best effort */ }
+      if (!outcome.needsApproval) {
+        this.complete(run, outcome.body);
+        return;
+      }
+      const approvalId = `approval-${crypto.randomBytes(4).toString('hex')}`;
+      run.status = 'awaiting_approval';
+      run.updatedAt = new Date().toISOString();
+      this.pendingSkillRuns.set(run.runId, { approvalId, outcomeBody: outcome.body, skill: skill.name, role: resolvedRole, arg });
+      run.pending = { approvalId, toolName: skill.name, summary: `Save ${skill.name} artifact for ${arg || 'T-07'} (pending authorized review)`, reason: 'Consequential skill output requires human approval before it is written.', argsSummary: { skill: skill.name }, createdAt: new Date().toISOString(), toolCallId: `skill-${skill.name}`, args: { skill: skill.name, arg }, resolver: () => undefined as never };
+      this.record(run, { type: 'approval.pending', approvalId, toolName: skill.name, summary: run.pending.summary, reason: run.pending.reason, argsSummary: run.pending.argsSummary, status: 'awaiting_approval' });
+    } catch (err) {
+      if ((run.status as string) === 'cancelled' || run.cancelled) this.ensureCancelled(run);
+      else this.fail(run, err);
+    } finally {
+      if (run.status === 'running' || run.status === 'awaiting_approval') {
+        if (run.cancelled) this.ensureCancelled(run);
+        else if (run.status === 'running') this.fail(run, new Error('RING_AGENT_INCOMPLETE: agent loop ended without a final answer.'));
+      }
+    }
+  }
   private async execute(run: InternalRun): Promise<void> {
+    if (typeof run.context.skillName === 'string' && run.context.skillName) {
+      await this.executeSkillRun(run, run.context.skillName, typeof run.context.skillArg === 'string' ? run.context.skillArg : '', typeof run.context.skillRole === 'string' ? run.context.skillRole : 'operator');
+      return;
+    }
     try {
       let arming: { isArmed: boolean; apiKey?: string };
       try { arming = this.checkBasetenArming(); } catch (err) { this.fail(run, err); return; }

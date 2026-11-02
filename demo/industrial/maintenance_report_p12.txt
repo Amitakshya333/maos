@@ -1,0 +1,21 @@
+MAOS INDUSTRIAL DEMO - PUMP P-12 MAINTENANCE REPORT
+Report ID: MR-P12-2026-0910
+Inspection window: 2026-09-10 08:00-10:00 IST
+Asset: Centrifugal Pump P-12, drive-end bearing assembly
+Operating state: Steady transfer duty, nominal speed 3000 RPM class
+
+Observations
+1. Vibration near the drive-end bearing felt higher than the T-07 baseline at similar load.
+2. The drive-end bearing housing felt warm to the touch.
+3. A small seal weep was visible below the drive-end seal; wiped for recheck.
+4. No casing crack, loose foundation bolt, or active leak was observed.
+5. Coupling guard was in place and secure.
+
+Actions completed
+- Verified external fasteners and guard were secure.
+- Wiped the seal weep to make recurrence visible.
+- Requested review of the next sensor export before continued unrestricted operation.
+
+Limitations
+This visual inspection did not include bearing disassembly, seal replacement,
+alignment measurement, or certified vibration instrumentation.
