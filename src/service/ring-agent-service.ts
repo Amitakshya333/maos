@@ -798,6 +798,7 @@ export class RingAgentService {
     const wantsPlan = /\bplan\b|todo|to-do|next steps/.test(text);
     const wantsOcr = /\bocr\b|scan(s|ned)?\b|turbine_inspection_scan|inspection.{0,20}scan/.test(text);
     const wantsWorkOrder = /work[- ]order|raise.{0,20}order|workorder/.test(text);
+    const wantsHandover = /handover|hand-over|hand over|shift.{0,20}note|shift.{0,20}summary/.test(text);
     const results: Array<{ name: string; result: Record<string, unknown> }> = [];
     const runTool = async (name: string, args: Record<string, unknown>) => {
       const out = await this.executeToolLogged(run, 'evidence-' + (results.length + 1), name, args);
@@ -816,6 +817,7 @@ export class RingAgentService {
       await runTool(name, args);
       return before !== (run.context as Record<string, unknown>).__lastApproval || true;
     };
+    let telemetryRan = wantsTelemetry;
     if (wantsTelemetry) await runTool('analyze_telemetry', run.context.csvPath ? { csvPath: run.context.csvPath } : {});
     if (wantsDocument) await runTool('read_company_document', { path: run.context.documentPath || 'sop_turbine_vibration_monitoring.md' });
     if (wantsVerify) await runTool('verify_export', run.context.exportPath ? { exportPath: run.context.exportPath } : {});
@@ -825,11 +827,30 @@ export class RingAgentService {
       else await runTool('remember', { content: run.instruction.slice(0, 2000), tags: ['evidence-only'] });
     }
     if (wantsPlan) await runTool('update_plan', { plan: [{ step: 'Review evidence-only findings', status: 'in_progress' }] });
-    if (wantsWorkOrder) {
+    if ((wantsWorkOrder || wantsHandover) && !telemetryRan) {
+      // Evidence-first: work-order findings require a tool-hashed citation,
+      // so the deterministic telemetry summary must exist before the
+      // approval-gated generation runs (the instruction wording alone may
+      // not mention telemetry at all).
+      await runTool('analyze_telemetry', run.context.csvPath ? { csvPath: run.context.csvPath } : {});
+      telemetryRan = true;
+    }
+    // Deny stops the artifact batch: a denied work order skips the handover.
+    let artifactsDenied = false;
+    if (wantsWorkOrder && !artifactsDenied) {
       const tel = (run.context as Record<string, unknown>).__telemetry as Record<string, unknown> | undefined;
       const finding = typeof tel?.verdict === 'string' ? 'Turbine vibration verdict: ' + String(tel.verdict) + ' (deterministic telemetry summary).' : run.instruction.slice(0, 500);
       const proceed = await runConsequential('create_work_order', { title: 'T-07 work order', assetId: 'T-07', finding, priority: tel?.verdict === 'CRITICAL' ? 'urgent' : 'routine', evidencePaths: typeof tel?.csvRel === 'string' ? [tel.csvRel] : [] });
       if (!proceed && ((run.status as string) === 'cancelled')) return;
+      if (!proceed) artifactsDenied = true;
+    }
+    if (wantsHandover && !artifactsDenied) {
+      const tel = (run.context as Record<string, unknown>).__telemetry as Record<string, unknown> | undefined;
+      const handoverEvidence = typeof tel?.csvRel === 'string' ? [tel.csvRel] : [];
+      const handoverOpen = typeof tel?.verdict === 'string' ? ['Review turbine vibration verdict: ' + String(tel.verdict) + ' (deterministic telemetry summary).'] : [run.instruction.slice(0, 500)];
+      const proceed = await runConsequential('write_shift_handover', { title: 'T-07 shift handover', outgoingShift: 'Day shift', incomingShift: 'Night shift', openItems: handoverOpen, watchOuts: ['Re-check vibration trend before any operation.'], evidencePaths: handoverEvidence });
+      if (!proceed && ((run.status as string) === 'cancelled')) return;
+      if (!proceed) artifactsDenied = true;
     }
     if (wantsSearch) await runTool('search_knowledge', { query: run.instruction });
     if (results.length === 0) await runTool('search_knowledge', { query: run.instruction });
@@ -845,6 +866,7 @@ export class RingAgentService {
       else if (name === 'recall') lines.push(`Recall: ${truncate(String((result as Record<string, unknown>).message ?? JSON.stringify(result)), 500)}`);
       else if (name === 'update_plan') lines.push(`Plan: ${truncate(JSON.stringify((result as Record<string, unknown>).steps ?? result), 300)}`);
       else if (name === 'create_work_order') lines.push(`Work order: ${truncate(String((result as Record<string, unknown>).primaryPath ?? (result as Record<string, unknown>).message ?? (result as Record<string, unknown>).error ?? JSON.stringify(result)), 500)}`);
+      else if (name === 'write_shift_handover') lines.push(`Handover: ${truncate(String((result as Record<string, unknown>).primaryPath ?? (result as Record<string, unknown>).message ?? (result as Record<string, unknown>).error ?? JSON.stringify(result)), 500)}`);
       else lines.push(`${name}: ${truncate(JSON.stringify(result), 500)}`);
     }
     lines.push('No model prose was generated in evidence-only mode.');

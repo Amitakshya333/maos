@@ -466,6 +466,159 @@ describe('RingOverlay', () => {
     view.unmount();
   });
 
+  it('TASK OVERLAY-FIX-01: overlay panel is translucent and the page backdrop is transparent', async () => {
+    const state: RingRunState = { status: 'completed', mode: 'hosted', events: [] };
+    const prevBodyBg = document.body.style.background;
+    const prevBodyBgc = document.body.style.backgroundColor;
+    const prevHtml = document.documentElement.style.background;
+    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
+    await view.render();
+    // Native side (transparent:true + zero-alpha) only works when the
+    // renderer paints no opaque backdrop: page chain must be transparent.
+    expect(document.documentElement.style.background).toBe('transparent');
+    expect(document.body.style.backgroundColor).toBe('transparent');
+    // Panel itself keeps alpha < 1 (no fully-opaque fill).
+    const panel = view.container.querySelector<HTMLElement>('[data-testid="ring-overlay"]');
+    expect(panel).toBeTruthy();
+    const bg = panel!.style.backgroundColor;
+    expect(bg).toMatch(/rgba/);
+    const alpha = Number(bg.replace(/.*,(\s*[\d.]+)\s*\)$/, '$1'));
+    expect(alpha).toBeLessThan(1);
+    expect(alpha).toBeGreaterThan(0);
+    view.unmount();
+    // Unmount restores the theme backdrop for the full view.
+    expect(document.body.style.background).toBe(prevBodyBg);
+    expect(document.body.style.backgroundColor).toBe(prevBodyBgc);
+    expect(document.documentElement.style.background).toBe(prevHtml);
+  });
+
+  it('TASK OVERLAY-FIX-01: header is the frameless drag handle; controls opt out', async () => {
+    // happy-dom strips the non-standard -webkit-app-region declaration from
+    // the serialized style attribute, so this test pins the DOM contract
+    // (drag-region header exists, Expand + input + approval buttons render
+    // INSIDE the overlay and stay enabled) while the exact CSS value is
+    // verified by code inspection against RingOverlay.tsx (WebkitAppRegion:
+    // 'drag' on the header, 'no-drag' on interactive children).
+    const state: RingRunState = { status: 'completed', mode: 'hosted', events: [] };
+    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
+    await view.render();
+    const header = view.container.querySelector<HTMLElement>('[data-testid="ring-overlay-drag-region"]');
+    expect(header).toBeTruthy();
+    expect(header!.tagName.toLowerCase()).toBe('header');
+    const expand = view.container.querySelector<HTMLButtonElement>('[data-testid="ring-expand-button"]');
+    expect(expand).toBeTruthy();
+    expect(expand!.disabled).toBe(false);
+    expect(header!.contains(expand)).toBe(true);
+    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]');
+    expect(input).toBeTruthy();
+    expect(input!.disabled).toBe(false);
+    view.unmount();
+  });
+
+  it('TASK OVERLAY-FIX-01: overlay accepts a PDF drop into the evidence root (copy, then reference)', async () => {
+    const stored: Array<{ name: string; contentBase64: string }> = [];
+    const client: RingRunClient = {
+      startRun: async () => ({ runId: 'run-1' }),
+      getRun: async () => ({ status: 'completed', mode: 'hosted', events: [] }),
+      cancelRun: async () => {},
+      decideApproval: async () => {},
+      downloadArtifact: async () => {},
+      attachmentClient: {
+        storeEvidenceFile: async (name: string, contentBase64: string) => {
+          stored.push({ name, contentBase64 });
+          return { storedPath: 'evidence/' + name };
+        },
+      },
+    };
+    const view = mount(React.createElement(RingOverlay, { runClient: client, pollIntervalMs: 60_000 }));
+    await view.render();
+    // Same dropzone contract as the full Ring view, now inside the overlay.
+    const dropzone = view.container.querySelector('[data-testid="ring-attachment-dropzone"]');
+    expect(dropzone).toBeTruthy();
+    const picker = view.container.querySelector('[data-testid="ring-attachment-input"]');
+    expect(picker).toBeTruthy();
+    // Drive the file-ingest path the dropzone shares with onDrop: a PDF is
+    // read locally, copied into the evidence root, then referenced.
+    const pdfBytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52, 10]);
+    const pdf = new File([pdfBytes], 'turbine_inspection_scan.pdf', { type: 'application/pdf' });
+    await act(async () => {
+      const fileInput = view.container.querySelector<HTMLInputElement>('[data-testid="ring-attachment-input"]')!;
+      Object.defineProperty(fileInput, 'files', { value: [pdf], configurable: true });
+      fileInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    await view.flush();
+    expect(stored.length).toBe(1);
+    expect(stored[0].name).toBe('turbine_inspection_scan.pdf');
+    expect(stored[0].contentBase64.length).toBeGreaterThan(0);
+    expect(view.container.querySelector('[data-testid="ring-attachment-chip"]')?.textContent).toContain(
+      'turbine_inspection_scan.pdf',
+    );
+    expect(view.container.querySelector('[data-testid="ring-overlay-attach-error"]')).toBeNull();
+    view.unmount();
+  });
+
+  it('overlay shows artifact cards and a generating status across the approval gap', async () => {
+    const card: RingRunState = {
+      status: 'completed',
+      mode: 'evidence-only',
+      events: [
+        { type: 'run.started', ts: 't' },
+        { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write work order' },
+        { type: 'approval.resolved', ts: 't', approvalId: 'a1', decision: 'approved' },
+        {
+          type: 'artifact.created',
+          ts: 't',
+          artifact: { path: '.maos/ring-runs/artifacts/run-1/work-order-1.docx', kind: 'docx', size: 1234, sha256: 'a'.repeat(64) },
+        },
+        {
+          type: 'artifact.created',
+          ts: 't',
+          artifact: { path: '.maos/ring-runs/artifacts/run-1/work-order-1.md', kind: 'markdown', size: 99, sha256: 'b'.repeat(64) },
+        },
+      ],
+    };
+    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(card), pollIntervalMs: 60_000 }));
+    await view.render();
+    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter?.call(input, 'raise a work order');
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(view.container.querySelectorAll('[data-testid="ring-artifact-card"]').length).toBe(2);
+    expect(view.container.querySelector('[data-testid="ring-artifact-open"]')).toBeTruthy();
+    view.unmount();
+
+    const generating: RingRunState = {
+      status: 'running',
+      mode: 'evidence-only',
+      events: [
+        { type: 'run.started', ts: 't' },
+        { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write work order' },
+        { type: 'approval.resolved', ts: 't', approvalId: 'a1', decision: 'approved' },
+        { type: 'tool.call', ts: 't', tool: 'create_work_order', toolCallId: 'c1' },
+      ],
+    };
+    const view2 = mount(React.createElement(RingOverlay, { runClient: overlayClient(generating), pollIntervalMs: 60_000 }));
+    await view2.render();
+    const input2 = view2.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
+    await act(async () => {
+      setter?.call(input2, 'raise a work order');
+      input2.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      view2.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(view2.container.querySelector('[data-testid="ring-overlay-generating"]')?.textContent).toContain('Generating approved artifacts');
+    view2.unmount();
+  });
+
   it('evidence-only badge stays exact in the overlay', async () => {
     const state: RingRunState = { status: 'completed', mode: 'evidence-only', events: [], finalAnswer: 'Local summary.' };
     const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
@@ -645,10 +798,20 @@ describe('desktop overlay host (plain node)', () => {
       return fakeWindow();
     };
     const ui = { origin: 'http://127.0.0.1:9' };
-    const first = host.toggleOverlay(ui, { BrowserWindow: FakeBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
+    const seenOpts = [];
+    const OptsBrowserWindow = function(opts) {
+      seenOpts.push(opts);
+      created.push({ shown: 'shown' });
+      return fakeWindow();
+    };
+    const first = host.toggleOverlay(ui, { BrowserWindow: OptsBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
     expect(first).toBe('shown');
     expect(calls.join('|')).toContain('load:http://127.0.0.1:9/#/ring-overlay');
-    const second = host.toggleOverlay(ui, { BrowserWindow: FakeBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
+    expect(seenOpts.length).toBe(1);
+    expect(seenOpts[0].transparent).toBe(true);
+    expect(seenOpts[0].frame).toBe(false);
+    expect(seenOpts[0].backgroundColor).toBe('#00000000');
+    const second = host.toggleOverlay(ui, { BrowserWindow: OptsBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
     expect(second).toBe('hidden');
     host.overlayState.window = null;
   });

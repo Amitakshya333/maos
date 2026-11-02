@@ -78,7 +78,14 @@ export const RingAttachmentBar: React.FC<{
   client: RingAttachmentClient;
   onChange: (attachments: RingAttachment[]) => void;
   onError: (message: string) => void;
-}> = ({ attachments, client, onChange, onError }) => {
+  /**
+   * TASK OVERLAY-FIX-01: the overlay already owns an explicit screenshot
+   * row (memory-only capture + visible indicator). Setting this hides the
+   * bar's duplicate screenshot button so the overlay shows exactly one
+   * capture trigger. Defaults to false (full Ring view unchanged).
+   */
+  hideScreenshotButton?: boolean;
+}> = ({ attachments, client, onChange, onError, hideScreenshotButton = false }) => {
   const [busy, setBusy] = React.useState(false);
   const [capturing, setCapturing] = React.useState(false);
   const dropRef = React.useRef<HTMLDivElement>(null);
@@ -242,6 +249,7 @@ export const RingAttachmentBar: React.FC<{
         </div>
       )}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        {!hideScreenshotButton && (
         <button
           type="button"
           data-testid="ring-screenshot-button"
@@ -253,6 +261,7 @@ export const RingAttachmentBar: React.FC<{
         >
           {capturing ? 'Capturing…' : 'What am I looking at?'}
         </button>
+        )}
         {attachments.map((attachment, index) => (
           <span
             key={attachment.name + '-' + index}

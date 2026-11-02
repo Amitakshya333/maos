@@ -25,7 +25,6 @@ import * as path from 'path';
 import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL } from '../../src/backends/meta-api-policy';
 import type { IProvider, ProviderResponse } from '../../src/backends/provider';
 import { AuditService } from '../../src/service/audit-service';
-import { AuditService } from '../../src/service/audit-service';
 import { seedEngineFixture } from './ring-dev-audit-proxy.test';
 import { MemoryService } from '../../src/service/memory-service';
 import { RingAgentService } from '../../src/service/ring-agent-service';

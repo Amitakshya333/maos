@@ -6,6 +6,8 @@ import * as os from 'os';
 import { AddressInfo } from 'net';
 import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL } from '../../src/backends/meta-api-policy';
 import { RingAgentService } from '../../src/service/ring-agent-service';
+import { seedEngineFixture } from './ring-dev-audit-proxy.test';
+import { validateRingRunState } from '../../src/gui/src/api/ring-run-types';
 import { AuditService } from '../../src/service/audit-service';
 
 describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
@@ -219,6 +221,49 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     expect(snap.transcript.some((e) => e.type === 'mode.evidence-only')).toBe(true);
     expect(snap.transcript.some((e) => e.type === 'tool.result' && e.toolName === 'analyze_telemetry' && e.ok === true)).toBe(true);
     expect(capturedRequests.length).toBe(0);
+  });
+
+  it('approval then artifacts for a work-order+handover ask without telemetry wording', async () => {
+    // TASK APPROVAL-ARTIFACT-FIX-01: the overlay demo instruction names no
+    // telemetry keyword, so evidence-only must still establish the
+    // deterministic telemetry summary before the approval-gated generation
+    // (work-order findings require a tool-hashed citation), and the
+    // handover half of the ask must run its own approval + twin artifacts.
+    const haveEngine = seedEngineFixture(tempProjectRoot);
+    delete process.env[BASETEN_API_KEY_ENV];
+    const { createServiceContainer } = await import('../../src/service');
+    const services = createServiceContainer(tempProjectRoot);
+    const audit = new AuditService(tempProjectRoot);
+    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: audit, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
+    const runId = service.startRun('Raise a work order and draft my handover');
+    const awaiting = await service.waitForRun(runId, 30000);
+    expect(awaiting.status).toBe('awaiting_approval');
+    expect(awaiting.pendingApproval?.toolName).toBe('create_work_order');
+    service.resolveApproval(runId, awaiting.pendingApproval!.approvalId, 'approved');
+    for (let i = 0; i < 5; i++) {
+      const snap = await service.waitForRun(runId, 30000);
+      if (snap.status === 'awaiting_approval' && snap.pendingApproval) {
+        service.resolveApproval(runId, snap.pendingApproval.approvalId, 'approved');
+      } else break;
+    }
+    const done = await service.waitForCompletion(runId, 30000);
+    expect(done.status).toBe('completed');
+    if (haveEngine) {
+      const created = done.events.filter((e) => e.type === 'artifact.created');
+      // work-order docx+md twins plus handover docx+md twins
+      expect(created.length).toBe(4);
+      const kinds = created.map((e) => e.artifact?.kind).sort();
+      expect(kinds).toEqual(['docx', 'docx', 'markdown', 'markdown']);
+      for (const e of created) {
+        const abs = path.resolve(tempProjectRoot, e.artifact!.path);
+        expect(fs.existsSync(abs)).toBe(true);
+      }
+      expect(String(done.finalAnswer)).toContain('Work order:');
+      expect(String(done.finalAnswer)).toContain('Handover:');
+    } else {
+      expect(String(done.finalAnswer)).toContain('Engine executable not found');
+    }
+    expect(validateRingRunState(done as unknown).status).toBe('completed');
   });
 
   it('(e) prompt safety: model request contains summary and not raw CSV rows', async () => {

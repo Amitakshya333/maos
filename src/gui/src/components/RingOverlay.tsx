@@ -12,6 +12,15 @@
  *   still pause) + instruction input + explicit "What am I looking at?"
  *   screenshot button (Electron IPC capture with a visible indicator, or
  *   the browser screen picker elsewhere — never automatic).
+ * - Draggable frameless header (TASK OVERLAY-FIX-01 defect 2): the top bar
+ *   carries `-webkit-app-region: drag` so the overlay can be moved with one
+ *   display; every button/input inside the drag region opts back out with
+ *   `no-drag`, and text + transcript stay selectable.
+ * - Overlay-native dropzone (TASK OVERLAY-FIX-01 defect 3): PDF/image/CSV
+ *   files dropped ONTO the overlay are read locally and copied into the
+ *   project evidence root through the SAME attachment client as the full
+ *   view (CSV resolves to the deterministic summary path; images/PDFs stay
+ *   local-only with an honest chip until their write route exists).
  * - "Expand" navigates the MAIN window to the full Ring view on the same
  *   thread: it writes the thread id to localStorage (`maos:ring:expand`)
  *   and asks the opener via IPC (`maos:expand-ring`); the full view picks
@@ -42,6 +51,11 @@ import {
   ringVisualStateForRun,
   RingMark,
 } from './RingStreamPanels';
+import {
+  attachmentInstructionSuffix,
+  RingAttachmentBar,
+  type RingAttachment,
+} from './RingAttachments';
 import { RING_EXPAND_KEY } from './RingThreads';
 
 function resolvedApprovalIds(events: readonly RingRunEvent[]): Set<string> {
@@ -50,6 +64,22 @@ function resolvedApprovalIds(events: readonly RingRunEvent[]): Set<string> {
     if (event.type === 'approval.resolved' && event.approvalId) resolved.add(event.approvalId);
   }
   return resolved;
+}
+
+/**
+ * Honest in-flight status for the approval -> artifact gap. True only when
+ * an approval was granted, the run is still live, and no artifact.created
+ * has landed after the grant yet. Pure projection of polled events — the
+ * overlay never invents artifacts or progress.
+ */
+function approvedArtifactsPending(events: readonly RingRunEvent[], live: boolean): boolean {
+  if (!live) return false;
+  let granted = false;
+  for (const event of events) {
+    if (event.type === 'approval.resolved' && event.decision === 'approved') granted = true;
+    if (event.type === 'artifact.created' && granted) return false;
+  }
+  return granted;
 }
 
 export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?: number }> = ({
@@ -84,6 +114,41 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
       : RING_HOSTED_BADGE
     : null;
 
+  // TASK OVERLAY-FIX-01 (defect 3): overlay-native attachments. Reuses
+  // RingAttachments (same classify + same evidence-root client as the full
+  // view) and appends csvPath:/documentPath: references to the next send.
+  const [overlayAttachments, setOverlayAttachments] = useState<RingAttachment[]>([]);
+  const [overlayAttachError, setOverlayAttachError] = useState<string | null>(null);
+
+  // TASK OVERLAY-FIX-01 (defect 1: overlay was opaque). The native side sets
+  // transparent:true + zero-alpha backgroundColor, but that alone is NOT
+  // enough: the default theme paints html/body with an opaque background
+  // (var(--bg) = #000), which would keep the window visually solid. While
+  // the overlay route is mounted, force the page backdrop chain
+  // (html/body/#root) to transparent so the compositor shows through, and
+  // restore the theme values on unmount so the full view is unaffected.
+  useEffect(() => {
+    const doc = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById('root');
+    const prev = {
+      html: doc.style.background,
+      bodyBg: body.style.background,
+      bodyBgc: body.style.backgroundColor,
+      root: root ? root.style.background : '',
+    };
+    doc.style.background = 'transparent';
+    body.style.background = 'transparent';
+    body.style.backgroundColor = 'transparent';
+    if (root) root.style.background = 'transparent';
+    return () => {
+      doc.style.background = prev.html;
+      body.style.background = prev.bodyBg;
+      body.style.backgroundColor = prev.bodyBgc;
+      if (root) root.style.background = prev.root;
+    };
+  }, []);
+
   useEffect(() => {
     if (!runId || !isLive) return;
     let cancelled = false;
@@ -109,8 +174,13 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
 
   const handleSend = async (event?: React.FormEvent) => {
     event?.preventDefault();
-    const text = instruction.trim();
-    if (!text || starting) return;
+    const rawText = instruction.trim();
+    if (!rawText || starting) return;
+    // Same contract as the full Ring view: only stored evidence paths are
+    // referenced (csvPath:/documentPath:); local-only files stay out of the
+    // prompt so no raw bytes leak into a run instruction.
+    const suffix = attachmentInstructionSuffix(overlayAttachments);
+    const text = suffix ? rawText + suffix : rawText;
     setStarting(true);
     setStartError(null);
     try {
@@ -325,6 +395,12 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
   void latestPlan;
   void allMemories;
 
+  const overlayAttachmentClient = clientRef.current.attachmentClient ?? {
+    storeEvidenceFile: async () => {
+      throw new Error('Evidence store unavailable in this context.');
+    },
+  };
+
   return (
     <section
       aria-label="Ring overlay"
@@ -335,12 +411,34 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
         gap: '10px',
         height: '100vh',
         padding: '12px',
-        backgroundColor: 'rgba(18, 18, 18, 0.88)',
+        // TASK OVERLAY-FIX-01 (defect 1): alpha < 1 keeps the panel itself
+        // translucent (native transparent:true + transparent page backdrop
+        // do the rest). Fully opaque fills would hide the desktop behind.
+        backgroundColor: 'rgba(18, 18, 18, 0.72)',
         color: 'var(--text-primary, #eeeeee)',
         fontSize: '13px',
+        borderRadius: '12px',
+        border: '1px solid rgba(255, 255, 255, 0.14)',
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      {/* TASK OVERLAY-FIX-01 (defect 2): frameless windows have no title
+          bar, so the header is the drag handle. The title block drags;
+          RingMark, text, and transcript keep default (selectable)
+          behaviour. Every interactive child inside the drag region opts
+          back out with no-drag so Allow/Deny, Expand, and inputs stay
+          clickable. Single-display safe: pure CSS region, no screen API. */}
+      <header
+        data-testid="ring-overlay-drag-region"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          // @ts-expect-error -webkit-app-region is an Electron/Chromium
+          // CSS property without a standard lib.dom.d.ts entry.
+          WebkitAppRegion: 'drag',
+          userSelect: 'none',
+        }}
+      >
         <RingMark state={visual} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: '14px' }}>Ring</div>
@@ -355,7 +453,8 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
           data-testid="ring-expand-button"
           onClick={handleExpand}
           className="btn-secondary"
-          style={{ padding: '4px 10px', fontSize: '12px' }}
+          // @ts-expect-error -webkit-app-region needs per-control opt-out.
+          style={{ padding: '4px 10px', fontSize: '12px', WebkitAppRegion: 'no-drag' }}
           title="Open this thread in the full Ring workspace"
         >
           Expand
@@ -366,6 +465,27 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
           </span>
         )}
       </header>
+
+      {/* TASK OVERLAY-FIX-01 (defect 3): the overlay accepts the same
+          PDF/image/CSV drops as the full Ring view — files are read locally
+          and copied into the project evidence root, then referenced
+          (csvPath:/documentPath:) on the next send. Local-only kinds keep
+          their honest chip instead of silently vanishing. Same-thread,
+          same evidence root; nothing raw leaves the machine. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <RingAttachmentBar
+          attachments={overlayAttachments}
+          client={overlayAttachmentClient}
+          onChange={setOverlayAttachments}
+          onError={setOverlayAttachError}
+          hideScreenshotButton
+        />
+        {overlayAttachError && (
+          <div role="alert" data-testid="ring-overlay-attach-error" style={{ fontSize: '12px', color: '#ff7b72' }}>
+            {overlayAttachError}
+          </div>
+        )}
+      </div>
 
       <div
         data-testid="ring-overlay-transcript"
@@ -378,6 +498,11 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
           </div>
         )}
         {events.map(renderEvent)}
+        {approvedArtifactsPending(events, isLive) && (
+          <div data-testid="ring-overlay-generating" role="status" style={{ fontSize: '12px', color: 'var(--text-secondary, #cccccc)' }}>
+            Generating approved artifacts…
+          </div>
+        )}
         {state?.finalAnswer && <RingFinalAnswer answer={state.finalAnswer} mode={state.mode} />}
         <div ref={endRef} />
       </div>

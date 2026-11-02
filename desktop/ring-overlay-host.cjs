@@ -33,6 +33,28 @@ function ringHotkey() {
  * `sessionPartition` should be the SAME partition string as the main window
  * so both renderers share the loopback origin session; the private-IPC
  * session handshake (`maos:initialize`) still runs per-window after load.
+ *
+ * TASK OVERLAY-FIX-01 (defect 1: overlay was opaque): translucency needs
+ * BOTH sides — the native window must be alpha-capable AND the renderer
+ * must not paint an opaque backdrop. Native side (here): `transparent: true`
+ * plus an explicit zero-alpha `backgroundColor` (Electron defaults to
+ * opaque white when backgroundColor is omitted — exactly the reported
+ * "cannot see through it" symptom) and `hasShadow: false` (shadows force
+ * an opaque frame treatment on some Windows compositors).
+ *
+ * What this Windows machine actually supports (recorded 2026-11-02,
+ * Windows 11 build 26300, Electron 45): `transparent: true` frameless
+ * windows composite through DWM — see-through WORKS when the renderer also
+ * stays transparent (RingOverlay forces transparent html/body/root
+ * backgrounds and paints its panel with rgba alpha < 1). `vibrancy` and
+ * `blur` are macOS-only Electron options and no-ops on Windows, so they
+ * are deliberately NOT set. `backgroundMaterial` (acrylic/mica, Windows 11
+ * / Electron 28+) is deliberately NOT used: it would put a second
+ * system-drawn blur behind the CSS backdrop and make overlay opacity differ
+ * between machines. See-through on the PACKAGED build was NOT verified by
+ * eye in this task (no packaged install was launched); translucency is
+ * verified by code (options + CSS alpha) plus the GUI tests. Honest machine
+ * record lives in the packet run-log.
  */
 function createOverlayWindow({ BrowserWindow, ui, preloadPath, sessionPartition }) {
   const overlay = new BrowserWindow({
@@ -42,6 +64,8 @@ function createOverlayWindow({ BrowserWindow, ui, preloadPath, sessionPartition 
     minHeight: 480,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: true,
