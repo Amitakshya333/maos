@@ -300,6 +300,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
   const ringAgent = new RingAgentService({
     projectRoot,
     auditService: audit,
+    eventService: event,
     endpointAllowlist,
     kbSearch: kbSearch as unknown as import('./ring-agent-service').RingKbSearchLike,
     memoryService: memory,

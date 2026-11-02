@@ -31,6 +31,9 @@ import type {
   RingRunState,
 } from '../api/ring-run-types';
 import { CompletionRefusalDemo } from './CompletionRefusalDemo';
+import { RingArtifactCard, RingLiveText, RingMemoryNote, RingPlanChecklist } from './RingStreamPanels';
+import { DEFAULT_RING_ROLE, RING_EXPAND_KEY, RingRolePicker, RingThreadSidebar, toThreadSummary, type RingThreadClient } from './RingThreads';
+import { attachmentInstructionSuffix, RingAttachmentBar, type RingAttachment, type RingAttachmentClient } from './RingAttachments';
 import { TelemetryReviewCoordinator } from './telemetryReviewCoordinator';
 
 /** Exact hosted badge copy (RING-IMPL-01 step 2). Served suffix only from server echo. */
@@ -446,6 +449,9 @@ export interface RingRunClient {
   createThread?: (input: { title?: string }) => Promise<{ threadId: string }>;
   getThread?: (threadId: string) => Promise<RingThreadSummary>;
   postThreadMessage?: (threadId: string, instruction: string) => Promise<{ runId: string }>;
+  downloadArtifact: (runId: string, filename: string) => Promise<void>;
+  threadClient?: RingThreadClient;
+  attachmentClient?: RingAttachmentClient;
 }
 
 export const defaultRingRunClient: RingRunClient = {
@@ -456,6 +462,32 @@ export const defaultRingRunClient: RingRunClient = {
   createThread: (input) => apiAdapter.createRingThread(input),
   getThread: (threadId) => apiAdapter.getRingThread(threadId),
   postThreadMessage: (threadId, instruction) => apiAdapter.postRingThreadMessage(threadId, instruction),
+  attachmentClient: {
+    storeEvidenceFile: async (name, contentBase64) => {
+      const lower = name.toLowerCase();
+      if (!lower.endsWith('.csv')) {
+        throw new Error('No evidence-root write route for this file kind yet (CSV upload works; PDF/image stay local-only).');
+      }
+      return apiAdapter.storeRingCsvEvidence(name, contentBase64);
+    },
+  },
+  threadClient: {
+    createThread: (input) => apiAdapter.createRingThread(input),
+    getThread: async (threadId) => toThreadSummary(await apiAdapter.getRingThread(threadId)),
+    postMessage: (threadId, instruction) => apiAdapter.postRingThreadMessage(threadId, instruction),
+  },
+  downloadArtifact: async (runId, filename) => {
+    const blob = await apiAdapter.downloadRingArtifact(runId, filename);
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  },
 };
 
 export interface RingVerifyTranscript {
@@ -595,6 +627,17 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
   const [activeThread, setActiveThread] = useState<RingThreadSummary | null>(null);
   const [threadStarting, setThreadStarting] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
+  // TASK RING-DEV-B-01 (Day 2a): thread sidebar + role picker + attachments.
+  // Dev B adds list/role/attachment state around Dev A's active-thread core:
+  // threadsAvailable flips false on the first 404/connection failure and the
+  // workspace keeps starting unscoped runs with an honest note.
+  const [threads, setThreads] = useState<RingThreadSummary[]>([]);
+  const [threadsAvailable, setThreadsAvailable] = useState(true);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [role, setRole] = useState<string>(DEFAULT_RING_ROLE);
+  const [attachments, setAttachments] = useState<RingAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [expandNotice, setExpandNotice] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
@@ -606,6 +649,71 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
   const startedAtRef = useRef<number | null>(null);
   const runCounterRef = useRef(0);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // TASK RING-DEV-B-01 (Day 1a): adopt the overlay's Expand handoff.
+  // The value is a thread id (preferred) or a run id fallback. Threads
+  // load their summary + run list from the thread service (Dev A); runs
+  // append to the transcript and join the existing poll loop. The key is
+  // consumed after adoption so a stale handoff never replays. Failures
+  // flip threadsAvailable and say so — existing runs are untouched.
+  const adoptHandoff = async (handoff: string) => {
+    const value = handoff.trim();
+    if (!value) return;
+    const threadClient = clientRef.current.threadClient;
+    if (threadClient && threadsAvailable && value.startsWith('thread-')) {
+      try {
+        const summary = await threadClient.getThread(value);
+        setThreads((prev) => [summary, ...prev.filter((t) => t.threadId !== summary.threadId)]);
+        setActiveThreadId(summary.threadId);
+        setActiveThread(summary);
+        if (summary.role) setRole(summary.role);
+        for (const rid of summary.runs) {
+          try {
+            const state = await clientRef.current.getRun(rid);
+            setRuns((prev) => (prev.some((r) => r.runId === rid) ? prev : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state }]));
+          } catch {
+            setRuns((prev) => (prev.some((r) => r.runId === rid) ? prev : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state: null }]));
+          }
+        }
+        const last = summary.runs[summary.runs.length - 1];
+        if (last) {
+          setActiveRunId(last);
+          runCounterRef.current += 1;
+        }
+        setExpandNotice('Adopted thread ' + summary.threadId + ' from the overlay.');
+        return;
+      } catch {
+        setThreadsAvailable(false);
+      }
+    }
+    // Run-id fallback (overlay had no thread yet): append + poll.
+    try {
+      const state = await clientRef.current.getRun(value);
+      setRuns((prev) => (prev.some((r) => r.runId === value) ? prev : [...prev, { runId: value, instruction: '(from overlay)', agentId: selectedAgentId, state }]));
+      setActiveRunId(value);
+      runCounterRef.current += 1;
+      setExpandNotice('Adopted run ' + value + ' from the overlay.');
+    } catch {
+      setExpandNotice('Could not adopt ' + value + ': the run service did not return it.');
+    }
+  };
+  useEffect(() => {
+    const consume = () => {
+      let handoff: string | null = null;
+      try {
+        handoff = window.localStorage.getItem(RING_EXPAND_KEY);
+        if (handoff) window.localStorage.removeItem(RING_EXPAND_KEY);
+      } catch {
+        handoff = null;
+      }
+      if (handoff) void adoptHandoff(handoff);
+    };
+    consume();
+    window.addEventListener('focus', consume);
+    return () => window.removeEventListener('focus', consume);
+    // Mount + focus only: adoption is a one-shot per handoff value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Refusal beat (RING-IMPL-01 behaviour, still reachable): the workspace
   // owns a TelemetryReviewCoordinator exactly like the panel it replaces.
@@ -733,20 +841,43 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
 
   const handleSend = async (event?: React.FormEvent, overrideInstruction?: string) => {
     event?.preventDefault();
-    const text = (overrideInstruction ?? instruction).trim();
-    if (!text || starting) return;
+    const rawText = (overrideInstruction ?? instruction).trim();
+    if (!rawText || starting) return;
+    const suffix = attachmentInstructionSuffix(attachments);
+    const text = suffix ? rawText + suffix : rawText;
     setStarting(true);
     setStartError(null);
     setPollError(null);
     setCancelError(null);
     try {
       const scopedAgentId = selectedAgentId === RING_LEAD_AGENT.id ? undefined : selectedAgentId;
-      const threadClient = activeThreadId && clientRef.current.postThreadMessage ? clientRef.current : undefined;
-      const { runId } = threadClient
-        ? await threadClient.postThreadMessage!(activeThreadId as string, text)
-        : await clientRef.current.startRun(
+      // TASK RING-DEV-B-01: when a thread is active and the thread client
+      // is reachable, post into the thread (run carries prior context).
+      // A 404/connection failure flips threadsAvailable off and falls
+      // back to an unscoped start — the note in the sidebar says why.
+      // Dev A owns the thread methods on the default client; the injected
+      // overlay/sidebar threadClient shape is honored when present.
+      const direct = activeThreadId && clientRef.current.postThreadMessage ? clientRef.current : undefined;
+      const viaSidebar = activeThreadId && !direct ? clientRef.current.threadClient : undefined;
+      let runId: string;
+      if (direct) {
+        runId = (await direct.postThreadMessage!(activeThreadId as string, text)).runId;
+      } else if (viaSidebar && threadsAvailable) {
+        try {
+          runId = (await viaSidebar.postMessage(activeThreadId as string, text)).runId;
+        } catch (err: unknown) {
+          setThreadsAvailable(false);
+          const fallback = await clientRef.current.startRun(
             scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
           );
+          runId = fallback.runId;
+        }
+      } else {
+        const started = await clientRef.current.startRun(
+          scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
+        );
+        runId = started.runId;
+      }
       runCounterRef.current += 1;
       startedAtRef.current = Date.now();
       setNowMs(Date.now());
@@ -770,30 +901,66 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
     }
   };
 
-  // TASK DEV-A-01: start a thread, then refresh its summary (runs link on
-  // the service side at run start; the summary read shows the linkage).
+  // TASK RING-DEV-B-01 (Day 2a): new thread with the picked role (Dev A
+  // owns the thread service; Dev B owns the sidebar/role surface). The
+  // injected sidebar threadClient wins when present; otherwise the
+  // default client's Dev A thread methods are used. Failures flip
+  // threadsAvailable off so sends fall back to unscoped runs.
   const handleNewThread = async () => {
     const client = clientRef.current;
-    if (!client.createThread || threadStarting) return;
+    const threadClient = client.threadClient;
+    if ((!client.createThread && !threadClient) || threadStarting || threadsLoading) return;
     setThreadStarting(true);
+    setThreadsLoading(true);
     setThreadError(null);
     try {
-      const { threadId } = await client.createThread({ title: instruction.trim() || undefined });
-      setActiveThreadId(threadId);
+      const title = 'Ring thread ' + new Date().toLocaleString();
+      const created = threadClient
+        ? await threadClient.createThread({ title, role })
+        : await client.createThread!({ title });
+      const summary = threadClient
+        ? await threadClient.getThread(created.threadId)
+        : await client.getThread!(created.threadId);
+      setActiveThreadId(summary.threadId);
+      setActiveThread(summary);
+      setThreads((prev) => [summary, ...prev.filter((t) => t.threadId !== summary.threadId)]);
+      setRole(summary.role || role);
       setRuns([]);
       setActiveRunId(null);
-      if (client.getThread) {
-        try {
-          setActiveThread(await client.getThread(threadId));
-        } catch {
-          setActiveThread(null);
-        }
-      }
-    } catch (err: unknown) {
-      setThreadError((err as Error).message || 'Could not create the thread.');
+    } catch {
+      setThreadsAvailable(false);
     } finally {
       setThreadStarting(false);
+      setThreadsLoading(false);
     }
+  };
+
+  const handleSelectThread = async (threadId: string) => {
+    setActiveThreadId(threadId);
+    const client = clientRef.current;
+    const threadClient = client.threadClient;
+    if (threadClient) {
+      try {
+        const summary = await threadClient.getThread(threadId);
+        setThreads((prev) => prev.map((t) => (t.threadId === threadId ? summary : t)));
+        setActiveThread(summary);
+        if (summary.role) setRole(summary.role);
+      } catch {
+        setThreadsAvailable(false);
+      }
+      return;
+    }
+    if (client.getThread) {
+      try {
+        setActiveThread(await client.getThread(threadId));
+      } catch {
+        setActiveThread(null);
+      }
+    }
+  };
+
+  const handlePickRole = (next: string) => {
+    setRole(next);
   };
 
   const handleCancel = async () => {
@@ -873,7 +1040,39 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
       case 'model.turn':
         // Evidence-only honesty: a model turn the server sent is rendered;
         // the client never synthesizes one, and there is no fake typing.
+        // (Unchanged RING-UI-01 behavior; deltas stream via RingLiveText.)
         return entry.text ? <RingModelTurn key={index} text={entry.text} /> : null;
+      case 'model.delta': {
+        // TASK RING-DEV-B-01: live fragments render once, at the position of
+        // the LAST delta event, concatenated verbatim in arrival order.
+        // Earlier fragments render nothing so text never duplicates. Full
+        // model.turn events keep their existing RingModelTurn rendering.
+        const laterDelta = events.slice(index + 1).some((e) => e.type === 'model.delta');
+        if (laterDelta) return null;
+        const deltas = events.filter((e) => e.type === 'model.delta');
+        const isLive = run.state !== null && !TERMINAL_STATUSES.includes(run.state.status);
+        return <RingLiveText key={index} events={deltas} live={isLive} />;
+      }
+      case 'plan.updated': {
+        // Latest plan wins: render the checklist only at the last
+        // plan.updated position; earlier ones are superseded history.
+        const laterPlan = events.slice(index + 1).some((e) => e.type === 'plan.updated');
+        if (laterPlan || !entry.plan) return null;
+        return <RingPlanChecklist key={index} plan={entry.plan} />;
+      }
+      case 'artifact.created': {
+        if (!entry.artifact) return null;
+        return (
+          <RingArtifactCard
+            key={index}
+            artifact={entry.artifact}
+            runId={run.runId}
+            onDownload={(rid, filename) => clientRef.current.downloadArtifact(rid, filename)}
+          />
+        );
+      }
+      case 'memory.saved':
+        return entry.memory ? <RingMemoryNote key={index} memory={entry.memory} /> : null;
       case 'approval.pending': {
         if (entry.approvalId && resolved.has(entry.approvalId)) return null;
         return (
@@ -936,7 +1135,21 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
         </div>
       )}
 
+      {expandNotice && (
+        <div data-testid="ring-expand-notice" style={{ fontSize: '12px', color: 'var(--text-dim, #888888)', paddingBottom: '8px' }}>
+          {expandNotice}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0 }}>
+        <RingThreadSidebar
+          threads={threads}
+          activeThreadId={activeThreadId}
+          available={threadsAvailable}
+          loading={threadsLoading}
+          onSelect={(threadId) => void handleSelectThread(threadId)}
+          onNew={() => void handleNewThread()}
+        />
         <RingAgentRoster agents={agents} selectedAgentId={selectedAgentId} presence={presence} onSelect={handleSelectAgent} />
 
         <div
@@ -1011,6 +1224,7 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
                   {cancelling ? 'Cancelling…' : 'Cancel'}
                 </button>
               )}
+              <RingRolePicker role={role} threadAvailable={threadsAvailable} onPick={handlePickRole} />
               <button
                 type="button"
                 className="btn-secondary"
@@ -1103,6 +1317,19 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
             </div>
           )}
 
+          <div style={{ padding: '0 16px' }}>
+            <RingAttachmentBar
+              attachments={attachments}
+              client={clientRef.current.attachmentClient ?? { storeEvidenceFile: async () => { throw new Error('Evidence store unavailable in this context.'); } }}
+              onChange={setAttachments}
+              onError={setAttachError}
+            />
+            {attachError && (
+              <div role='alert' data-testid='ring-attach-error' style={{ paddingTop: '6px', fontSize: '12px', color: '#ff7b72' }}>
+                {attachError}
+              </div>
+            )}
+          </div>
           <form
             onSubmit={(event) => void handleSend(event)}
             style={{

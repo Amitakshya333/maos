@@ -403,12 +403,27 @@ export class GuiApiAdapter {
     return this.rest.postRingThreadMessage(threadId, instruction);
   }
 
+  /** TASK RING-DEV-B-01: run artifact bytes (session bearer header, never token in URL). */
+  async downloadRingArtifact(runId: string, filename: string): Promise<Blob> {
+    return this.rest.downloadRingArtifact(runId, filename);
+  }
+
   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {
     return this.rest.promoteToTask(conversationId, data);
   }
 
   async getProjectFiles(subpath?: string): Promise<ProjectFileInfo[]> {
     return this.rest.getProjectFiles(subpath);
+  }
+
+  /** TASK RING-DEV-B-01: store an uploaded CSV into the evidence flow; resolves the stored project-relative path verbatim. */
+  async storeRingCsvEvidence(name: string, contentBase64: string): Promise<{ storedPath: string }> {
+    const receipt = await this.rest.analyzeIndustrialTelemetry({ name, contentBase64 });
+    const storedPath = (receipt as { receiptPath?: unknown }).receiptPath;
+    if (typeof storedPath !== 'string' || !storedPath.trim()) {
+      throw new Error('Evidence store returned no receipt path.');
+    }
+    return { storedPath };
   }
 
   async analyzeIndustrialTelemetry(input: {

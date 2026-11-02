@@ -785,10 +785,50 @@ export class BrowserRestClient {
     return this.getRingRun(runId, options);
   }
 
-  async downloadRingArtifact(runId: string, filename: string, options?: RequestOptions): Promise<unknown> {
-    // TASK RING-CONTRACT-01: artifact download (Dev C lane serves it with
-    // path checks reusing the isWithin/isStrictlyWithin patterns).
-    return this.request('GET', `/api/v1/ring/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}`, undefined, options);
+  /**
+   * TASK RING-DEV-B-01: download a run artifact as a Blob. The request
+   * carries the session bearer header (never a token in the URL); the
+   * filename is a single path segment (no slashes) so the server-side
+   * path check cannot escape the run dir. Dev C serves the bytes.
+   */
+  async downloadRingArtifact(runId: string, filename: string, options?: RequestOptions): Promise<Blob> {
+    const clean = filename.split(/[/]/).pop() || filename;
+    const correlationId = options?.correlationId || 'corr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
+    const callerSignal = options?.signal;
+    const abortScope = this.createAbortScope({ ...options, timeoutMs }, timeoutMs);
+    const headers: Record<string, string> = {
+      Accept: 'application/octet-stream',
+      'X-Project-Root': this.projectRoot,
+      'X-Correlation-ID': correlationId,
+    };
+    if (this.projectId) headers['X-Project-ID'] = this.projectId;
+    if (typeof window === 'undefined') headers.Origin = this.baseUrl;
+    if (this.sessionToken) headers.Authorization = 'Bearer ' + this.sessionToken;
+    try {
+      const response = await this.fetch('' + this.baseUrl + '/api/v1/ring/runs/' + encodeURIComponent(runId) + '/artifacts/' + encodeURIComponent(clean), {
+        method: 'GET',
+        headers,
+        signal: abortScope.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        let body: unknown = { message: text };
+        try { body = JSON.parse(text); } catch { /* keep plain-text failure */ }
+        throw mapHttpError(response.status, body, correlationId);
+      }
+      return await response.blob();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      const callerAbort = this.callerAbortError(callerSignal);
+      if (callerAbort) throw callerAbort;
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new TimeoutError('Request timed out after ' + timeoutMs + 'ms for ring artifact ' + clean);
+      }
+      throw new NetworkError('Failed to download ring artifact ' + clean + ': ' + ((err as Error)?.message || String(err)), err);
+    } finally {
+      abortScope.dispose();
+    }
   }
 
   async decideRingApproval(

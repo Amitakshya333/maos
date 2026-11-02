@@ -17,6 +17,7 @@ import { OpenAIProvider } from '../backends/openai-provider';
 import type { ChatMessage, IProvider, ToolDef } from '../backends/provider';
 import type { Project } from '../domain/schemas';
 import type { AuditService } from './audit-service';
+import type { EventService } from './event-service';
 import type { EndpointAllowlistService } from './endpoint-allowlist-service';
 
 export type RingAgentRunStatus = 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
@@ -122,6 +123,7 @@ export interface RingKbSearchLike {
 export interface RingAgentServiceOptions {
   projectRoot: string;
   auditService?: AuditService;
+  eventService?: EventService;
   endpointAllowlist?: EndpointAllowlistService;
   loadProjectConfig?: () => Project | undefined;
   fetch?: typeof globalThis.fetch;
@@ -202,6 +204,7 @@ function truncate(value: string, max = 1000): string {
 export class RingAgentService {
   private readonly projectRoot: string;
   private readonly auditService?: AuditService;
+  private readonly eventService?: EventService;
   private readonly loadProjectConfig: () => Project | undefined;
   private readonly fetchImpl?: typeof globalThis.fetch;
   private readonly providerFactory?: () => IProvider;
@@ -216,6 +219,7 @@ export class RingAgentService {
   constructor(options: RingAgentServiceOptions) {
     this.projectRoot = path.resolve(options.projectRoot);
     this.auditService = options.auditService;
+    this.eventService = options.eventService;
     this.fetchImpl = options.fetch;
     this.providerFactory = options.providerFactory;
     this.kbSearch = options.kbSearch;
@@ -523,12 +527,32 @@ export class RingAgentService {
     return () => this.streamListeners.delete(listener);
   }
 
+  /**
+   * TASK RING-DEV-B-01 (Day 1): fan the same mapped wire copy that backs the
+   * onStreamEvent hook into the sequenced event bus (EventService) when one
+   * is wired, so the existing WS /api/v1/events channel (runId-scoped,
+   * sequenced + replay) delivers it. Payload shape is the wire event the UI
+   * validator consumes; nothing raw (no CSV rows) is attached. Listener
+   * exceptions never break the run; the JSONL transcript on disk is
+   * untouched.
+   */
   private emitStreamEvent(run: InternalRun, entry: RingAgentTranscriptEntry): void {
-    if (this.streamListeners.size === 0) return;
     let wire: RingAgentWireEvent | null = null;
     try { wire = this.toWireEvent(run, entry); } catch { return; }
     if (!wire) return;
     for (const l of this.streamListeners) { try { l(run.runId, wire); } catch {} }
+    const bus = this.eventService;
+    if (!bus) return;
+    try {
+      const projectId = this.safeProjectId();
+      bus.recordEvent({
+        eventType: 'ring.run.' + wire.type,
+        projectId,
+        runId: run.runId,
+        correlationId: 'ring-' + run.runId + '-' + Date.now(),
+        payload: wire,
+      });
+    } catch { /* event bus must not break the run */ }
   }
 
   private record(run: InternalRun, entry: Omit<RingAgentTranscriptEntry, 'ts' | 'runId'> & { type: string }): void {

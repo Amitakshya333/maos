@@ -12,6 +12,7 @@ import { ModuleId, ALL_MODULE_IDS } from '../../domain/layout';
 
 // Views
 import { ChatView } from './views/ChatView';
+import { RingOverlay } from './components/RingOverlay';
 import { TasksView } from './views/TasksView';
 import { AgentsView } from './views/AgentsView';
 import { EvidenceView } from './views/EvidenceView';
@@ -344,7 +345,19 @@ const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) =
   );
 };
 
+// TASK RING-DEV-B-01: dedicated overlay route. The Electron overlay window
+// loads the same bundle at #/ring-overlay and renders ONLY the compact Ring
+// view (no app shell, no onboarding modal) — same thread ids, same run state.
+function isRingOverlayRoute(): boolean {
+  try {
+    return window.location.hash.replace(/^#\/?/, '').toLowerCase().split('?')[0].split('&')[0] === 'ring-overlay';
+  } catch {
+    return false;
+  }
+}
+
 export const App: React.FC<{ industrialDemo?: boolean }> = ({ industrialDemo = false }) => {
+  if (isRingOverlayRoute()) return <RingOverlay />;
   return (
     <LayoutProvider>
       <AppContent industrialDemo={industrialDemo} />

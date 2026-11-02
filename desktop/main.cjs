@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const { URL } = require('node:url');
+const ringOverlay = require('./ring-overlay-host.cjs');
 
 const packageRoot = path.resolve(__dirname, '..');
 
@@ -158,7 +159,7 @@ function parseArgs(argv) {
 }
 
 async function runElectron() {
-  const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+  const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Tray } = require('electron');
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
@@ -168,6 +169,7 @@ async function runElectron() {
   let projectHost;
   let ui;
   let browserWindow;
+  let sessionPartition;
   let bootstrap;
   let shutdownPromise;
   let shutdownComplete = false;
@@ -219,18 +221,61 @@ async function runElectron() {
     const session = await projectHost.createSession(`desktop-${randomBytes(12).toString('hex')}`);
     bootstrap = buildBootstrap(projectHost, session);
 
+    const overlayWebContents = () =>
+      ringOverlay.overlayState.window && !ringOverlay.overlayState.window.isDestroyed()
+        ? ringOverlay.overlayState.window.webContents
+        : null;
+    ipcMain.handle('maos:expand-ring', (event) => {
+      if (!browserWindow || event.sender !== overlayWebContents()) {
+        throw new Error('UNTRUSTED_RENDERER: expand is restricted to the active Ring overlay.');
+      }
+      ringOverlay.focusMainWindow(browserWindow);
+    });
+    // TASK RING-DEV-B-01 (Day 1 fix): the overlay is a SECOND window with
+    // its OWN main frame. The old check compared every sender against the
+    // main window's mainFrame, so the overlay could never complete the
+    // private-IPC session handshake. Each sender is now checked against
+    // its own main frame; the loopback-origin check is unchanged.
+    const expectedMainFrames = () => {
+      const frames = [browserWindow.webContents.mainFrame];
+      const overlay = overlayWebContents();
+      if (overlay) {
+        try { frames.push(overlay.mainFrame); } catch { /* overlay gone mid-check */ }
+      }
+      return frames;
+    };
     ipcMain.handle('maos:initialize', (event) => {
       if (
         !browserWindow ||
-        event.sender !== browserWindow.webContents ||
-        event.senderFrame !== browserWindow.webContents.mainFrame ||
+        (event.sender !== browserWindow.webContents && event.sender !== overlayWebContents()) ||
+        !expectedMainFrames().includes(event.senderFrame) ||
         new URL(event.senderFrame.url).origin !== ui.origin
       ) {
         throw new Error('UNTRUSTED_RENDERER: Session handoff is restricted to the active MAOS window.');
       }
       return bootstrap;
     });
+    // TASK RING-DEV-B-01 (Day 2c): explicit user-triggered screen capture
+    // for "What am I looking at?". The sandboxed renderer cannot call
+    // getDisplayMedia (no picker exists in the overlay); the main process
+    // captures the primary display via desktopCapturer ONLY when the user
+    // clicks the button (this IPC is the trigger — never automatic, never
+    // background). Returns PNG base64 held in memory; nothing is written
+    // to disk and nothing leaves the machine (inspect_image is Dev C's
+    // lane; until then the image chip is labelled local-only).
+    ipcMain.handle('maos:capture-ring-screen', async (event) => {
+      if (
+        !browserWindow ||
+        (event.sender !== browserWindow.webContents && event.sender !== overlayWebContents()) ||
+        !expectedMainFrames().includes(event.senderFrame) ||
+        new URL(event.senderFrame.url).origin !== ui.origin
+      ) {
+        throw new Error('UNTRUSTED_RENDERER: Screen capture is restricted to the active MAOS window.');
+      }
+      return ringOverlay.capturePrimaryDisplay({ desktopCapturer: require('electron').desktopCapturer, screen: require('electron').screen });
+    });
 
+    sessionPartition = `maos-${randomBytes(16).toString('hex')}`;
     browserWindow = new BrowserWindow({
       width: 1440,
       height: 960,
@@ -242,7 +287,7 @@ async function runElectron() {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
-        partition: `maos-${randomBytes(16).toString('hex')}`,
+        partition: sessionPartition,
       },
     });
     browserWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -251,6 +296,27 @@ async function runElectron() {
     });
     browserWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
     await browserWindow.loadURL(`${ui.origin}/`);
+    // TASK RING-DEV-B-01 (Day 1a): overlay companions — tray first (always
+    // safe), then the global hotkey (loud failure, never silent).
+    const overlayOptions = {
+      BrowserWindow,
+      ui,
+      preloadPath: path.join(__dirname, 'preload.cjs'),
+      sessionPartition,
+    };
+    const toggleOverlay = () => ringOverlay.toggleOverlay(ui, overlayOptions);
+    const expandRing = () => {
+      ringOverlay.focusMainWindow(browserWindow);
+      try {
+        const overlay = ringOverlay.overlayState.window;
+        if (overlay && !overlay.isDestroyed() && overlay.isVisible()) overlay.loadURL(`${ui.origin}/${ringOverlay.OVERLAY_ROUTE}`);
+      } catch { /* overlay navigation is best-effort */ }
+    };
+    ringOverlay.createRingTray({ Tray, Menu, nativeImage }, toggleOverlay, expandRing);
+    ringOverlay.registerRingHotkey({ globalShortcut, dialog }, toggleOverlay);
+    app.on('will-quit', () => {
+      try { globalShortcut.unregisterAll(); } catch { /* best effort */ }
+    });
   } catch (error) {
     dialog.showErrorBox('MAOS could not start securely', error instanceof Error ? error.message : String(error));
     app.quit();
