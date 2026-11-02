@@ -7,10 +7,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import {
-  FirewallAdapter,
-  FirewallApplyOptions,
-} from './firewall-adapter';
+import { FirewallAdapter, FirewallApplyOptions } from './firewall-adapter';
 import {
   FirewallRulePlan,
   FirewallRule,
@@ -26,6 +23,23 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * TASK LANE-B-LINUX-01: honest Linux degradation. The Windows adapter
+ * shells out to `net session` / `powershell.exe`, which do not exist on
+ * Linux. Every live-host method fails closed with FIREWALL_PLATFORM_UNSUPPORTED
+ * ("not available on linux") instead of crashing with ENOENT or reporting a
+ * misleading unelevated/empty result. Pure script synthesis
+ * (generatePowerShellScript) stays platform-independent for tests/plan review.
+ */
+function assertWindowsPlatform(): void {
+  if (process.platform === 'win32') return;
+  throw new FirewallError(
+    FIREWALL_ERROR_CODES.FIREWALL_PLATFORM_UNSUPPORTED,
+    `Windows Defender Firewall is not available on linux (process.platform='${process.platform}'). ` +
+      `Use createPlatformFirewallAdapter() for the current platform, the Linux adapter, or the mock adapter.`,
+  );
+}
+
 export class WindowsFirewallAdapter implements FirewallAdapter {
   public readonly platformName = 'windows';
 
@@ -33,6 +47,7 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
    * Checks whether the current process has Windows Administrator privileges.
    */
   public async isElevated(): Promise<boolean> {
+    assertWindowsPlatform();
     try {
       // 'net session' exits with 0 if running elevated as Administrator, non-zero otherwise
       await execFileAsync('net', ['session']);
@@ -87,6 +102,7 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
   }
 
   public async captureSnapshot(): Promise<FirewallSnapshot> {
+    assertWindowsPlatform();
     const isElevated = await this.isElevated();
     let capturedRules: unknown[] = [];
 
@@ -126,6 +142,7 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
   }
 
   public async inspectStatus(): Promise<FirewallStatusResult> {
+    assertWindowsPlatform();
     const isElevated = await this.isElevated();
     let activeRuleCount = 0;
 
@@ -158,10 +175,8 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
     };
   }
 
-  public async applyRules(
-    plan: FirewallRulePlan,
-    options: FirewallApplyOptions = {},
-  ): Promise<FirewallApplyResult> {
+  public async applyRules(plan: FirewallRulePlan, options: FirewallApplyOptions = {}): Promise<FirewallApplyResult> {
+    assertWindowsPlatform();
     const isElevated = await this.isElevated();
     if (!isElevated) {
       throw new FirewallError(
@@ -216,6 +231,7 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
   }
 
   public async restoreSnapshot(snapshot: FirewallSnapshot): Promise<FirewallRestoreResult> {
+    assertWindowsPlatform();
     const isElevated = await this.isElevated();
     if (!isElevated) {
       throw new FirewallError(
@@ -243,6 +259,7 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
   }
 
   public async verifyAppliedRules(plan: FirewallRulePlan): Promise<FirewallVerificationResult> {
+    assertWindowsPlatform();
     const isElevated = await this.isElevated();
     if (!isElevated) {
       return {
@@ -301,6 +318,7 @@ export class WindowsFirewallAdapter implements FirewallAdapter {
   }
 
   public async clearAppliedRules(): Promise<void> {
+    assertWindowsPlatform();
     const isElevated = await this.isElevated();
     if (!isElevated) return;
 

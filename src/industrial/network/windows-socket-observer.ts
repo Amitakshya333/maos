@@ -10,9 +10,31 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { SocketObserverAdapter, ProcessMetadata } from './socket-observer-adapter';
-import { ObservedSocket, SocketState } from '../../domain/network-monitor';
+import {
+  NETWORK_MONITOR_ERROR_CODES,
+  NetworkMonitorError,
+  ObservedSocket,
+  SocketState,
+} from '../../domain/network-monitor';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * TASK LANE-B-LINUX-01: honest Linux degradation. The Windows observer shells
+ * out to `powershell.exe` (Get-NetTCPConnection / Get-Process), which does not
+ * exist on Linux. Both live methods fail closed with OBSERVER_ADAPTER_ERROR
+ * ("not available on linux") instead of crashing with ENOENT or returning a
+ * misleading empty socket list. Construction and platformName stay
+ * side-effect free for tests.
+ */
+function assertWindowsPlatform(): void {
+  if (process.platform === 'win32') return;
+  throw new NetworkMonitorError(
+    NETWORK_MONITOR_ERROR_CODES.OBSERVER_ADAPTER_ERROR,
+    `Windows socket observation is not available on linux (process.platform='${process.platform}'). ` +
+      `Use createPlatformSocketObserver() for the current platform, the Linux observer, or the mock observer.`,
+  );
+}
 
 const TCP_STATE_MAP: Record<number | string, SocketState> = {
   1: 'CLOSE',
@@ -46,6 +68,7 @@ export class WindowsSocketObserver implements SocketObserverAdapter {
   private readonly processCache = new Map<number, ProcessMetadata | null>();
 
   public async captureActiveSockets(): Promise<ObservedSocket[]> {
+    assertWindowsPlatform();
     const sockets: ObservedSocket[] = [];
     const timestamp = new Date().toISOString();
 
@@ -111,6 +134,7 @@ $udp = @(Get-NetUDPEndpoint | Select-Object LocalAddress,LocalPort,OwningProcess
   }
 
   public async resolveProcessMetadata(pid: number): Promise<ProcessMetadata | null> {
+    assertWindowsPlatform();
     if (this.processCache.has(pid)) {
       return this.processCache.get(pid) || null;
     }
@@ -135,11 +159,9 @@ if ($p) {
   } | ConvertTo-Json -Compress
 }
 `;
-      const { stdout } = await execFileAsync(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', script],
-        { timeout: 5000 },
-      );
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        timeout: 5000,
+      });
 
       const trimmed = stdout.trim();
       if (!trimmed) {
