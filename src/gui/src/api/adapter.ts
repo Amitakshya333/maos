@@ -390,6 +390,19 @@ export class GuiApiAdapter {
     return this.rest.decideRingApproval(runId, approvalId, decision);
   }
 
+  /** TASK DEV-A-01: thread routes (Dev A lane implements the service). */
+  async createRingThread(input: { title?: string; role?: string }): Promise<{ threadId: string }> {
+    return this.rest.createRingThread(input);
+  }
+
+  async getRingThread(threadId: string): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
+    return this.rest.getRingThread(threadId);
+  }
+
+  async postRingThreadMessage(threadId: string, instruction: string): Promise<RingRunStartResult> {
+    return this.rest.postRingThreadMessage(threadId, instruction);
+  }
+
   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {
     return this.rest.promoteToTask(conversationId, data);
   }

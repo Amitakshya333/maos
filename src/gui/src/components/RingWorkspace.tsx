@@ -429,11 +429,23 @@ export const RingFinalAnswer: React.FC<{ answer: string; mode: RingRunState['mod
 
 // ── Run client (injectable for tests) ─────────────────────────
 
+export interface RingThreadSummary {
+  threadId: string;
+  title: string;
+  role: string;
+  createdAt: string;
+  runs: string[];
+}
+
 export interface RingRunClient {
   startRun: (input: RingRunRequest) => Promise<{ runId: string }>;
   getRun: (runId: string) => Promise<RingRunState>;
   cancelRun: (runId: string) => Promise<void>;
   decideApproval: (runId: string, approvalId: string, decision: RingApprovalDecision) => Promise<void>;
+  /** TASK DEV-A-01: thread methods. Optional so existing injected mocks keep compiling. */
+  createThread?: (input: { title?: string }) => Promise<{ threadId: string }>;
+  getThread?: (threadId: string) => Promise<RingThreadSummary>;
+  postThreadMessage?: (threadId: string, instruction: string) => Promise<{ runId: string }>;
 }
 
 export const defaultRingRunClient: RingRunClient = {
@@ -441,6 +453,9 @@ export const defaultRingRunClient: RingRunClient = {
   getRun: (runId) => apiAdapter.getRingRun(runId),
   cancelRun: (runId) => apiAdapter.cancelRingRun(runId),
   decideApproval: (runId, approvalId, decision) => apiAdapter.decideRingApproval(runId, approvalId, decision),
+  createThread: (input) => apiAdapter.createRingThread(input),
+  getThread: (threadId) => apiAdapter.getRingThread(threadId),
+  postThreadMessage: (threadId, instruction) => apiAdapter.postRingThreadMessage(threadId, instruction),
 };
 
 export interface RingVerifyTranscript {
@@ -574,6 +589,12 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
   const [instruction, setInstruction] = useState('');
   const [runs, setRuns] = useState<TranscriptRun[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // TASK DEV-A-01: threads. Null = unthreaded (legacy single-run view).
+  // Threads only activate when the client exposes thread methods.
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [activeThread, setActiveThread] = useState<RingThreadSummary | null>(null);
+  const [threadStarting, setThreadStarting] = useState(false);
+  const [threadError, setThreadError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
@@ -720,9 +741,12 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
     setCancelError(null);
     try {
       const scopedAgentId = selectedAgentId === RING_LEAD_AGENT.id ? undefined : selectedAgentId;
-      const { runId } = await clientRef.current.startRun(
-        scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
-      );
+      const threadClient = activeThreadId && clientRef.current.postThreadMessage ? clientRef.current : undefined;
+      const { runId } = threadClient
+        ? await threadClient.postThreadMessage!(activeThreadId as string, text)
+        : await clientRef.current.startRun(
+            scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
+          );
       runCounterRef.current += 1;
       startedAtRef.current = Date.now();
       setNowMs(Date.now());
@@ -743,6 +767,32 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
       setStartError((err as Error).message || 'Ring run service unavailable.');
     } finally {
       setStarting(false);
+    }
+  };
+
+  // TASK DEV-A-01: start a thread, then refresh its summary (runs link on
+  // the service side at run start; the summary read shows the linkage).
+  const handleNewThread = async () => {
+    const client = clientRef.current;
+    if (!client.createThread || threadStarting) return;
+    setThreadStarting(true);
+    setThreadError(null);
+    try {
+      const { threadId } = await client.createThread({ title: instruction.trim() || undefined });
+      setActiveThreadId(threadId);
+      setRuns([]);
+      setActiveRunId(null);
+      if (client.getThread) {
+        try {
+          setActiveThread(await client.getThread(threadId));
+        } catch {
+          setActiveThread(null);
+        }
+      }
+    } catch (err: unknown) {
+      setThreadError((err as Error).message || 'Could not create the thread.');
+    } finally {
+      setThreadStarting(false);
     }
   };
 
@@ -901,6 +951,34 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
             minWidth: 0,
           }}
         >
+          {clientRef.current.createThread && (
+            <div
+              data-testid="ring-thread-bar"
+              style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color, #333333)', display: 'flex', gap: '8px', alignItems: 'center' }}
+            >
+              <button
+                type="button"
+                className="btn-secondary"
+                data-testid="ring-new-thread-button"
+                disabled={threadStarting}
+                onClick={() => void handleNewThread()}
+                style={{ padding: '4px 10px', fontSize: '12px' }}
+              >
+                {threadStarting ? 'Starting…' : 'New thread'}
+              </button>
+              {activeThreadId && (
+                <span data-testid="ring-active-thread" style={{ fontSize: '12px', color: 'var(--text-dim, #888888)' }}>
+                  Thread {activeThreadId}
+                  {activeThread ? ` · ${activeThread.runs.length} run${activeThread.runs.length === 1 ? '' : 's'}` : ''}
+                </span>
+              )}
+              {threadError && (
+                <span role="alert" data-testid="ring-thread-error" style={{ fontSize: '12px', color: '#ff7b72' }}>
+                  {threadError}
+                </span>
+              )}
+            </div>
+          )}
           <div
             style={{
               padding: '10px 16px',

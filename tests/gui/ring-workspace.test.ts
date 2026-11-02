@@ -348,6 +348,45 @@ describe('ring approval cards', () => {
   });
 });
 
+describe('ring threads (Dev A lane)', () => {
+  it('thread UI: new thread button posts to the thread routes and scopes runs', async () => {
+    const threadCalls: Array<{ title?: string }> = [];
+    const messageCalls: Array<{ threadId: string; instruction: string }> = [];
+    const { client } = makeClient([HOSTED_RUNNING]);
+    const threadClient: RingRunClient = {
+      ...client,
+      createThread: async (input) => { threadCalls.push(input); return { threadId: 'thread-1' }; },
+      getThread: async (threadId) => ({ threadId, title: 'T-07 review', role: 'operator', createdAt: '2026-11-02T00:00:00Z', runs: [] }),
+      postThreadMessage: async (threadId, instruction) => { messageCalls.push({ threadId, instruction }); return { runId: 'run-1' }; },
+    };
+    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: threadClient, pollIntervalMs: 60000 });
+    try {
+      expect(view.container.querySelector('[data-testid="ring-thread-bar"]')).toBeTruthy();
+      await act(async () => { view.container.querySelector<HTMLButtonElement>('[data-testid="ring-new-thread-button"]')!.click(); await new Promise((r) => setTimeout(r, 0)); });
+      expect(threadCalls.length).toBe(1);
+      expect(view.container.querySelector('[data-testid="ring-active-thread"]')?.textContent).toContain('thread-1');
+      await sendInstruction(view.container, 'Brief me on T-07');
+      expect(messageCalls).toEqual([{ threadId: 'thread-1', instruction: 'Brief me on T-07' }]);
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it('without thread methods the thread bar stays hidden and runs stay unthreaded', async () => {
+    const { client, calls } = makeClient([HOSTED_RUNNING]);
+    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: client, pollIntervalMs: 60000 });
+    try {
+      expect(view.container.querySelector('[data-testid="ring-thread-bar"]')).toBeNull();
+      const analyst = view.container.querySelector<HTMLButtonElement>('[data-testid="ring-agent-ANALYST_AGENT"]');
+      await act(async () => analyst!.click());
+      await sendInstruction(view.container, 'Check turbine 7');
+      expect(calls.starts).toEqual([{ instruction: 'Check turbine 7', agentId: 'ANALYST_AGENT' }]);
+    } finally {
+      view.unmount();
+    }
+  });
+});
+
 describe('ring evidence-only honesty', () => {
   it('shows the evidence-only banner and no fake model text appears', async () => {
     const { client } = makeClient([EVIDENCE_ONLY_DONE]);

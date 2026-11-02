@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as child_process from 'child_process';
 import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError, RingAgentError } from '../service';
+import { isRingRole, isRingThreadId } from '../service/ring-contract';
 import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import {
   getCorrelationId,
@@ -1409,6 +1410,74 @@ export class RestApiRouter {
           sendError(res, 400, err.code, err.message, correlationId);
         } else {
           sendError(res, 500, 'RING_AGENT_APPROVAL_FAILED', err.message || 'Ring agent approval failed', correlationId);
+        }
+      }
+      return true;
+    }
+
+    // ── Ring Threads (TASK DEV-A-01, Dev A lane) ─────────────────
+    // Disk-backed threads: POST creates, GET reads state, POST messages
+    // starts a run carrying the thread's prior conversation context.
+    // Existing /ring/runs routes above stay working unchanged.
+
+    if (method === 'POST' && pathname === '/api/v1/ring/threads') {
+      const bodyResult = await readJsonBody<{ title?: string; role?: string }>(req, res, correlationId);
+      if (!bodyResult) return true;
+      const payload = bodyResult.parsed;
+      if (payload && typeof payload.title !== 'undefined' && typeof payload.title !== 'string') {
+        sendError(res, 400, 'VALIDATION_FAILED', 'title must be a string when provided.', correlationId);
+        return true;
+      }
+      if (payload && typeof payload.role !== 'undefined' && !isRingRole(payload.role)) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'role must be operator, maintenance, safety, or manager when provided.', correlationId);
+        return true;
+      }
+      try {
+        const thread = this.services.ringThread.createThread(payload && typeof payload.title === 'string' && payload.title.trim() ? payload.title : undefined, (payload && typeof payload.role === 'string' ? payload.role : undefined) as never);
+        sendJson(res, 201, { data: { threadId: thread.threadId } }, correlationId);
+      } catch (err: unknown) {
+        sendError(res, 500, 'RING_THREAD_CREATE_FAILED', (err as Error).message || 'Ring thread creation failed', correlationId);
+      }
+      return true;
+    }
+
+    const ringThreadMatch = pathname.match(new RegExp('^/api/v1/ring/threads/([^/]+)$'));
+    if (method === 'GET' && ringThreadMatch) {
+      const threadId = decodeURIComponent(ringThreadMatch[1]);
+      const thread = isRingThreadId(threadId) ? this.services.ringThread.getThread(threadId) : undefined;
+      if (!thread) {
+        sendError(res, 404, 'NOT_FOUND', 'Ring thread not found.', correlationId);
+        return true;
+      }
+      sendJson(res, 200, { data: thread }, correlationId);
+      return true;
+    }
+
+    const ringThreadMsgMatch = pathname.match(new RegExp('^/api/v1/ring/threads/([^/]+)/messages$'));
+    if (method === 'POST' && ringThreadMsgMatch) {
+      const threadId = decodeURIComponent(ringThreadMsgMatch[1]);
+      const bodyResult = await readJsonBody<{ instruction?: string }>(req, res, correlationId);
+      if (!bodyResult) return true;
+      const payload = bodyResult.parsed;
+      if (!payload || typeof payload.instruction !== 'string' || !payload.instruction.trim()) {
+        sendError(res, 400, 'VALIDATION_FAILED', 'instruction is required and must be a non-empty string.', correlationId);
+        return true;
+      }
+      const thread = isRingThreadId(threadId) ? this.services.ringThread.getThread(threadId) : undefined;
+      if (!thread) {
+        sendError(res, 404, 'NOT_FOUND', 'Ring thread not found.', correlationId);
+        return true;
+      }
+      try {
+        const runId = this.services.ringAgent.startRun(payload.instruction.trim(), { threadId: thread.threadId });
+        const snapshot = this.services.ringAgent.getRun(runId);
+        sendJson(res, 201, { data: snapshot ?? { runId } }, correlationId);
+      } catch (err: unknown) {
+        if (err instanceof RingAgentError) {
+          const code = (err as { code: string }).code;
+          sendError(res, code === 'RING_THREAD_NOT_FOUND' ? 404 : 400, code, (err as Error).message, correlationId);
+        } else {
+          sendError(res, 500, 'RING_AGENT_START_FAILED', (err as Error).message || 'Ring agent start failed', correlationId);
         }
       }
       return true;

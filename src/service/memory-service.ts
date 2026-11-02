@@ -32,6 +32,14 @@ export class MemoryService {
   }
 
   /**
+   * Share a memory entry from an agent (additive passthrough to the
+   * underlying append-only store; mirrors the share_knowledge tool path).
+   */
+  share(entry: { agentId: string; taskId: string; type: MemoryType; content: string; tags: string[]; confidence: number }): MemoryEntry {
+    return toMemoryEntry(this.store.add(entry));
+  }
+
+  /**
    * Get all live (non-expired) memory entries.
    */
   getLive(): MemoryEntry[] {
