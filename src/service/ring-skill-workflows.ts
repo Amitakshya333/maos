@@ -99,6 +99,61 @@ function toRole(role: unknown): RingRole {
     : DEFAULT_RING_ROLE;
 }
 
+/**
+ * TASK DEV-C-02 (Day 2): demo asset routing for the P-12 demo-pack v2.
+ *
+ * The frozen six-skill set is unchanged; only the DEFAULT EVIDENCE PATHS
+ * gain a second demo asset. Explicit caller paths always win; the asset
+ * key only selects defaults. Unknown equipment never invents files: /sop
+ * names the SOPs that exist and refuses to fabricate one.
+ */
+interface RingAssetPreset {
+  /** Canonical shop-floor label used in headers and refusals. */
+  label: string;
+  /** Telemetry CSV under the evidence root (via analyze_telemetry only). */
+  csvPath: string;
+  /** Maintenance/observation note under the evidence root. */
+  maintenancePath: string;
+  /** SOP file under the evidence root. */
+  sopPath: string;
+  /** Match keys: equipment ids and plain-language aliases (lowercased). */
+  aliases: string[];
+}
+
+const RING_ASSET_PRESETS: RingAssetPreset[] = [
+  {
+    label: 'T-07',
+    csvPath: 'turbine_vibration_log.csv',
+    maintenancePath: 'maintenance_report.txt',
+    sopPath: 'sop_turbine_vibration_monitoring.md',
+    aliases: ['t-07', 't07', 'turbine', 'turbine t-07', 'steam turbine'],
+  },
+  {
+    label: 'P-12',
+    csvPath: 'pump_p12_vibration_log.csv',
+    maintenancePath: 'maintenance_report_p12.txt',
+    sopPath: 'sop_pump_p12_monitoring.md',
+    aliases: ['p-12', 'p12', 'pump', 'pump p-12', 'centrifugal pump'],
+  },
+];
+
+function matchAssetPreset(text: string): RingAssetPreset | undefined {
+  const needle = (text || '').trim().toLowerCase();
+  if (!needle) return undefined;
+  return RING_ASSET_PRESETS.find((preset) =>
+    preset.aliases.some((alias) => needle === alias || needle.includes(alias)),
+  );
+}
+
+function assetLabelFor(arg: string, fallback: string): string {
+  return matchAssetPreset(arg)?.label || fallback;
+}
+
+/** SOPs that actually exist under the demo evidence root (never invented). */
+function knownSopSummary(): string {
+  return RING_ASSET_PRESETS.map((preset) => `${preset.sopPath} (${preset.label})`).join(', ');
+}
+
 function resolveWithinRoot(root: string, requested: string): string {
   const resolved = path.resolve(root, requested);
   const rel = path.relative(root, resolved);
@@ -134,17 +189,20 @@ function readEvidenceFile(evidenceRoot: string, requested: string, maxBytes = 25
 
 function defaultPathsFor(skill: string, arg: string, paths?: RingWorkflowEvidencePaths): RingWorkflowEvidencePaths {
   const out: RingWorkflowEvidencePaths = { ...(paths || {}) };
-  if (!out.csvPath) {
-    out.csvPath = 'turbine_vibration_log.csv';
+  const hasExplicitCsv = typeof out.csvPath === 'string' && out.csvPath.trim().length > 0;
+  const hasExplicitDoc = typeof out.documentPath === 'string' && out.documentPath.trim().length > 0;
+  const preset = matchAssetPreset(arg) || matchAssetPreset(`${out.csvPath || ''} ${out.documentPath || ''}`);
+  const fallback = preset || RING_ASSET_PRESETS[0];
+  if (!hasExplicitCsv) {
+    out.csvPath = fallback.csvPath;
   }
-  if (!out.documentPath) {
+  if (!hasExplicitDoc) {
     if (skill === 'handover' || skill === 'rca' || skill === 'report') {
-      out.documentPath = 'maintenance_report.txt';
+      out.documentPath = fallback.maintenancePath;
     } else {
-      out.documentPath = 'sop_turbine_vibration_monitoring.md';
+      out.documentPath = fallback.sopPath;
     }
   }
-  void arg;
   return out;
 }
 
@@ -219,17 +277,40 @@ export function runRingSkillWorkflow(input: RingWorkflowInput, paths?: RingWorkf
   const resolvedPaths = defaultPathsFor(skill.name, arg, paths);
   const skillKey = skill.name as string;
 
-  if (skillKey === 'sop' && !arg) {
-    return {
-      skill: skill.name,
-      role,
-      title: skill.title,
-      body: 'Usage: /sop <equipment> — for example `/sop T-07`. Known SOP: sop_turbine_vibration_monitoring.md (T-07). Synthetic demo data only.',
-      evidence: [],
-      injectionNotes: [],
-      needsApproval: false,
-      audit: { event: 'RING_SKILL_RUN', skill: skill.name, role, runId, evidencePaths: [], needsApproval: false },
-    };
+  if (skillKey === 'sop') {
+    if (!arg) {
+      return {
+        skill: skill.name,
+        role,
+        title: skill.title,
+        body: `Usage: /sop <equipment> — for example '/sop T-07'. Known SOPs: ${knownSopSummary()}. Synthetic demo data only.`,
+        evidence: [],
+        injectionNotes: [],
+        needsApproval: false,
+        audit: { event: 'RING_SKILL_RUN', skill: skill.name, role, runId, evidencePaths: [], needsApproval: false },
+      };
+    }
+    const preset = matchAssetPreset(arg);
+    if (!preset) {
+      return {
+        skill: skill.name,
+        role,
+        title: skill.title,
+        body: `I don't have an SOP for "${arg}". Known SOPs: ${knownSopSummary()}. I will not invent one — point me at the right evidence file. Synthetic demo data only.`,
+        evidence: [],
+        injectionNotes: [],
+        needsApproval: false,
+        audit: {
+          event: 'RING_SKILL_MISSING_EVIDENCE',
+          skill: skill.name,
+          role,
+          runId,
+          evidencePaths: [],
+          needsApproval: false,
+        },
+      };
+    }
+    resolvedPaths.documentPath = preset.sopPath;
   }
 
   if (skillKey === 'permit' || skillKey === 'loto') {
@@ -371,14 +452,15 @@ export function runRingSkillWorkflow(input: RingWorkflowInput, paths?: RingWorkf
       },
     };
   }
+  const assetLabel = assetLabelFor(arg, 'T-07');
   const header =
     skillKey === 'handover'
-      ? `SHIFT HANDOVER (draft — pending authorized review). Asset ${(arg || 'T-07').toUpperCase()}: status ${telemetry.verdict}.`
+      ? `SHIFT HANDOVER (draft — pending authorized review). Asset ${assetLabel}: status ${telemetry.verdict}.`
       : skillKey === 'rca'
-        ? `ROOT-CAUSE STARTER (not a certified finding — needs authorized engineering review). Asset ${(arg || 'T-07').toUpperCase()}: verdict ${telemetry.verdict}.`
+        ? `ROOT-CAUSE STARTER (not a certified finding — needs authorized engineering review). Asset ${assetLabel}: verdict ${telemetry.verdict}.`
         : skillKey === 'sop'
-          ? `SOP SUMMARY for ${(arg || '').toUpperCase()} (demo summary — verify against your site procedure).`
-          : `SHIFT REPORT (draft — saving needs human approval). Asset ${(arg || 'T-07').toUpperCase()}: ${telemetry.verdict}.`;
+          ? `SOP SUMMARY for ${assetLabelFor(arg, (arg || 'unknown equipment').toUpperCase())} (demo summary — verify against your site procedure).`
+          : `SHIFT REPORT (draft — saving needs human approval). Asset ${assetLabel}: ${telemetry.verdict}.`;
   const bodyParts = [
     header,
     `KEY READINGS (deterministic): verdict=${telemetry.verdict}; overallVibrationRms=${telemetry.overallVibrationRms} mm/s; peakVibration=${telemetry.peakVibration} mm/s; peakTemperature=${telemetry.peakTemperature} C; warnings=${telemetry.warningCount} critical=${telemetry.criticalCount}; rows=${telemetry.rowsAnalyzed}; source=${telemetry.csvPath}.`,

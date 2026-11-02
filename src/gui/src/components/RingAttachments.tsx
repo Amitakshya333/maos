@@ -271,7 +271,15 @@ export const RingAttachmentBar: React.FC<{
               <img src={attachment.previewUrl} alt={'Preview of ' + attachment.name} style={{ width: '40px', height: 'auto', borderRadius: '4px' }} />
             )}
             {attachment.kind} · {attachment.name}
-            {attachment.storedPath ? '' : attachment.kind === 'image' && attachment.previewUrl ? ' (local only — inspect_image pending, Dev C)' : ' (local only — store unreachable)'}
+            {attachment.storedPath
+              ? ''
+              : attachment.kind === 'image' && attachment.previewUrl
+                ? ' (local only — inspect_image pending, Dev C)'
+                : attachment.kind === 'pdf'
+                  ? ' (local only — no evidence-root write route for PDF yet)'
+                  : attachment.kind === 'csv'
+                    ? ' (local only — evidence store unreachable)'
+                    : ' (local only — store unreachable)'}
             <button
               type="button"
               aria-label={'Remove ' + attachment.name}

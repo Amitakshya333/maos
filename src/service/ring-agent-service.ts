@@ -328,7 +328,7 @@ export class RingAgentService {
         return this.snapshot(run);
       }
       try {
-        const descriptor = new RingArtifactService(this.projectRoot).saveArtifact(runId, `${skillIntent.skill}-${skillIntent.arg || 'asset'}.md`, skillIntent.outcomeBody, 'markdown');
+        const descriptor = new RingArtifactService(this.projectRoot).saveArtifact(runId, `${skillIntent.skill}-${(skillIntent.arg || 'asset').trim().replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 40) || 'asset'}.md`, skillIntent.outcomeBody, 'markdown');
         this.record(run, { type: 'artifact.created', artifact: { path: descriptor.path, kind: descriptor.kind, size: descriptor.size, sha256: descriptor.sha256 } });
         try { this.auditService?.recordAuditEvent({ category: 'approval', source: 'ring-agent', data: { event: 'RING_SKILL_ARTIFACT_WRITTEN', runId, path: descriptor.path, sha256: descriptor.sha256 } }); } catch { /* best effort */ }
         this.complete(run, skillIntent.outcomeBody);
@@ -653,7 +653,7 @@ export class RingAgentService {
       run.status = 'awaiting_approval';
       run.updatedAt = new Date().toISOString();
       this.pendingSkillRuns.set(run.runId, { approvalId, outcomeBody: outcome.body, skill: skill.name, role: resolvedRole, arg });
-      run.pending = { approvalId, toolName: skill.name, summary: `Save ${skill.name} artifact for ${arg || 'T-07'} (pending authorized review)`, reason: 'Consequential skill output requires human approval before it is written.', argsSummary: { skill: skill.name }, createdAt: new Date().toISOString(), toolCallId: `skill-${skill.name}`, args: { skill: skill.name, arg }, resolver: () => undefined as never };
+      run.pending = { approvalId, toolName: skill.name, summary: `Save ${skill.name} artifact for ${(arg || '').trim() ? (arg || '').trim() : skill.name} (pending authorized review)`, reason: 'Consequential skill output requires human approval before it is written.', argsSummary: { skill: skill.name }, createdAt: new Date().toISOString(), toolCallId: `skill-${skill.name}`, args: { skill: skill.name, arg }, resolver: () => undefined as never };
       this.record(run, { type: 'approval.pending', approvalId, toolName: skill.name, summary: run.pending.summary, reason: run.pending.reason, argsSummary: run.pending.argsSummary, status: 'awaiting_approval' });
     } catch (err) {
       if ((run.status as string) === 'cancelled' || run.cancelled) this.ensureCancelled(run);
@@ -736,8 +736,9 @@ export class RingAgentService {
     const text = instruction.toLowerCase();
     const wantsRestartApproval = /(approv|authori[sz]e|permit|allow).{0,40}(restart|re-start|start-up|startup|shut-?down|trips+reset|resets+trip)/.test(text) || /(restart|re-start|start-up|startup).{0,40}(approv|authori[sz]e|permit|ok|okay|go-ahead|green light)/.test(text);
     const wantsOperation = /(operate|run|start)s+(thes+)?(equipment|turbine|pump|compressor|plant|machine|asset)/.test(text) && /(approv|authori[sz]e|permit|allow|ok|go-ahead)/.test(text);
+    const wantsPumpRestart = /(p-12|pump).{0,60}(restart|re-start|start-up|startup|back in service|return to service)/.test(text) && /(approv|authori[sz]e|permit|allow|ok|okay|go-ahead|green light|give)/.test(text);
     const wantsCertification = /(certif|declare|confirm|verify).{0,40}(safe|safety|safe-to-operate|safe to operate|fit for|compliant)/.test(text) || /(safe|safety).{0,40}(certif|sign-?off)/.test(text);
-    if (wantsRestartApproval || wantsOperation) return 'I cannot approve equipment restart or operation. Restarting or operating plant equipment requires an authorized human operator following site procedures; a Ring run approval covers evidence artifacts only and never authorizes operating the plant. No action was taken and no files were written.';
+    if (wantsRestartApproval || wantsOperation || wantsPumpRestart) return 'I cannot approve equipment restart or operation. Restarting or operating plant equipment requires an authorized human operator following site procedures; a Ring run approval covers evidence artifacts only and never authorizes operating the plant. No action was taken and no files were written.';
     if (wantsCertification) return 'I cannot certify safety or declare equipment safe to operate. Safety certification requires a qualified human authority following site procedures; Ring evidence summaries are decision support only. No action was taken and no files were written.';
     return undefined;
   }
@@ -747,13 +748,18 @@ export class RingAgentService {
     const refused = this.refusalFor(run.instruction);
     if (refused) { this.complete(run, refused); return; }
     const text = run.instruction.toLowerCase();
-    const wantsTelemetry = /telemetry|vibration|turbine|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
+    const wantsPumpAsset = /p-12|\bpump\b/.test(text);
+    if (wantsPumpAsset) {
+      if (!run.context.csvPath) run.context.csvPath = 'demo/industrial/pump_p12_vibration_log.csv';
+      if (!run.context.documentPath) run.context.documentPath = 'demo/industrial/maintenance_report_p12.txt';
+    }
+    const wantsTelemetry = /telemetry|vibration|turbine|pump|p-12|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
     const wantsVerify = /audit|verify|export|chain/.test(text);
     const wantsDocument = /document|\bsop\b|maintenance report|read/.test(text);
     const wantsSearch = /search|knowledge|find in|look up/.test(text);
-    const wantsMemory = /remember|recall|memory|note that|don't forget/.test(text);
-    const wantsPlan = /plan|todo|to-do|next steps/.test(text);
-    const wantsOcr = /ocr|scan(s|ned)?|turbine_inspection_scan|inspection.{0,20}scan/.test(text);
+    const wantsMemory = /\bremember\b|\brecall\b|\bmemory\b|note that|don't forget/.test(text);
+    const wantsPlan = /\bplan\b|todo|to-do|next steps/.test(text);
+    const wantsOcr = /\bocr\b|scan(s|ned)?\b|turbine_inspection_scan|inspection.{0,20}scan/.test(text);
     const wantsWorkOrder = /work[- ]order|raise.{0,20}order|workorder/.test(text);
     const results: Array<{ name: string; result: Record<string, unknown> }> = [];
     const runTool = async (name: string, args: Record<string, unknown>) => {
@@ -778,7 +784,7 @@ export class RingAgentService {
     if (wantsVerify) await runTool('verify_export', run.context.exportPath ? { exportPath: run.context.exportPath } : {});
     if (wantsOcr) await runTool('ocr_document', { path: 'turbine_inspection_scan.pdf' });
     if (wantsMemory) {
-      if (/recall/.test(text)) await runTool('recall', { query: run.instruction });
+      if (/\brecall\b/.test(text)) await runTool('recall', { query: run.instruction });
       else await runTool('remember', { content: run.instruction.slice(0, 2000), tags: ['evidence-only'] });
     }
     if (wantsPlan) await runTool('update_plan', { plan: [{ step: 'Review evidence-only findings', status: 'in_progress' }] });
@@ -808,15 +814,58 @@ export class RingAgentService {
     this.complete(run, lines.join('\n'));
   }
 
+  /**
+   * TASK RING-DEV-A-DAY2: one streamed model turn. When the provider
+   * exposes `generateStream()`, each non-empty content fragment is
+   * recorded as a `model.delta` transcript entry (which fans out through
+   * the existing `record()` → Dev B streaming drain and `toWireEvent`
+   * projection — no evidence-only or drain change needed) and the
+   * redacted whole-text `model.turn` is recorded once the stream closes,
+   * exactly as the non-streaming path did. Evidence-only never calls this
+   * (it never touches a provider), so no `model.delta` is ever fabricated
+   * there. When the provider has no streaming shape, or the transport
+   * yields zero chunks (`streamEmpty`), this falls back to `generate()`
+   * ONCE per turn; the fallback response is the whole text and emits no
+   * deltas. Deltas that arrive after cancellation are dropped.
+   */
+  private async generateHostedTurn(provider: IProvider, run: InternalRun): Promise<Awaited<ReturnType<IProvider['generate']>>> {
+    const canStream = typeof (provider as { generateStream?: unknown }).generateStream === 'function';
+    if (!canStream) {
+      return provider.generate(run.conversation, RING_AGENT_TOOLS, { signal: run.abortController.signal });
+    }
+    const streamProvider = provider as Required<Pick<IProvider, 'generateStream'>> & IProvider;
+    const streamed = await streamProvider.generateStream!(run.conversation, RING_AGENT_TOOLS, {
+      signal: run.abortController.signal,
+      onDelta: (delta: string) => {
+        if (run.cancelled || (run.status as string) === 'cancelled') return;
+        try { this.record(run, { type: 'model.delta', delta: this.redact(delta) }); } catch { /* streaming must not break the run */ }
+      },
+    });
+    if (streamed.streamEmpty) {
+      return provider.generate(run.conversation, RING_AGENT_TOOLS, { signal: run.abortController.signal });
+    }
+    return streamed;
+  }
+
+  /** TASK DEV-C-02: instruction-matched asset default (P-12 pump vs T-07 turbine). */
+  private defaultAssetPaths(run: InternalRun): void {
+    const text = run.instruction.toLowerCase();
+    if (/p-12|\bpump\b/.test(text)) {
+      if (!run.context.csvPath) run.context.csvPath = 'demo/industrial/pump_p12_vibration_log.csv';
+      if (!run.context.documentPath) run.context.documentPath = 'demo/industrial/maintenance_report_p12.txt';
+    }
+  }
+
   private hostedNeedsTelemetry(run: InternalRun): boolean {
     const text = run.instruction.toLowerCase();
-    return /telemetry|vibration|turbine|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
+    return /telemetry|vibration|turbine|pump|p-12|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
   }
 
   private async executeHosted(run: InternalRun, apiKey?: string): Promise<void> {
     const provider: IProvider = this.providerFactory ? this.providerFactory() : new OpenAIProvider({ name: 'baseten', apiKey: apiKey || '', model: BASETEN_API_MODEL, baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true, fetch: this.fetchImpl });
     const refused = this.refusalFor(run.instruction);
     if (refused) { this.complete(run, refused); return; }
+    this.defaultAssetPaths(run);
     const includeTelemetry = this.hostedNeedsTelemetry(run);
     const telemetry = includeTelemetry ? this.telemetrySummaryText(run.context.csvPath) : undefined;
     const carryOver = run.threadId ? this.buildThreadCarryOver(run.threadId) : '';
@@ -828,7 +877,7 @@ export class RingAgentService {
       if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }
       run.turns = turn;
       let response;
-      try { response = await provider.generate(run.conversation, RING_AGENT_TOOLS, { signal: run.abortController.signal }); }
+      try { response = await this.generateHostedTurn(provider, run); }
       catch (err) { if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; } throw err; }
       if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }
       const toolCalls = response.toolCalls || [];

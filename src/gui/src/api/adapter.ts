@@ -416,12 +416,16 @@ export class GuiApiAdapter {
     return this.rest.getProjectFiles(subpath);
   }
 
-  /** TASK RING-DEV-B-01: store an uploaded CSV into the evidence flow; resolves the stored project-relative path verbatim. */
+  /** TASK RING-DEV-B-02: store an uploaded CSV into the evidence flow; resolves the stored project-relative path verbatim. */
+  // TASK RING-DEV-B-02: resolve the EVIDENCE CSV (receipt.source.relativePath,
+  // the file analyze_telemetry reads), not the receipt JSON (receiptPath).
+  // No router change: the telemetry route stays the only write route.
   async storeRingCsvEvidence(name: string, contentBase64: string): Promise<{ storedPath: string }> {
     const receipt = await this.rest.analyzeIndustrialTelemetry({ name, contentBase64 });
-    const storedPath = (receipt as { receiptPath?: unknown }).receiptPath;
+    const sourcePath = (receipt as { source?: { relativePath?: unknown } }).source?.relativePath;
+    const storedPath = typeof sourcePath === 'string' && sourcePath.trim() ? sourcePath : undefined;
     if (typeof storedPath !== 'string' || !storedPath.trim()) {
-      throw new Error('Evidence store returned no receipt path.');
+      throw new Error('Evidence store returned no evidence path for the uploaded CSV.');
     }
     return { storedPath };
   }

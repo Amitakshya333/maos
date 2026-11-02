@@ -392,11 +392,11 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
         <button
           type="button"
           data-testid="ring-overlay-screenshot"
-          disabled={capturing}
+          disabled={capturing || screenshot !== null}
+          title={screenshot ? 'One capture is already held locally — discard it before taking another' : 'Capture the screen you pick and hold it locally (inspect_image arrives with Dev C)'}
           onClick={() => void handleScreenshot()}
           className="btn-secondary"
           style={{ padding: '4px 10px', fontSize: '12px' }}
-          title="Capture the screen you pick and hold it locally (inspect_image arrives with Dev C)"
         >
           {capturing ? 'Capturing…' : 'What am I looking at?'}
         </button>

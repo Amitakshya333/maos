@@ -105,10 +105,10 @@ export const RING_SKILLS: RingSkill[] = [
   {
     name: 'sop',
     title: '/sop <equipment> — read the SOP',
-    description: 'Read the SOP for the named equipment. Usage: /sop T-07.',
+    description: 'Read the SOP for the named equipment. Usage: /sop T-07 or /sop P-12.',
     template: [
       'Read the SOP for equipment "{arg}". Steps:',
-      '1. Load the SOP file for "{arg}" (T-07: sop_turbine_vibration_monitoring.md).',
+      '1. Load the SOP file for "{arg}" (T-07: sop_turbine_vibration_monitoring.md; P-12: sop_pump_p12_monitoring.md).',
       '2. Summarize: purpose, thresholds table, action directives, evidence cross-checks.',
       '3. Quote the disclaimer line. Keep it short and action-first.',
       '4. If no SOP exists for "{arg}", say so and name the SOPs that do exist. Never invent one.',

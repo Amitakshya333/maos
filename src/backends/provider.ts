@@ -66,11 +66,30 @@ export interface ProviderResponse {
 
   /** Whether the model wants to stop or continue with tools */
   finishReason: 'stop' | 'tool_calls' | 'length' | 'unknown';
+
+  /**
+   * TASK RING-DEV-A-DAY2: true only when a `generateStream()` call saw a
+   * live transport that yielded ZERO chunks (e.g. a non-SSE endpoint
+   * answering `stream: true` with plain JSON). The caller must fall back
+   * to `generate()` once; the empty stream carries no model signal.
+   */
+  streamEmpty?: boolean;
 }
 
 export interface ProviderRequestOptions {
   signal?: AbortSignal;
   maxTokens?: number;
+}
+
+/**
+ * TASK RING-DEV-A-DAY2: incremental token-streaming options (additive).
+ * `onDelta` observes transport only; it is never sent to the model and
+ * never changes the assembled result. Throwing inside the callback must
+ * never break the stream (providers swallow it).
+ */
+export interface ProviderStreamOptions extends ProviderRequestOptions {
+  /** Called once per non-empty content fragment, in arrival order. */
+  onDelta?: (delta: string) => void;
 }
 
 // ─── Provider Interface ───────────────────────────────────────
@@ -93,6 +112,20 @@ export interface IProvider {
     messages: ChatMessage[],
     tools?: ToolDef[],
     options?: ProviderRequestOptions,
+  ): Promise<ProviderResponse>;
+
+  /**
+   * TASK RING-DEV-A-DAY2: optional incremental streaming (additive; absence
+   * keeps the whole-text `generate()` path). The returned response is
+   * assembled EXACTLY as `generate()` would return it (same content,
+   * tool calls, guards); `onDelta` additionally observes each non-empty
+   * content fragment live. When the transport yields zero chunks the
+   * response has `streamEmpty: true` and the caller falls back.
+   */
+  generateStream?(
+    messages: ChatMessage[],
+    tools?: ToolDef[],
+    options?: ProviderStreamOptions,
   ): Promise<ProviderResponse>;
 }
 

@@ -43,6 +43,35 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     try { fs.rmSync(tempProjectRoot, { recursive: true, force: true }); } catch {}
   });
 
+  /**
+   * TASK RING-DEV-A-DAY2: dual-mode mock. `stream: true` requests get a real
+   * SSE body (content split in two, tool-call args split in two, empty
+   * heartbeat, terminal finish chunk); plain requests keep the legacy whole
+   * JSON body. Both modes answer from the SAME handler completion, so one
+   * request always equals one model turn again.
+   */
+  const toSSEChunks = (out: any): Array<{ delta: any; finish?: string | null }> => {
+    const choice = out.choices[0];
+    const msg = choice.message || {};
+    const chunks: Array<{ delta: any; finish?: string | null }> = [];
+    const content = typeof msg.content === 'string' ? msg.content : '';
+    if (content) {
+      const mid = Math.max(1, Math.ceil(content.length / 2));
+      chunks.push({ delta: { role: 'assistant', content: content.slice(0, mid) } });
+      chunks.push({ delta: { content: content.slice(mid) } });
+    } else {
+      chunks.push({ delta: { role: 'assistant' } });
+    }
+    for (const tc of msg.tool_calls || []) {
+      const args = typeof tc.function?.arguments === 'string' ? tc.function.arguments : '{}';
+      const mid = Math.max(1, Math.ceil(args.length / 2));
+      chunks.push({ delta: { tool_calls: [{ index: 0, id: tc.id, type: 'function', function: { name: tc.function?.name, arguments: '' } }] } });
+      chunks.push({ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(0, mid) } }] } });
+      chunks.push({ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(mid) } }] } });
+    }
+    chunks.push({ delta: {}, finish: choice.finish_reason || (msg.tool_calls?.length ? 'tool_calls' : 'stop') });
+    return chunks;
+  };
   const startMock = (handler: (body: any) => any, opts?: { delayMs?: number }): Promise<string> => new Promise((resolve, reject) => {
     mockServer = http.createServer((req, res) => {
       const chunks: Buffer[] = [];
@@ -50,7 +79,19 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
       req.on('end', () => {
         let body: any; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = undefined; }
         capturedRequests.push({ url: req.url || '', body });
-        const send = () => { const out = handler(body); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); };
+        const send = () => {
+          const out = handler(body);
+          if (body && body.stream === true) {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+            for (const c of toSSEChunks(out)) {
+              res.write(`data: ${JSON.stringify({ id: 'chatcmpl-ring-agent-mock', object: 'chat.completion.chunk', created: 1730000000, model: BASETEN_API_MODEL, choices: [{ index: 0, delta: c.delta, finish_reason: c.finish ?? null }] })}\n\n`);
+            }
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out));
+        };
         if (opts?.delayMs) setTimeout(send, opts.delayMs); else send();
       });
     });

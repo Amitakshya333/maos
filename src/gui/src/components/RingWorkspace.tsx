@@ -945,6 +945,21 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
         setThreads((prev) => prev.map((t) => (t.threadId === threadId ? summary : t)));
         setActiveThread(summary);
         if (summary.role) setRole(summary.role);
+        // TASK RING-DEV-B-02: selecting a thread shows that thread's history,
+        // not the previously active view. Runs load through the same getRun
+        // poll path; unreachable runs keep a null state.
+        const loaded = [];
+        for (const rid of summary.runs) {
+          try {
+            const state = await clientRef.current.getRun(rid);
+            loaded.push({ runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state });
+          } catch {
+            loaded.push({ runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state: null });
+          }
+        }
+        setRuns(loaded);
+        const last = summary.runs[summary.runs.length - 1];
+        setActiveRunId(last ?? null);
       } catch {
         setThreadsAvailable(false);
       }

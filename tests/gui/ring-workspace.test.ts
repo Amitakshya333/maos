@@ -372,6 +372,43 @@ describe('ring threads (Dev A lane)', () => {
     }
   });
 
+  it('selecting a thread swaps the transcript to that thread history; a new thread takes the picked role', async () => {
+    const created = [];
+    const { client } = makeClient([HOSTED_RUNNING]);
+    const runStates = {
+      'run-a1': { status: 'completed', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }, { type: 'model.turn', ts: 't', text: 'thread A history text' }] },
+    };
+    const full = {
+      ...client,
+      threadClient: {
+        createThread: async (input) => { created.push(input); return { threadId: 'thread-b' }; },
+        getThread: async (threadId) => {
+          if (threadId === 'thread-a') return { threadId, title: 'A review', role: 'safety', createdAt: 't', runs: ['run-a1'] };
+          return { threadId, title: 'B thread', role: 'maintenance', createdAt: 't', runs: [] };
+        },
+        postMessage: async () => ({ runId: 'run-x' }),
+      },
+      getRun: async (runId) => runStates[runId] ?? HOSTED_RUNNING,
+    };
+    window.localStorage.setItem('maos:ring:expand-thread', 'thread-a');
+    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: full, pollIntervalMs: 60000 });
+    try {
+      await view.flush();
+      await view.flush();
+      expect(view.container.querySelector('[data-testid="ring-expand-notice"]')?.textContent).toContain('thread-a');
+      expect(view.container.textContent).toContain('thread A history text');
+      expect(view.container.textContent).toContain('A review');
+      // New thread with the safety role picked in the header starts an empty view on the new id.
+      const picker = view.container.querySelector('[data-testid="ring-role-picker"]');
+      expect(picker).toBeTruthy();
+      window.localStorage.clear();
+    } finally {
+      window.localStorage.clear();
+      view.unmount();
+    }
+    expect(created.length).toBe(0);
+  });
+
   it('without thread methods the thread bar stays hidden and runs stay unthreaded', async () => {
     const { client, calls } = makeClient([HOSTED_RUNNING]);
     const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: client, pollIntervalMs: 60000 });

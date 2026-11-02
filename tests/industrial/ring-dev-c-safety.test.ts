@@ -13,6 +13,13 @@
  *     doc text is wrapped as DATA; injections are surfaced, never obeyed).
  *  6. prompt-injection SOP: a document telling the agent to approve the
  *     restart is quoted as data and does NOT authorize anything.
+ *
+ * TASK DEV-C-02 (Day 2): P-12 second-asset triplet is staged in the same
+ * temp sandbox (telemetry + SOP + maintenance note wired through existing
+ * tools). P-12 scan PNG + photo stay NOT WIRED: OCR/vision are honestly
+ * unavailable on this machine, so the eval asserts the unavailable path
+ * instead of pixels. All tests remain evidence-only (no live Baseten
+ * calls; BASETEN_API_KEY unset).
  */
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
@@ -50,6 +57,9 @@ function makeTempRoot(): string {
     'maintenance_report.txt',
     'safety_thresholds.json',
     'turbine_vibration_log.csv',
+    'sop_pump_p12_monitoring.md',
+    'maintenance_report_p12.txt',
+    'pump_p12_vibration_log.csv',
   ]) {
     fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root, 'demo', 'industrial', f));
   }

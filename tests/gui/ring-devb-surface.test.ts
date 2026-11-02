@@ -238,6 +238,46 @@ describe('threads + role picker', () => {
   });
 });
 
+describe('TASK RING-DEV-B-02: thread sidebar history', () => {
+  it('expand handoff loads the chosen thread runs through getRun; role vocab stays frozen', async () => {
+    const { RingWorkspace } = await import('../../src/gui/src/components/RingWorkspace');
+    const states = {
+      'run-a1': { status: 'completed', mode: 'hosted', events: [{ type: 'model.turn', ts: 't', text: 'A history line' }] },
+    };
+    const seen = [];
+    const client = {
+      startRun: async () => ({ runId: 'run-x' }),
+      getRun: async (runId) => { seen.push(runId); return states[runId] || { status: 'completed', mode: 'hosted', events: [] }; },
+      cancelRun: async () => {},
+      decideApproval: async () => {},
+      downloadArtifact: async () => {},
+      threadClient: {
+        createThread: async () => ({ threadId: 'thread-b' }),
+        getThread: async (threadId) => ({ threadId, title: 'A review', role: 'safety', createdAt: 't', runs: ['run-a1'] }),
+        postMessage: async () => ({ runId: 'run-x' }),
+      },
+    };
+    window.localStorage.setItem('maos:ring:expand-thread', 'thread-a');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const mod = await import('react-dom/client');
+    const root = mod.createRoot(container);
+    await act(async () => { root.render(React.createElement(RingWorkspace, { runClient: client, pollIntervalMs: 60000 })); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    try {
+      expect(container.textContent).toContain('A history line');
+      expect(seen).toContain('run-a1');
+      const options = Array.from(container.querySelectorAll('[data-testid=ring-role-picker] option')).map((o) => o.value);
+      expect(options).toEqual(['operator', 'maintenance', 'safety', 'manager']);
+    } finally {
+      await act(async () => { root.unmount(); });
+      container.remove();
+      window.localStorage.clear();
+    }
+  });
+});
+
 describe('attachments', () => {
   it('classifyAttachment accepts pdf/image/csv and refuses the rest', () => {
     const file = (name: string, type: string) => ({ name, type }) as File;
@@ -261,6 +301,61 @@ describe('attachments', () => {
     ).toBe('');
   });
 
+  it('storeRingCsvEvidence resolves the evidence CSV path (not the receipt JSON)', async () => {
+    const mod = await import('../../src/gui/src/api/adapter');
+    const calls = [];
+    const fake = { analyzeIndustrialTelemetry: async (input) => { calls.push(input); return { receiptPath: 'r/x.json', source: { relativePath: 'e/x-v.csv' } }; } };
+    const adapter = new mod.GuiApiAdapter({ baseUrl: 'http://127.0.0.1:9', projectRoot: 'C:\t' });
+    adapter.rest.analyzeIndustrialTelemetry = fake.analyzeIndustrialTelemetry;
+    const out = await adapter.storeRingCsvEvidence('v.csv', 'eA==');
+    expect(out).toEqual({ storedPath: 'e/x-v.csv' });
+    expect(calls.length).toBe(1);
+  });
+
+  it('storeRingCsvEvidence fails loudly when the receipt carries no evidence path', async () => {
+    const mod = await import('../../src/gui/src/api/adapter');
+    const adapter = new mod.GuiApiAdapter({ baseUrl: 'http://127.0.0.1:9', projectRoot: 'C:\t' });
+    adapter.rest.analyzeIndustrialTelemetry = async () => ({ receiptPath: 'r/x.json' });
+    await expect(adapter.storeRingCsvEvidence('v.csv', 'eA==')).rejects.toThrow('no evidence path');
+  });
+
+  it('pdf local-only chips name the missing write route', async () => {
+    const view = mount(React.createElement(RingAttachmentBar, {
+      attachments: [{ name: 's.pdf', kind: 'pdf', size: 10, storedPath: null }],
+      client: { storeEvidenceFile: async () => ({ storedPath: 'evidence/x.csv' }) },
+      onChange: () => {},
+      onError: () => {},
+    }));
+    await view.render();
+    expect(view.container.textContent).toContain('no evidence-root write route for PDF yet');
+    view.unmount();
+  });
+
+  it('overlay screenshot button arms only one held capture at a time', async () => {
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64');
+    window.maosNative = {
+      initialize: async () => ({}),
+      expandRing: () => {},
+      captureRingScreen: async () => ({ pngBase64: png, width: 8, height: 8, displays: 1 }),
+    };
+    const running = { status: 'running', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }] };
+    const oc = (state) => ({
+      startRun: async () => ({ runId: 'run-1' }),
+      getRun: async () => state,
+      cancelRun: async () => {},
+      decideApproval: async () => {},
+      downloadArtifact: async () => {},
+    });
+    const view = mount(React.createElement(RingOverlay, { runClient: oc(running), pollIntervalMs: 60000 }));
+    await view.render();
+    const btn = () => view.container.querySelector('[data-testid=ring-overlay-screenshot]');
+    await act(async () => { const b = btn(); if (b) b.click(); await new Promise((r) => setTimeout(r, 10)); });
+    await view.flush();
+    expect(view.container.querySelector('[data-testid=ring-overlay-screenshot-chip]')).toBeTruthy();
+    expect(btn().hasAttribute('disabled')).toBe(true);
+    delete window.maosNative;
+    view.unmount();
+  });
   it('dropzone + screenshot button render with the visible-capture indicator contract', async () => {
     const view = mount(
       React.createElement(RingAttachmentBar, {
@@ -389,6 +484,48 @@ describe('RingOverlay', () => {
       'EVIDENCE-ONLY · no model configured',
     );
     view.unmount();
+  });
+});
+
+describe('TASK RING-DEV-B-02: artifact real-loopback download (this machine, no key)', () => {
+  it('saved artifact bytes download through the frozen route with path checks', async () => {
+    delete process.env.BASETEN_API_KEY;
+    const fsp = await import('fs');
+    const osp = await import('os');
+    const pathp = await import('path');
+    const root = fsp.mkdtempSync(pathp.join(osp.tmpdir(), 'maos-ring-day2-dl-'));
+    try {
+      fsp.mkdirSync(pathp.join(root, '.maos'), { recursive: true });
+      fsp.mkdirSync(pathp.join(root, 'demo', 'industrial'), { recursive: true });
+      const repoRoot = pathp.resolve('demo', '..');
+      for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
+        fsp.copyFileSync(pathp.join(repoRoot, 'demo', 'industrial', f), pathp.join(root, 'demo', 'industrial', f));
+      }
+      fsp.writeFileSync(pathp.join(root, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-day2-dl', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true } }));
+      const storeMod = await import('../../src/service/ring-artifact-store');
+      const store = new storeMod.RingArtifactService(root);
+      const saved = store.saveArtifact('run-day2', 'safety-note.md', '# note ' + 'T-07 review. ', 'note');
+      expect(saved.path).toBe('.maos/ring-runs/artifacts/run-day2/safety-note.md');
+      const abs = store.resolveArtifactPath('run-day2', 'safety-note.md');
+      expect(fsp.readFileSync(abs, 'utf8')).toContain('T-07 review');
+      expect(() => store.resolveArtifactPath('run-day2', '../secret.txt')).toThrow('ARTIFACT_PATH_ESCAPE');
+      expect(() => store.resolveArtifactPath('run-day2', 'sub/dir.md')).toThrow('ARTIFACT_PATH_ESCAPE');
+      const { createRestApiServer } = await import('../../src/api/server');
+      const server = createRestApiServer(root);
+      const port = await server.start(0);
+      try {
+        const ok = await fetch('http://127.0.0.1:' + port + '/api/v1/ring/runs/run-day2/artifacts/safety-note.md');
+        expect(ok.status).toBe(200);
+        expect(await ok.text()).toContain('T-07 review');
+        const trav = await fetch('http://127.0.0.1:' + port + '/api/v1/ring/runs/run-day2/artifacts/..%2Fsecret.txt');
+        expect([400, 404]).toContain(trav.status);
+      } finally {
+        await server.stop();
+      }
+    } finally {
+      delete process.env.BASETEN_API_KEY;
+      try { fsp.rmSync(root, { recursive: true, force: true }); } catch {}
+    }
   });
 });
 
@@ -661,6 +798,29 @@ describe('TASK RING-DEV-B-01: overlay Expand handoff + explicit screenshot', () 
     expect(current[0].previewUrl).toContain('data:image/png;base64,');
     delete (window as unknown as { maosNative?: unknown }).maosNative;
     view.unmount();
+  });
+});
+
+describe('TASK RING-DEV-B-02: artifact open/download', () => {
+  it('artifact download through the adapter carries no token and only the filename', async () => {
+    const mod = await import('../../src/gui/src/api/rest-client');
+    const seen = [];
+    const fakeFetch = async (url, init) => {
+      seen.push({ url, auth: init && init.headers ? init.headers.Authorization : undefined });
+      return { ok: true, status: 200, blob: async () => new Blob(['note-bytes']) };
+    };
+    const rest = new mod.BrowserRestClient({ baseUrl: 'http://127.0.0.1:9', projectRoot: 'C:\t', fetchFn: fakeFetch });
+    const blob = await rest.downloadRingArtifact('run-1', 'safety-note.md');
+    expect(await blob.text()).toBe('note-bytes');
+    expect(seen.length).toBe(1);
+    expect(seen[0].url).toBe('http://127.0.0.1:9/api/v1/ring/runs/run-1/artifacts/safety-note.md');
+    expect(seen[0].url).not.toContain('token');
+    expect(seen[0].auth).toBeUndefined();
+    const card = mount(React.createElement(RingArtifactCard, { artifact: { path: '.maos/ring-runs/artifacts/run-1/safety-note.md', kind: 'note', size: 10, sha256: 'a'.repeat(64) }, runId: 'run-1', onDownload: async (rid, file) => { expect(rid).toBe('run-1'); expect(file).toBe('safety-note.md'); } }));
+    await card.render();
+    expect(card.container.querySelector('[data-testid=ring-artifact-name]').textContent).toBe('safety-note.md');
+    await act(async () => { card.container.querySelector('[data-testid=ring-artifact-open]').click(); await new Promise((r) => setTimeout(r, 0)); });
+    card.unmount();
   });
 });
 

@@ -130,7 +130,57 @@ describe('TASK DEV-A-01: Ring brain', () => {
     expect(seen).toContain('model.turn');
     expect(seen).toContain('tool.call');
     expect(seen).toContain('tool.result');
-    // no token streaming exists on the provider contract, so no model.delta
+    // the loopback mock exposes no generateStream, so the loop falls back to
+    // generate() once and emits no model.delta (see the SSE tests for deltas)
+    expect(seen.includes('model.delta')).toBe(false);
+    expect(validateRingRunState(snap as unknown).status).toBe('completed');
+  });
+
+  it('hosted streaming provider fans out model.delta live; deltas join to the final answer', async () => {
+    const fragments = ['Telemetry verdict: ', 'CRITICAL', ' at 2.637 mm/s.'];
+    const whole = fragments.join('');
+    const deltas: string[] = [];
+    const provider: IProvider & { generateStream: IProvider['generate'] } = {
+      name: 'fake-baseten-stream',
+      model: BASETEN_API_MODEL,
+      generate: async () => providerResponse(whole, []),
+      generateStream: async (_messages, _tools, options) => {
+        for (const f of fragments) {
+          try { (options as { onDelta?: (d: string) => void } | undefined)?.onDelta?.(f); } catch { /* ignore */ }
+        }
+        return providerResponse(whole, []);
+      },
+    };
+    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const seen: string[] = [];
+    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); if (event.type === 'model.delta') deltas.push(String(event.delta)); });
+    const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
+    const snap = await service.waitForCompletion(runId);
+    off();
+    expect(snap.status).toBe('completed');
+    expect(snap.mode).toBe('hosted');
+    // deltas streamed live, in order, joining to the recorded whole text
+    expect(seen).toContain('model.delta');
+    expect(deltas).toEqual(fragments);
+    expect(deltas.join('')).toBe(whole);
+    expect(snap.finalAnswer).toBe(whole);
+    const transcriptDeltas = snap.transcript.filter((e) => e.type === 'model.delta').map((e) => e.delta);
+    expect(transcriptDeltas).toEqual(fragments);
+    // evidence-only honesty: this run was hosted, so deltas are genuine stream output
+    expect(snap.transcript.some((e) => e.type === 'mode.evidence-only')).toBe(false);
+    expect(validateRingRunState(snap as unknown).status).toBe('completed');
+  });
+
+  it('hosted stream fallback: no generateStream still completes with no faked deltas', async () => {
+    const provider = mockProvider([providerResponse('Telemetry is CRITICAL at 2.637 mm/s.', [])]);
+    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const seen: string[] = [];
+    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); });
+    const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
+    const snap = await service.waitForCompletion(runId);
+    off();
+    expect(snap.status).toBe('completed');
+    expect(snap.mode).toBe('hosted');
     expect(seen.includes('model.delta')).toBe(false);
     expect(validateRingRunState(snap as unknown).status).toBe('completed');
   });
@@ -270,6 +320,24 @@ describe('TASK DEV-A-01: Ring brain', () => {
     const bodyText = JSON.stringify(bodies[0]);
     expect(bodyText).not.toContain('overallVibrationRms');
     expect(bodyText).not.toContain('2026-08-22T09:00:00');
+  });
+
+  it('telemetry question DOES ride the deterministic summary along (and never raw rows)', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const provider: IProvider = { name: 'fake-baseten-loopback', model: BASETEN_API_MODEL, generate: async (messages) => { bodies.push({ messages }); return providerResponse('Telemetry verdict summarized.', []); } };
+    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const runId = service.startRun('Analyze turbine vibration telemetry and give the verdict');
+    const snap = await service.waitForCompletion(runId);
+    expect(snap.status).toBe('completed');
+    expect(snap.mode).toBe('hosted');
+    expect(bodies.length).toBeGreaterThan(0);
+    const bodyText = JSON.stringify(bodies[0]);
+    // positive: the deterministic summary rides along for telemetry questions
+    expect(bodyText).toContain('overallVibrationRms');
+    expect(bodyText).toContain('Deterministic Engineering Context');
+    // negative: raw CSV rows never ride along, even for telemetry questions
+    expect(bodyText).not.toContain('timestamp,asset_id,vibration_rms_mm_s');
+    expect(bodyText).not.toContain('2026-08-22T09:00:00+05:30,T-07');
   });
 });
 

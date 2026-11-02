@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packId": "MAOS-INDUSTRIAL-PUBLIC-DEMO-PACK-V1",
-  "packVersion": "1.0.0",
-  "generatedAt": "2026-09-24T18:00:00.000Z",
+  "packVersion": "1.1.0",
+  "generatedAt": "2026-11-02T00:00:00.000Z",
   "title": "MAOS Industrial Public Demonstration Pack",
-  "description": "Frozen, licensed, non-proprietary synthetic benchmark dataset and operating procedures for autonomous industrial safety audits across scenarios D1 through D7.",
+  "description": "Frozen, licensed, non-proprietary synthetic benchmark dataset and operating procedures for autonomous industrial safety audits across scenarios D1 through D7. v1.1.0 adds the pump P-12 second-asset triplet (telemetry CSV + SOP + maintenance note) and labels the P-12 scan PNG and equipment photo as NOT wired into Ring evidence paths in this packet (OCR/vision unavailable on the demo machine; see packet run-log).",
   "license": "CC0-1.0 Universal",
   "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
   "clearancePolicy": {
@@ -217,6 +217,79 @@
         "D7"
       ],
       "description": "Timed 3-minute presentation narration and judge-facing demonstration script"
+    },
+    {
+      "id": "ASSET-13-P12-TELEMETRY-CSV",
+      "filename": "pump_p12_vibration_log.csv",
+      "relativePath": "demo/industrial/pump_p12_vibration_log.csv",
+      "category": "telemetry",
+      "mimeType": "text/csv",
+      "sha256": "639c7e2aaea5c2b6ee383cbd685db5dc0cbbaec6b82ad247e2c7bb6606f04c39",
+      "byteSize": 18388,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D2",
+        "D7"
+      ],
+      "description": "Synthetic pump P-12 vibration + bearing temperature log (360 rows, 20-second sampling); Ring skill workflows route P-12 requests here via analyze_telemetry"
+    },
+    {
+      "id": "ASSET-14-P12-SOP-MARKDOWN",
+      "filename": "sop_pump_p12_monitoring.md",
+      "relativePath": "demo/industrial/sop_pump_p12_monitoring.md",
+      "category": "sop",
+      "mimeType": "text/markdown",
+      "sha256": "457e94db7b3b36b18c4c335b2c4700ac15d8afcc65db7f4bda37dc5ce747d3fe",
+      "byteSize": 4464,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D2",
+        "D7"
+      ],
+      "description": "Pump P-12 vibration/temperature SOP; /sop P-12 and permit/loto read this file; LOTO section marked verify-against-site-procedure"
+    },
+    {
+      "id": "ASSET-15-P12-MAINTENANCE-REPORT-TXT",
+      "filename": "maintenance_report_p12.txt",
+      "relativePath": "demo/industrial/maintenance_report_p12.txt",
+      "category": "report",
+      "mimeType": "text/plain",
+      "sha256": "2787de767756c3d2de918810023324b7d8d4753d7c0d87daa4428776662212da",
+      "byteSize": 969,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D2",
+        "D7"
+      ],
+      "description": "Pump P-12 field visual inspection note; handover/rca/report cite it as evidence"
+    },
+    {
+      "id": "ASSET-16-P12-SCAN-PNG-NOT-WIRED",
+      "filename": "pump_p12_inspection_scan.png",
+      "relativePath": "demo/industrial/pump_p12_inspection_scan.png",
+      "category": "scan",
+      "mimeType": "image/png",
+      "sha256": "78e51ad89ac91b220b070202c05061c6dd63bbe39261c831e9f324313a5fc0bb",
+      "byteSize": 36511,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D7"
+      ],
+      "description": "NOT WIRED into Ring evidence paths in this packet: PNG scan needs OCR; Tesseract absent and bundled OCR fallback not executed here, so Ring reports it unavailable rather than fabricate text"
+    },
+    {
+      "id": "ASSET-17-P12-PHOTO-NOT-WIRED",
+      "filename": "images/pump_p12_photo.png",
+      "relativePath": "demo/industrial/images/pump_p12_photo.png",
+      "category": "image",
+      "mimeType": "image/png",
+      "sha256": "24720d6492ff1a0f135e057e42fb1a1820f3fcd74ab3ce0aeef9c4756d834aac",
+      "byteSize": 6987,
+      "license": "CC0-1.0",
+      "demoScenarios": [
+        "D4"
+      ],
+      "description": "NOT WIRED into Ring evidence paths in this packet: photo needs vision; vision weights absent so inspect_image reports unavailable rather than fabricate observations"
     }
   ]
 }

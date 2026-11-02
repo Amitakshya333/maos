@@ -53,8 +53,10 @@ const RESTART_PATTERNS: RegExp[] = [
   /\bcertify\b.{0,40}\bsafe\b/i,
   /\bgive\s+(the\s+)?(go-ahead|green\s*light)\b.{0,40}\b(restart|startup|operat)/i,
   /\bcan\s+(we|i)\s+(restart|start)\b/i,
-  /\bok\s+to\s+(restart|start|operate)\b/i,
+  /\bok\s+to\s+(restart|start|operate|run)\b/i,
   /\bpermission\s+to\s+(restart|start|operate|run)\b/i,
+  /\bput\s+(the\s+)?(pump|p-12|turbine|t-07)\s+back\s+in\s+service\b/i,
+  /\breturn\s+(the\s+)?(pump|p-12|turbine|t-07)\s+to\s+service\b/i,
 ];
 
 export function isRestartAuthorizationRequest(text: string): boolean {

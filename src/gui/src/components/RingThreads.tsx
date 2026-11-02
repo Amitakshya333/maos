@@ -68,10 +68,12 @@ export const RingRolePicker: React.FC<{
   threadAvailable: boolean;
   onPick: (role: string) => void;
 }> = ({ role, threadAvailable, onPick }) => (
-  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-    <span style={{ color: 'var(--text-dim, #888888)' }}>Role</span>
+  <span role="group" aria-label="Ring role" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+    <label htmlFor="ring-role-select" style={{ color: 'var(--text-dim, #888888)' }}>Role</label>
     <select
+      id="ring-role-select"
       aria-label="Ring role"
+      aria-describedby={threadAvailable ? undefined : 'ring-role-unscoped-note'}
       data-testid="ring-role-picker"
       value={role}
       onChange={(event) => onPick(event.target.value)}
@@ -92,6 +94,7 @@ export const RingRolePicker: React.FC<{
     </select>
     {!threadAvailable && (
       <span
+        id="ring-role-unscoped-note"
         data-testid="ring-role-unscoped-note"
         style={{ fontSize: '11px', color: 'var(--status-amber, #eab308)' }}
         title="The thread service is not available, so the role cannot be attached to a thread yet. Runs start unscoped."
@@ -99,7 +102,7 @@ export const RingRolePicker: React.FC<{
         requested — thread service unavailable
       </span>
     )}
-  </label>
+  </span>
 );
 
 export const RingThreadSidebar: React.FC<{
