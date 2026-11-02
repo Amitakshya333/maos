@@ -1,0 +1,10 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "node.exe",
+  "args": [
+    "-e",
+    "const fs=require('fs'),crypto=require('crypto');const root='C:/clean/core-b2-02',demo='C:/clean/demo-b2-02',out='C:/maos/review-packets/b2-cleanroom-retry-2026-10-31';if(fs.existsSync(demo))throw Error('Refusing existing demo project');fs.mkdirSync(demo+'/demo/industrial',{recursive:true});fs.mkdirSync(demo+'/.maos');const sha=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');const records=[];for(const n of ['safety_thresholds.json','turbine_vibration_log.csv','maintenance_report.txt','turbine_inspection_scan.pdf']){const src=root+'/demo/industrial/'+n,dst=demo+'/demo/industrial/'+n;fs.copyFileSync(src,dst);const h=sha(src);if(sha(dst)!==h)throw Error('Fixture copy mismatch');records.push({name:n,sha256:h});}fs.copyFileSync(root+'/profiles/industrial/maos.config.json',demo+'/.maos/maos.config.json');fs.mkdirSync(demo+'/rust/target/release',{recursive:true});const src=root+'/rust/target/release/maos-engine.exe',dst=demo+'/rust/target/release/maos-engine.exe';fs.copyFileSync(src,dst);const h=sha(src);if(sha(dst)!==h)throw Error('Engine copy mismatch');const r={demoRoot:demo,fixtures:records,engineSha256:h,configuration:'Copied public Industrial starter profile; destination private-state contents not inspected.'};fs.writeFileSync(out+'/demo-staging.json',JSON.stringify(r,null,2));console.log(JSON.stringify(r,null,2));"
+  ],
+  "startedAt": "2026-10-31T16:04:21.815Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

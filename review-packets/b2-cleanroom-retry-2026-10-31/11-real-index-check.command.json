@@ -1,0 +1,11 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "git.exe",
+  "args": [
+    "diff",
+    "--cached",
+    "--quiet"
+  ],
+  "startedAt": "2026-10-31T16:00:20.296Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

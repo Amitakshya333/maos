@@ -1,0 +1,4 @@
+COMMAND: git -C C:\maos apply --check <complete-correction.patch>
+CHECK_EXIT_CODE=0
+COMMAND: git -C C:\maos apply <complete-correction.patch>
+APPLY_EXIT_CODE=0

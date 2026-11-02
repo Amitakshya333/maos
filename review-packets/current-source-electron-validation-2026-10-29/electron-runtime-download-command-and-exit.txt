@@ -1,0 +1,4 @@
+COMMAND: desktop-tools/node_modules/.bin/install-electron.cmd --no
+EXIT_CODE: 0
+ELECTRON_BINARY_PRESENT: True
+ELECTRON_VERSION: v45.0.0

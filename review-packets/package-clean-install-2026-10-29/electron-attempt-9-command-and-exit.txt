@@ -1,0 +1,8 @@
+COMMAND: node <temp>\rehearsal\test-tools\desktop-agent-installed-package-rehearsal-debug.cjs --package-root <temp>\locked-install\node_modules\maosorch --evidence-path <temp>\rehearsal\evidence\package-agent-electron-attempt-9.json
+PACKAGE_ROOT: installed tarball copy
+RUST_ENGINE: separately built prerequisite from exact clean source checkout
+INFERENCE: loopback synthetic mock only
+USER_DATA: explicit --user-data-dir beneath the isolated temp root
+OUTCOME: interrupted by operator after runner stalled at its asynchronous request-header drain before Electron restart; no app assertion failure observed
+EXIT_CODE: unavailable; Ctrl+C terminated the attached PowerShell pipeline before it wrote its exit metadata
+EVIDENCE: preceding four TRACE lines retained in electron-attempt-9-sanitized-output.txt

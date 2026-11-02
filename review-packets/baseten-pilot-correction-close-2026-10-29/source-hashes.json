@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "candidateSource": "Four-file uncommitted correction against the verified bb871 checkpoint; no production source change for the contract error mapping.",
+  "patchFile": "complete-correction.patch",
+  "patchSha256": "dbb62ab351b474cd158071b34f47be173f890cb869391b6befa0e9ddb45b8ad1",
+  "files": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "status": "modified",
+      "rawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a"
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "status": "modified",
+      "rawSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "lfNormalizedSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755"
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "status": "modified",
+      "rawSha256": "ab8702cb9dac9f211e1abc2a1595fdcc5e2817dce93fbafc6749c6b564eb6eab",
+      "lfNormalizedSha256": "35f0c25a9ed7f1f89042a79064a5b0e34dcecbe141431094db7e84f41895fe84"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "status": "modified",
+      "rawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3"
+    }
+  ]
+}

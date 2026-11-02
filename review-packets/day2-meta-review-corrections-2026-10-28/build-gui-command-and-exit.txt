@@ -1,0 +1,2 @@
+COMMAND: npm run build:gui
+EXIT_CODE: 0

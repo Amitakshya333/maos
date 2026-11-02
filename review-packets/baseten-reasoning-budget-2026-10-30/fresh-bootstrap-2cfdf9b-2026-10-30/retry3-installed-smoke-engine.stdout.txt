@@ -1,0 +1,112 @@
+📋 [2026-10-30T13:36:21.244Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-bbf4efbd-ba95-4ff7-bd97-9e50ac838d7a
+📋 [2026-10-30T13:36:21.246Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+🔍 [2026-10-30T13:36:21.252Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 6ms (total: 18)
+📋 [2026-10-30T13:36:21.253Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+🔍 [2026-10-30T13:36:21.287Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 7ms (total: 36)
+📋 [2026-10-30T13:36:21.288Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+📋 [2026-10-30T13:36:21.301Z] [INFO] [industrial-analysis-agent] Budget warning: 1 iterations remaining. Nudging to finalize.
+🔍 [2026-10-30T13:36:21.307Z] [DEBUG] [industrial-analysis-agent] Iteration 3/4: 18 tokens, 5ms (total: 54)
+📋 [2026-10-30T13:36:21.308Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+🔍 [2026-10-30T13:36:21.327Z] [DEBUG] [industrial-analysis-agent] Iteration 4/4: 18 tokens, 6ms (total: 72)
+📋 [2026-10-30T13:36:21.328Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+⚠️ [2026-10-30T13:36:21.341Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+📋 [2026-10-30T13:36:21.377Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-df7e17d6-4e98-42f3-9abf-a3c27d4dce17
+📋 [2026-10-30T13:36:21.378Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+❌ [2026-10-30T13:36:21.387Z] [ERROR] [industrial-analysis-agent] Agent error: Error: baseten is temporarily unavailable (HTTP 503).
+Provider: baseten | Model: meta-models/muse-spark-open-1026 | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\backends\openai-provider.js:221:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async retryOnTransient (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\core\context-manager.js:235:20)
+    at async runAgent (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\core\agent-runner.js:192:30)
+    at async IndustrialAnalysisAgentService.analyzeWithinDeadline (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:206:21)
+    at async IndustrialAnalysisAgentService.analyze (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:101:20)
+    at async waitForActual (node:assert:646:5)
+    at async strict.rejects (node:assert:769:25)
+    at async runNoRetry (C:\maos\review-packets\baseten-reasoning-budget-2026-10-30\fresh-bootstrap-2cfdf9b-2026-10-30\installed-baseten-mock-smoke.cjs:292:5)
+    at async C:\maos\review-packets\baseten-reasoning-budget-2026-10-30\fresh-bootstrap-2cfdf9b-2026-10-30\installed-baseten-mock-smoke.cjs:356:5
+📋 [2026-10-30T13:36:21.431Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-c651da76-f467-49e8-b9d7-c0ad96b3e3b1
+📋 [2026-10-30T13:36:21.432Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+❌ [2026-10-30T13:36:21.442Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Connection error.
+    at OpenAI.makeRequest (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\node_modules\openai\client.js:398:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async OpenAIProvider.generate (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\backends\openai-provider.js:121:33)
+    at async retryOnTransient (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\core\context-manager.js:235:20)
+    at async runAgent (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\core\agent-runner.js:192:30)
+    at async IndustrialAnalysisAgentService.analyzeWithinDeadline (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:206:21)
+    at async IndustrialAnalysisAgentService.analyze (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:101:20)
+    at async waitForActual (node:assert:646:5)
+    at async strict.rejects (node:assert:769:25)
+    at async runRedirectRefusal (C:\maos\review-packets\baseten-reasoning-budget-2026-10-30\fresh-bootstrap-2cfdf9b-2026-10-30\installed-baseten-mock-smoke.cjs:309:5)
+📋 [2026-10-30T13:36:21.478Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-a308886c-4b73-4dfc-ad90-0c21e6749c20
+📋 [2026-10-30T13:36:21.478Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+❌ [2026-10-30T13:37:21.497Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\node_modules\openai\client.js:367:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runNextTicks (node:internal/process/task_queues:69:3)
+    at listOnTimeout (node:internal/timers:569:9)
+    at process.processTimers (node:internal/timers:543:7)
+    at async OpenAIProvider.generate (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\backends\openai-provider.js:121:33)
+    at async retryOnTransient (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\core\context-manager.js:235:20)
+    at async runAgent (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\core\agent-runner.js:192:30)
+    at async IndustrialAnalysisAgentService.analyzeWithinDeadline (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:206:21)
+{
+  "schemaVersion": 1,
+  "bundleCommit": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "scope": "Installed package dist via isolated temporary synthetic projects and loopback HTTP mocks only.",
+  "hostedRequests": 0,
+  "sourceURLInterceptedByHarness": "https://inference.baseten.co/v1/chat/completions",
+  "installedAppPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS installed mock 2cfdf9b retry3\\app",
+  "syntheticProjectRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS synthetic pilot projects 2cfdf9b retry3 engine",
+  "cases": [
+    {
+      "name": "installed-successful-tool-round-trip",
+      "passed": true,
+      "generations": 2,
+      "telemetryExecutions": 1,
+      "reportAccepted": true,
+      "durationMs": 413
+    },
+    {
+      "name": "truncated-partial-tool-response",
+      "passed": true,
+      "generations": 1,
+      "partialToolIncluded": true,
+      "reportAccepted": false
+    },
+    {
+      "name": "empty-reasoning-only-response",
+      "passed": true,
+      "generations": 1,
+      "partialToolIncluded": false,
+      "reportAccepted": false
+    },
+    {
+      "name": "four-generation-ceiling-and-single-telemetry-tool",
+      "passed": true,
+      "generations": 4,
+      "telemetryExecutions": 1,
+      "unauthorizedCommandExecuted": false,
+      "reportAccepted": false
+    },
+    {
+      "name": "provider-error-no-retry",
+      "passed": true,
+      "httpAttempts": 1,
+      "reportAccepted": false
+    },
+    {
+      "name": "redirect-refused-before-destination",
+      "passed": true,
+      "sourceRequests": 1,
+      "redirectDestinationRequests": 0
+    },
+    {
+      "name": "overall-60-second-deadline",
+      "passed": true,
+      "generations": 1,
+      "durationMs": 60034,
+      "requestAborted": true
+    }
+  ],
+  "passed": true
+}

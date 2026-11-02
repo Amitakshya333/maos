@@ -514,6 +514,9 @@ export const RingVerifyCard: React.FC<{ transcript: RingVerifyTranscript }> = ({
   }
   return (
     <div data-testid="ring-verify-card" style={{ marginTop: 10, fontSize: 11 }}>
+      <div data-testid="ring-verify-no-approval" style={{ color: '#8b949e', marginBottom: 6 }}>
+        Audit verify runs automatically — no approval needed.
+      </div>
       {hasAudit && (
         <div style={{ marginBottom: 6 }}>
           <code style={{ display: 'block', color: '#79c0ff', wordBreak: 'break-all' }}>

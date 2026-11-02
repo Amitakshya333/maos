@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "candidateSource": "current working-tree files copied into an isolated reconstruction of the reviewed installation snapshot",
+  "sourceFileCount": 17,
+  "files": [
+    {
+      "path": "README.md",
+      "status": "modified",
+      "baseRawSha256": "b65b3174846b28a0f347d3b4d5d930b42c73e5a73fabf46e6b9ecf169ec5791f",
+      "baseLfSha256": "b65b3174846b28a0f347d3b4d5d930b42c73e5a73fabf46e6b9ecf169ec5791f",
+      "priorRawSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887",
+      "priorLfSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887",
+      "rawSha256": "f00131b7f8551efb081675038445400ff256e75c0cd282d21ba7470e8615e74c",
+      "lfSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887"
+    },
+    {
+      "path": "desktop/README.md",
+      "status": "modified",
+      "baseRawSha256": "e3651e48bdb17f33344ffc3f94095f633052c614af31a4fe5d225be7bc4ea914",
+      "baseLfSha256": "e3651e48bdb17f33344ffc3f94095f633052c614af31a4fe5d225be7bc4ea914",
+      "priorRawSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e",
+      "priorLfSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e",
+      "rawSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e",
+      "lfSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e"
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "status": "modified",
+      "baseRawSha256": "882b7544c76f950ab45477f836d29902b347a435276a7569a32d3252d313321d",
+      "baseLfSha256": "882b7544c76f950ab45477f836d29902b347a435276a7569a32d3252d313321d",
+      "priorRawSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "priorLfSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "rawSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "lfSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43"
+    },
+    {
+      "path": "desktop/package.json",
+      "status": "modified",
+      "baseRawSha256": "4b3346bcdcd0674940c6e52ed7a041e19ae30b55a0855bff7aaa423a495e36dc",
+      "baseLfSha256": "4b3346bcdcd0674940c6e52ed7a041e19ae30b55a0855bff7aaa423a495e36dc",
+      "priorRawSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b",
+      "priorLfSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b",
+      "rawSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b",
+      "lfSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": "c15d81b760b869f2b82ed9eb6a0fcbd92cab771f7e43d8609dba14c240c80bb9",
+      "priorLfSha256": "c15d81b760b869f2b82ed9eb6a0fcbd92cab771f7e43d8609dba14c240c80bb9",
+      "rawSha256": "c51025b8ec36a7ad2d88aad82994fb27b83766babea6692b525488a6a9583d93",
+      "lfSha256": "c51025b8ec36a7ad2d88aad82994fb27b83766babea6692b525488a6a9583d93"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "baseRawSha256": "8985d2f7598db9c1fddbab8965365f460e35f0e8f7dd3ee0ec4b81b8ddb264f1",
+      "baseLfSha256": "8985d2f7598db9c1fddbab8965365f460e35f0e8f7dd3ee0ec4b81b8ddb264f1",
+      "priorRawSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98",
+      "priorLfSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98",
+      "rawSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98",
+      "lfSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98"
+    },
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": "c949ddc76f243508e813aa24e8e2881535e189530df38f7fb88f95fc9863841d",
+      "priorLfSha256": "c949ddc76f243508e813aa24e8e2881535e189530df38f7fb88f95fc9863841d",
+      "rawSha256": "b2dc2175b64609b8966cab4571848959f302441e481e0aa578ce086f1bcd51f5",
+      "lfSha256": "b2dc2175b64609b8966cab4571848959f302441e481e0aa578ce086f1bcd51f5"
+    },
+    {
+      "path": "scripts/New-MaosIndustrialInstallBundle.ps1",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb",
+      "priorLfSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb",
+      "rawSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb",
+      "lfSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb"
+    },
+    {
+      "path": "scripts/prepare-hooks.js",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc",
+      "priorLfSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc",
+      "rawSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc",
+      "lfSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc"
+    },
+    {
+      "path": "src/cli/doctor.ts",
+      "status": "modified",
+      "baseRawSha256": "794722b7116c403f4a47908a1cad1e967ca7e9822cbb998c2dd16e6f2d646ac3",
+      "baseLfSha256": "794722b7116c403f4a47908a1cad1e967ca7e9822cbb998c2dd16e6f2d646ac3",
+      "priorRawSha256": "7c309e047d677db7a4cf43c35980bdab8b3db454085e355ad23afca662374566",
+      "priorLfSha256": "7c309e047d677db7a4cf43c35980bdab8b3db454085e355ad23afca662374566",
+      "rawSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616",
+      "lfSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "status": "modified",
+      "baseRawSha256": "6b87874657f619f02c411814c0fed152f529dc640c3bd8aee8a515f752b2d887",
+      "baseLfSha256": "6b87874657f619f02c411814c0fed152f529dc640c3bd8aee8a515f752b2d887",
+      "priorRawSha256": "2e6c9c8c5dacdcd740f6d25af9798f40946601f2152e491963e6e39f04ee72ab",
+      "priorLfSha256": "2e6c9c8c5dacdcd740f6d25af9798f40946601f2152e491963e6e39f04ee72ab",
+      "rawSha256": "3103116dcc4052a6325266630253599927df873b163ed00015bb99e3be4a7c7a",
+      "lfSha256": "77f3da0184fbb596d017bb7f4da68553ef0a73f2ef88ae25ae443e78faa5a767"
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "status": "modified",
+      "baseRawSha256": "14e0a6750ee41b9831b3be8d6ea084b5f67b07b7865608ba8846ffc6141d46bc",
+      "baseLfSha256": "14e0a6750ee41b9831b3be8d6ea084b5f67b07b7865608ba8846ffc6141d46bc",
+      "priorRawSha256": "c0ff1dcc9fd6a4a858e342273fdf99619af8699813887be0f4854f29c69117f0",
+      "priorLfSha256": "c0ff1dcc9fd6a4a858e342273fdf99619af8699813887be0f4854f29c69117f0",
+      "rawSha256": "70957e9a803a6451b3d2510bd92af66cc03209610f3dda2d88a6f32740234117",
+      "lfSha256": "70957e9a803a6451b3d2510bd92af66cc03209610f3dda2d88a6f32740234117"
+    },
+    {
+      "path": "src/utils/project-git-context.ts",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": null,
+      "priorLfSha256": null,
+      "rawSha256": "91c26478a65bf0d8cc84bf40f33ab3c81b84a41e6352452cdd7017fa17e425a8",
+      "lfSha256": "91c26478a65bf0d8cc84bf40f33ab3c81b84a41e6352452cdd7017fa17e425a8"
+    },
+    {
+      "path": "tests/cli/doctor.test.ts",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548",
+      "priorLfSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548",
+      "rawSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548",
+      "lfSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548"
+    },
+    {
+      "path": "tests/cli/meta-provider-entrypoints.test.ts",
+      "status": "modified",
+      "baseRawSha256": "e10e1664d1b9e434622c100998a714695cd82dbad763e258604e20cac4b62e55",
+      "baseLfSha256": "e10e1664d1b9e434622c100998a714695cd82dbad763e258604e20cac4b62e55",
+      "priorRawSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15",
+      "priorLfSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15",
+      "rawSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15",
+      "lfSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15"
+    },
+    {
+      "path": "tests/cli/project-git-context.test.ts",
+      "status": "added",
+      "baseRawSha256": null,
+      "baseLfSha256": null,
+      "priorRawSha256": null,
+      "priorLfSha256": null,
+      "rawSha256": "20fce31bb2827e4feb991f6c7fd4e4a21a1072f96331da04e2e71f38982e0188",
+      "lfSha256": "20fce31bb2827e4feb991f6c7fd4e4a21a1072f96331da04e2e71f38982e0188"
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "status": "modified",
+      "baseRawSha256": "515f36b9ec9291ad77dd1d2f372315e66c6a427fdf721e84d977d8dd829f6b50",
+      "baseLfSha256": "515f36b9ec9291ad77dd1d2f372315e66c6a427fdf721e84d977d8dd829f6b50",
+      "priorRawSha256": "41ef36a794ae844eb054dc7d566ff98f10477f8a3e5db32fcef14707ef2c366a",
+      "priorLfSha256": "41ef36a794ae844eb054dc7d566ff98f10477f8a3e5db32fcef14707ef2c366a",
+      "rawSha256": "6ff70bd820f9c8ef9bd1244df3ed01c4943af4c3f39b3420a48161fd4361b8e6",
+      "lfSha256": "6ff70bd820f9c8ef9bd1244df3ed01c4943af4c3f39b3420a48161fd4361b8e6"
+    }
+  ],
+  "candidateLabel": "authorized-eof-whitespace-correction-2026-10-29",
+  "reviewedManifestSha256": "1d32ed58087d030a85d9e637c43bbb569f72ea4d102b02091c868aedb0a8edfd",
+  "authorizedException": {
+    "path": "src/cli/doctor.ts",
+    "operation": "Delete exactly one final LF byte; keep one terminating LF.",
+    "originalRawSha256": "3c9408baecac1548268ca573bf27f18e09da526ff07eb2a8b7d770c02babde20",
+    "correctedRawSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616"
+  }
+}

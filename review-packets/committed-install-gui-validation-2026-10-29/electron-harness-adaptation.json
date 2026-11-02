@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "sourceHarnessPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\clean committed source final with spaces\\tests\\release\\desktop-agent-deliverable-rehearsal.cjs",
+  "sourceHarnessSha256": "59e963cabdbb0e02f1593641e83eee1caa382c6dcc8823ee8658e79fd653d272",
+  "adaptedHarnessPath": "review-packets\\committed-install-gui-validation-2026-10-29\\desktop-agent-deliverable-rehearsal-installed.cjs",
+  "adaptedHarnessSha256": "58884d07905659e80ff93e3ccb802ab324092d39cff1759e85b79fdf1b3f08bc",
+  "adaptationPatchPath": "review-packets\\committed-install-gui-validation-2026-10-29\\electron-harness-installed-adaptation.patch",
+  "adaptationPatchSha256": "9db8fb823c43e17d468f5d682b4ae7768939e4a944f2206ac0661a375e06cbb8",
+  "changes": [
+    "isolated --user-data-dir",
+    "external candidate engine via MAOS_TEST_RUST_ENGINE",
+    "test-local process close and launcher relaunch while pending review",
+    "old-token rejection and new-token/private-IPC verification",
+    "dynamic selected-file locator after relaunch"
+  ]
+}

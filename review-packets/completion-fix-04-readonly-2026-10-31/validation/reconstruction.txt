@@ -1,0 +1,7 @@
+complete apply-check exit=0
+--- reconstructed blob hashes ---
+d1579eabd7cf24cad20c3ecb2714f11ac8788a86
+c95badf0b598816292eb5e7fa1dcfac6e16dd5d5
+528c4e1e2ed597556b95a2918cf1fd1549c9e7c5
+e6627955a685eaf04ccbe4d9297e3a9ab3532c1d
+a6fd5daf4de03106541734b7a3bc969139bd80be

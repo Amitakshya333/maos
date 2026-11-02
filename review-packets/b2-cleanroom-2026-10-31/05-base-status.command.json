@@ -1,0 +1,10 @@
+{
+  "cwd": "C:/clean/core",
+  "executable": "git.exe",
+  "args": [
+    "status",
+    "--porcelain"
+  ],
+  "startedAt": "2026-10-31T15:37:21.278Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

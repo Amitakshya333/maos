@@ -1,0 +1,46 @@
+{
+  "launcherPid": 39380,
+  "descendants": [
+    {
+      "pid": 23696,
+      "parentPid": 39380,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:37"
+    },
+    {
+      "pid": 8920,
+      "parentPid": 23696,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 17824,
+      "parentPid": 23696,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 39568,
+      "parentPid": 23696,
+      "name": "node.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 29200,
+      "parentPid": 39568,
+      "name": "conhost.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 28232,
+      "parentPid": 23696,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:39"
+    }
+  ],
+  "names": [
+    "conhost.exe",
+    "electron.exe",
+    "node.exe"
+  ]
+}

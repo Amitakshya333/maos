@@ -1,0 +1,9 @@
+{
+  "command": "npm run build",
+  "exitCode": 0,
+  "stdoutLog": "npm-build.stdout.log",
+  "stderrLog": "npm-build.stderr.log",
+  "npmVersion": "11.6.1",
+  "sensitiveEnvironmentNamesRemoved": 3,
+  "worktreeStatus": null
+}

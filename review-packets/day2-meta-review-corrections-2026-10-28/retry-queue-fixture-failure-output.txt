@@ -1,0 +1,31 @@
+
+ RUN  v4.1.11 C:/maos
+
+···············································································································x···········
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > holds queued whole-task retries for runtimes with an explicit zero retry cap
+Error: ENOENT: no such file or directory, open 'C:\Users\AMITAK~1\AppData\Local\Temp\maos-agent-budget-p12RNt\.maos\queue\pending\meta-retry-task.md'
+ ❯ drainRetryQueueUnderProjectLock src/core/retry-queue.ts:346:8
+    344|     // Update status back to pending in frontmatter
+    345|     const updated = content.replace(/^status:\s*.+$/m, 'status: pendin…
+    346|     fs.writeFileSync(pendingPath, updated, 'utf-8');
+       |        ^
+    347|
+    348|     // Clean up retry files
+ ❯ src/core/retry-queue.ts:304:62
+ ❯ src/industrial/judged-run-lock.ts:183:26
+ ❯ withJudgedRunLock src/industrial/judged-run-lock.ts:155:14
+ ❯ withJudgedRunOutputLock src/industrial/judged-run-lock.ts:182:10
+ ❯ drainRetryQueue src/core/retry-queue.ts:304:10
+ ❯ tests/core/agent-runner-budget.test.ts:126:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 122 passed (123)
+   Start at  23:54:53
+   Duration  47.45s (transform 2.67s, setup 0ms, import 18.45s, tests 26.56s, environment 1ms)
+

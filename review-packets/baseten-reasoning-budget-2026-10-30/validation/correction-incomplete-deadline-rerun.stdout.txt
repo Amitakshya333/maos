@@ -1,0 +1,23 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mC:/maos[39m
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mapplies the sixty-second Industrial deadline and cancellation to Baseten requests
+[22m[39m📋 [2026-10-30T12:53:37.103Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-aead8199-c5f2-4a8e-8492-1ad5f113f287
+📋 [2026-10-30T12:53:37.103Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mapplies the sixty-second Industrial deadline and cancellation to Baseten requests
+[22m[39m❌ [2026-10-30T12:54:37.103Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+
+ [32m✓[39m tests/industrial/meta-model-api-contract.test.ts [2m([22m[2m32 tests[22m[2m | [22m[33m29 skipped[39m[2m)[22m[32m 165[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[2m | [22m[33m29 skipped[39m[90m (32)[39m
+[2m   Start at [22m 18:23:33
+[2m   Duration [22m 3.18s[2m (transform 1.98s, setup 0ms, import 2.80s, tests 165ms, environment 0ms)[22m
+

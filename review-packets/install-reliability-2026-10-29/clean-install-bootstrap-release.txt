@@ -1,0 +1,17 @@
+COMMAND: powershell.exe -NoProfile -ExecutionPolicy Bypass -File Install-MaosIndustrial.ps1 -BundleRoot <extracted bundle> -InstallRoot <fresh empty destination>
+NPM_CONFIG_CACHE: <prior task-isolated cache>
+ELECTRON_CONFIG_CACHE: <prior task-isolated cache>
+Packaged desktop lockfile is missing: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196
+584def850343ff8a22565d\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\clean-install-smoke-release-d04b0a8be
+a6c407c86ec878468bbd05a\install\app\desktop\package-lock.json
+At C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\clean-instal
+l-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\clean-install-smoke-release-d04b0a8bea6c407c86ec878468bbd05a\bundle\Inst
+all-MaosIndustrial.ps1:24 char:61
++ ... teralPath $Path -PathType Leaf)) { throw "$Label is missing: $Path" }
++                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Packaged deskto...ckage-lock.json:String) [], RuntimeException
+    + FullyQualifiedErrorId : Packaged desktop lockfile is missing: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos- 
+   install-clean-source-37609be196584def850343ff8a22565d\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\c  
+  lean-install-smoke-release-d04b0a8bea6c407c86ec878468bbd05a\install\app\desktop\package-lock.json
+ 
+EXIT_CODE: 1

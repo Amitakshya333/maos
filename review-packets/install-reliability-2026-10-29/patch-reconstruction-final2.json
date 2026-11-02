@@ -1,0 +1,14 @@
+{
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "patchSha256": "24aded659900021886bec0ea3aaae01fd8174bdaf7155338dbe931050b644592",
+  "manifestSha256": "d6821e6254d549853d58063f9ad7f5a6bd8eb48978beaf017f0855a6d91544fb",
+  "pathCount": 15,
+  "pathSetMatches": true,
+  "applyCheckExitCode": 0,
+  "applyExitCode": 0,
+  "sourceMatchesManifest": true,
+  "lfNormalizedEqual": 15,
+  "rawByteEqual": 2,
+  "unmatched": [],
+  "stagedPathCount": 0
+}

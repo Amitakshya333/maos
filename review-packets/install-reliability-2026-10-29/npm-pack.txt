@@ -1,0 +1,3 @@
+COMMAND: npm pack --ignore-scripts --json --pack-destination <evidence>/candidate
+EXIT_CODE: 0
+{"filename":"maosorch-0.3.0.tgz","sizeBytes":1220488,"unpackedSizeBytes":5562446,"fileCount":494,"sha256":"4078172578682e02f4fccc9942fe654b2b0914c562362ac68cd8b79ab24a63d5"}

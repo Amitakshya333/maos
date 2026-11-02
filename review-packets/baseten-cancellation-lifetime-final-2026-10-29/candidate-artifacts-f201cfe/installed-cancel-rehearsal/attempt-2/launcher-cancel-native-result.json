@@ -1,0 +1,13 @@
+{
+  "mode": "cancel",
+  "launcherPid": 39620,
+  "launcherNativeExitCode": 1,
+  "failure": "Installed launcher exited before GUI initialization with native code 1.",
+  "ctrlCEventSent": false,
+  "ctrlCWin32Error": 0,
+  "requestActiveBeforeCtrlC": false,
+  "mockRequest": null,
+  "syntheticCredentialAppearedInCapturedOutput": false,
+  "forcedCleanup": false,
+  "mockServerPid": 1852
+}

@@ -1,0 +1,10 @@
+{
+  "targetLauncherPid": 22780,
+  "purpose": "cleanup only; no mock inference request active",
+  "detachedCurrentConsole": true,
+  "attachedTargetConsole": true,
+  "ignoreCtrlCForSender": true,
+  "eventSent": true,
+  "lastError": 0,
+  "sentAt": "2026-10-29T18:47:52.3529180Z"
+}

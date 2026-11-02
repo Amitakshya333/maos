@@ -1,0 +1,12 @@
+COMMAND=npm exec -- vitest run tests/backends/openai-provider-local-tool-call.test.ts
+
+ RUN  v4.1.11 C:/maos
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:21:26
+   Duration  420ms (transform 46ms, setup 0ms, import 202ms, tests 55ms, environment 0ms)
+
+
+EXIT_CODE=0

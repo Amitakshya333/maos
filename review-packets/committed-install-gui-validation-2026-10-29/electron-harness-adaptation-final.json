@@ -1,0 +1,7 @@
+{
+  "sourceHarnessSha256": "59e963cabdbb0e02f1593641e83eee1caa382c6dcc8823ee8658e79fd653d272",
+  "adaptedHarnessSha256": "c4dc8a89269e567d52354d17861110fae6e6ab9a5f629943901cd438e428e82e",
+  "adaptationPatchSha256": "7d5c10e3ca587aa301d1a1e0343ab6e9593f1ad510f7e2ebe38f50b8d3dcc9a6",
+  "sourceCommit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "noProductSourceChanged": true
+}

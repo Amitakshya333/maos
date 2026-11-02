@@ -1,0 +1,54 @@
+{
+  "mode": "normal",
+  "launcherPid": 39492,
+  "launcherNativeExitCode": 0,
+  "exitCodeCapturedFromProcessHandle": true,
+  "capturedAt": "2026-10-29T19:01:48.1304258Z",
+  "ctrlCEventSent": false,
+  "ctrlCWin32Error": 0,
+  "requestActiveBeforeCtrlC": false,
+  "mockRequest": null,
+  "authorizationValuePersisted": false,
+  "syntheticCredentialAppearedInCapturedOutput": false,
+  "electronHookLoaded": true,
+  "nodeServiceHookLoaded": true,
+  "unexpectedNonloopbackFetchCount": 0,
+  "ownedProcessesBeforeCtrlC": [
+    {
+      "pid": 34300,
+      "parentPid": 39492,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:31:34"
+    },
+    {
+      "pid": 26572,
+      "parentPid": 34300,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:31:34"
+    },
+    {
+      "pid": 32780,
+      "parentPid": 34300,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:31:34"
+    },
+    {
+      "pid": 22968,
+      "parentPid": 34300,
+      "name": "node.exe",
+      "creationDate": "10/30/2026 00:31:34"
+    },
+    {
+      "pid": 29884,
+      "parentPid": 22968,
+      "name": "conhost.exe",
+      "creationDate": "10/30/2026 00:31:34"
+    }
+  ],
+  "ownedProcessPidsStillPresentAfterExit": [],
+  "noOwnedProcessesRemain": true,
+  "mutexReacquirable": true,
+  "forcedCleanup": false,
+  "mockServerPid": 20268,
+  "mockServerPort": 57306
+}

@@ -1,0 +1,106 @@
+{
+  "status": "PASS",
+  "timestamp": "2026-10-29T10:20:25.287Z",
+  "browser": "Visible Electron BrowserWindow controlled through Playwright; no personal browser profile.",
+  "topology": "desktop/main.cjs -> ProjectHostLauncher -> ProjectServiceHost; renderer session initialized through the actual private preload IPC bridge.",
+  "inference": "MOCK ONLY — loopback synthetic HTTP inference, no live Meta or other model inference.",
+  "projectRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\electron temp with spaces\\maos-electron-agent-wuqMO5\\project",
+  "projectId": "maos-industrial-demo",
+  "uiOrigin": "http://127.0.0.1:61647",
+  "apiOrigin": "http://127.0.0.1:52168",
+  "apiPort": 52168,
+  "projectRootHash": "9ab09b04b335834535be60f3ce9acfb07c0190ac5398eede5cc29f5fc6057c83",
+  "serviceInstanceId": "inst_1793269222590_33fd1c908b81",
+  "session": "real launcher-issued session delivered to renderer through private IPC; token not recorded in evidence.",
+  "model": {
+    "requested": "mock-configured-model-v1",
+    "providerReported": "mock-returned-model-v1",
+    "requests": 8
+  },
+  "syntheticOracle": {
+    "rowsAnalyzed": 3,
+    "peakVibration": 8.7,
+    "peakTemperature": 101,
+    "verdict": "CRITICAL"
+  },
+  "attempts": [
+    {
+      "outcome": "mock inference failure",
+      "httpStatus": 502,
+      "acceptedSuccess": false
+    },
+    {
+      "outcome": "client cancelled while mock inference was pending",
+      "acceptedSuccess": false
+    },
+    {
+      "outcome": "rejected",
+      "runId": "judged-run-agent-telemetry-1793269219888-6fa88cff",
+      "analysisId": "telemetry-1793269219888-6fa88cff",
+      "artifactCreated": false
+    },
+    {
+      "outcome": "stale source approval refused",
+      "runId": "judged-run-agent-telemetry-1793269220587-aabb9a6b",
+      "analysisId": "telemetry-1793269220587-aabb9a6b",
+      "artifactCreated": false
+    },
+    {
+      "outcome": "approved and downloaded",
+      "runId": "judged-run-agent-telemetry-1793269223620-caafeeed",
+      "analysisId": "telemetry-1793269223620-caafeeed",
+      "engineeringVerdict": "FAIL",
+      "artifactSha256": "1f788f23a4fb32000bf21ed91e98a311584bc4bbf3b425e79eb8a196ed170b9a",
+      "downloadSha256": "1f788f23a4fb32000bf21ed91e98a311584bc4bbf3b425e79eb8a196ed170b9a"
+    }
+  ],
+  "sameRunAudit": {
+    "event": "JUDGED_RUN_COMPLETED",
+    "runId": "judged-run-agent-telemetry-1793269223620-caafeeed",
+    "analysisId": "telemetry-1793269223620-caafeeed",
+    "agentRunId": "cdd4fd5e-d5ce-4331-8817-97b24e5d19bf",
+    "receiptSha256": "dc23265632a33f131a71d626f6699e4a9791d9100a5f2dc5567efff33d736840",
+    "deliverableSha256": "1f788f23a4fb32000bf21ed91e98a311584bc4bbf3b425e79eb8a196ed170b9a",
+    "chainVerified": true
+  },
+  "invalidRequestRejections": {
+    "missingSession": 401,
+    "invalidSession": 401,
+    "wrongProject": 400,
+    "wrongOrigin": 403,
+    "unauthenticatedDownload": 401
+  },
+  "privacy": {
+    "tokenInUrl": false,
+    "tokenInPersistentStorage": false,
+    "tokenInCookies": false,
+    "tokenInCapturedElectronLogs": false
+  },
+  "processCleanup": {
+    "electronClosed": true,
+    "projectServiceStopped": true,
+    "uiServerStopped": true,
+    "mockStopped": true
+  },
+  "processRestartResume": {
+    "processRestarted": true,
+    "oldServiceStopped": true,
+    "oldUiStopped": true,
+    "newSessionIssued": true,
+    "oldSessionRejected": true,
+    "pendingRunResumed": true,
+    "pendingRunId": "judged-run-agent-telemetry-1793269220587-aabb9a6b",
+    "oldServiceInstanceId": "inst_1793269218903_6a9299c0e4fc",
+    "newServiceInstanceId": "inst_1793269222590_33fd1c908b81",
+    "oldServicePort": 61652,
+    "newServicePort": 52168,
+    "userDataPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\electron temp with spaces\\maos-electron-agent-wuqMO5\\electron-user-data"
+  },
+  "rustPrerequisite": {
+    "version": "0.1.0",
+    "protocolVersion": "1.0",
+    "capturedBinarySha256": "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+    "trustManifestComparison": "not performed"
+  },
+  "evidencePath": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\corrected-bundle-electron-journey.json"
+}

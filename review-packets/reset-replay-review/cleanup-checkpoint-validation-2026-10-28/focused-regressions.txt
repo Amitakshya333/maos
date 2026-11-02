@@ -1,0 +1,303 @@
+
+ RUN  v4.1.11 C:/maos
+
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 1. Chat Completion Cancellation & Interruption > rejects immediately when AbortSignal is already aborted before starting 61ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 1. Chat Completion Cancellation & Interruption > aborts in-flight inference on client cancellation via AbortSignal 99ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 1. Chat Completion Cancellation & Interruption > handles server timeout cleanly without phantom success 103ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 2. Task Interruption & Queue Protection > interrupts a specific active task and updates on-disk task metadata 38ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 2. Task Interruption & Queue Protection > interrupts all active tasks and clears active queue on fleet interrupt 41ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 2. Task Interruption & Queue Protection > fail-closed: interrupted tasks never transition to done without re-execution 29ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 3. Workflow / Objective Cancellation > cancels an objective and marks uncompleted subtasks cancelled/interrupted 46ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 3. Workflow / Objective Cancellation > interruptAllWorkflows marks all in-flight stages failed 32ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 4. Sandbox Container Crash & Timeout Cleanup > guarantees cleanupContainerSync and cleanupContainer do not throw on missing containers 334ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 4. Sandbox Container Crash & Timeout Cleanup > coordinator tracks and cleans up registered containers and staging dirs 167ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 5. Firewall Unclean Shutdown & Rollback > detects RESTORE_REQUIRED when state file indicates an interrupted transaction 4ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 5. Firewall Unclean Shutdown & Rollback > automatically restores previous snapshot on coordinator recovery sweep 8ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 6. Network Observation Session Teardown > halts active observation sessions, clears polling timers, and flushes traces 5ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 7. Model Lease Reclamation > releases all active model leases and resets lease count to zero 13271ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > purges orphan temporary files across artifacts, bundles, and stale locks 22ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > forced cleanup preserves a live owner and another lifecycle command cannot enter 451ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > removes only a stale same-host lock whose owner is confirmed dead 51ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > treats an unverified process-liveness result as possibly alive 1ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > leaves foreign host ownership ambiguity blocked 12ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > leaves malformed record ownership ambiguity blocked 11ms
+ × tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > orchestrates complete atomic cleanup across all subsystems simultaneously 324ms
+   → expected false to be true // Object.is equality
+ × tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > idempotent execution: second run immediately after is clean and no-op 95ms
+   → expected false to be true // Object.is equality
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > installs and cleanly removes process signal handlers without error 16ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 10. Canary Invariant > rust/test.txt SHA-256 remains strictly untouched and unmodified 1ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Discovery & Category Allowlist > discovers all generated files when category is all 127ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Discovery & Category Allowlist > filters discovery strictly to specified allowlist categories 93ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Discovery & Category Allowlist > filters discovery by runId when specified 96ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Dry-Run Safety Guarantee > reports candidates without removing any files during dry-run 86ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > refuses index even in dry-run mode 84ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > refuses sandbox even in dry-run mode 82ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > refuses conversation even in dry-run mode 80ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > returns an actionable failure from the Industrial CLI for a disabled category 96ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Confirmation & Live Execution > rejects live execution when confirmed is false or omitted 99ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Confirmation & Live Execution > deletes allowlisted files when live reset is explicitly confirmed 134ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > keeps an active generic publisher temp file out of cleanup and serializes CLI reset across processes 2817ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > rejects a cross-process retry-queue writer while the project reset lock is held 422ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > rejects cross-process event and checkpoint writers while the reset lock is held 456ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > refuses queue reset while a normal TaskService task is active 117ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > queue reset clears old checkpoints before a reused task ID can be recovered 150ms
+ × tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > refuses queue reset after TaskService interrupt until worker exit is established 124ms
+   → expected false to be true // Object.is equality
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > reports scanned and actually removed bytes separately when candidates disappear 90ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > counts only successful unlinks when one candidate cannot be removed 93ms
+stdout | tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > defaults to dry-run when --yes is omitted
+
+🔍 MAOS Industrial — Deterministic Reset (DRY-RUN)
+
+Project Root: C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-05-8j1WcV
+Categories:   queue, output
+
+Candidate Files to Remove (7 files, 1393 bytes):
+  [queue       ] .maos/queue/pending/AUTO__1793177245005_ubt2.md (626 bytes)
+  [queue       ] .maos/queue/pending/AUTO__1793177245009_atga.md (626 bytes)
+  [queue       ] .maos/queue/objectives/obj-runA.json (42 bytes)
+  [queue       ] .maos/plans/plan-runA.json (38 bytes)
+  [queue       ] .maos/events/events-runA.jsonl (31 bytes)
+  [output      ] artifacts/generated/report-run-A.docx (18 bytes)
+  [output      ] demo/industrial/generated/output.md (12 bytes)
+
+No files were deleted. To perform live reset, run with --yes.
+
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > defaults to dry-run when --yes is omitted 108ms
+stderr | tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > rejects invalid category with INVALID_ARGS exit code 2
+Invalid reset category 'invalid_category_xyz'. Allowed categories: queue, output, index, sandbox, conversation, or 'all'.
+
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > rejects invalid category with INVALID_ARGS exit code 2 94ms
+stdout | tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > executes confirmed live reset with --yes and returns exit code 0
+
+🧹 MAOS Industrial — Deterministic Reset (COMPLETED)
+
+Project Root: C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-05-j8HLnB
+Categories:   queue, output
+Removed 7 generated files (1393 bytes).
+
+
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > executes confirmed live reset with --yes and returns exit code 0 149ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > never scans or deletes review packets 108ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects canary file rust/test.txt 106ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects anything in fixtures/ 83ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects demo/industrial source files 79ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath allows demo/industrial/generated outputs 90ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects audit logs and root configs 86ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > preserves canary hash byte-for-byte throughout all operations 82ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Service Container > should create all 8 services 36ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should detect initialized project 24ms
+ × tests/f3-01-services.test.ts > F3-01 ProjectService > should detect non-initialized project 36ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-empty-DoI7HA\.maos\maos.config.json
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should load config as domain Project type 26ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should return agents 23ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should return providers 23ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should not detect industrial profile for non-industrial config 24ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should create a task with domain Task type 30ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should list tasks 45ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should return queue counts 28ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should clean all queues 34ms
+ ✓ tests/f3-01-services.test.ts > F3-01 EventService > should return empty timeline for unknown task 22ms
+ ✓ tests/f3-01-services.test.ts > F3-01 EventService > should return empty query results 22ms
+ ✓ tests/f3-01-services.test.ts > F3-01 EventService > should return stats with zero events 21ms
+ ✓ tests/f3-01-services.test.ts > F3-01 MemoryService > should return empty live memories 22ms
+ ✓ tests/f3-01-services.test.ts > F3-01 MemoryService > should return stats 23ms
+ ✓ tests/f3-01-services.test.ts > F3-01 MemoryService > should clear without error 22ms
+ ✓ tests/f3-01-services.test.ts > F3-01 HealthService > should return agent pool entries 22ms
+ ✓ tests/f3-01-services.test.ts > F3-01 HealthService > should return empty retry queue 23ms
+ ✓ tests/f3-01-services.test.ts > F3-01 HealthService > should return empty dead letter queue 21ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ModelService > should list configured models 25ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ModelService > should validate local provider credentials 21ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ModelService > should reject unknown provider 21ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import chalk in any service file 34ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import commander in any service file 34ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not call process.exit in any service file 33ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import from cli/ in any service file 35ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Domain schemas have schemaVersion > should define schemaVersion in all primary schemas 22ms
+ × tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > dispatches typed workflow stage and returns run and stage links 28ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-uQAuWU\.maos\maos.config.json
+ × tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > creates persistent workflow objective accessible through WorkflowService 17ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-NtQ2y4\.maos\maos.config.json
+ × tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > creates objective task accessible through TaskService without direct fake INGEST assignment 15ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-cO3d8b\.maos\maos.config.json
+ × tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > supports custom goal parameter 16ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-rJY637\.maos\maos.config.json
+ × tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > records audited event in audit trail 17ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-SqJ9d1\.maos\maos.config.json
+ × tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > HTTP endpoint execution > handles POST /api/industrial/trigger via server and returns JSON with run/stage links 17ms
+   → MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-U5axwk\.maos\maos.config.json
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_BUSY as unavailable/in-progress 10ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_LOCK_UNAVAILABLE as unavailable/in-progress 7ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves a genuine engineering FAIL 7ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_BUSY as unavailable/in-progress 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_LOCK_UNAVAILABLE as unavailable/in-progress 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves a genuine engineering FAIL 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > Static code verification for negative requirements > verifies src/cli/dashboard.ts does not directly import core/queue createTask 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > Static code verification for negative requirements > verifies src/cli/dashboard.ts does not assign fake INGEST_AGENT in trigger endpoint 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > Static code verification for negative requirements > exposes typed workflow run and stage links from the dashboard trigger 6ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/f3-01-services.test.ts > F3-01 ProjectService > should detect non-initialized project
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-empty-DoI7HA\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/f3-01-services.test.ts:99:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > dispatches typed workflow stage and returns run and stage links
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-uQAuWU\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f10-02-dashboard-trigger.test.ts:31:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > creates persistent workflow objective accessible through WorkflowService
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-NtQ2y4\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f10-02-dashboard-trigger.test.ts:54:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > creates objective task accessible through TaskService without direct fake INGEST assignment
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-cO3d8b\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f10-02-dashboard-trigger.test.ts:65:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > supports custom goal parameter
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-rJY637\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f10-02-dashboard-trigger.test.ts:81:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > records audited event in audit trail
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-SqJ9d1\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f10-02-dashboard-trigger.test.ts:91:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > HTTP endpoint execution > handles POST /api/industrial/trigger via server and returns JSON with run/stage links
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-02-U5axwk\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f10-02-dashboard-trigger.test.ts:107:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > refuses queue reset after TaskService interrupt until worker exit is established
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:454:45
+    452|       expect(reset.error).toBe('ACTIVE_QUEUE_WORK');
+    453|       expect(reset.message).toContain('worker exit is unconfirmed');
+    454|       expect(fs.existsSync(task.filePath!)).toBe(true);
+       |                                             ^
+    455|       expect(loadCheckpoint(testRoot, task.id)).not.toBeNull();
+    456|       expect(() => services.task.clean()).toThrow('worker exit is unco…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯
+
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > orchestrates complete atomic cleanup across all subsystems simultaneously
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts:858:30
+
+    856|       });
+    857|
+    858|       expect(report.success).toBe(true);
+       |                              ^
+    859|       expect(report.tasksInterruptedCount).toBe(1);
+    860|       expect(report.workflowsInterruptedCount).toBe(1);
+ Test Files  4 failed (4)
+      Tests  10 failed | 85 passed (95)
+   Start at  14:17:00
+   Duration  28.15s (transform 2.12s, setup 0ms, import 5.04s, tests 22.41s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯
+
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > idempotent execution: second run immediately after is clean and no-op
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts:881:31
+    879|         reason: 'First pass',
+    880|       });
+    881|       expect(report1.success).toBe(true);
+       |                               ^
+    882|
+    883|       const report2 = await services.atomicCleanup.executeAtomicCleanu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯
+
+EXIT_CODE=1

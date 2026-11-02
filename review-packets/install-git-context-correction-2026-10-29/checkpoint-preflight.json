@@ -1,0 +1,18 @@
+{
+  "checkedAt": "2026-10-29T14:12:44.7775830+05:30",
+  "repositoryRoot": "C:\\maos",
+  "branch": "main",
+  "head": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "indexEmpty": true,
+  "indexQuietExitCode": 0,
+  "authoritativeIndexPath": "review-packets/install-git-context-correction-2026-10-29/AUTHORITATIVE_EVIDENCE_INDEX.md",
+  "manifestPath": "review-packets/install-git-context-correction-2026-10-29/complete-source-hashes.json",
+  "expectedManifestSha256": "1d32ed58087d030a85d9e637c43bbb569f72ea4d102b02091c868aedb0a8edfd",
+  "actualManifestSha256": "1d32ed58087d030a85d9e637c43bbb569f72ea4d102b02091c868aedb0a8edfd",
+  "expectedPatchSha256": "ea2ffa2c90cb571add1cab5d3b9f5b26ec2d44b30b0cadbfd621a852304903bb",
+  "actualPatchSha256": "ea2ffa2c90cb571add1cab5d3b9f5b26ec2d44b30b0cadbfd621a852304903bb",
+  "manifestFileCount": 17,
+  "rawHashesMatched": 17,
+  "lfHashesMatched": 17,
+  "mismatches": []
+}

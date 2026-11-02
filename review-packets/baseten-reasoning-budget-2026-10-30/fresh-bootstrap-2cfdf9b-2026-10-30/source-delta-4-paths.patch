@@ -1,0 +1,194 @@
+diff --git a/src/backends/openai-provider.ts b/src/backends/openai-provider.ts
+index 25c068f12fe53eb6b22a3a1c17d4de8cc66a84e4..6c6ecc21aff7c22d5c25a1e1c4760c3d69eef793 100644
+--- a/src/backends/openai-provider.ts
++++ b/src/backends/openai-provider.ts
+@@ -85,7 +85,7 @@ export class OpenAIProvider implements IProvider {
+     this.temperature = hostedPolicy?.provider === 'meta'
+       ? hostedPolicy.temperature
+       : Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
+-    this.maxOutputTokens = hostedPolicy?.provider === 'meta' ? 256 : opts.maxOutputTokens;
++    this.maxOutputTokens = hostedPolicy?.provider === 'baseten' ? 1500 : hostedPolicy?.provider === 'meta' ? 256 : opts.maxOutputTokens;
+ 
+     const fetchImpl = opts.fetch ?? globalThis.fetch;
+ 
+@@ -107,15 +107,18 @@ export class OpenAIProvider implements IProvider {
+ 
+     try {
+       // Build the request — only include tools if we have them
+-      const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
++      const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & { reasoning_effort?: 'low' } = {
+         model: this.model,
+         messages: messages.map((m) => this.toOpenAIMessage(m)),
+       };
++      if (this.isBasetenApi) requestBody.reasoning_effort = 'low';
+       if (this.temperature !== null) requestBody.temperature = this.temperature;
+       const requestedMaxTokens = options?.maxTokens;
+-      const maxTokens = this.maxOutputTokens === undefined
+-        ? requestedMaxTokens
+-        : Math.min(requestedMaxTokens ?? this.maxOutputTokens, this.maxOutputTokens);
++      const maxTokens = this.isBasetenApi
++        ? this.maxOutputTokens
++        : this.maxOutputTokens === undefined
++          ? requestedMaxTokens
++          : Math.min(requestedMaxTokens ?? this.maxOutputTokens, this.maxOutputTokens);
+       if (typeof maxTokens === 'number' && Number.isInteger(maxTokens) && maxTokens > 0) {
+         requestBody.max_tokens = maxTokens;
+       }
+@@ -208,6 +211,12 @@ export class OpenAIProvider implements IProvider {
+       })) {
+         throw new Error('PROVIDER_CREDENTIAL_CONTAMINATION: configured credential found in provider tool-call metadata; execution was blocked.');
+       }
++      if (this.isBasetenApi && finishReason === 'length') {
++        throw new Error('BASETEN_INCOMPLETE_GENERATION: response ended at the configured output-token limit; partial output was discarded and no report was accepted.');
++      }
++      if (this.isBasetenApi && toolCalls.length === 0 && (typeof content !== 'string' || content.trim().length === 0)) {
++        throw new Error('BASETEN_EMPTY_GENERATION: response contained no usable content or tool call; reasoning metadata was discarded and no report was accepted.');
++      }
+ 
+       return {
+         content,
+diff --git a/tests/backends/baseten-api-provider-boundary.test.ts b/tests/backends/baseten-api-provider-boundary.test.ts
+index 3ef2a803d23465cea7ba012f49fa1c06dfa1345d..556fe9d313ea0d6fd7b072c4f5a3a1f8b083f1c0 100644
+--- a/tests/backends/baseten-api-provider-boundary.test.ts
++++ b/tests/backends/baseten-api-provider-boundary.test.ts
+@@ -308,7 +308,7 @@ describe('Baseten exact opt-in provider policy (loopback/injected transport only
+     }
+   });
+ 
+-  it('uses the documented structured Chat Completions tool-call shape and caller token limit', async () => {
++  it('uses the structured tool-call shape with the fixed hackathon reasoning and output budget', async () => {
+     process.env[BASETEN_API_KEY_ENV] = apiKey;
+     const mock = await listen((_request, res, _body) => response(toolCompletion())(_request, res));
+     const originalFetch = globalThis.fetch.bind(globalThis);
+@@ -320,12 +320,12 @@ describe('Baseten exact opt-in provider policy (loopback/injected transport only
+     const result = await provider.generate(
+       [{ role: 'user', content: 'Analyze the selected synthetic CSV.' }],
+       [{ type: 'function', function: { name: 'analyze_telemetry_csv', description: 'Analyze CSV', parameters: { type: 'object' } } }],
+-      { maxTokens: 1024 },
++      { maxTokens: 256 },
+     );
+ 
+     expect(mock.requests).toHaveLength(1);
+     expect(mock.requests[0].headers.authorization).toBe(`Bearer ${apiKey}`);
+-    expect(mock.requests[0].body).toMatchObject({ model: BASETEN_API_MODEL, max_tokens: 1024 });
++    expect(mock.requests[0].body).toMatchObject({ model: BASETEN_API_MODEL, max_tokens: 1500, reasoning_effort: 'low' });
+     expect(mock.requests[0].body).not.toHaveProperty('tool_choice');
+     expect(result.reportedModel).toBe(BASETEN_API_MODEL);
+     expect(result.toolCalls[0].function).toEqual({ name: 'analyze_telemetry_csv', arguments: '{"sourcePath":"selected.csv"}' });
+diff --git a/tests/backends/openai-provider-local-tool-call.test.ts b/tests/backends/openai-provider-local-tool-call.test.ts
+index a03597d2c8e18549adff96aecd3510239914f0d4..48d728d1053e537d8f8b2a385e25cfae1aa55af3 100644
+--- a/tests/backends/openai-provider-local-tool-call.test.ts
++++ b/tests/backends/openai-provider-local-tool-call.test.ts
+@@ -62,6 +62,7 @@ describe('OpenAI-compatible loopback mock tool request', () => {
+ 
+     expect(requestBody.model).toBe(model);
+     expect(requestBody.max_tokens).toBe(256);
++    expect(requestBody).not.toHaveProperty('reasoning_effort');
+     if (providerName === 'ollama-local') expect(requestBody.temperature).toBe(0.2);
+     expect(requestBody.tools[0].function.name).toBe('analyze_telemetry_csv');
+     expect(requestBody).not.toHaveProperty('tool_choice');
+diff --git a/tests/industrial/meta-model-api-contract.test.ts b/tests/industrial/meta-model-api-contract.test.ts
+index af78c4cf011f2703005311583900c0088baae3aa..d35055dec11de7298cbaa2c6633999d0549fb032 100644
+--- a/tests/industrial/meta-model-api-contract.test.ts
++++ b/tests/industrial/meta-model-api-contract.test.ts
+@@ -27,6 +27,8 @@ function completion(toolName: string, args: string, options: {
+   content?: string | null;
+   reasoning?: string;
+   reasoning_content?: string;
++  finishReason?: string;
++  omitToolCalls?: boolean;
+ } = {}) {
+   return {
+     id: 'chatcmpl-meta-contract',
+@@ -40,9 +42,9 @@ function completion(toolName: string, args: string, options: {
+         content: options.content ?? null,
+         ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
+         ...(options.reasoning_content === undefined ? {} : { reasoning_content: options.reasoning_content }),
+-        tool_calls: [{ id: 'call-meta-tool', type: 'function', function: { name: toolName, arguments: args } }],
++        ...(options.omitToolCalls ? {} : { tool_calls: [{ id: 'call-meta-tool', type: 'function', function: { name: toolName, arguments: args } }] }),
+       },
+-      finish_reason: 'tool_calls',
++      finish_reason: options.finishReason ?? 'tool_calls',
+     }],
+     usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+   };
+@@ -182,6 +184,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
+       count++;
+       expect(body.model).toBe(MODEL);
+       expect(body.max_tokens).toBe(256);
++      expect(body).not.toHaveProperty('reasoning_effort');
+       expect(Object.prototype.hasOwnProperty.call(body, 'temperature')).toBe(hasTemperature);
+       if (hasTemperature) expect(body.temperature).toBe(1);
+       expect(Object.prototype.hasOwnProperty.call(body, 'tool_choice')).toBe(false);
+@@ -520,7 +523,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
+       expect(outbound).toHaveLength(2);
+       expect(outbound.every((request) => request.url === `${BASETEN_API_BASE_URL}/chat/completions`)).toBe(true);
+       expect(outbound.every((request) => new Headers(request.init?.headers).get('authorization') === `Bearer ${apiKey}`)).toBe(true);
+-      expect(mock.requests.every((request) => request.body.max_tokens === 256)).toBe(true);
++      expect(mock.requests.every((request) => request.body.max_tokens === 1500 && request.body.reasoning_effort === 'low')).toBe(true);
+       expect(result.requestedModel).toBe(BASETEN_API_MODEL);
+       expect(result.reportedModel).toBeNull();
+       expect(result.evidence.verification.valid).toBe(true);
+@@ -539,6 +542,53 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
+     }
+   });
+ 
++  it.each([
++    { label: 'truncated reasoning-only response', finishReason: 'length', diagnostic: 'BASETEN_INCOMPLETE_GENERATION' },
++    { label: 'empty reasoning-only response', finishReason: 'stop', diagnostic: 'BASETEN_EMPTY_GENERATION' },
++  ])('does not accept a Baseten $label', async ({ finishReason, diagnostic }) => {
++    const reasoning = 'SYNTHETIC_PRIVATE_REASONING_NOT_FOR_STORAGE';
++    const mock = await startServer(() => ({ body: completion('unused', '{}', {
++      omitToolCalls: true,
++      finishReason,
++      content: null,
++      reasoning,
++      reasoning_content: `${reasoning}_CONTENT`,
++    }) }));
++    const project = makeProject({ baseURL: BASETEN_API_BASE_URL, providerName: 'baseten' });
++    const apiKey = 'synthetic-baseten-empty-response-key-not-real';
++    process.env[project.keyEnv] = apiKey;
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound, BASETEN_API_BASE_URL);
++    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
++    try {
++      const failure = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      }).then(
++        () => { throw new Error('Expected the incomplete Baseten response to fail.'); },
++        (error: Error) => error,
++      );
++      expect(failure).toMatchObject<Partial<IndustrialAnalysisAgentError>>({
++        code: 'AGENT_EXECUTION_FAILED',
++        message: expect.stringContaining(diagnostic),
++      });
++      expect(failure.message).not.toContain(apiKey);
++      expect(failure.message).not.toContain(reasoning);
++      const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
++      const logPath = path.join(project.root, '.maos', 'logs', 'orchestrator.log');
++      expect(mock.requests).toHaveLength(1);
++      expect(outbound).toHaveLength(1);
++      expect(mock.requests[0].body).toMatchObject({ max_tokens: 1500, reasoning_effort: 'low' });
++      expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
++      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords())).not.toContain('INDUSTRIAL_ANALYSIS_AGENT_COMPLETED');
++      expect(fs.existsSync(analysisRoot)).toBe(false);
++      expect(consoleLog.mock.calls.flat().join('\n')).not.toContain(reasoning);
++      expect(fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '').not.toContain(reasoning);
++    } finally {
++      restoreFetch();
++      consoleLog.mockRestore();
++    }
++  });
++
+   it('fails closed when Baseten task_complete arguments contain the configured key', async () => {
+     const apiKey = 'synthetic-baseten-tool-secret-not-a-real-key';
+     const mock = await startServer((body) => {
+@@ -596,7 +646,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
+       })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
+       const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
+       expect(mock.requests).toHaveLength(4);
+-      expect(mock.requests.every((request) => request.body.max_tokens === 256)).toBe(true);
++      expect(mock.requests.every((request) => request.body.max_tokens === 1500 && request.body.reasoning_effort === 'low')).toBe(true);
+       expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
+       expect(fs.existsSync(path.join(project.root, 'should-not-run'))).toBe(false);
+       expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);

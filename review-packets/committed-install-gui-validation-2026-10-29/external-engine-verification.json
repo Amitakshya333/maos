@@ -1,0 +1,12 @@
+{
+  "enginePath": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M6-7c1a\\candidate engine target with spaces\\release\\maos-engine.exe",
+  "exists": true,
+  "sha256": "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+  "manifestSha256": "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+  "manifestMatches": true,
+  "manifestApproved": false,
+  "manifestSourceCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "rustDiffExit": 0,
+  "installedBridgeExit": 0,
+  "installedBridgeOutput": "{\"engineVersion\":\"0.1.0\",\"protocolVersion\":\"1.0\",\"executableHash\":\"3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77\"}"
+}

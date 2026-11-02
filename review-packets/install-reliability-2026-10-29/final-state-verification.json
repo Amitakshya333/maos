@@ -1,0 +1,37 @@
+{
+  "repository": "C:\\maos",
+  "branch": "main",
+  "head": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "indexDiffExitCode": 0,
+  "indexEmpty": true,
+  "engineManifestSourceTree": "e3f1ec51b4a264c0ce67d21dab0842c7b30a7940",
+  "gitSourceTree": "e3f1ec51b4a264c0ce67d21dab0842c7b30a7940",
+  "engineSourceTreeMatches": true,
+  "engineBinarySha256": "011dd53795d025f11c605ee62bc25b1e85fcf7d5ae69503bbcef2fb3a40129de",
+  "engineManifestSha256": "011dd53795d025f11c605ee62bc25b1e85fcf7d5ae69503bbcef2fb3a40129de",
+  "engineHashMatches": true,
+  "testProcessFilter": "CommandLine LIKE '%install%'",
+  "matchingProcesses": [
+    {
+      "Name": "node.exe",
+      "ProcessId": 29824
+    },
+    {
+      "Name": "electron.exe",
+      "ProcessId": 37456
+    },
+    {
+      "Name": "electron.exe",
+      "ProcessId": 2016
+    },
+    {
+      "Name": "electron.exe",
+      "ProcessId": 32288
+    },
+    {
+      "Name": "electron.exe",
+      "ProcessId": 29276
+    }
+  ],
+  "noMatchingTaskProcesses": false
+}

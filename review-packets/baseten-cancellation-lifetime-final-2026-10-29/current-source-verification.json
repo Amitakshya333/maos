@@ -1,0 +1,24 @@
+{
+  "candidateRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-bb871cb191184b5de1-correction-20261029\\repo",
+  "mainRoot": "C:\\maos",
+  "expectedBase": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "candidate": {
+    "head": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+    "branch": "detached",
+    "indexEmpty": true,
+    "trackedDiffPaths": [
+      "scripts/Start-BasetenSyntheticPilot.ps1",
+      "scripts/Windows-ProcessTree.ps1",
+      "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "tests/industrial/meta-model-api-contract.test.ts"
+    ]
+  },
+  "main": {
+    "head": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+    "branch": "main",
+    "indexEmpty": true,
+    "unrelatedWorkingTreeChangesPreserved": true
+  },
+  "sourceManifestSha256": "324baa7ee8869ecf2d74925d59c449f5df2628e866d887454cbde16af34e024d",
+  "allTrackedCandidateChangesAccountedFor": true
+}

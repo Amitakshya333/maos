@@ -1,0 +1,1 @@
+C:\Program Files\nodejs\node.exe C:\maos\review-packets\baseten-reasoning-budget-2026-10-30\fresh-bootstrap-2cfdf9b-2026-10-30\installed-baseten-mock-smoke.cjs C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS synthetic pilot projects 2cfdf9b retry3 engine

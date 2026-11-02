@@ -1,0 +1,13 @@
+COMMAND: node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/industrial/meta-model-api-contract.test.ts
+ENGINE_SHA256: 3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2
+ENGINE_BYTES: 472064
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-bb871cb191184b5de1-correction-20261029/repo
+
+
+ Test Files  1 passed (1)
+      Tests  30 passed (30)
+   Start at  22:49:22
+   Duration  4.77s (transform 2.19s, setup 0ms, import 3.03s, tests 1.48s, environment 0ms)
+
+PROCESS_EXIT_CODE=0

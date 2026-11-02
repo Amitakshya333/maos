@@ -1,0 +1,862 @@
+diff --git a/prior-snapshot-lf/docs/INSTALLATION.md b/candidate-scope-lf/docs/INSTALLATION.md
+index 12f0ccb..5c5b8ee 100644
+--- a/prior-snapshot-lf/docs/INSTALLATION.md
++++ b/candidate-scope-lf/docs/INSTALLATION.md
+@@ -27,12 +27,15 @@ Expand-Archive .\maos-industrial-windows-x64.zip -DestinationPath .\maos-install
+ 
+ The install directory must be empty. The script verifies the package archive, lockfile, desktop lockfile, and installer against the bundle manifest before running install commands. Application and Electron package versions come from their committed lockfiles. After installing the pinned Electron npm package, the bootstrap explicitly runs that package's `install.js` helper to fetch Electron 45 for Windows x64. It uses the checksum data shipped in the pinned npm package by default; a configured Electron mirror is honored. The installer does not disable TLS validation. The bootstrap therefore needs network access to the npm registry and configured Electron binary host.
+ 
++`npm ci` executes dependency lifecycle scripts such as `preinstall`, `install`, and `postinstall` (and applicable root lifecycle scripts). They run with the invoking user's permissions and inherited environment and may access the network. The installer separately invokes the pinned Electron package's runtime-download helper. Lockfiles pin dependency resolution and package integrity, but they do not sandbox lifecycle scripts or make those scripts inherently trustworthy. Run installation in a dedicated, least-privilege environment that does not contain unrelated credentials or secrets.
++
+ ## Runtime prerequisites and use
+ 
+ - Windows x64, Windows PowerShell 5.1 or newer, Node.js 22.12 or newer, and npm 9 or newer are required for this bootstrap. Node.js 22.12 is required by the pinned Electron install dependency; the app's package metadata alone only requires Node.js 20.
+ - Node.js 20 or newer must remain available on `PATH` for the authenticated desktop service child process. Set `MAOS_NODE_EXECUTABLE` to an explicit `node.exe` if it is not discoverable.
+ - Python is not installed by this bootstrap. The Industrial runbook documents Python `>=3.10` for workflow-dependent OCR, embedding, data-script and selected sandbox tasks, and says the deterministic T-07 flow does not invoke Python. Current `maos industrial preflight` nevertheless requires a Python interpreter to be present; it displays a default minimum of `3.9` when none is configured but does not compare the detected version. Treat the preflight/runbook mismatch as unresolved. Docker/Podman is optional unless `requireDocker=true`; Tesseract is optional unless `requireOcr=true`.
+ - Run the installed CLI with `node.exe app\dist\cli\index.js ...` and the Industrial CLI with `node.exe app\dist\industrial\entrypoint.js ...`. These are the packaged npm `bin` entrypoints; `npm ci` installs the application graph in place and does not create self-package `.bin` shims. Launch Electron from `app\desktop\node_modules\electron\dist\electron.exe` with `app\desktop\main.cjs`.
++- The installer checks npm archive entries, dependency paths from both pinned lockfiles, and the Electron executable path before accessing the destination. It refuses projected paths of 240 characters or more; choose a short destination such as `C:\MAOS`. Windows long-path support varies by Node, npm, native modules, and dependency scripts, so longer paths are unsupported even on systems configured for extended paths.
+ - The Rust Industrial engine is a separate, required project prerequisite for the Industrial profile. The npm tarball and bootstrap do not include it. Place the platform-matched release binary at `<project-root>\rust\target\release\maos-engine.exe`. From a source checkout, build with `cargo build --release --locked --manifest-path rust/Cargo.toml`, then copy `rust\target\release\maos-engine.exe` into that project path. No automatic download or engine substitution occurs.
+ - For an Industrial project, `maos doctor` invokes the engine's bounded `health` operation and requires engine name `maos-industrial-engine`, version `0.1.0`, protocol `1.0`, status `ok`, and `unsafe_code=false`. `maos industrial preflight` performs the supported engine readiness checks as well.
+ 
+diff --git a/prior-snapshot-lf/scripts/Install-MaosIndustrial.ps1 b/candidate-scope-lf/scripts/Install-MaosIndustrial.ps1
+index 67e0300..0fd8f4e 100644
+--- a/prior-snapshot-lf/scripts/Install-MaosIndustrial.ps1
++++ b/candidate-scope-lf/scripts/Install-MaosIndustrial.ps1
+@@ -10,12 +10,6 @@ $targetRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+ if ($targetRoot.StartsWith($bundlePath.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+   throw 'InstallRoot must be outside the installer bundle directory.'
+ }
+-if (Test-Path -LiteralPath $targetRoot) {
+-  if (Get-ChildItem -LiteralPath $targetRoot -Force | Select-Object -First 1) { throw "InstallRoot must be empty: $targetRoot" }
+-} else {
+-  New-Item -ItemType Directory -Path $targetRoot | Out-Null
+-}
+-
+ $manifestPath = Join-Path $bundlePath 'bundle-manifest.json'
+ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+ if ($manifest.schemaVersion -ne 1 -or $manifest.sourceRevision -notmatch '^[0-9a-f]{40}$' -or $manifest.sourceDeltaSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Unsupported or malformed bundle manifest.' }
+@@ -48,6 +42,7 @@ if ([int]$Matches[1] -lt 9) { throw "npm 9 or newer is required for lockfileVers
+ 
+ $entries = & $tar.Source -tzf $archivePath
+ if ($LASTEXITCODE -ne 0 -or $entries.Count -eq 0) { throw 'The npm package archive is invalid or empty.' }
++$longestArchivePath = 0
+ foreach ($entry in $entries) {
+   $normalized = $entry.Replace('\', '/')
+   if (-not $normalized.StartsWith('package/', [System.StringComparison]::Ordinal) -or
+@@ -55,9 +50,48 @@ foreach ($entry in $entries) {
+       ($normalized.Split('/') -contains '..')) {
+     throw "Refusing unsafe package archive entry: $entry"
+   }
++  if ($normalized -eq 'package/') { continue }
++  $relativeEntry = $normalized.Substring('package/'.Length).Replace('/', '\')
++  $projectedEntry = Join-Path (Join-Path $targetRoot 'app') $relativeEntry
++  if ($projectedEntry.Length -gt $longestArchivePath) { $longestArchivePath = $projectedEntry.Length }
+ }
+ 
+ $appRoot = Join-Path $targetRoot 'app'
++$desktopRoot = Join-Path $appRoot 'desktop'
++$lockPathProbe = @'
++const fs = require('fs');
++const path = require('path');
++const cp = require('child_process');
++const appLock = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
++const desktopText = cp.execFileSync(process.argv[5], ['-xOf', process.argv[2], 'package/desktop/package-lock.json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
++const desktopLock = JSON.parse(desktopText);
++function longest(lock, base) {
++  let max = 0;
++  for (const relative of Object.keys(lock.packages || {})) {
++    if (!relative.startsWith('node_modules/')) continue;
++    const candidate = path.join(base, ...relative.split('/'), 'package.json');
++    max = Math.max(max, candidate.length);
++  }
++  return max;
++}
++process.stdout.write(JSON.stringify({ app: longest(appLock, process.argv[3]), desktop: longest(desktopLock, process.argv[4]) }));
++'@
++$lockPathLengths = & $node.Source -e $lockPathProbe $lockPath $archivePath $appRoot $desktopRoot $tar.Source
++if ($LASTEXITCODE -ne 0) { throw 'Could not inspect pinned lockfile paths before installation.' }
++try { $lockedPaths = $lockPathLengths | ConvertFrom-Json } catch { throw 'Could not parse pinned lockfile path lengths before installation.' }
++$longestLockedPath = [Math]::Max([int]$lockedPaths.app, [int]$lockedPaths.desktop)
++$electronExe = Join-Path $desktopRoot 'node_modules\electron\dist\electron.exe'
++$longestPlannedPath = [Math]::Max($longestArchivePath, [Math]::Max($longestLockedPath, $electronExe.Length))
++if ($longestPlannedPath -ge 240) {
++  throw "InstallRoot path is too long for this Windows bootstrap (projected file path is $longestPlannedPath characters; limit is 239). Choose a shorter destination. No install files were written."
++}
++
++if (Test-Path -LiteralPath $targetRoot) {
++  if (Get-ChildItem -LiteralPath $targetRoot -Force | Select-Object -First 1) { throw "InstallRoot must be empty: $targetRoot" }
++} else {
++  New-Item -ItemType Directory -Path $targetRoot | Out-Null
++}
++
+ New-Item -ItemType Directory -Path $appRoot | Out-Null
+ & $tar.Source -xzf $archivePath -C $appRoot --strip-components=1
+ if ($LASTEXITCODE -ne 0) { throw 'Could not extract the npm package archive.' }
+@@ -80,13 +114,17 @@ try {
+   if ($LASTEXITCODE -ne 0) { throw "Pinned Electron dependency install failed (exit $LASTEXITCODE)." }
+ } finally { Pop-Location }
+ 
+-$electronExe = Join-Path $appRoot 'desktop/node_modules/electron/dist/electron.exe'
+ $electronInstall = Join-Path $appRoot 'desktop/node_modules/electron/install.js'
+ if (-not (Test-Path -LiteralPath $electronInstall -PathType Leaf)) { throw 'Pinned Electron package is missing its install script.' }
+ Push-Location (Join-Path $appRoot 'desktop')
++$electronLogRoot = Join-Path $env:TEMP ('maos-electron-install-' + [guid]::NewGuid().ToString('N'))
++New-Item -ItemType Directory -Path $electronLogRoot | Out-Null
+ try {
+-  & $node.Source $electronInstall
+-  if ($LASTEXITCODE -ne 0) { throw "Pinned Electron runtime download failed (exit $LASTEXITCODE); check network access to the configured Electron release host." }
++  try {
++    # Capture native stderr so PowerShell does not treat it as a script error.
++    $electronDownload = Start-Process -FilePath $node.Source -ArgumentList ('"' + $electronInstall + '"') -WorkingDirectory (Join-Path $appRoot 'desktop') -NoNewWindow -Wait -PassThru -RedirectStandardOutput (Join-Path $electronLogRoot 'stdout.log') -RedirectStandardError (Join-Path $electronLogRoot 'stderr.log')
++    if ($electronDownload.ExitCode -ne 0) { throw "Pinned Electron runtime download failed (exit $($electronDownload.ExitCode)); check network access to the configured Electron release host." }
++  } finally { Remove-Item -LiteralPath $electronLogRoot -Recurse -Force }
+ } finally { Pop-Location }
+ 
+ if (-not (Test-Path -LiteralPath $electronExe -PathType Leaf)) { throw 'Pinned Electron install completed without its Windows runtime binary.' }
+diff --git a/prior-snapshot-lf/src/cli/doctor.ts b/candidate-scope-lf/src/cli/doctor.ts
+index fa50f76..adb7ce5 100644
+--- a/prior-snapshot-lf/src/cli/doctor.ts
++++ b/candidate-scope-lf/src/cli/doctor.ts
+@@ -21,6 +21,7 @@ import { RuntimeFactory, CredentialCheckResult } from '../backends/factory';
+ import { AgentRuntimeConfig } from '../backends/runtime';
+ import { ProviderConfig } from '../backends/provider';
+ import { engineHealth, getDefaultEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
++import { resolveProjectGitContext } from '../utils/project-git-context';
+ 
+ interface DiagnosticResult {
+   label: string;
+@@ -35,8 +36,8 @@ export interface DoctorReport {
+   checks: DiagnosticResult[];
+ }
+ 
+-export async function runDoctor(): Promise<DoctorReport> {
+-  const cwd = process.cwd();
++export async function runDoctor(projectRoot: string = process.cwd()): Promise<DoctorReport> {
++  const cwd = path.resolve(projectRoot);
+   const results: DiagnosticResult[] = [];
+ 
+   console.log(chalk.bold.cyan('\n🩺 MAOS Doctor — Environment Diagnostics'));
+@@ -207,84 +208,25 @@ export async function runDoctor(): Promise<DoctorReport> {
+   }
+ 
+   // ── 6. Git Status ──
+-  try {
+-    const isInsideWorkTree =
+-      child_process
+-        .execSync('git rev-parse --is-inside-work-tree', {
+-          cwd,
+-          encoding: 'utf-8',
+-          stdio: ['pipe', 'pipe', 'pipe'],
+-        })
+-        .trim() === 'true';
+-
+-    if (isInsideWorkTree) {
+-      let branch = 'unknown';
+-      try {
+-        // Try symbolic-ref first to support newborn repositories (no commits)
+-        branch = child_process
+-          .execSync('git symbolic-ref --short HEAD', {
+-            cwd,
+-            encoding: 'utf-8',
+-            stdio: ['pipe', 'pipe', 'pipe'],
+-          })
+-          .trim();
+-      } catch {
+-        try {
+-          branch = child_process
+-            .execSync('git rev-parse --abbrev-ref HEAD', {
+-              cwd,
+-              encoding: 'utf-8',
+-              stdio: ['pipe', 'pipe', 'pipe'],
+-            })
+-            .trim();
+-        } catch {
+-          branch = 'main (no commits yet)';
+-        }
+-      }
+-
+-      let gitStatus = 'clean';
+-      let changedFiles = 0;
+-      try {
+-        const statusOutput = child_process
+-          .execSync('git status --porcelain', {
+-            cwd,
+-            encoding: 'utf-8',
+-            stdio: ['pipe', 'pipe', 'pipe'],
+-          })
+-          .trim();
+-        if (statusOutput) {
+-          changedFiles = statusOutput.split('\n').length;
+-          gitStatus = `${changedFiles} uncommitted changes`;
+-        }
+-      } catch {
+-        /* ignore */
+-      }
+-
+-      // Uncommitted changes are normal during development — not a warning.
+-      // Only flag as warn if there is no git at all.
+-      results.push({
+-        label: 'Git',
+-        status: 'pass',
+-        required: false,
+-        detail:
+-          gitStatus === 'clean'
+-            ? `Branch: ${branch} — clean working tree`
+-            : `Branch: ${branch} — ${changedFiles} file${changedFiles !== 1 ? 's' : ''} modified`,
+-      });
+-    } else {
+-      results.push({
+-        label: 'Git',
+-        status: 'warn',
+-        required: false,
+-        detail: 'Not inside a git worktree',
+-      });
+-    }
+-  } catch {
++  const gitContext = resolveProjectGitContext(cwd);
++  if (gitContext.kind === 'repository') {
++    const { branch, changedFiles } = gitContext;
++    results.push({
++      label: 'Git',
++      status: 'pass',
++      required: false,
++      detail: changedFiles === 0
++        ? `Branch: ${branch} — clean working tree`
++        : `Branch: ${branch} — ${changedFiles} file${changedFiles !== 1 ? 's' : ''} modified`,
++    });
++  } else {
+     results.push({
+       label: 'Git',
+       status: 'warn',
+       required: false,
+-      detail: 'Git not found — install git for branch isolation',
++      detail: gitContext.kind === 'none'
++        ? 'No project repository'
++        : 'Git status unavailable — verify Git is installed and the project root is accessible',
+     });
+   }
+ 
+diff --git a/prior-snapshot-lf/src/cli/index.ts b/candidate-scope-lf/src/cli/index.ts
+index 551c7b6..a2eceac 100644
+--- a/prior-snapshot-lf/src/cli/index.ts
++++ b/candidate-scope-lf/src/cli/index.ts
+@@ -246,7 +246,7 @@ program
+   .description('Run environment and connectivity diagnostics')
+   .action(async () => {
+     try {
+-      const result = await runDoctor();
++      const result = await runDoctor(process.cwd());
+       process.exitCode = result.exitCode;
+     } catch (err: any) {
+       console.error(chalk.red(`Error: ${err.message}`));
+@@ -259,7 +259,7 @@ program
+   .command('repl')
+   .description('Launch the interactive MAOS REPL')
+   .action(() => {
+-    runRepl();
++    runRepl(process.cwd());
+   });
+ 
+ // ─── maos replay ─────────────────────────────────────────────
+@@ -920,7 +920,7 @@ industrial
+ 
+ // Default action: launch interactive REPL when no subcommand is provided
+ program.action(() => {
+-  runRepl();
++  runRepl(process.cwd());
+ });
+ 
+ // Parse
+diff --git a/prior-snapshot-lf/src/cli/repl.ts b/candidate-scope-lf/src/cli/repl.ts
+index 9a07c12..c012ed6 100644
+--- a/prior-snapshot-lf/src/cli/repl.ts
++++ b/candidate-scope-lf/src/cli/repl.ts
+@@ -18,6 +18,7 @@ import { EventStore } from '../core/event-store';
+ import { getRetryQueueStatus, getDeadLetterQueue } from '../core/retry-queue';
+ import { MemoryStore } from '../core/context-memory';
+ import { TaskService } from '../service/task-service';
++import { resolveProjectGitContext } from '../utils/project-git-context';
+ 
+ const VERSION = '0.3.0';
+ 
+@@ -57,9 +58,9 @@ interface ModelInfo {
+   tier: string;
+ }
+ 
+-function getModelInfo(): ModelInfo {
++function getModelInfo(projectRoot: string = process.cwd()): ModelInfo {
+   try {
+-    const cfgPath = getConfigPath();
++    const cfgPath = getConfigPath(projectRoot);
+     if (fs.existsSync(cfgPath)) {
+       const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+       const agent = cfg.agents?.find((a: any) => a.role === 'planner') || cfg.agents?.[0];
+@@ -77,18 +78,9 @@ function getModelInfo(): ModelInfo {
+   return { provider: 'freemodel', model: 'gpt-5.4', tier: 'low' };
+ }
+ 
+-function getGitBranch(): string {
+-  try {
+-    const cp = require('child_process');
+-    return cp
+-      .execSync('git rev-parse --abbrev-ref HEAD', {
+-        encoding: 'utf-8',
+-        stdio: ['pipe', 'pipe', 'pipe'],
+-      })
+-      .trim();
+-  } catch {
+-    return '';
+-  }
++function getGitBranch(projectRoot: string): string {
++  const context = resolveProjectGitContext(projectRoot);
++  return context.kind === 'repository' ? context.branch : '';
+ }
+ 
+ interface FleetAgent {
+@@ -99,9 +91,9 @@ interface FleetAgent {
+   enabled: boolean;
+ }
+ 
+-function getFleetAgents(): FleetAgent[] {
++function getFleetAgents(projectRoot: string = process.cwd()): FleetAgent[] {
+   try {
+-    const cwd = process.cwd();
++    const cwd = projectRoot;
+     const configPath = getConfigPath(cwd);
+     if (!fs.existsSync(configPath)) return [];
+     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+@@ -150,14 +142,14 @@ function getFleetAgents(): FleetAgent[] {
+ 
+ // ── Screen Renderers ─────────────────────────────────────────
+ 
+-function drawWelcome(): void {
++function drawWelcome(projectRoot: string = process.cwd()): void {
+   console.clear();
+   const W = process.stdout.columns || 80;
+   const H = process.stdout.rows || 24;
+-  const info = getModelInfo();
+-  const branch = getGitBranch();
+-  const cwd = process.cwd();
+-  const agents = getFleetAgents();
++  const info = getModelInfo(projectRoot);
++  const branch = getGitBranch(projectRoot);
++  const cwd = projectRoot;
++  const agents = getFleetAgents(projectRoot);
+ 
+   // ── Color Palette ──
+   const slate = chalk.hex('#64748B');
+@@ -302,7 +294,7 @@ function drawWelcome(): void {
+ // Shown after every command so MAOS identity never disappears.
+ // Replaces the full welcome screen between commands.
+ 
+-function drawCompactHeader(): void {
++function drawCompactHeader(projectRoot: string = process.cwd()): void {
+   console.clear();
+ 
+   const W = process.stdout.columns || 80;
+@@ -311,9 +303,9 @@ function drawCompactHeader(): void {
+   const emerald = chalk.hex('#10B981');
+ 
+   // Collect live state
+-  const info = getModelInfo();
+-  const branch = getGitBranch();
+-  const agents = getFleetAgents();
++  const info = getModelInfo(projectRoot);
++  const branch = getGitBranch(projectRoot);
++  const agents = getFleetAgents(projectRoot);
+ 
+   // ── Row 1: Brand wordmark + context ──────────────────────
+   // "MAOS" in two-tone, then separator dots and live context
+@@ -340,8 +332,8 @@ function drawCompactHeader(): void {
+   process.stdout.write('\n');
+ }
+ 
+-function drawOutput(cmd: string, lines: string[]): void {
+-  drawCompactHeader();
++function drawOutput(cmd: string, lines: string[], projectRoot: string = process.cwd()): void {
++  drawCompactHeader(projectRoot);
+   const pink = chalk.hex('#EC4899');
+   process.stdout.write(`  ${pink('❯')} ${chalk.bold.white(cmd)}\n`);
+   process.stdout.write('\n');
+@@ -634,8 +626,9 @@ function parseArgs(input: string): { positional: string; flags: Record<string, s
+ 
+ // ── Main REPL ────────────────────────────────────────────────
+ 
+-export function runRepl(): void {
+-  const cwd = process.cwd();
++export function runRepl(projectRoot: string = process.cwd()): void {
++  const cwd = path.resolve(projectRoot);
++  const showOutput = (cmd: string, lines: string[]) => drawOutput(cmd, lines, cwd);
+ 
+   if (!isMaosInitialized(cwd)) {
+     console.log(chalk.red('❌ MAOS is not initialized. Run `maos init` first.'));
+@@ -643,7 +636,7 @@ export function runRepl(): void {
+   }
+ 
+   // Draw the beautiful welcome screen
+-  drawWelcome();
++  drawWelcome(cwd);
+ 
+   // All available commands for tab completion
+   const ALL_COMMANDS = [
+@@ -704,7 +697,7 @@ export function runRepl(): void {
+     let raw = input.trim();
+ 
+     if (!raw) {
+-      drawWelcome();
++      drawWelcome(cwd);
+       rl.prompt();
+       return;
+     }
+@@ -731,7 +724,7 @@ export function runRepl(): void {
+         // ── Navigation ──────────────────────────────────────
+         case 'clear':
+         case 'cls':
+-          drawWelcome();
++          drawWelcome(cwd);
+           break;
+ 
+         case 'exit':
+@@ -750,7 +743,7 @@ export function runRepl(): void {
+           const a = chalk.hex('#F59E0B');
+           const g = chalk.hex('#64748B');
+ 
+-          drawOutput('help', [
++          showOutput('help', [
+             `  ${v('━━━ Fleet Operations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')}`,
+             '',
+             `    ${chalk.bold.cyan('status')}                    ${g('Live fleet status grid & task counts')}`,
+@@ -818,7 +811,7 @@ export function runRepl(): void {
+         // ── Fleet Operations ────────────────────────────────
+         case 'status':
+         case 's':
+-          drawOutput('status', await capture(() => runStatus()));
++          showOutput('status', await capture(() => runStatus()));
+           break;
+ 
+         case 'start': {
+@@ -826,20 +819,20 @@ export function runRepl(): void {
+           const { flags } = parseArgs(restOfInput);
+           if (flags.provider || flags.p) opts.provider = flags.provider || flags.p;
+           if (flags.force || flags.f) opts.force = true;
+-          drawOutput('start', await capture(() => runStart(opts)));
++          showOutput('start', await capture(() => runStart(opts)));
+           break;
+         }
+ 
+         case 'pool': {
+           if (!restOfInput) {
+             // No flags — show pool status
+-            drawOutput('pool', await capture(() => runPool({} as PoolOptions)));
++            showOutput('pool', await capture(() => runPool({} as PoolOptions)));
+           } else {
+             const { flags } = parseArgs(restOfInput);
+             const opts: PoolOptions = {};
+             if (flags.enable) opts.enable = flags.enable;
+             if (flags.disable) opts.disable = flags.disable;
+-            drawOutput('pool', await capture(() => runPool(opts)));
++            showOutput('pool', await capture(() => runPool(opts)));
+           }
+           break;
+         }
+@@ -848,7 +841,7 @@ export function runRepl(): void {
+         case 'task': {
+           const { positional, flags } = parseArgs(restOfInput);
+           if (!positional) {
+-            drawOutput('task', [
++            showOutput('task', [
+               chalk.yellow('  Usage: task "description" [--agent <id>] [--complexity <level>]'),
+               '',
+               chalk.gray('  Example: task "Add user authentication" --agent DEV --complexity high'),
+@@ -861,21 +854,21 @@ export function runRepl(): void {
+           if (flags.capabilities || flags.c) taskOpts.capabilities = flags.capabilities || flags.c;
+           if (flags.complexity) taskOpts.complexity = flags.complexity;
+           if (flags.category) taskOpts.category = flags.category;
+-          drawOutput(`task "${positional}"`, await capture(() => runTask(positional, taskOpts)));
++          showOutput(`task "${positional}"`, await capture(() => runTask(positional, taskOpts)));
+           break;
+         }
+ 
+         case 'plan': {
+           const { positional } = parseArgs(restOfInput);
+           if (!positional) {
+-            drawOutput('plan', [
++            showOutput('plan', [
+               chalk.yellow('  Usage: plan "goal"'),
+               '',
+               chalk.gray('  Example: plan "Build a REST API with authentication"'),
+             ]);
+             break;
+           }
+-          drawOutput(`plan "${positional}"`, await capture(() => runPlan(positional, { yes: true })));
++          showOutput(`plan "${positional}"`, await capture(() => runPlan(positional, { yes: true })));
+           break;
+         }
+ 
+@@ -884,29 +877,29 @@ export function runRepl(): void {
+         case 'obj': {
+           const objArgs = restOfInput.split(/\s+/).filter(Boolean);
+           const { runObjective } = require('./objective');
+-          drawOutput('objective', await capture(() => runObjective(objArgs)));
++          showOutput('objective', await capture(() => runObjective(objArgs)));
+           break;
+         }
+ 
+         case 'queue':
+-          drawOutput('queue', await capture(() => runQueue()));
++          showOutput('queue', await capture(() => runQueue()));
+           break;
+ 
+         case 'clean':
+-          drawOutput('clean', await capture(() => runClean()));
++          showOutput('clean', await capture(() => runClean()));
+           break;
+ 
+         // ── Intelligence ────────────────────────────────────
+         case 'brain': {
+           const action = restOfInput.split(/\s+/)[0] || 'status';
+-          drawOutput(`brain ${action}`, await capture(() => runBrain(action)));
++          showOutput(`brain ${action}`, await capture(() => runBrain(action)));
+           break;
+         }
+ 
+         case 'memory':
+         case 'mem': {
+           const memArgs = restOfInput.split(/\s+/).filter(Boolean);
+-          drawOutput('memory', await capture(() => runMemory(memArgs)));
++          showOutput('memory', await capture(() => runMemory(memArgs)));
+           break;
+         }
+ 
+@@ -917,20 +910,20 @@ export function runRepl(): void {
+           const { flags } = parseArgs(restOfInput);
+           if (flags.n || flags.lines) logsOpts.lines = flags.n || flags.lines;
+           if (flags.agent || flags.a) (logsOpts as any).agent = flags.agent || flags.a;
+-          drawOutput('logs', await capture(() => runLogs(logsOpts)));
++          showOutput('logs', await capture(() => runLogs(logsOpts)));
+           break;
+         }
+ 
+         case 'replay': {
+           const replayArgs = restOfInput.split(/\s+/).filter(Boolean);
+-          drawOutput('replay', await capture(() => runReplay(replayArgs)));
++          showOutput('replay', await capture(() => runReplay(replayArgs)));
+           break;
+         }
+ 
+         // ── System ──────────────────────────────────────────
+         case 'doctor':
+         case 'doc':
+-          drawOutput('doctor', await capture(async () => { await runDoctor(); }));
++          showOutput('doctor', await capture(async () => { await runDoctor(cwd); }));
+           break;
+ 
+         case 'login': {
+@@ -942,7 +935,7 @@ export function runRepl(): void {
+             // Allow shorthand: login copilot
+             loginOpts.cli = restOfInput.trim();
+           }
+-          drawOutput('login', await capture(() => runLogin(loginOpts)));
++          showOutput('login', await capture(() => runLogin(loginOpts)));
+           break;
+         }
+ 
+@@ -950,17 +943,17 @@ export function runRepl(): void {
+         case 'config': {
+           const configArgs = restOfInput.split(/\s+/).filter(Boolean);
+           const { runConfigure } = require('./configure');
+-          drawOutput('configure', await capture(() => runConfigure(configArgs)));
++          showOutput('configure', await capture(() => runConfigure(configArgs)));
+           break;
+         }
+ 
+         case 'dashboard':
+         case 'dash':
+-          drawOutput('dashboard', await capture(() => runDashboard()));
++          showOutput('dashboard', await capture(() => runDashboard()));
+           break;
+ 
+         case 'init':
+-          drawOutput('init', await capture(() => runInit()));
++          showOutput('init', await capture(() => runInit()));
+           break;
+ 
+         // ── Default: Natural Language Goal ──────────────────
+@@ -971,9 +964,9 @@ export function runRepl(): void {
+             const goal = quotedMatch[1];
+             const amber = chalk.hex('#F59E0B');
+             process.stdout.write(`\n  ${amber('⟳')} Decomposing: ${chalk.bold.white(`"${goal}"`)}\n\n`);
+-            drawOutput(`plan "${goal}"`, await capture(() => runPlan(goal, { yes: true })));
++            showOutput(`plan "${goal}"`, await capture(() => runPlan(goal, { yes: true })));
+           } else {
+-            drawOutput(raw, [
++            showOutput(raw, [
+               chalk.yellow(`  Unknown command: "${firstWord}"`),
+               '',
+               chalk.gray('  Type ') + chalk.bold.cyan('help') + chalk.gray(' to see all available commands.'),
+@@ -984,7 +977,7 @@ export function runRepl(): void {
+         }
+       }
+     } catch (err: any) {
+-      drawOutput(raw, [chalk.red(`  Error: ${err.message}`)]);
++      showOutput(raw, [chalk.red(`  Error: ${err.message}`)]);
+     }
+ 
+     rl.prompt();
+diff --git a/candidate-scope-lf/src/utils/project-git-context.ts b/candidate-scope-lf/src/utils/project-git-context.ts
+new file mode 100644
+index 0000000..1abce8a
+--- /dev/null
++++ b/candidate-scope-lf/src/utils/project-git-context.ts
+@@ -0,0 +1,59 @@
++import * as childProcess from 'node:child_process';
++import * as fs from 'node:fs';
++import * as path from 'node:path';
++
++export type ProjectGitContext =
++  | { kind: 'repository'; branch: string; changedFiles: number }
++  | { kind: 'none' }
++  | { kind: 'unavailable' };
++
++export function resolveProjectGitContext(projectRoot: string): ProjectGitContext {
++  let root: string;
++  try {
++    root = fs.realpathSync.native(path.resolve(projectRoot));
++  } catch {
++    return { kind: 'none' };
++  }
++
++  const env = Object.fromEntries(
++    Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
++  ) as NodeJS.ProcessEnv;
++  env.LC_ALL = 'C';
++  env.LANG = 'C';
++
++  const git = (args: string[]): string => childProcess.execFileSync(
++    'git',
++    ['--no-optional-locks', '-C', root, ...args],
++    { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, windowsHide: true, env },
++  );
++
++  let repositoryRoot: string;
++  try {
++    repositoryRoot = fs.realpathSync.native(git(['rev-parse', '--show-toplevel']).trim());
++  } catch (error: any) {
++    if (error?.code === 'ENOENT' || error?.code === 'EACCES') return { kind: 'unavailable' };
++    if (String(error?.stderr || '').includes('not a git repository')) return { kind: 'none' };
++    return { kind: 'unavailable' };
++  }
++
++  // A project nested inside another repository is not itself a repository root.
++  if (path.relative(root, repositoryRoot) !== '') return { kind: 'none' };
++
++  let branch = 'unknown';
++  try {
++    branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD']).trim();
++  } catch {
++    try {
++      branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
++    } catch {
++      branch = 'main (no commits yet)';
++    }
++  }
++
++  try {
++    const status = git(['status', '--porcelain']).trim();
++    return { kind: 'repository', branch, changedFiles: status ? status.split('\n').length : 0 };
++  } catch {
++    return { kind: 'unavailable' };
++  }
++}
+diff --git a/candidate-scope-lf/tests/cli/project-git-context.test.ts b/candidate-scope-lf/tests/cli/project-git-context.test.ts
+new file mode 100644
+index 0000000..575ef7a
+--- /dev/null
++++ b/candidate-scope-lf/tests/cli/project-git-context.test.ts
+@@ -0,0 +1,172 @@
++import * as childProcess from 'node:child_process';
++import * as fs from 'node:fs';
++import * as os from 'node:os';
++import * as path from 'node:path';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++
++const gitCalls = vi.hoisted(() => ({ calls: [] as any[] }));
++
++vi.mock('node:child_process', async (importOriginal) => {
++  const actual = await importOriginal<typeof import('node:child_process')>();
++  return {
++    ...actual,
++    execFileSync: vi.fn((...args: any[]) => {
++      gitCalls.calls.push(args);
++      return (actual.execFileSync as any)(...args);
++    }),
++  };
++});
++
++import { runDoctor } from '../../src/cli/doctor';
++import { resolveProjectGitContext } from '../../src/utils/project-git-context';
++
++const temporaryRoots: string[] = [];
++let originalCwd = '';
++const cleanEnv = () => Object.fromEntries(
++  Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
++) as NodeJS.ProcessEnv;
++
++function makeRoot(): string {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos git context '));
++  temporaryRoots.push(root);
++  return root;
++}
++
++function git(args: string[], cwd?: string): string {
++  const result = childProcess.spawnSync('git', args, { cwd, env: cleanEnv(), encoding: 'utf8' });
++  if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
++  return result.stdout.trim();
++}
++
++function createRepository(root: string, branch: string): void {
++  fs.mkdirSync(root, { recursive: true });
++  git(['init', root]);
++  git(['-C', root, 'config', 'user.name', 'MAOS Temporary Test']);
++  git(['-C', root, 'config', 'user.email', 'maos-temporary-test@example.invalid']);
++  fs.writeFileSync(path.join(root, 'synthetic.txt'), 'temporary test content\n');
++  git(['-C', root, 'add', 'synthetic.txt']);
++  git(['-C', root, '-c', 'commit.gpgsign=false', 'commit', '-m', 'synthetic test repository']);
++  git(['-C', root, 'branch', '-M', branch]);
++}
++
++function addProjectConfig(root: string): void {
++  const maos = path.join(root, '.maos');
++  fs.mkdirSync(maos, { recursive: true });
++  fs.writeFileSync(path.join(maos, 'maos.config.json'), JSON.stringify({
++    schemaVersion: 1,
++    projectName: 'temporary-git-boundary-test',
++    providers: {},
++    agents: [],
++  }));
++}
++
++afterEach(() => {
++  if (originalCwd) process.chdir(originalCwd);
++  originalCwd = '';
++  vi.restoreAllMocks();
++  vi.unstubAllEnvs();
++  gitCalls.calls.length = 0;
++  for (const root of temporaryRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
++});
++
++describe('explicit project Git context', () => {
++  it('does not query branch or status when a non-repository child sits under a repository', async () => {
++    const temp = makeRoot();
++    const parent = path.join(temp, 'parent repo');
++    const child = path.join(parent, 'selected project');
++    const ambient = path.join(temp, 'unrelated ambient directory');
++    createRepository(parent, 'synthetic-parent-branch');
++    fs.mkdirSync(child);
++    fs.mkdirSync(ambient);
++    addProjectConfig(child);
++
++    gitCalls.calls.length = 0;
++    expect(resolveProjectGitContext(child)).toEqual({ kind: 'none' });
++    const gitArgs = gitCalls.calls.map(([, args]) => (args as string[]).join(' '));
++    expect(gitArgs).toHaveLength(1);
++    expect(gitArgs[0]).toContain('rev-parse --show-toplevel');
++    expect(gitArgs.join('\n')).not.toMatch(/symbolic-ref|status --porcelain/);
++
++    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
++    originalCwd = process.cwd();
++    process.chdir(ambient);
++    const report = await runDoctor(child);
++    const gitCheck = report.checks.find((check) => check.label === 'Git');
++    expect(report.checks.find((check) => check.label === 'Config')?.status).toBe('pass');
++    expect(gitCheck?.detail).toBe('No project repository');
++    expect(log.mock.calls.flat().join('\n')).not.toContain('synthetic-parent-branch');
++    expect(gitCalls.calls.map(([, args]) => (args as string[]).join(' ')).some((args) => args.includes('status --porcelain'))).toBe(false);
++  });
++
++  it('reports branch and changes for a normal repository whose path contains spaces', () => {
++    const root = path.join(makeRoot(), 'normal repository with spaces');
++    createRepository(root, 'selected-project-branch');
++    fs.writeFileSync(path.join(root, 'changed.txt'), 'changed\n');
++
++    const result = resolveProjectGitContext(root);
++    expect(root).toContain(' ');
++    expect(result).toEqual({ kind: 'repository', branch: 'selected-project-branch', changedFiles: 1 });
++  });
++
++  it('supports a Git worktree whose .git entry is a file', () => {
++    const temp = makeRoot();
++    const source = path.join(temp, 'source repository');
++    const worktree = path.join(temp, 'selected worktree with spaces');
++    createRepository(source, 'source-branch');
++    git(['-C', source, 'worktree', 'add', '-b', 'selected-worktree-branch', worktree]);
++
++    expect(fs.statSync(path.join(worktree, '.git')).isFile()).toBe(true);
++    expect(resolveProjectGitContext(worktree)).toEqual({ kind: 'repository', branch: 'selected-worktree-branch', changedFiles: 0 });
++  });
++
++  it('ignores inherited Git directory and work-tree overrides', () => {
++    const temp = makeRoot();
++    const selected = path.join(temp, 'selected repository');
++    const hostile = path.join(temp, 'other repository');
++    createRepository(selected, 'selected-branch');
++    createRepository(hostile, 'redirected-parent-branch');
++    vi.stubEnv('GIT_DIR', path.join(hostile, '.git'));
++    vi.stubEnv('GIT_WORK_TREE', hostile);
++    vi.stubEnv('GIT_INDEX_FILE', path.join(hostile, 'redirected.index'));
++
++    gitCalls.calls.length = 0;
++    expect(resolveProjectGitContext(selected)).toEqual({ kind: 'repository', branch: 'selected-branch', changedFiles: 0 });
++    expect(gitCalls.calls.every(([, , options]) => !Object.keys((options as any).env || {}).some((name) => /^GIT_/i.test(name)))).toBe(true);
++  });
++
++  it('keeps the REPL on its explicit child project instead of the ambient parent repository', () => {
++    const temp = makeRoot();
++    const parent = path.join(temp, 'parent repository');
++    const child = path.join(parent, 'child project with spaces');
++    createRepository(parent, 'synthetic-parent-branch');
++    fs.mkdirSync(child);
++    addProjectConfig(child);
++
++    const replModule = path.join(process.cwd(), 'src', 'cli', 'repl.ts');
++    const tsNodeRegister = require.resolve('ts-node/register/transpile-only');
++    const script = 'require(process.argv[1]).runRepl(process.argv[2]);';
++    const result = childProcess.spawnSync(process.execPath, ['-r', tsNodeRegister, '-e', script, replModule, child], {
++      cwd: parent,
++      env: {
++        PATH: process.env.PATH,
++        SystemRoot: process.env.SystemRoot,
++        WINDIR: process.env.WINDIR,
++        TEMP: process.env.TEMP,
++        TMP: process.env.TMP,
++        NO_COLOR: '1',
++        TS_NODE_PROJECT: path.join(process.cwd(), 'tsconfig.json'),
++        TS_NODE_TRANSPILE_ONLY: 'true',
++        GIT_DIR: path.join(parent, '.git'),
++        GIT_WORK_TREE: parent,
++      },
++      input: 'exit\n',
++      encoding: 'utf8',
++      timeout: 15000,
++      windowsHide: true,
++    });
++
++    expect(result.status).toBe(0);
++    expect(result.stderr).toBe('');
++    expect(result.stdout).not.toContain('synthetic-parent-branch');
++  });
++});
+diff --git a/prior-snapshot-lf/tests/industrial/package-runtime-assets.test.ts b/candidate-scope-lf/tests/industrial/package-runtime-assets.test.ts
+index e136021..8aa06d4 100644
+--- a/prior-snapshot-lf/tests/industrial/package-runtime-assets.test.ts
++++ b/candidate-scope-lf/tests/industrial/package-runtime-assets.test.ts
+@@ -86,7 +86,8 @@ describe('Industrial npm runtime assets', () => {
+     expect(fs.existsSync(path.join(PROJECT_ROOT, 'scripts/New-MaosIndustrialInstallBundle.ps1'))).toBe(true);
+     const installer = fs.readFileSync(path.join(PROJECT_ROOT, 'scripts/Install-MaosIndustrial.ps1'), 'utf8');
+     expect(installer).toContain("desktop/node_modules/electron/install.js");
+-    expect(installer).toContain('$node.Source $electronInstall');
++    expect(installer).toContain('Start-Process -FilePath $node.Source');
++    expect(installer).toContain('-RedirectStandardError');
+     expect(desktop.dependencies.electron).toBe('45.0.0');
+     expect(desktop.devDependencies.playwright).toBe('1.64.1');
+     expect(desktopLock.packages[''].dependencies.electron).toBe('45.0.0');

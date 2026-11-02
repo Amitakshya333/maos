@@ -1,0 +1,6 @@
+{
+  "sourceHarnessSha256": "59e963cabdbb0e02f1593641e83eee1caa382c6dcc8823ee8658e79fd653d272",
+  "adaptedHarnessSha256": "c6299f75720a87a8623b91d9c1756c0839863bd7829adb3f7c708c103ddc8283",
+  "adaptationPatchSha256": "0b2275a2ff69dcdbc58ea64ecc51145e10c5e5cd9d415394487a753921b6f5db",
+  "change": "After process restart, resume from authoritative Approvals queue; local cockpit banner remains covered by the preceding reload/resume step."
+}

@@ -1,0 +1,7 @@
+COMMAND: npm run typecheck:gui
+EXIT_CODE: 0
+
+
+> maosorch@0.3.0 typecheck:gui
+> tsc -p tsconfig.gui.json --noEmit
+

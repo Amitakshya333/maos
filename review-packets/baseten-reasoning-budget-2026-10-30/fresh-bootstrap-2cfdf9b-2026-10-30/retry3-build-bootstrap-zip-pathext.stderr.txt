@@ -1,0 +1,10 @@
+tar (child): Cannot connect to C: resolve failed
+
+gzip: stdin: unexpected end of file
+/usr/bin/tar: Child returned status 128
+/usr/bin/tar: Error is not recoverable: exiting now
+[31;1mException: [0mC:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-baseten-budget-2cfdf9b-retry3-checkout\scripts\New-MaosIndustrialInstallBundle.ps1:24[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  24 | [0m . STEXITCODE -ne 0) { [36;1mthrow 'Could not list the npm package archive.'[0m }[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCould not list the npm package archive.[0m

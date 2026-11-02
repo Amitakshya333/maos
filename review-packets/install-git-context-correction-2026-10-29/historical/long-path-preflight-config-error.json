@@ -1,0 +1,7 @@
+{
+  "projectedPathCharacters": 240,
+  "installerRejected": true,
+  "message": "You cannot call a method on a null-valued expression.",
+  "installRootCreated": false,
+  "expectedActionableMessage": false
+}

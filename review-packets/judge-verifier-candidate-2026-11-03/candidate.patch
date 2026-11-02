@@ -1,0 +1,1105 @@
+diff --git a/scripts/demonstrate-judge-tamper.js b/scripts/demonstrate-judge-tamper.js
+new file mode 100644
+index 0000000..1f98a40
+--- /dev/null
++++ b/scripts/demonstrate-judge-tamper.js
+@@ -0,0 +1,220 @@
++#!/usr/bin/env node
++/**
++ * MAOS Industrial — Judge Tamper Demonstration
++ *
++ * Demonstrates the "don't trust it — verify it" invariant:
++ * 1. Verifies an authentic judged-run audit export -> PASS
++ * 2. Creates a temporary copy and alters exactly ONE numeric field -> FAIL (Closed)
++ * 3. Reports the exact differing check (hash mismatch from canonical serialization)
++ * 4. Confirms the original export artifact is completely untouched
++ */
++
++const fs = require('fs');
++const path = require('path');
++const crypto = require('crypto');
++const os = require('os');
++
++const { createServiceContainer } = require('../dist/service');
++const { executeJudgedRun, verifyAuditExport } = require('../dist/industrial/judged-run');
++const { INDUSTRIAL_CLI_EXIT } = require('../dist/industrial/industrial-cli');
++
++async function main() {
++  console.log('\n===============================================================');
++  console.log('  MAOS Industrial — Judge Verifier & Tamper Demonstration');
++  console.log('===============================================================\n');
++
++  // Parse CLI args for existing export path
++  let exportPath = null;
++  let projectRoot = path.resolve(__dirname, '..');
++  const args = process.argv.slice(2);
++  for (let i = 0; i < args.length; i++) {
++    if (args[i] === '--export' && args[i + 1]) {
++      exportPath = path.resolve(args[i + 1]);
++      i++;
++    } else if (args[i] === '--project-root' && args[i + 1]) {
++      projectRoot = path.resolve(args[i + 1]);
++      i++;
++    }
++  }
++
++  let cleanupDir = null;
++  if (!exportPath) {
++    console.log('[Setup] No --export specified. Preparing clean isolated project and running T-07 safety audit...');
++    cleanupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-judge-tamper-demo-'));
++    fs.mkdirSync(path.join(cleanupDir, '.maos'), { recursive: true });
++    fs.writeFileSync(
++      path.join(cleanupDir, '.maos', 'maos.config.json'),
++      JSON.stringify({ projectName: 'judge-tamper-demo' }, null, 2),
++    );
++    const demoDir = path.join(cleanupDir, 'demo', 'industrial');
++    fs.mkdirSync(demoDir, { recursive: true });
++    for (const name of [
++      'safety_thresholds.json',
++      'turbine_vibration_log.csv',
++      'maintenance_report.txt',
++      'turbine_inspection_scan.pdf',
++    ]) {
++      fs.copyFileSync(path.join(projectRoot, 'demo', 'industrial', name), path.join(demoDir, name));
++    }
++
++    const services = createServiceContainer(cleanupDir);
++    const runResult = await executeJudgedRun({
++      projectRoot: cleanupDir,
++      services,
++      autoApprove: true,
++      yes: true,
++      json: true,
++    });
++
++    if (!runResult.success || !runResult.auditExportPath) {
++      console.error('Failed to generate baseline judged run for demo:', runResult.message);
++      process.exit(1);
++    }
++
++    exportPath = path.join(cleanupDir, runResult.auditExportPath);
++    projectRoot = cleanupDir;
++    console.log(`[Setup] T-07 judged run complete: ${runResult.runId}\n`);
++  }
++
++  try {
++    // Record original file hash
++    const originalBytes = fs.readFileSync(exportPath);
++    const originalSha256 = crypto.createHash('sha256').update(originalBytes).digest('hex');
++
++    // ─────────────────────────────────────────────────────────────
++    // STEP 1: Verify Original Export
++    // ─────────────────────────────────────────────────────────────
++    console.log('---------------------------------------------------------------');
++    console.log('STEP 1: Verifying Original Authentic Audit Export');
++    console.log('---------------------------------------------------------------');
++    console.log(`Export Path:     ${path.relative(process.cwd(), exportPath)}`);
++    console.log(`Original SHA256: ${originalSha256}`);
++
++    const originalVerification = verifyAuditExport(exportPath, { projectRoot });
++    console.log(`Verification:    ${originalVerification.valid ? 'PASS' : 'FAIL'}`);
++    console.log(`Run ID:          ${originalVerification.runId || 'none'}`);
++    console.log(`Record Count:    ${originalVerification.recordCount}`);
++    console.log(`Latest Hash:     ${originalVerification.latestHash}`);
++    console.log(`Deliverable:     ${originalVerification.deliverablePath || 'none'} (Verified: ${originalVerification.deliverableVerified})`);
++    console.log(`Deliverable SHA: ${originalVerification.deliverableSha256 || 'none'}`);
++
++    if (!originalVerification.valid) {
++      console.error('Original export verification unexpectedly failed!');
++      for (const err of originalVerification.errors) console.error(`  - ${err}`);
++      process.exit(1);
++    }
++    console.log('\n>> RESULT: Original export PASSED all cryptographic and evidence checks.\n');
++
++    // ─────────────────────────────────────────────────────────────
++    // STEP 2: Create Isolated Temporary Copy
++    // ─────────────────────────────────────────────────────────────
++    const tempCopyPath = path.join(os.tmpdir(), `tampered-export-${Date.now()}.json`);
++    console.log('---------------------------------------------------------------');
++    console.log('STEP 2: Creating Temporary Isolated Copy for Tamper Demonstration');
++    console.log('---------------------------------------------------------------');
++    console.log(`Copy Path:       ${tempCopyPath}`);
++
++    const exportData = JSON.parse(originalBytes.toString('utf8'));
++
++    // ─────────────────────────────────────────────────────────────
++    // STEP 3: Alter Exactly One Numeric Field
++    // ─────────────────────────────────────────────────────────────
++    console.log('---------------------------------------------------------------');
++    console.log('STEP 3: Altering Exactly One Numeric Field in Copy');
++    console.log('---------------------------------------------------------------');
++
++    // Locate a record with numeric payload data
++    let tamperedRecordIndex = -1;
++    let tamperedFieldName = '';
++    let oldValue = null;
++    let newValue = null;
++
++    for (let i = 0; i < exportData.records.length; i++) {
++      const rec = exportData.records[i];
++      if (rec.data && typeof rec.data === 'object') {
++        for (const [key, val] of Object.entries(rec.data)) {
++          if (typeof val === 'number') {
++            tamperedRecordIndex = i;
++            tamperedFieldName = key;
++            oldValue = val;
++            newValue = val + 1;
++            rec.data[key] = newValue;
++            break;
++          }
++        }
++        if (tamperedRecordIndex >= 0) break;
++      }
++    }
++
++    if (tamperedRecordIndex < 0) {
++      console.error('Could not find any numeric field to alter in records.');
++      process.exit(1);
++    }
++
++    console.log(`Target Record:   Index ${tamperedRecordIndex} (sequence ${exportData.records[tamperedRecordIndex].sequence})`);
++    console.log(`Field Altered:   record.data.${tamperedFieldName}`);
++    console.log(`Original Value:  ${oldValue}`);
++    console.log(`Tampered Value:  ${newValue} (value incremented by 1)`);
++
++    fs.writeFileSync(tempCopyPath, JSON.stringify(exportData, null, 2), 'utf8');
++
++    // ─────────────────────────────────────────────────────────────
++    // STEP 4: Verify Tampered Copy
++    // ─────────────────────────────────────────────────────────────
++    console.log('---------------------------------------------------------------');
++    console.log('STEP 4: Verifying Tampered Copy (Expecting Fail-Closed)');
++    console.log('---------------------------------------------------------------');
++
++    const tamperedVerification = verifyAuditExport(tempCopyPath, { projectRoot });
++    console.log(`Verification:    ${tamperedVerification.valid ? 'PASS' : 'FAIL (Closed)'}`);
++    console.log(`Exit Code:       ${tamperedVerification.valid ? INDUSTRIAL_CLI_EXIT.SUCCESS : INDUSTRIAL_CLI_EXIT.VERIFY_FAILED}`);
++    console.log('Differing Checks Reported:');
++    for (const err of tamperedVerification.errors) {
++      console.log(`  ✗ ${err}`);
++    }
++
++    if (tamperedVerification.valid) {
++      console.error('\nERROR: Tampered copy unexpectedly passed verification!');
++      process.exit(1);
++    }
++    console.log('\n>> RESULT: Tampered copy FAILED CLOSED as expected.');
++
++    // ─────────────────────────────────────────────────────────────
++    // STEP 5: Confirm Original Artifact is Untouched
++    // ─────────────────────────────────────────────────────────────
++    console.log('---------------------------------------------------------------');
++    console.log('STEP 5: Confirming Original Artifact Remains Untouched');
++    console.log('---------------------------------------------------------------');
++
++    const postVerifyBytes = fs.readFileSync(exportPath);
++    const postVerifySha256 = crypto.createHash('sha256').update(postVerifyBytes).digest('hex');
++    console.log(`Original SHA256 Before: ${originalSha256}`);
++    console.log(`Original SHA256 After:  ${postVerifySha256}`);
++
++    if (originalSha256 !== postVerifySha256) {
++      console.error('ERROR: Original export artifact was modified!');
++      process.exit(1);
++    }
++    console.log('Integrity:       MATCH (0 bytes modified)');
++
++    // Clean up temporary copy
++    if (fs.existsSync(tempCopyPath)) fs.unlinkSync(tempCopyPath);
++
++    console.log('\n===============================================================');
++    console.log('  DEMONSTRATION COMPLETE: ALL INVARIANTS VERIFIED');
++    console.log('  1. Authentic export passes verification.');
++    console.log('  2. Single numeric change causes fail-closed hash rejection.');
++    console.log('  3. Authoritative Rust engine reports exact mismatch.');
++    console.log('  4. Original artifact is never modified.');
++    console.log('===============================================================\n');
++  } finally {
++    if (cleanupDir && fs.existsSync(cleanupDir)) {
++      fs.rmSync(cleanupDir, { recursive: true, force: true });
++    }
++  }
++}
++
++main().catch((err) => {
++  console.error('Unexpected demonstration failure:', err);
++  process.exit(1);
++});
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index a2eceac..48214ff 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -818,16 +818,20 @@ industrial
+ 
+ // ─── maos industrial verify ─────────────────────────────────
+ industrial
+-  .command('verify [target]')
+-  .description('Verify industrial state: audit, boundary, service, or telemetry analysis')
++  .command('verify [target] [exportPath]')
++  .description('Verify industrial state: audit, boundary, service, telemetry analysis, or audit export')
+   .option('-p, --project-root <path>', 'Project root directory', process.cwd())
+   .option('--run-id <runId>', 'Verify one completed judged run and its report/export hashes')
++  .option('--export <path>', 'Verify an audit export JSON file and its linked run evidence')
+   .option('--analysis-id <analysisId>', 'Replay one local telemetry analysis against its source CSV')
+   .option('--json', 'Output machine-readable JSON')
+-  .action(async (target, opts) => {
++  .action(async (target, exportPath, opts) => {
++    const effectiveExport = opts.export || (target === 'export' ? exportPath : (target && (target.endsWith('.json') || target.includes('audit-export')) ? target : undefined));
++    const effectiveTarget = effectiveExport && (!target || target === 'export' || target.endsWith('.json') || target.includes('audit-export')) ? 'export' : (target || 'audit');
+     const result = await runIndustrialVerify({
+-      target: target || 'audit',
++      target: effectiveTarget,
+       runId: opts.runId,
++      exportPath: effectiveExport,
+       analysisId: opts.analysisId,
+       projectRoot: opts.projectRoot,
+       json: opts.json,
+diff --git a/src/industrial/industrial-cli.ts b/src/industrial/industrial-cli.ts
+index c6f21fe..8cfb389 100644
+--- a/src/industrial/industrial-cli.ts
++++ b/src/industrial/industrial-cli.ts
+@@ -38,6 +38,8 @@ import {
+   JudgedRunOptions,
+   JudgedRunResult,
+   readJudgedRunManifest,
++  verifyAuditExport,
++  AuditExportVerificationResult,
+ } from './judged-run';
+ import {
+   openLocalArtifact,
+@@ -615,11 +617,13 @@ export async function runIndustrialDemo(
+ // ── 4. Verify ──────────────────────────────────────────────────────
+ 
+ export interface VerifyCliOptions {
+-  readonly target?: 'audit' | 'boundary' | 'service' | 'telemetry';
++  readonly target?: 'audit' | 'boundary' | 'service' | 'telemetry' | 'export';
+   readonly runId?: string;
++  readonly exportPath?: string;
+   readonly analysisId?: string;
+   readonly projectRoot?: string;
+   readonly json?: boolean;
++  readonly services?: ServiceContainer;
+ }
+ 
+ export async function runIndustrialVerify(
+@@ -629,6 +633,53 @@ export async function runIndustrialVerify(
+   const target = options.target || 'audit';
+ 
+   try {
++    const exportFile = options.exportPath || (target === 'export' ? undefined : (target && (target.endsWith('.json') || target.includes('audit-export')) ? target : undefined));
++    if (target === 'export' || exportFile) {
++      const targetExport = exportFile || (target !== 'export' ? target : undefined);
++      if (!targetExport) {
++        const msg = 'Export verification requires an export path via --export <path> or "maos industrial verify export <path>".';
++        if (!options.json) console.error(chalk.red(msg));
++        return { exitCode: INDUSTRIAL_CLI_EXIT.INVALID_ARGS, message: msg };
++      }
++      const services = options.services ?? createServiceContainer(projectRoot);
++      const verification = verifyAuditExport(targetExport, { projectRoot, services });
++      const exitCode = verification.valid ? INDUSTRIAL_CLI_EXIT.SUCCESS : INDUSTRIAL_CLI_EXIT.VERIFY_FAILED;
++      const data = { target: 'export', verification };
++
++      if (options.json) {
++        console.log(JSON.stringify(data, null, 2));
++      } else {
++        console.log(chalk.bold.blue('\n🔍 MAOS Industrial — Audit Export Verification\n'));
++        console.log(`Status:          ${verification.valid ? chalk.green('PASS') : chalk.red('FAIL (Closed)')}`);
++        if (verification.runId) console.log(`Run ID:          ${verification.runId}`);
++        console.log(`Record Count:    ${verification.recordCount}`);
++        console.log(`Latest Hash:     ${verification.latestHash}`);
++        console.log(`Export SHA-256:  ${verification.exportSha256}`);
++        if (verification.deliverablePath) {
++          const delivStatus = verification.deliverableVerified === true
++            ? chalk.green('VERIFIED')
++            : verification.deliverableVerified === false
++              ? chalk.red('MISMATCH/MISSING')
++              : chalk.gray('UNCHECKED');
++          console.log(`Deliverable:     ${verification.deliverablePath} (${delivStatus})`);
++          if (verification.deliverableSha256) console.log(`Deliverable SHA: ${verification.deliverableSha256}`);
++        }
++        if (verification.manifestVerified !== undefined) {
++          console.log(`Manifest:        ${verification.manifestVerified ? chalk.green('VERIFIED') : chalk.red('MISMATCH/MISSING')}`);
++        }
++        if (verification.errors.length > 0) {
++          console.log(chalk.red('\nErrors:'));
++          for (const err of verification.errors) console.log(chalk.red(`  ✗ ${err}`));
++        }
++      }
++
++      return {
++        exitCode,
++        message: verification.valid ? 'Audit export and run evidence verified.' : 'Audit export verification failed.',
++        data,
++      };
++    }
++
+     if (target === 'telemetry') {
+       if (!options.analysisId) {
+         const msg = "Telemetry verification requires --analysis-id <id>.";
+@@ -1047,3 +1098,5 @@ export async function runIndustrialOpen(
+     data,
+   };
+ }
++
++export { verifyAuditExport, AuditExportVerificationResult } from './judged-run';
+diff --git a/src/industrial/judged-run.ts b/src/industrial/judged-run.ts
+index 3b56794..6bbeece 100644
+--- a/src/industrial/judged-run.ts
++++ b/src/industrial/judged-run.ts
+@@ -23,6 +23,7 @@ import chalk from 'chalk';
+ import { createServiceContainer, ServiceContainer } from '../service';
+ import { INDUSTRIAL_CLI_EXIT, IndustrialCliExitCode } from './industrial-cli';
+ import type { ApprovalRecord, ReviewApprovalInput } from '../domain/approval';
++import type { AuditRecord } from '../domain';
+ import { withJudgedRunLock, withJudgedRunOutputLock } from './judged-run-lock';
+ import {
+   OfficeDocxInput,
+@@ -1658,3 +1659,302 @@ async function resumeJudgedRunAfterApprovalLocked(
+     throw error;
+   }
+ }
++
++export interface AuditExportVerificationResult {
++  readonly valid: boolean;
++  readonly runId?: string;
++  readonly recordCount: number;
++  readonly latestHash: string;
++  readonly exportPath: string;
++  readonly exportSha256: string;
++  readonly deliverablePath?: string;
++  readonly deliverableSha256?: string;
++  readonly deliverableVerified?: boolean;
++  readonly manifestVerified?: boolean;
++  readonly errors: readonly string[];
++  readonly details?: Record<string, unknown>;
++}
++
++/**
++ * Verify an audit export JSON file and its linked judged run evidence.
++ *
++ * Requirements:
++ * 1. Read-only: never modifies the original artifact or evidence files.
++ * 2. Fail closed: fails immediately on missing file, malformed JSON, altered numeric values,
++ *    broken sequence numbers, altered hashes, or mismatched deliverables.
++ * 3. Authoritative: reuses the Rust-backed cryptographic chain verifier (engineChainVerify).
++ */
++export function verifyAuditExport(
++  exportPathInput: string,
++  options: {
++    projectRoot?: string;
++    services?: ServiceContainer;
++  } = {},
++): AuditExportVerificationResult {
++  const projectRoot = path.resolve(options.projectRoot || process.cwd());
++  const resolvedExportPath = path.isAbsolute(exportPathInput)
++    ? exportPathInput
++    : path.resolve(projectRoot, exportPathInput);
++
++  if (!fs.existsSync(resolvedExportPath)) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256: '',
++      errors: [`Audit export file not found: ${exportPathInput}`],
++    };
++  }
++
++  let stat: fs.Stats;
++  try {
++    stat = fs.statSync(resolvedExportPath);
++  } catch (err: any) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256: '',
++      errors: [`Cannot read audit export file: ${err.message}`],
++    };
++  }
++
++  if (!stat.isFile()) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256: '',
++      errors: [`Audit export path is not a file: ${exportPathInput}`],
++    };
++  }
++
++  const fileBytes = fs.readFileSync(resolvedExportPath);
++  const exportSha256 = crypto.createHash('sha256').update(fileBytes).digest('hex');
++
++  let parsed: any;
++  try {
++    parsed = JSON.parse(fileBytes.toString('utf8'));
++  } catch (err: any) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256,
++      errors: [`Audit export is not valid JSON: ${err.message}`],
++    };
++  }
++
++  if (typeof parsed !== 'object' || parsed === null) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256,
++      errors: ['Audit export top-level structure must be a JSON object.'],
++    };
++  }
++
++  if (!Array.isArray(parsed.records)) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256,
++      errors: ['Audit export missing "records" array.'],
++    };
++  }
++
++  if (parsed.records.length === 0) {
++    return {
++      valid: false,
++      recordCount: 0,
++      latestHash: '',
++      exportPath: exportPathInput,
++      exportSha256,
++      errors: ['Audit export contains zero records.'],
++    };
++  }
++
++  const errors: string[] = [];
++  const records = parsed.records as AuditRecord[];
++  const declaredVerification = parsed.verification;
++
++  if (declaredVerification) {
++    if (declaredVerification.recordCount !== undefined && declaredVerification.recordCount !== records.length) {
++      errors.push(
++        `Declared verification recordCount (${declaredVerification.recordCount}) does not match actual records array length (${records.length}).`,
++      );
++    }
++    const lastRecord = records[records.length - 1];
++    if (declaredVerification.latestHash && lastRecord && declaredVerification.latestHash !== lastRecord.hash) {
++      errors.push(
++        `Declared verification latestHash mismatch: declared '${declaredVerification.latestHash}', actual '${lastRecord.hash}'.`,
++      );
++    }
++  }
++
++  const services = options.services ?? createServiceContainer(projectRoot);
++  const chainVerification = services.audit.verifyChainRecords(records);
++  if (!chainVerification.valid) {
++    errors.push(...chainVerification.errors);
++  }
++
++  // Identify runId and deliverable from export records
++  let runId: string | undefined;
++  let docxArtifactId: string | undefined;
++  let docxArtifactHash: string | undefined;
++  let docxInputHash: string | undefined;
++  let docxRelativePath: string | undefined;
++
++  for (const record of records) {
++    const data = record.data as Record<string, unknown> | undefined;
++    if (!data) continue;
++    if (!runId && typeof data.runId === 'string' && data.runId.startsWith('judged-run-')) {
++      runId = data.runId;
++    }
++    if (data.event === 'DOCX_GENERATED') {
++      docxArtifactId = data.artifactId as string | undefined;
++      docxArtifactHash = data.artifactHash as string | undefined;
++      docxInputHash = data.inputHash as string | undefined;
++      docxRelativePath = data.relativePath as string | undefined;
++    }
++  }
++
++  let deliverableVerified: boolean | undefined;
++  let manifestVerified: boolean | undefined;
++  let deliverablePathFound: string | undefined = docxRelativePath;
++  let deliverableShaFound: string | undefined = docxArtifactHash;
++
++  // Run evidence check: if runId exists, check manifest and artifacts
++  if (runId) {
++    const manifest = readJudgedRunManifest(projectRoot, runId);
++    if (manifest) {
++      if (manifest.status !== 'completed') {
++        errors.push(`Judged run '${runId}' status is '${manifest.status}', expected 'completed'.`);
++      }
++      if (manifest.auditExportLatestHash && manifest.auditExportLatestHash !== chainVerification.latestHash) {
++        errors.push(
++          `Manifest auditExportLatestHash ('${manifest.auditExportLatestHash}') does not match verified latestHash ('${chainVerification.latestHash}').`,
++        );
++      }
++      if (
++        Number.isSafeInteger(manifest.auditExportThroughSequence) &&
++        manifest.auditExportThroughSequence !== records.length - 1
++      ) {
++        errors.push(
++          `Manifest auditExportThroughSequence (${manifest.auditExportThroughSequence}) does not match last record sequence (${records.length - 1}).`,
++        );
++      }
++
++      // If the export file matches the manifest's declared export path:
++      const manifestExportRel = manifest.auditExportPath;
++      if (manifestExportRel) {
++        const manifestExportAbs = path.resolve(projectRoot, manifestExportRel);
++        if (manifestExportAbs === path.resolve(resolvedExportPath)) {
++          if (manifest.auditExportSha256 && manifest.auditExportSha256 !== exportSha256) {
++            errors.push(
++              `Export file SHA-256 ('${exportSha256}') does not match manifest auditExportSha256 ('${manifest.auditExportSha256}').`,
++            );
++          }
++        }
++      }
++
++      // Check deliverable
++      if (manifest.deliverablePath) {
++        deliverablePathFound = manifest.deliverablePath;
++        deliverableShaFound = manifest.deliverableSha256;
++        const deliverableAbs = path.resolve(projectRoot, manifest.deliverablePath);
++        if (!fs.existsSync(deliverableAbs)) {
++          errors.push(`Associated deliverable file missing: ${manifest.deliverablePath}`);
++          deliverableVerified = false;
++        } else {
++          const actualDeliverableSha = crypto
++            .createHash('sha256')
++            .update(fs.readFileSync(deliverableAbs))
++            .digest('hex');
++          if (manifest.deliverableSha256 && actualDeliverableSha !== manifest.deliverableSha256) {
++            errors.push(
++              `Deliverable hash mismatch: expected '${manifest.deliverableSha256}', got '${actualDeliverableSha}'.`,
++            );
++            deliverableVerified = false;
++          } else if (docxArtifactHash && actualDeliverableSha !== docxArtifactHash) {
++            errors.push(
++              `Deliverable hash mismatch with DOCX_GENERATED record: expected '${docxArtifactHash}', got '${actualDeliverableSha}'.`,
++            );
++            deliverableVerified = false;
++          } else {
++            deliverableVerified = true;
++          }
++        }
++      }
++
++      // Check source files in manifest
++      if (manifest.sourceHashes) {
++        for (const [relPath, expectedHash] of Object.entries(manifest.sourceHashes)) {
++          const sourceAbs = path.resolve(projectRoot, relPath);
++          if (fs.existsSync(sourceAbs)) {
++            const actualSourceHash = crypto
++              .createHash('sha256')
++              .update(fs.readFileSync(sourceAbs))
++              .digest('hex');
++            if (actualSourceHash !== expectedHash) {
++              errors.push(
++                `Source evidence file '${relPath}' hash altered: expected '${expectedHash}', got '${actualSourceHash}'.`,
++              );
++            }
++          }
++        }
++      }
++
++      manifestVerified = errors.length === 0;
++    } else {
++      // Manifest not found in this projectRoot (could be standalone export file)
++      if (docxRelativePath && docxArtifactHash) {
++        const candidatePaths = [
++          path.resolve(projectRoot, docxRelativePath),
++          path.resolve(path.dirname(resolvedExportPath), path.basename(docxRelativePath)),
++        ];
++        const existingPath = candidatePaths.find((p) => fs.existsSync(p));
++        if (existingPath) {
++          const actualSha = crypto.createHash('sha256').update(fs.readFileSync(existingPath)).digest('hex');
++          if (actualSha === docxArtifactHash) {
++            deliverableVerified = true;
++          } else {
++            errors.push(
++              `Standalone deliverable at '${existingPath}' hash mismatch: expected '${docxArtifactHash}', got '${actualSha}'.`,
++            );
++            deliverableVerified = false;
++          }
++        }
++      }
++    }
++  }
++
++  const valid = errors.length === 0 && chainVerification.valid;
++
++  return {
++    valid,
++    runId,
++    recordCount: records.length,
++    latestHash: chainVerification.latestHash || (records[records.length - 1]?.hash ?? ''),
++    exportPath: exportPathInput,
++    exportSha256,
++    deliverablePath: deliverablePathFound,
++    deliverableSha256: deliverableShaFound,
++    deliverableVerified,
++    manifestVerified,
++    errors,
++    details: {
++      executableHash: chainVerification.executableHash,
++      docxArtifactId,
++      docxInputHash,
++    },
++  };
++}
+diff --git a/src/service/audit-service.ts b/src/service/audit-service.ts
+index 21cd535..ac44deb 100644
+--- a/src/service/audit-service.ts
++++ b/src/service/audit-service.ts
+@@ -508,9 +508,79 @@ export class AuditService {
+       throw new Error('RUST_VERIFY_FAILED: Simulated Rust engine failure for chain verification');
+     }
+ 
+-    // Prepare the chain once, then send it to Rust in byte-bounded windows.
+-    // Each window is anchored to the preceding persisted hash; Rust verifies
+-    // both that boundary link and every record's absolute sequence/hash.
++    const chainRes = this.verifyChainRecords(records);
++    const errors = [...headErrors, ...chainRes.errors];
++
++    return {
++      valid: chainRes.valid && headErrors.length === 0,
++      recordCount: records.length,
++      errors,
++      verifiedAt: chainRes.verifiedAt,
++      latestHash: records[records.length - 1].hash,
++      executableHash: manifest.executableHash,
++    };
++  }
++
++  /**
++   * Authoritative Rust-backed chain verification for an arbitrary list of audit records.
++   * Validates structural continuity, schema integrity, and cryptographic record hashes.
++   */
++  public verifyChainRecords(records: AuditRecord[]): AuditChainVerification {
++    const manifest = this.getEngineManifest();
++    const verifiedAt = new Date().toISOString();
++
++    if (!Array.isArray(records) || records.length === 0) {
++      return {
++        valid: false,
++        recordCount: 0,
++        errors: ['Audit record list is empty or not an array.'],
++        verifiedAt,
++        latestHash: '',
++        executableHash: manifest.executableHash,
++      };
++    }
++
++    const structureErrors: string[] = [];
++    for (let i = 0; i < records.length; i++) {
++      const r = records[i];
++      if (typeof r !== 'object' || r === null) {
++        structureErrors.push(`Record at index ${i} is not a valid object.`);
++        continue;
++      }
++      if (r.sequence !== i) {
++        structureErrors.push(`Sequence continuity break at index ${i}: expected sequence ${i}, found ${r.sequence}.`);
++      }
++      if (i === 0) {
++        if (r.previous_hash !== '') {
++          structureErrors.push(`Genesis record 0 has non-empty previous_hash: '${r.previous_hash}'.`);
++        }
++      } else {
++        const expectedPrev = records[i - 1]?.hash;
++        if (r.previous_hash !== expectedPrev) {
++          structureErrors.push(
++            `Hash chain link break at sequence ${i}: previous_hash '${r.previous_hash}' does not match record ${i - 1} hash '${expectedPrev}'.`,
++          );
++        }
++      }
++      if (!validateAuditCategory(r.category)) {
++        structureErrors.push(`Record at sequence ${i} has invalid audit category: '${r.category}'.`);
++      }
++      if (typeof r.hash !== 'string' || !/^[a-f0-9]{64}$/i.test(r.hash)) {
++        structureErrors.push(`Record at sequence ${i} has malformed hash: '${r.hash}'.`);
++      }
++    }
++
++    if (structureErrors.length > 0) {
++      return {
++        valid: false,
++        recordCount: records.length,
++        errors: structureErrors,
++        verifiedAt,
++        latestHash: records[records.length - 1]?.hash ?? '',
++        executableHash: manifest.executableHash,
++      };
++    }
++
+     const engineChain = records.map((r) => ({
+       sequence: r.sequence,
+       previous_hash: r.previous_hash,
+@@ -526,9 +596,6 @@ export class AuditService {
+     while (start < engineChain.length) {
+       const previousHash = start === 0 ? '' : engineChain[start - 1].hash;
+       const options = { startSequence: start, previousHash };
+-      // The empty-chain envelope has the same fixed request fields. Add each
+-      // serialized record and its comma incrementally to avoid repeatedly
+-      // serializing the growing candidate window while packing it.
+       let requestBytes = engineChainVerifyRequestSizeBytes([], options);
+       const window: typeof engineChain = [];
+ 
+@@ -570,12 +637,10 @@ export class AuditService {
+       start += window.length;
+     }
+ 
+-    const errors = [...headErrors, ...engineErrors];
+-
+     return {
+-      valid: engineErrors.length === 0 && errors.length === 0,
++      valid: engineErrors.length === 0,
+       recordCount: records.length,
+-      errors,
++      errors: engineErrors,
+       verifiedAt,
+       latestHash: records[records.length - 1].hash,
+       executableHash: manifest.executableHash,
+diff --git a/tests/industrial/judge-verifier.test.ts b/tests/industrial/judge-verifier.test.ts
+new file mode 100644
+index 0000000..de4cdf0
+--- /dev/null
++++ b/tests/industrial/judge-verifier.test.ts
+@@ -0,0 +1,329 @@
++/**
++ * W1: Judge Verifier & Audit Export Verification Test Suite
++ *
++ * Verifies the "don't trust it — verify it" operator and judge journey:
++ * 1. Valid authentic audit export passes with run ID, record count, and evidence hashes.
++ * 2. Tampered numeric values fail closed with exact hash mismatch reporting.
++ * 3. Tampered record hashes fail closed.
++ * 4. Broken sequence numbers fail closed.
++ * 5. Altered deliverable artifacts fail closed.
++ * 6. Missing or malformed export inputs fail closed.
++ * 7. Original artifact is never modified under any verification path.
++ */
++
++import { describe, it, expect, beforeAll, afterAll } from 'vitest';
++import * as fs from 'fs';
++import * as path from 'path';
++import * as crypto from 'crypto';
++import * as os from 'os';
++import { createServiceContainer, ServiceContainer } from '../../src/service';
++import {
++  executeJudgedRun,
++  verifyAuditExport,
++  AuditExportVerificationResult,
++} from '../../src/industrial/judged-run';
++import {
++  runIndustrialVerify,
++  INDUSTRIAL_CLI_EXIT,
++} from '../../src/industrial/industrial-cli';
++
++const REPO_ROOT = path.resolve(__dirname, '../..');
++
++describe('W1: Judge Audit Export Verifier', () => {
++  let testProjectRoot: string;
++  let services: ServiceContainer;
++  let validExportPath: string;
++  let validExportSha256: string;
++  let runId: string;
++
++  beforeAll(async () => {
++    testProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-w1-verifier-'));
++    fs.mkdirSync(path.join(testProjectRoot, '.maos'), { recursive: true });
++    fs.writeFileSync(
++      path.join(testProjectRoot, '.maos', 'maos.config.json'),
++      JSON.stringify({ projectName: 'w1-verifier-test' }, null, 2),
++    );
++
++    const demoDir = path.join(testProjectRoot, 'demo', 'industrial');
++    fs.mkdirSync(demoDir, { recursive: true });
++    for (const name of [
++      'safety_thresholds.json',
++      'turbine_vibration_log.csv',
++      'maintenance_report.txt',
++      'turbine_inspection_scan.pdf',
++    ]) {
++      fs.copyFileSync(path.join(REPO_ROOT, 'demo', 'industrial', name), path.join(demoDir, name));
++    }
++
++    services = createServiceContainer(testProjectRoot);
++    const runResult = await executeJudgedRun({
++      projectRoot: testProjectRoot,
++      services,
++      autoApprove: true,
++      yes: true,
++      json: true,
++    });
++
++    expect(runResult.success).toBe(true);
++    expect(runResult.auditExportPath).toBeDefined();
++
++    runId = runResult.runId;
++    validExportPath = path.join(testProjectRoot, runResult.auditExportPath!);
++    expect(fs.existsSync(validExportPath)).toBe(true);
++
++    validExportSha256 = crypto
++      .createHash('sha256')
++      .update(fs.readFileSync(validExportPath))
++      .digest('hex');
++  });
++
++  afterAll(() => {
++    if (testProjectRoot && fs.existsSync(testProjectRoot)) {
++      fs.rmSync(testProjectRoot, { recursive: true, force: true });
++    }
++  });
++
++  // ─────────────────────────────────────────────────────────────
++  // 1. Valid Authentic Export Passes
++  // ─────────────────────────────────────────────────────────────
++
++  describe('1. Valid Export Verification', () => {
++    it('verifies the original export and reports PASS with runId, record count, and hashes', () => {
++      const result: AuditExportVerificationResult = verifyAuditExport(validExportPath, {
++        projectRoot: testProjectRoot,
++        services,
++      });
++
++      expect(result.valid).toBe(true);
++      expect(result.errors).toHaveLength(0);
++      expect(result.runId).toBe(runId);
++      expect(result.recordCount).toBeGreaterThan(0);
++      expect(result.latestHash).toMatch(/^[a-f0-9]{64}$/);
++      expect(result.exportSha256).toBe(validExportSha256);
++      expect(result.deliverableVerified).toBe(true);
++      expect(result.manifestVerified).toBe(true);
++      expect(result.deliverablePath).toBe('artifacts/generated/turbine_safety_approval_note.docx');
++    });
++
++    it('verifies via CLI runIndustrialVerify with target export', async () => {
++      const cliResult = await runIndustrialVerify({
++        target: 'export',
++        exportPath: validExportPath,
++        projectRoot: testProjectRoot,
++        services,
++        json: true,
++      });
++
++      expect(cliResult.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
++      expect(cliResult.message).toContain('verified');
++      const data = cliResult.data as any;
++      expect(data?.verification?.valid).toBe(true);
++      expect(data?.verification?.runId).toBe(runId);
++    });
++
++    it('verifies via CLI runIndustrialVerify when target is the JSON file path', async () => {
++      const cliResult = await runIndustrialVerify({
++        target: validExportPath as any,
++        projectRoot: testProjectRoot,
++        services,
++        json: true,
++      });
++
++      expect(cliResult.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
++      const data = cliResult.data as any;
++      expect(data?.verification?.valid).toBe(true);
++    });
++  });
++
++  // ─────────────────────────────────────────────────────────────
++  // 2. Tampered Export Fails Closed
++  // ─────────────────────────────────────────────────────────────
++
++  describe('2. Tampered Export Fails Closed', () => {
++    it('fails closed when exactly one numeric field is changed in a temporary copy', () => {
++      const copyPath = path.join(testProjectRoot, 'tampered-numeric.json');
++      const data = JSON.parse(fs.readFileSync(validExportPath, 'utf8'));
++
++      // Find record with numeric data and alter it
++      let targetRecord: any = null;
++      for (const r of data.records) {
++        if (r.data && typeof r.data === 'object') {
++          for (const [k, v] of Object.entries(r.data)) {
++            if (typeof v === 'number') {
++              targetRecord = r;
++              r.data[k] = v + 1; // alter single number
++              break;
++            }
++          }
++          if (targetRecord) break;
++        }
++      }
++      expect(targetRecord).not.toBeNull();
++      fs.writeFileSync(copyPath, JSON.stringify(data, null, 2), 'utf8');
++
++      const result = verifyAuditExport(copyPath, {
++        projectRoot: testProjectRoot,
++        services,
++      });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.length).toBeGreaterThan(0);
++      // Rust engine reports the exact hash mismatch
++      expect(result.errors.some((e) => e.includes('hash mismatch') || e.includes('possible modification'))).toBe(true);
++
++      fs.unlinkSync(copyPath);
++    });
++
++    it('fails closed when a record hash is tampered', () => {
++      const copyPath = path.join(testProjectRoot, 'tampered-hash.json');
++      const data = JSON.parse(fs.readFileSync(validExportPath, 'utf8'));
++
++      // Alter hash of record 1
++      data.records[1].hash = 'a'.repeat(64);
++      fs.writeFileSync(copyPath, JSON.stringify(data, null, 2), 'utf8');
++
++      const result = verifyAuditExport(copyPath, {
++        projectRoot: testProjectRoot,
++        services,
++      });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.length).toBeGreaterThan(0);
++      expect(
++        result.errors.some(
++          (e) => e.includes('hash mismatch') || e.includes('link break') || e.includes('previous_hash'),
++        ),
++      ).toBe(true);
++
++      fs.unlinkSync(copyPath);
++    });
++
++    it('fails closed when a record sequence number is broken', () => {
++      const copyPath = path.join(testProjectRoot, 'tampered-sequence.json');
++      const data = JSON.parse(fs.readFileSync(validExportPath, 'utf8'));
++
++      // Break sequence of record 2
++      data.records[2].sequence = 999;
++      fs.writeFileSync(copyPath, JSON.stringify(data, null, 2), 'utf8');
++
++      const result = verifyAuditExport(copyPath, {
++        projectRoot: testProjectRoot,
++        services,
++      });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.some((e) => e.includes('Sequence continuity break') || e.includes('sequence'))).toBe(true);
++
++      fs.unlinkSync(copyPath);
++    });
++
++    it('fails closed when the associated deliverable file hash is altered', () => {
++      // Modify deliverable docx on disk temporarily
++      const deliverablePath = path.join(testProjectRoot, 'artifacts/generated/turbine_safety_approval_note.docx');
++      const originalDeliverableBytes = fs.readFileSync(deliverablePath);
++
++      // Append 1 byte to alter SHA-256
++      fs.appendFileSync(deliverablePath, Buffer.from([0x00]));
++
++      try {
++        const result = verifyAuditExport(validExportPath, {
++          projectRoot: testProjectRoot,
++          services,
++        });
++
++        expect(result.valid).toBe(false);
++        expect(result.deliverableVerified).toBe(false);
++        expect(result.errors.some((e) => e.includes('Deliverable hash mismatch'))).toBe(true);
++      } finally {
++        // Restore deliverable
++        fs.writeFileSync(deliverablePath, originalDeliverableBytes);
++      }
++    });
++
++    it('fails closed when export header declared latestHash disagrees with chain', () => {
++      const copyPath = path.join(testProjectRoot, 'tampered-header.json');
++      const data = JSON.parse(fs.readFileSync(validExportPath, 'utf8'));
++
++      if (data.verification) {
++        data.verification.latestHash = 'f'.repeat(64);
++      }
++      fs.writeFileSync(copyPath, JSON.stringify(data, null, 2), 'utf8');
++
++      const result = verifyAuditExport(copyPath, {
++        projectRoot: testProjectRoot,
++        services,
++      });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.some((e) => e.includes('latestHash'))).toBe(true);
++
++      fs.unlinkSync(copyPath);
++    });
++  });
++
++  // ─────────────────────────────────────────────────────────────
++  // 3. Missing and Malformed Inputs Fail Closed
++  // ─────────────────────────────────────────────────────────────
++
++  describe('3. Missing and Malformed Inputs Fail Closed', () => {
++    it('fails closed on non-existent export path', () => {
++      const nonExistent = path.join(testProjectRoot, 'does-not-exist.json');
++      const result = verifyAuditExport(nonExistent, { projectRoot: testProjectRoot, services });
++
++      expect(result.valid).toBe(false);
++      expect(result.recordCount).toBe(0);
++      expect(result.errors.some((e) => e.includes('not found'))).toBe(true);
++    });
++
++    it('fails closed on malformed JSON file', () => {
++      const malformedPath = path.join(testProjectRoot, 'malformed.json');
++      fs.writeFileSync(malformedPath, '{ "records": [ invalid json syntax', 'utf8');
++
++      const result = verifyAuditExport(malformedPath, { projectRoot: testProjectRoot, services });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.some((e) => e.includes('not valid JSON'))).toBe(true);
++
++      fs.unlinkSync(malformedPath);
++    });
++
++    it('fails closed when records array is missing', () => {
++      const missingRecordsPath = path.join(testProjectRoot, 'missing-records.json');
++      fs.writeFileSync(missingRecordsPath, JSON.stringify({ note: 'no records' }), 'utf8');
++
++      const result = verifyAuditExport(missingRecordsPath, { projectRoot: testProjectRoot, services });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.some((e) => e.includes('missing "records" array'))).toBe(true);
++
++      fs.unlinkSync(missingRecordsPath);
++    });
++
++    it('fails closed when records array is empty', () => {
++      const emptyRecordsPath = path.join(testProjectRoot, 'empty-records.json');
++      fs.writeFileSync(emptyRecordsPath, JSON.stringify({ records: [] }), 'utf8');
++
++      const result = verifyAuditExport(emptyRecordsPath, { projectRoot: testProjectRoot, services });
++
++      expect(result.valid).toBe(false);
++      expect(result.errors.some((e) => e.includes('zero records'))).toBe(true);
++
++      fs.unlinkSync(emptyRecordsPath);
++    });
++  });
++
++  // ─────────────────────────────────────────────────────────────
++  // 4. Artifact Preservation Invariant
++  // ─────────────────────────────────────────────────────────────
++
++  describe('4. Original Artifact Preservation', () => {
++    it('strictly preserves the original export artifact SHA-256 after all verifications', () => {
++      const postTestSha256 = crypto
++        .createHash('sha256')
++        .update(fs.readFileSync(validExportPath))
++        .digest('hex');
++
++      expect(postTestSha256).toBe(validExportSha256);
++    });
++  });
++});

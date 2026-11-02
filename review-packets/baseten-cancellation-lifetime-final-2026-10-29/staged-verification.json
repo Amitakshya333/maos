@@ -1,0 +1,47 @@
+{
+  "repository": "C:\\maos",
+  "baseHead": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "stagedPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "exactAllowlist": true,
+  "files": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "stagedGitBlob": "556593d7615fdb7e78fa663429d2ec8165184b84",
+      "stagedBlobSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "reviewedLfSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "matches": true
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "stagedGitBlob": "4b4eaace3c686dcb89e33952d9bc2413c73fa196",
+      "stagedBlobSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "reviewedLfSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "matches": true
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "stagedGitBlob": "82e38ede4c008681401e265057b0a4473da84730",
+      "stagedBlobSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb",
+      "reviewedLfSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb",
+      "matches": true
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "stagedGitBlob": "af78c4cf011f2703005311583900c0088baae3aa",
+      "stagedBlobSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "reviewedLfSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "matches": true
+    }
+  ],
+  "stagedDiffCheckExitCode": 0,
+  "unstagedAllowlistedPaths": [],
+  "stagedPatchSha256": "d3eb82e46a242ff63aae6323c84820a3a1ff000fdd990bf7e23717b103c8b059",
+  "approvedPatchSha256": "d3eb82e46a242ff63aae6323c84820a3a1ff000fdd990bf7e23717b103c8b059",
+  "stagedPatchLfEqualToApprovedPatch": true,
+  "result": "PASS"
+}

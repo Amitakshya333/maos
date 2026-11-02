@@ -1,0 +1,36 @@
+
+ RUN  v4.1.11 C:/maos
+
+ Γ¥» tests/industrial/baseten-pilot-process-tree.test.ts (10 tests | 2 failed) 12319ms
+     ├ù 'C:\Program Files\PowerShell\7\pwsh.exe' '7.6.9' holds the launcher mutex through adapter cancellation and process shutdown 574ms
+     ├ù 'C:\Windows\System32\WindowsPowerShellΓÇª' '5.1.26100.9711' holds the launcher mutex through adapter cancellation and process shutdown 403ms
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 2 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/industrial/baseten-pilot-process-tree.test.ts > Baseten pilot task-owned Windows process tree > 'C:\Program Files\PowerShell\7\pwsh.exe' '7.6.9' holds the launcher mutex through adapter cancellation and process shutdown
+ FAIL  tests/industrial/baseten-pilot-process-tree.test.ts > Baseten pilot task-owned Windows process tree > 'C:\Windows\System32\WindowsPowerShellΓÇª' '5.1.26100.9711' holds the launcher mutex through adapter cancellation and process shutdown
+AssertionError: 
+: expected 41 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 41
+
+ Γ¥» tests/industrial/baseten-pilot-process-tree.test.ts:406:65
+    404|
+    405|     expect(result.error, result.stdout + '\n' + result.stderr).toBeUndΓÇª
+    406|     expect(result.status, result.stdout + '\n' + result.stderr).toBe(0ΓÇª
+       |                                                                 ^
+    407|     expect(fs.existsSync(marker)).toBe(true);
+    408|   });
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/2]ΓÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 8 passed (10)
+   Start at  16:11:29
+   Duration  13.68s (transform 35ms, setup 0ms, import 1.17s, tests 12.32s, environment 0ms)
+

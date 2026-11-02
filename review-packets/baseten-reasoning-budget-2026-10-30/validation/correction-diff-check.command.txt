@@ -1,0 +1,1 @@
+git diff --check HEAD -- src/backends/openai-provider.ts tests/backends/baseten-api-provider-boundary.test.ts tests/backends/openai-provider-local-tool-call.test.ts tests/industrial/meta-model-api-contract.test.ts

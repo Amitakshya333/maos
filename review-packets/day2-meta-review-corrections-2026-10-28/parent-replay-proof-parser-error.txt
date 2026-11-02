@@ -1,0 +1,38 @@
+COMMAND: git clone --shared --no-checkout C:\maos <temporary-proof>
+EXIT_CODE: 0
+COMMAND: git checkout --detach 239a0042b08a3960d3c89f890f01ab194ff82f1f
+EXIT_CODE: 0
+COMMAND: git apply --check <historical 15-file patch>
+EXIT_CODE: 0
+COMMAND: git apply <historical 15-file patch>
+EXIT_CODE: 0
+COMMAND: compare reconstructed files with historical source manifest
+EXIT_CODE: 0
+{
+  "proofRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-day2-packet-rebuild-b669046105314e9991595907fb1f5552\\parent-replay-proof",
+  "baseRevision": "239a0042b08a3960d3c89f890f01ab194ff82f1f",
+  "historicalPatchApplied": true,
+  "parentManifestPaths": 15,
+  "rawMatches": 9,
+  "lfNormalizedMatches": 15,
+  "resultingPathCount": 15,
+  "resultingPaths": [
+    "docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md",
+    "rc/api/openapi-spec.ts",
+    "src/api/router.ts",
+    "src/backends/openai-provider.ts",
+    "src/cli/index.ts",
+    "src/core/agent-runner.ts",
+    "src/domain/schemas.ts",
+    "src/industrial/analysis-agent-service.ts",
+    "src/industrial/industrial-repl.ts",
+    "src/service/index.ts",
+    "tests/backends/openai-provider-local-tool-call.test.ts",
+    "tests/industrial/analysis-agent-auth-http.test.ts",
+    "tests/industrial/analysis-agent-contract.test.ts",
+    "tests/industrial/industrial-repl.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "stagedPaths": []
+}
+

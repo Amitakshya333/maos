@@ -1,0 +1,9 @@
+COMMAND: npm uninstall --prefix <TEMP_VALIDATION_ROOT>\locked-install --no-save --ignore-scripts --no-audit --no-fund --offline maosorch
+EXIT_CODE: 0
+OUTPUT: removed 1 package in 1s
+PACKAGE_PRESENT_AFTER: false
+MAOS-INDUSTRIAL_BIN_SHIM_PRESENT_AFTER: false
+TEMP_PACKAGE_JSON_HASH_AFTER: 8985d2f7598db9c1fddbab8965365f460e35f0e8f7dd3ee0ec4b81b8ddb264f1
+TEMP_PACKAGE_LOCK_HASH_AFTER: 5d9577c499c53d1e78457d00901d117f626fcb824ba76ef8e5fa76637d7eae27
+TEMP_PACKAGE_JSON_AND_LOCKFILE_UNCHANGED: true (before/after hashes matched)
+SCOPE: isolated locked-install directory only; no repository files changed

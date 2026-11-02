@@ -1,0 +1,12 @@
+
+> maosorch@0.3.0 prepare
+> node scripts/prepare-hooks.js
+
+
+added 77 packages in 14s
+
+added 13 packages in 6s
+Installed MAOS Industrial 0.3.0 from base 2cfdf9b81f56eada7df2041625da18e44531151e plus delta c916ddc30baf3b35c80fbe099fb97ee568431a6bc663cf612e3114f2f8f5bac1.
+Application: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app
+Electron runtime: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\desktop\node_modules\electron\dist\electron.exe
+Rust Industrial engine remains a separate prerequisite; see desktop/README.md.

@@ -1,0 +1,27 @@
+{
+  "bundle": "retry3-native-tar-maos-industrial-windows-x64.zip",
+  "bundleSha256": "797b3f89d94b37f9ddb765e413679d4ae8335aad18e5feac2d8d481a65cd1c59",
+  "installedApp": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS installed mock 2cfdf9b retry3\\app",
+  "syntheticProjectRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS synthetic pilot projects 2cfdf9b retry3 engine",
+  "node": "C:\\Program Files\\nodejs\\node.exe",
+  "externalEngine": {
+    "path": "C:\\Users\\AMITAKSHYA SUTAR\\.codex\\worktrees\\baseten-gate-validation-2026-10-29\\rust\\target\\release\\maos-engine.exe",
+    "bytes": 472064,
+    "sha256": "3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2",
+    "protocolHealthResponse": {
+      "operation": "health",
+      "version": "1.0",
+      "data": {
+        "engine": "maos-industrial-engine",
+        "protocol_version": "1.0",
+        "rust_version": "1.95.0",
+        "status": "ok",
+        "unsafe_code": false,
+        "version": "0.1.0"
+      }
+    },
+    "classification": "External test fixture only; unsigned, unapproved, publisher provenance unavailable; not a product-bundle member."
+  },
+  "hostedCredentialsInherited": false,
+  "networkPolicy": "global fetch accepts only the exact configured Baseten URL and bridges it to 127.0.0.1; all other destinations throw"
+}

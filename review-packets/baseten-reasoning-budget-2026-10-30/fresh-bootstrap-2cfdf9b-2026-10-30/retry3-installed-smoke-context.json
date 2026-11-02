@@ -1,0 +1,9 @@
+{
+  "bundle": "retry3-native-tar-maos-industrial-windows-x64.zip",
+  "bundleSha256": "797b3f89d94b37f9ddb765e413679d4ae8335aad18e5feac2d8d481a65cd1c59",
+  "installedApp": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS installed mock 2cfdf9b retry3\\app",
+  "syntheticProjectRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS synthetic pilot projects 2cfdf9b retry3",
+  "node": "C:\\Program Files\\nodejs\\node.exe",
+  "hostedCredentialsInherited": false,
+  "networkPolicy": "global fetch accepts only the exact configured Baseten URL and bridges it to 127.0.0.1; all other destinations throw"
+}

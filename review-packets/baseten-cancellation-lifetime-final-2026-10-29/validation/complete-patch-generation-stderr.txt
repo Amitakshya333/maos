@@ -1,0 +1,2 @@
+warning: in the working copy of 'scripts/Start-BasetenSyntheticPilot.ps1', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/industrial/baseten-pilot-process-tree.test.ts', CRLF will be replaced by LF the next time Git touches it

@@ -1,0 +1,12 @@
+{
+  "targetRunnerPid": 8788,
+  "targetLauncherPid": 25952,
+  "targetVerifiedAsThisRehearsal": true,
+  "method": "AttachConsole + GenerateConsoleCtrlEvent(CTRL_C_EVENT, processGroupId=0)",
+  "requestWasActive": false,
+  "apiCallSucceeded": true,
+  "lastError": 0,
+  "launcherExitedWithin15Seconds": true,
+  "launcherNativeExitCode": null,
+  "at": "2026-10-29T18:37:22.9192241Z"
+}

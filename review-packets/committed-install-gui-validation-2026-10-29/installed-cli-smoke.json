@@ -1,0 +1,14 @@
+﻿{
+    "timestamp":  "2026-10-29T14:53:33.6649975+05:30",
+    "installedAppRoot":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed app retry with spaces\\app",
+    "nodeVersion":  "v24.11.0",
+    "isolatedWorkingDirectory":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e",
+    "environmentSecretLikeNamesRemoved":  4,
+    "syntheticParentRepo":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\synthetic git parent with spaces",
+    "syntheticChild":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\synthetic git parent with spaces\\selected child project with spaces",
+    "results":  [
+
+                ],
+    "childAvoidedAncestorMetadata":  true,
+    "normalRepoMetadataObserved":  false
+}

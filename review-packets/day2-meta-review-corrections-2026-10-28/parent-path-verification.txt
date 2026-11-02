@@ -1,0 +1,21 @@
+COMMAND: git status --porcelain --untracked-files=all (isolated historical-parent clone)
+EXPECTED_PATHS=15
+ACTUAL_PATHS=15
+PATH_SET_MATCH=True
+STAGED_PATHS=0
+PATHS:
+docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+src/api/openapi-spec.ts
+src/api/router.ts
+src/backends/openai-provider.ts
+src/cli/index.ts
+src/core/agent-runner.ts
+src/domain/schemas.ts
+src/industrial/analysis-agent-service.ts
+src/industrial/industrial-repl.ts
+src/service/index.ts
+tests/backends/openai-provider-local-tool-call.test.ts
+tests/industrial/analysis-agent-auth-http.test.ts
+tests/industrial/analysis-agent-contract.test.ts
+tests/industrial/industrial-repl.test.ts
+tests/industrial/meta-model-api-contract.test.ts

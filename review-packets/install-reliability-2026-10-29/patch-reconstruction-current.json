@@ -1,0 +1,151 @@
+{
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "patchSha256": "ca4aef480083a370737d860a761af8727a6cb7ae3ec2da49df57626cd8af87f4",
+  "manifestSha256": "e39d5ac9e8f66f49a1b0d3e7232b55373498b1f1d19710b3390fb822163bf40e",
+  "patchPathCount": 15,
+  "manifestPathCount": 15,
+  "pathSetMatches": true,
+  "applyCheckExitCode": 0,
+  "applyExitCode": 0,
+  "sourceHashesMatchManifest": true,
+  "lfNormalizedReconstructionCount": 15,
+  "rawReconstructionCount": 2,
+  "stagedPathCount": 0,
+  "files": [
+    {
+      "path": "README.md",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": true,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": true,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "package.json",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "desktop/package.json",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "desktop/README.md",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "src/cli/doctor.ts",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "src/cli/index.ts",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": true,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": true,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "tests/cli/meta-provider-entrypoints.test.ts",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "scripts/New-MaosIndustrialInstallBundle.ps1",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "scripts/prepare-hooks.js",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "tests/cli/doctor.test.ts",
+      "sourceManifestRawMatches": true,
+      "sourceManifestLfMatches": true,
+      "reconstructedRawMatchesSource": false,
+      "reconstructedLfMatchesSource": true,
+      "rawMatchesManifest": false,
+      "lfMatchesManifest": true
+    }
+  ]
+}

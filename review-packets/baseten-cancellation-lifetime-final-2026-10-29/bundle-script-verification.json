@@ -1,0 +1,37 @@
+{
+  "bundlePath": "C:\\maos\\review-packets\\baseten-cancellation-lifetime-final-2026-10-29\\candidate-artifacts-f201cfe\\maos-industrial-bootstrap-windows-x64-commit-f201cfe-2026-10-29.zip",
+  "bundleBytes": 1265742,
+  "bundleSha256": "8ce5da16d81a788fd8c8596c445c95df8227aa551595171d95da75817273572c",
+  "sourceRevision": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "sourceDeltaSha256": "d3eb82e46a242ff63aae6323c84820a3a1ff000fdd990bf7e23717b103c8b059",
+  "embeddedArchiveBytes": 1233574,
+  "embeddedArchiveSha256": "2b9992e47e75cdfb91a23144d3c7460ae4fade01cddcbeddd56c7eb5d92f783f",
+  "packageEntriesChecked": [
+    "package/desktop/package.json",
+    "package/desktop/package-lock.json",
+    "package/scripts/Install-MaosIndustrial.ps1",
+    "package/scripts/Start-BasetenSyntheticPilot.ps1",
+    "package/scripts/Windows-ProcessTree.ps1"
+  ],
+  "pilotScripts": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "packageEntry": "package/scripts/Start-BasetenSyntheticPilot.ps1",
+      "rawSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "reviewedCommitLfSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "lfMatch": true,
+      "rawMatch": false
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "packageEntry": "package/scripts/Windows-ProcessTree.ps1",
+      "rawSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "lfNormalizedSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "reviewedCommitLfSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "lfMatch": true,
+      "rawMatch": true
+    }
+  ],
+  "result": "PASS"
+}

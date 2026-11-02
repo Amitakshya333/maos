@@ -1,0 +1,1795 @@
+diff --git a/src/api/openapi-spec.ts b/src/api/openapi-spec.ts
+index 4d18cf9975794f08c6104b4315478f688c1e8891..74a981aee3552239515676c1335dc7774f4c40d0 100644
+--- a/src/api/openapi-spec.ts
++++ b/src/api/openapi-spec.ts
+@@ -645,6 +645,7 @@ export const OPENAPI_SPEC: Record<string, unknown> = {
+           '500': { description: 'Report acceptance/final replacement failed; no successful completion audit is recorded.' },
+           '422': { description: 'Model did not use the allowlisted tool or source, rules, receipt hash, or replay checks failed.' },
+           '502': { description: 'Local model provider failed.' },
++          '504': { description: 'The complete Industrial agent run exceeded its 60-second deadline; no successful report is accepted.' },
+         },
+       },
+     },
+diff --git a/src/api/router.ts b/src/api/router.ts
+index f1518ca3c05fc61b7c909f79dc98fe91ef2e1c47..8a85d467a5c702b0d3cef692cf9e7de7aa1ae35a 100644
+--- a/src/api/router.ts
++++ b/src/api/router.ts
+@@ -619,7 +619,8 @@ export class RestApiRouter {
+         const code = err instanceof IndustrialAnalysisAgentError ? err.code : 'INDUSTRIAL_AGENT_FAILED';
+         const status = code === 'INVALID_REQUEST' || code === 'INVALID_SOURCE_PATH' ? 400
+           : code === 'MODEL_ENDPOINT_BLOCKED' ? 403
+-          : code === 'MODEL_NOT_CONFIGURED' || code === 'PROJECT_NOT_INITIALIZED' || code === 'PROJECT_CONFIG_INVALID' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
++          : code === 'MODEL_NOT_CONFIGURED' || code === 'MODEL_CREDENTIAL_MISSING' || code === 'PROJECT_NOT_INITIALIZED' || code === 'PROJECT_CONFIG_INVALID' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
++          : code === 'AGENT_TIMEOUT' ? 504
+           : code === 'AGENT_EXECUTION_FAILED' ? 502
+           : 422;
+         if (!abortController.signal.aborted && !res.writableEnded && !res.destroyed) {
+diff --git a/src/backends/openai-provider.ts b/src/backends/openai-provider.ts
+index ddecb2a5808714ad826684618d501e7b6a50e25d..66d7e1e7f1695a25f841dc06be7ed793746650c3 100644
+--- a/src/backends/openai-provider.ts
++++ b/src/backends/openai-provider.ts
+@@ -25,16 +25,33 @@ export class OpenAIProvider implements IProvider {
+   readonly model: string;
+ 
+   private client: OpenAI;
+-
+-  constructor(opts: { name: string; apiKey: string; model: string; baseURL?: string; timeout?: number; maxRetries?: number }) {
++  private readonly apiKey: string;
++  private readonly temperature: number | null;
++  private readonly maxOutputTokens?: number;
++
++  constructor(opts: {
++    name: string;
++    apiKey: string;
++    model: string;
++    baseURL?: string;
++    timeout?: number;
++    maxRetries?: number;
++    temperature?: number | null;
++    maxOutputTokens?: number;
++    fetch?: typeof globalThis.fetch;
++  }) {
+     this.name = opts.name;
+     this.model = opts.model;
++    this.apiKey = opts.apiKey;
++    this.temperature = Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
++    this.maxOutputTokens = opts.maxOutputTokens;
+ 
+     this.client = new OpenAI({
+       apiKey: opts.apiKey,
+       baseURL: opts.baseURL,
+       timeout: opts.timeout || 180_000, // 3 min default timeout
+       maxRetries: opts.maxRetries ?? 2,
++      fetch: opts.fetch,
+     });
+   }
+ 
+@@ -46,9 +63,12 @@ export class OpenAIProvider implements IProvider {
+       const requestBody: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
+         model: this.model,
+         messages: messages.map((m) => this.toOpenAIMessage(m)),
+-        temperature: 0.2,
+       };
+-      const maxTokens = options?.maxTokens;
++      if (this.temperature !== null) requestBody.temperature = this.temperature;
++      const requestedMaxTokens = options?.maxTokens;
++      const maxTokens = this.maxOutputTokens === undefined
++        ? requestedMaxTokens
++        : Math.min(requestedMaxTokens ?? this.maxOutputTokens, this.maxOutputTokens);
+       if (typeof maxTokens === 'number' && Number.isInteger(maxTokens) && maxTokens > 0) {
+         requestBody.max_tokens = maxTokens;
+       }
+@@ -146,7 +166,7 @@ export class OpenAIProvider implements IProvider {
+ 
+       // Provide helpful error messages for common failures
+       if (err.status === 401 || err.status === 403) {
+-        const rawBody = err.error ? JSON.stringify(err.error).substring(0, 200) : '';
++        const rawBody = err.error ? this.redact(JSON.stringify(err.error).substring(0, 200)) : '';
+         throw new Error(
+           `Authentication failed for ${this.name}. Check your API key.\n` +
+             `Provider: ${this.name} | Model: ${this.model}` +
+@@ -154,38 +174,42 @@ export class OpenAIProvider implements IProvider {
+         );
+       }
+       if (err.status === 429) {
+-        throw new Error(
++        throw new Error(this.redact(
+           `Rate limit hit on ${this.name}. Wait and retry.\n` +
+             `Provider: ${this.name} | Model: ${this.model} | Latency: ${latencyMs}ms`,
+-        );
++        ));
+       }
+       if (err.status === 503 || err.status === 502 || err.status === 504) {
+-        throw new Error(
++        throw new Error(this.redact(
+           `${this.name} is temporarily unavailable (HTTP ${err.status}).\n` +
+             `Provider: ${this.name} | Model: ${this.model} | This is a provider outage, not an auth issue.`,
+-        );
++        ));
+       }
+       if (err.status === 404) {
+-        throw new Error(
++        throw new Error(this.redact(
+           `Model "${this.model}" not found on ${this.name}.\n` + `Check available models at your provider's dashboard.`,
+-        );
++        ));
+       }
+       if (err.code === 'ECONNREFUSED') {
+-        throw new Error(
++        throw new Error(this.redact(
+           `Cannot connect to ${this.name} at ${this.client.baseURL}.\n` +
+             `Is the server running? (Check Ollama/LM Studio if local)`,
+-        );
++        ));
+       }
+ 
+       // Re-throw with context
+-      const newErr = new Error(
++      const newErr = new Error(this.redact(
+         `Provider error [${this.name}/${this.model}]: ${err.message}\n` + `Latency: ${latencyMs}ms`,
+-      );
+-      newErr.stack = err.stack;
++      ));
++      newErr.stack = this.redact(err.stack || newErr.stack || '');
+       throw newErr;
+     }
+   }
+ 
++  private redact(value: string): string {
++    return this.apiKey ? value.split(this.apiKey).join('[REDACTED]') : value;
++  }
++
+   /**
+    * Convert our ChatMessage format to OpenAI's expected format.
+    */
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index 91ff529082e6251b5ddaa6681cf2b66da2a2b179..242d45b364af22fe44c5febd64525ba06d3c3b18 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -41,6 +41,7 @@ import {
+   runIndustrialRun,
+   runIndustrialOpen,
+ } from '../industrial/industrial-cli';
++import { runIndustrialRepl } from '../industrial/industrial-repl';
+ import { createServiceContainer } from '../service';
+ 
+ const VERSION = '0.3.0';
+@@ -532,6 +533,15 @@ const standaloneIndustrialProgram = invokedAsIndustrial
+ const industrial = standaloneIndustrialProgram ||
+   program.command('industrial').description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification');
+ 
++industrial
++  .description('MAOS Industrial commands and local operator REPL')
++  .action(() => runIndustrialRepl());
++
++industrial
++  .command('repl')
++  .description('Start the bounded local operator REPL')
++  .action(() => runIndustrialRepl());
++
+ const bundleCmd = industrial
+   .command('bundle')
+   .description('Manage offline bundle packaging and verification');
+diff --git a/src/core/agent-runner.ts b/src/core/agent-runner.ts
+index 99bc6cc0b37622ae732df6f0e2cade4de28c4e0d..65f3e8d554518ad12e6b4f69fbf9e0b51b7377a5 100644
+--- a/src/core/agent-runner.ts
++++ b/src/core/agent-runner.ts
+@@ -40,6 +40,8 @@ export interface AgentRunOptions {
+   maxTokens?: number;
+   maxProviderRetries?: number;
+   allowPartialSuccess?: boolean;
++  deadlineAt?: number;
++  toolCallLimits?: Readonly<Record<string, number>>;
+ }
+ 
+ /**
+@@ -171,6 +173,7 @@ export async function runAgent(
+   let bonusIterationsGranted = 0;
+   let nudgeSent = false;
+   const initialSnapshot = lastSnapshot;
++  const toolCallCounts = new Map<string, number>();
+ 
+   // Semantic progress tracker -- smarter than blunt file-count diffing
+   const progress = new ProgressTracker();
+@@ -183,6 +186,29 @@ export async function runAgent(
+     }
+   };
+ 
++  const assertActive = () => {
++    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
++      throw new Error('Agent run timed out.');
++    }
++    if (options.signal?.aborted) throw new Error('Agent run cancelled.');
++  };
++
++  const executeLimitedTool = (
++    toolName: string,
++    args: Record<string, any>,
++  ): ReturnType<typeof executeTool> => {
++    assertActive();
++    const count = toolCallCounts.get(toolName) ?? 0;
++    const limit = options.toolCallLimits?.[toolName];
++    if (limit !== undefined && count >= limit) {
++      throw new Error(`Tool call limit exceeded for ${toolName} (maximum ${limit}).`);
++    }
++    toolCallCounts.set(toolName, count + 1);
++    const result = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id, agent.allowedTools);
++    assertActive();
++    return result;
++  };
++
+   // Build conversation
+   const systemPrompt = buildSystemPrompt(agent, task, projectRoot);
+   const messages: ChatMessage[] = [
+@@ -196,7 +222,7 @@ export async function runAgent(
+   // Effective max = base + bonus for productive agents
+   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
+   const generate = () => {
+-    if (options.signal?.aborted) throw new Error('Agent run cancelled.');
++    assertActive();
+     return provider.generate(
+       messages,
+       filterTools(AGENT_TOOLS, agent.allowedTools, agent.id),
+@@ -206,7 +232,7 @@ export async function runAgent(
+ 
+   try {
+     while (iterations < getEffectiveMax()) {
+-      if (options.signal?.aborted) throw new Error('Agent run cancelled.');
++      assertActive();
+       iterations++;
+       onProgress?.(iterations, 'thinking');
+ 
+@@ -252,6 +278,7 @@ export async function runAgent(
+         logger,
+         agent.id,
+       );
++      assertActive();
+       returnedModel = response.model || returnedModel;
+       if (response.reportedModel) reportedModel = response.reportedModel;
+       totalTokens += response.usage.totalTokens;
+@@ -285,6 +312,7 @@ export async function runAgent(
+             logger,
+             agent.id,
+           );
++          assertActive();
+           returnedModel = retryResponse.model || returnedModel;
+           if (retryResponse.reportedModel) reportedModel = retryResponse.reportedModel;
+           totalTokens += retryResponse.usage.totalTokens;
+@@ -298,25 +326,18 @@ export async function runAgent(
+           // Check if it called task_complete this time
+           if (retryResponse.toolCalls.length > 0) {
+             for (const tc of retryResponse.toolCalls) {
+-              if (options.signal?.aborted) throw new Error('Agent run cancelled.');
++              assertActive();
+               let tcArgs: Record<string, any>;
+               try {
+                 tcArgs = JSON.parse(tc.function.arguments);
+               } catch {
+                 tcArgs = {};
+               }
+-              const { result, isComplete: done } = executeTool(
+-                tc.function.name,
+-                tcArgs,
+-                projectRoot,
+-                agent.scope,
+-                agent.id,
+-                task.id,
+-                agent.allowedTools,
+-              );
++              const { result, isComplete: done } = executeLimitedTool(tc.function.name, tcArgs);
+               onToolResult?.(tc.function.name, result);
+               messages.push({ role: 'tool', name: tc.function.name, content: result, tool_call_id: tc.id });
+               if (done) {
++                assertActive();
+                 logger.success(agent.id, `Task completed (after nudge): ${tcArgs.summary || 'Task completed'}`);
+                 deleteCheckpoint(projectRoot, task.id);
+                 return {
+@@ -351,7 +372,7 @@ export async function runAgent(
+       hadMutatingToolCall = false;
+ 
+       for (const toolCall of response.toolCalls) {
+-        if (options.signal?.aborted) throw new Error('Agent run cancelled.');
++        assertActive();
+         let args: Record<string, any>;
+         try {
+           args = JSON.parse(toolCall.function.arguments);
+@@ -386,7 +407,7 @@ export async function runAgent(
+           }
+         }
+ 
+-        const { result, isComplete: done } = executeTool(toolName, args, projectRoot, agent.scope, agent.id, task.id, agent.allowedTools);
++        const { result, isComplete: done } = executeLimitedTool(toolName, args);
+         onToolResult?.(toolName, result);
+ 
+         // Truncate huge tool results to prevent context bloat
+@@ -410,6 +431,7 @@ export async function runAgent(
+ 
+       // If task_complete was called, we're done
+       if (isComplete) {
++        assertActive();
+         logger.success(agent.id, `Task completed: ${completionSummary}`);
+         deleteCheckpoint(projectRoot, task.id);
+         return {
+@@ -466,6 +488,7 @@ export async function runAgent(
+       }
+ 
+       // ---- CHECKPOINT SAVE (every iteration) ----
++      assertActive();
+       // Snapshot current progress to disk so we can recover if MAOS crashes.
+       try {
+         const changedFiles = getChangedFiles(projectRoot, initialSnapshot);
+@@ -539,8 +562,9 @@ export async function runAgent(
+     // ---- GRACEFUL FAILURE WITH PARTIAL SUCCESS ----
+     const crashSnapshot = snapshotFilesystem(projectRoot);
+     const crashedButWorked = crashSnapshot !== initialSnapshot;
++    const timedOut = options.deadlineAt !== undefined && Date.now() >= options.deadlineAt;
+ 
+-    if (crashedButWorked && options.allowPartialSuccess !== false && !options.signal?.aborted) {
++    if (crashedButWorked && options.allowPartialSuccess !== false && !options.signal?.aborted && !timedOut) {
+       logger.warn(agent.id, `Agent crashed but DID modify files. Treating as partial success. Error: ${err.message}`);
+       return {
+         agentId: agent.id,
+@@ -556,13 +580,13 @@ export async function runAgent(
+     }
+ 
+     logger.error(agent.id, `Agent error: ${err.stack || err.message}`);
+-    const error = options.signal?.aborted ? 'ABORTED' : err.message;
++    const error = timedOut ? 'TIMEOUT' : options.signal?.aborted ? 'ABORTED' : err.message;
+     return {
+       agentId: agent.id,
+       taskId: task.id,
+       model: returnedModel,
+       success: false,
+-      summary: options.signal?.aborted ? 'Agent run cancelled.' : `Agent failed: ${err.message}`,
++      summary: timedOut ? 'Agent run timed out.' : options.signal?.aborted ? 'Agent run cancelled.' : `Agent failed: ${err.message}`,
+       filesChanged: [],
+       iterations,
+       totalTokens,
+diff --git a/src/domain/schemas.ts b/src/domain/schemas.ts
+index 922b4da40551700d4fea1c4747ded14e4d24832e..3fb42502ab0d716f3bb9a3e9276cf071316f1244 100644
+--- a/src/domain/schemas.ts
++++ b/src/domain/schemas.ts
+@@ -178,8 +178,12 @@ export interface ExtendedTaskRequirements {
+ 
+ export interface ProviderEntry {
+   readonly apiKey?: string;
++  readonly apiKeyEnv?: string;
+   readonly baseURL?: string;
+   readonly costPerMillionTokens?: number;
++  /** Exact opt-in required before using Meta's hosted Muse Spark endpoint. */
++  readonly metaApiEnabled?: boolean;
++  readonly temperature?: number;
+ }
+ 
+ export interface AgentEntry {
+diff --git a/src/industrial/analysis-agent-service.ts b/src/industrial/analysis-agent-service.ts
+index 737fb4a75f6c3ac4458047908e579473e3166fe7..303b13955160d7ac4139a4f4100af8d973dd09af 100644
+--- a/src/industrial/analysis-agent-service.ts
++++ b/src/industrial/analysis-agent-service.ts
+@@ -11,6 +11,8 @@ import { verifyTelemetryAnalysis } from './telemetry-analysis';
+ export type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
+ 
+ const ALLOWED_TOOLS = ['analyze_telemetry_csv', 'task_complete'];
++const AGENT_DEADLINE_MS = 60_000;
++const AGENT_TIMEOUT_MESSAGE = 'The analysis exceeded its 60-second deadline. No report was accepted; retry when the configured model is responsive.';
+ 
+ const PROMPT = `You are a read-only industrial telemetry analysis assistant. Use only the supplied analyze_telemetry_csv tool and the user-selected source path. After the tool returns, explain only what its deterministic evidence supports. Include the exact analysisId in your summary so the explanation is linked to its evidence. Do not infer causes, prescribe operation, or claim certification. Finish by calling task_complete with that evidence-linked summary.`;
+ 
+@@ -28,6 +30,7 @@ export interface IndustrialAnalysisAgentOptions {
+ export interface IndustrialAnalysisAgentRuntime {
+   provider?: IProvider;
+   modelEndpoint?: string;
++  allowMetaApi?: boolean;
+ }
+ 
+ export class IndustrialAnalysisAgentService {
+@@ -56,11 +59,52 @@ export class IndustrialAnalysisAgentService {
+     options: IndustrialAnalysisAgentOptions = {},
+   ): Promise<IndustrialAnalysisAgentResult> {
+     if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
++    const deadlineAt = Date.now() + AGENT_DEADLINE_MS;
++    const controller = new AbortController();
++    const forwardAbort = () => controller.abort();
++    options.signal?.addEventListener('abort', forwardAbort, { once: true });
++    if (options.signal?.aborted) forwardAbort();
++    let timedOut = false;
++    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
++    const timeout = new Promise<never>((_resolve, reject) => {
++      timeoutHandle = setTimeout(() => {
++        timedOut = true;
++        controller.abort();
++        reject(new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE));
++      }, AGENT_DEADLINE_MS);
++    });
++    try {
++      return await Promise.race([
++        this.analyzeWithinDeadline(projectRoot, input, { signal: controller.signal, deadlineAt }),
++        timeout,
++      ]);
++    } catch (error) {
++      if (timedOut || Date.now() >= deadlineAt) {
++        throw new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE);
++      }
++      throw error;
++    } finally {
++      if (timeoutHandle) clearTimeout(timeoutHandle);
++      options.signal?.removeEventListener('abort', forwardAbort);
++    }
++  }
++
++  private async analyzeWithinDeadline(
++    projectRoot: string,
++    input: IndustrialAnalysisAgentRequest,
++    options: IndustrialAnalysisAgentOptions & { deadlineAt: number },
++  ): Promise<IndustrialAnalysisAgentResult> {
++    const assertBeforeDeadline = () => {
++      if (Date.now() >= options.deadlineAt) {
++        throw new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE);
++      }
++    };
+     let provider = this.provider;
+     let modelEndpoint = this.modelEndpoint;
++    let allowMetaApi = false;
+     if (this.resolveRuntime) {
+       try {
+-        ({ provider, modelEndpoint } = this.resolveRuntime());
++        ({ provider, modelEndpoint, allowMetaApi = false } = this.resolveRuntime());
+       } catch (error) {
+         if (error instanceof IndustrialAnalysisAgentError) throw error;
+         const detail = error instanceof Error ? error.message : String(error);
+@@ -71,7 +115,7 @@ export class IndustrialAnalysisAgentService {
+       }
+     }
+     if (!provider || !modelEndpoint) {
+-      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure a local analysis model and loopback endpoint in the project agent/provider settings.');
++      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure ANALYST_AGENT and an approved local loopback model endpoint, or explicitly enable the exact Meta Model API model and endpoint.');
+     }
+     if (typeof input.request !== 'string' || input.request.trim().length === 0 || input.request.length > 4000) {
+       throw new IndustrialAnalysisAgentError('INVALID_REQUEST', 'request must contain 1 to 4000 characters.');
+@@ -109,14 +153,21 @@ export class IndustrialAnalysisAgentService {
+     } catch {
+       throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The configured model endpoint URL is invalid.');
+     }
+-    if (
+-      modelUrl.protocol !== 'http:' ||
+-      !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) ||
+-      modelUrl.username || modelUrl.password || modelUrl.search || modelUrl.hash
+-    ) {
+-      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The analysis model must use a credential-free HTTP loopback endpoint.');
++    const metaEndpointAllowed = allowMetaApi === true &&
++      modelEndpoint === 'https://api.meta.ai/v1' &&
++      provider.model === 'muse-spark-1.3' &&
++      modelUrl.protocol === 'https:' &&
++      modelUrl.hostname === 'api.meta.ai' &&
++      modelUrl.pathname === '/v1' &&
++      !modelUrl.port && !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
++    const loopbackEndpointAllowed = modelUrl.protocol === 'http:' &&
++      ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) &&
++      !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
++    if (!metaEndpointAllowed && !loopbackEndpointAllowed) {
++      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or the explicitly enabled exact Meta URL/model pair is allowed.');
+     }
+-    if (this.endpointAllowlist) {
++    // The one explicit hosted exception is config-bound to Meta's exact HTTPS URL and model.
++    if (this.endpointAllowlist && !metaEndpointAllowed) {
+       const port = modelUrl.port ? parseInt(modelUrl.port, 10) : 80;
+       const validation = this.endpointAllowlist.validateSocketTarget({
+         protocol: 'tcp',
+@@ -156,9 +207,19 @@ export class IndustrialAnalysisAgentService {
+       (toolName, result) => {
+         if (toolName === 'analyze_telemetry_csv') toolResults.push(result);
+       },
+-      { signal: options.signal, maxTokens: 256, maxProviderRetries: 0, allowPartialSuccess: false },
++      {
++        signal: options.signal,
++        deadlineAt: options.deadlineAt,
++        maxTokens: 256,
++        maxProviderRetries: 0,
++        allowPartialSuccess: false,
++        toolCallLimits: { analyze_telemetry_csv: 1 },
++      },
+     );
+ 
++    if (run.error === 'TIMEOUT' || Date.now() >= options.deadlineAt) {
++      throw new IndustrialAnalysisAgentError('AGENT_TIMEOUT', AGENT_TIMEOUT_MESSAGE);
++    }
+     if (options.signal?.aborted || run.error === 'ABORTED') {
+       throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+     }
+@@ -190,6 +251,7 @@ export class IndustrialAnalysisAgentService {
+       throw new IndustrialAnalysisAgentError('EVIDENCE_VERIFICATION_FAILED', 'Persisted telemetry evidence did not verify against its source and rules.');
+     }
+ 
++    assertBeforeDeadline();
+     if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+     const reportedModel = run.reportedModel || null;
+     const report = {
+@@ -230,6 +292,7 @@ export class IndustrialAnalysisAgentService {
+       }
+       const reportFile = path.join(realReportRoot, `${evidence.analysisId}.json`);
+       const reportBytes = Buffer.from(`${JSON.stringify(report, null, 2)}\n`, 'utf8');
++      assertBeforeDeadline();
+       fs.writeFileSync(reportFile, reportBytes, { flag: 'wx', mode: 0o600 });
+       reportPath = path.relative(root, reportFile).split(path.sep).join('/');
+       acceptedReport = { ...report, status: 'completed', acceptance: 'accepted' };
+@@ -240,13 +303,20 @@ export class IndustrialAnalysisAgentService {
+     }
+ 
+     try {
++      assertBeforeDeadline();
+       this.replaceReport(root, reportPath, acceptedReport);
+     } catch (error) {
+       try {
+-        this.replaceReport(root, reportPath, { ...report, status: 'failed', acceptance: 'unaccepted', failure: { code: 'REPORT_REPLACEMENT_FAILED' } });
++        this.replaceReport(root, reportPath, {
++          ...report,
++          status: 'failed',
++          acceptance: 'unaccepted',
++          failure: { code: error instanceof IndustrialAnalysisAgentError ? error.code : 'REPORT_REPLACEMENT_FAILED' },
++        });
+       } catch {
+         // The original pending report is still explicitly unaccepted.
+       }
++      if (error instanceof IndustrialAnalysisAgentError && error.code === 'AGENT_TIMEOUT') throw error;
+       throw new IndustrialAnalysisAgentError(
+         'AGENT_REPORT_ACCEPTANCE_FAILED',
+         `The report remains unaccepted because its final replacement failed: ${error instanceof Error ? error.message : String(error)}`,
+@@ -255,6 +325,7 @@ export class IndustrialAnalysisAgentService {
+ 
+     let auditRecord;
+     try {
++      assertBeforeDeadline();
+       auditRecord = this.audit.recordAuditEvent({
+         source: 'industrial-analysis-agent',
+         category: 'stage',
+@@ -277,11 +348,18 @@ export class IndustrialAnalysisAgentService {
+       const chainValid = this.audit.verifyChain?.().valid ?? false;
+       if (persisted.length === 1 && chainValid) auditRecord = persisted[0];
+       else {
++        const timeoutError = error instanceof IndustrialAnalysisAgentError && error.code === 'AGENT_TIMEOUT';
+         try {
+-          this.replaceReport(root, reportPath, { ...report, status: 'failed', acceptance: 'unaccepted', failure: { code: 'AUDIT_PERSISTENCE_FAILED' } });
++          this.replaceReport(root, reportPath, {
++            ...report,
++            status: 'failed',
++            acceptance: 'unaccepted',
++            failure: { code: timeoutError ? 'AGENT_TIMEOUT' : 'AUDIT_PERSISTENCE_FAILED' },
++          });
+         } catch {
+           // The accepted file remains unusable without a matching valid audit record.
+         }
++        if (timeoutError) throw error;
+         throw new IndustrialAnalysisAgentError(
+           'AUDIT_PERSISTENCE_FAILED',
+           `The diagnostic report was retained as failed/unaccepted because its completion audit event could not be verified: ${error instanceof Error ? error.message : String(error)}. Restore audit-chain health and retry; this run was not accepted as successful.`,
+diff --git a/src/service/index.ts b/src/service/index.ts
+index 4321c4a7c2a7a93871b156da99b30a38c8e7de3c..8f59357e52b8945000e7f4acd54b4dcb77b3856b 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -307,20 +307,47 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+       if (typeof analysisModel?.provider !== 'string' || !analysisModel.provider.trim() || typeof analysisModel.model !== 'string' || !analysisModel.model.trim()) return {};
+       const providerConfig = projectConfig.providers[analysisModel.provider];
+       if (!providerConfig || typeof providerConfig !== 'object' || typeof providerConfig.baseURL !== 'string' || !providerConfig.baseURL.trim()) return {};
++      const metaApiEnabled = providerConfig.metaApiEnabled === true;
++      if (metaApiEnabled && (providerConfig.baseURL !== 'https://api.meta.ai/v1' || analysisModel.model !== 'muse-spark-1.3')) {
++        throw new IndustrialAnalysisAgentError(
++          'PROJECT_CONFIG_INVALID',
++          'Meta Model API opt-in is limited to baseURL "https://api.meta.ai/v1" and model "muse-spark-1.3".',
++        );
++      }
+       const timeout = analysisModel.timeoutMs ?? 60_000;
+       if (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout <= 0) {
+         throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'ANALYST_AGENT.timeoutMs must be a positive number.');
+       }
++      if (metaApiEnabled && providerConfig.temperature !== undefined &&
++          (typeof providerConfig.temperature !== 'number' || !Number.isFinite(providerConfig.temperature) || providerConfig.temperature < 0 || providerConfig.temperature > 2)) {
++        throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'Meta provider temperature must be a number from 0 to 2 when configured.');
++      }
++      let apiKey = 'local-only';
++      if (metaApiEnabled) {
++        if (typeof providerConfig.apiKeyEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(providerConfig.apiKeyEnv)) {
++          throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'Set providers.<name>.apiKeyEnv to the environment variable name that holds the Meta API key.');
++        }
++        apiKey = process.env[providerConfig.apiKeyEnv] || '';
++        if (!apiKey.trim()) {
++          throw new IndustrialAnalysisAgentError('MODEL_CREDENTIAL_MISSING', `The configured environment variable ${providerConfig.apiKeyEnv} is empty. Set it before running Industrial analysis.`);
++        }
++      }
+       return {
+         provider: new OpenAIProvider({
+           name: analysisModel.provider,
+-          apiKey: 'local-only',
++          apiKey,
+           baseURL: providerConfig.baseURL,
+           model: analysisModel.model,
+-          timeout,
++          timeout: metaApiEnabled ? 60_000 : timeout,
+           maxRetries: 0,
++          ...(metaApiEnabled ? {
++            temperature: typeof providerConfig.temperature === 'number' ? providerConfig.temperature : null,
++            maxOutputTokens: 256,
++            fetch: (input, init) => fetch(input, { ...init, redirect: 'error' }),
++          } : {}),
+         }),
+         modelEndpoint: providerConfig.baseURL,
++        allowMetaApi: metaApiEnabled,
+       };
+     },
+   );
+diff --git a/tests/backends/openai-provider-local-tool-call.test.ts b/tests/backends/openai-provider-local-tool-call.test.ts
+index 6bf49245b73bf31116b0dc7de5e0d3ae2dbf5736..a03597d2c8e18549adff96aecd3510239914f0d4 100644
+--- a/tests/backends/openai-provider-local-tool-call.test.ts
++++ b/tests/backends/openai-provider-local-tool-call.test.ts
+@@ -9,8 +9,11 @@ afterEach(async () => {
+   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+ });
+ 
+-describe('OpenAI-compatible local tool request', () => {
+-  it('omits unsupported tool_choice, bounds output, and parses the returned tool call', async () => {
++describe('OpenAI-compatible loopback mock tool request', () => {
++  it.each([
++    ['local model', 'ollama-local', 'llama3.2:3b-instruct-q4_K_M'],
++    ['Meta Muse Spark protocol shape', 'meta-model-api-mock', 'muse-spark-1.3'],
++  ])('%s omits tool_choice, bounds output, and parses the returned tool call', async (_label, providerName, model) => {
+     let requestBody: any;
+     const server = http.createServer(async (req, res) => {
+       const chunks: Buffer[] = [];
+@@ -44,10 +47,10 @@ describe('OpenAI-compatible local tool request', () => {
+     });
+     const port = (server.address() as AddressInfo).port;
+     const provider = new OpenAIProvider({
+-      name: 'ollama-local',
++      name: providerName,
+       apiKey: 'local-only',
+       baseURL: `http://127.0.0.1:${port}/v1`,
+-      model: 'llama3.2:3b-instruct-q4_K_M',
++      model,
+       maxRetries: 0,
+     });
+ 
+@@ -57,8 +60,9 @@ describe('OpenAI-compatible local tool request', () => {
+       { maxTokens: 256 },
+     );
+ 
+-    expect(requestBody.model).toBe('llama3.2:3b-instruct-q4_K_M');
++    expect(requestBody.model).toBe(model);
+     expect(requestBody.max_tokens).toBe(256);
++    if (providerName === 'ollama-local') expect(requestBody.temperature).toBe(0.2);
+     expect(requestBody.tools[0].function.name).toBe('analyze_telemetry_csv');
+     expect(requestBody).not.toHaveProperty('tool_choice');
+     expect(response.model).toBe('local-returned-model');
+@@ -71,8 +75,31 @@ describe('OpenAI-compatible local tool request', () => {
+     }]);
+   });
+ 
++  it('rejects a successful HTTP response with no usable choices', async () => {
++    const server = http.createServer(async (_req, res) => {
++      res.writeHead(200, { 'Content-Type': 'application/json' });
++      res.end(JSON.stringify({ choices: [] }));
++    });
++    servers.push(server);
++    await new Promise<void>((resolve, reject) => {
++      server.once('error', reject);
++      server.listen(0, '127.0.0.1', resolve);
++    });
++    const port = (server.address() as AddressInfo).port;
++    const provider = new OpenAIProvider({
++      name: 'malformed-response-mock',
++      apiKey: 'local-only',
++      baseURL: `http://127.0.0.1:${port}/v1`,
++      model: 'mock-model',
++      maxRetries: 0,
++    });
++
++    await expect(provider.generate([{ role: 'user', content: 'test' }])).rejects.toThrow(/Empty response.*no choices array/);
++  });
++
+   it.each([
+     ['provider confirms the requested ID', 'requested-model', 'requested-model'],
++    ['provider reports a different served ID', 'served-model', 'served-model'],
+     ['provider omits its ID', undefined, undefined],
+   ])('preserves provider identity when %s', async (_label, responseModel, expectedReported) => {
+     const server = http.createServer(async (_req, res) => {
+diff --git a/tests/industrial/analysis-agent-auth-http.test.ts b/tests/industrial/analysis-agent-auth-http.test.ts
+index 95b9b6c60a1cb348f6ff3daa6e20bba4795e0b0e..fb40a5cda53b92d179c6ca2c4721e14c9758eaaf 100644
+--- a/tests/industrial/analysis-agent-auth-http.test.ts
++++ b/tests/industrial/analysis-agent-auth-http.test.ts
+@@ -13,6 +13,7 @@ import { ProjectServiceHost } from '../../src/service/project-service/host';
+ import { EndpointAllowlistService } from '../../src/service/endpoint-allowlist-service';
+ import { INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
+ import { RestApiServer } from '../../src/api/server';
++import { IndustrialAnalysisAgentError } from '../../src/industrial/analysis-agent-service';
+ import { parseZipArchive } from '../../src/industrial/office/ooxml-packager';
+ import { isAcceptedJudgedRun, readJudgedRunManifest, resumeJudgedRunAfterApproval } from '../../src/industrial/judged-run';
+ import { executeDeterministicReset } from '../../src/industrial/deterministic-reset';
+@@ -1174,6 +1175,24 @@ describe('authenticated Industrial analysis agent HTTP integration', () => {
+     expect(fs.existsSync(path.join(system.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports'))).toBe(false);
+   });
+ 
++  it('maps the overall agent deadline to an HTTP gateway timeout', async () => {
++    const system = await createSystem();
++    const agent = system.host.getServer()!.getServices().industrialAnalysisAgent;
++    vi.spyOn(agent, 'analyze').mockRejectedValue(new IndustrialAnalysisAgentError(
++      'AGENT_TIMEOUT',
++      'The analysis exceeded its 60-second deadline.',
++    ));
++
++    const result = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.',
++      sourcePath: 'selected.csv',
++    });
++
++    expect(result.status).toBe(504);
++    expect(result.payload.error.code).toBe('AGENT_TIMEOUT');
++    expect(system.model.requests).toHaveLength(0);
++  });
++
+   it('refuses destructive reset while DOCX finalization is active', async () => {
+     const system = await createSystem();
+     mockAudit(system);
+diff --git a/tests/industrial/analysis-agent-contract.test.ts b/tests/industrial/analysis-agent-contract.test.ts
+index ee693c1cf47ac3d812bd8f4d603d1b94597b8e09..8a12472740e97844810cd3e7b7bebd7587687069 100644
+--- a/tests/industrial/analysis-agent-contract.test.ts
++++ b/tests/industrial/analysis-agent-contract.test.ts
+@@ -3,8 +3,9 @@ import * as http from 'node:http';
+ import * as os from 'node:os';
+ import * as path from 'node:path';
+ import type { AddressInfo } from 'node:net';
+-import { afterEach, describe, expect, it } from 'vitest';
++import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { OpenAIProvider } from '../../src/backends/openai-provider';
++import type { IProvider } from '../../src/backends/provider';
+ import type { AuditRecord } from '../../src/domain';
+ import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../../src/industrial/analysis-agent-service';
+ import type { AuditService } from '../../src/service/audit-service';
+@@ -233,6 +234,37 @@ describe('Industrial analysis agent OpenAI-compatible transport contract', () =>
+     expect(result.explanation).not.toBe(JSON.stringify(result.evidence.result));
+   });
+ 
++  it('executes at most one telemetry tool when one model response requests it more than once', async () => {
++    const project = createProject();
++    const transport = await createTransport((request) => {
++      const response = makeChatCompletion({
++        id: 'call-analysis-first',
++        name: 'analyze_telemetry_csv',
++        arguments: JSON.stringify({ sourcePath: requestedPath(request) }),
++      });
++      response.choices[0].message.tool_calls.push({
++        id: 'call-analysis-second',
++        type: 'function',
++        function: {
++          name: 'analyze_telemetry_csv',
++          arguments: JSON.stringify({ sourcePath: requestedPath(request) }),
++        },
++      });
++      return { body: response };
++    });
++    const service = createService(transport);
++
++    await expect(service.analyze(project.root, {
++      request: 'Review the selected CSV and report its measured values.',
++      sourcePath: project.sourcePath,
++    })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
++
++    const analysisRoot = path.join(project.root, '.maos/industrial/telemetry-analyses');
++    expect(transport.requests).toHaveLength(1);
++    expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
++    expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
++  });
++
+   it.each([
+     ['malformed JSON arguments', '{"sourcePath":'],
+     ['an undeclared argument', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv', extra: true })],
+@@ -343,6 +375,65 @@ describe('Industrial analysis agent OpenAI-compatible transport contract', () =>
+     expect(transport.requests).toHaveLength(1);
+   });
+ 
++  it('applies one 60-second deadline to the complete agent run and does not accept a late report', async () => {
++    const project = createProject();
++    let requests = 0;
++    let signalAborted = false;
++    let auditEvents = 0;
++    const provider: IProvider = {
++      name: 'mock-hanging-provider',
++      model: 'deadline-test-model',
++      generate(_messages, _tools, options) {
++        requests++;
++        return new Promise<never>((_resolve, reject) => {
++          const signal = options?.signal;
++          if (signal?.aborted) {
++            signalAborted = true;
++            reject(new Error('mock request aborted'));
++            return;
++          }
++          signal?.addEventListener('abort', () => {
++            signalAborted = true;
++            reject(new Error('mock request aborted'));
++          }, { once: true });
++        });
++      },
++    };
++    const service = new IndustrialAnalysisAgentService(provider, 'http://127.0.0.1:1/v1', {
++      recordAuditEvent(params) {
++        auditEvents++;
++        return {
++          schemaVersion: 1,
++          sequence: 0,
++          previous_hash: '',
++          timestamp: new Date().toISOString(),
++          source: params.source,
++          category: params.category,
++          data: params.data,
++          hash: 'b'.repeat(64),
++        } satisfies AuditRecord;
++      },
++    });
++
++    vi.useFakeTimers();
++    try {
++      const pending = service.analyze(project.root, {
++        request: 'Review this synthetic telemetry sample.',
++        sourcePath: project.sourcePath,
++      });
++      const timeoutAssertion = expect(pending).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_TIMEOUT' });
++      await vi.advanceTimersByTimeAsync(60_000);
++      await timeoutAssertion;
++    } finally {
++      vi.useRealTimers();
++    }
++
++    expect(requests).toBe(1);
++    expect(signalAborted).toBe(true);
++    expect(auditEvents).toBe(0);
++    expect(fs.existsSync(path.join(project.root, '.maos/industrial/telemetry-analyses/agent-reports'))).toBe(false);
++  });
++
+   it('caps transient retries at one request for the industrial path', async () => {
+     const project = createProject();
+     const transport = await createTransport(() => ({ status: 503, body: { error: { message: 'local model unavailable' } } }));
+diff --git a/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md b/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac1b8e9a5612bacd1e0849508bbb237cd8cee639
+--- /dev/null
++++ b/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+@@ -0,0 +1,75 @@
++# MAOS Industrial Operator Guide
++
++## Start the CLI
++
++After building or installing the package, run `maos-industrial` with no arguments to enter the bounded local REPL. `maos-industrial repl` starts it explicitly. The regular `maos industrial` command also opens the same REPL.
++
++The REPL accepts only these commands:
++
++| Command | Purpose |
++| --- | --- |
++| `project [directory]` | Show or select a project directory. |
++| `analyze <relative.csv> <request>` | Analyze one CSV selected inside the active project and prepare its persisted review run. Quote paths or requests containing spaces. |
++| `status <run-id>` | Show persisted status and whether the deliverable is currently accepted. |
++| `approve <run-id> <reviewer> [note]` | Record a reviewer decision and finalize the approved report. |
++| `reject <run-id> <reviewer> [note]` | Record rejection; no report is finalized. |
++| `report <run-id>` | Print the current accepted DOCX path and registered hash. |
++| `verify <run-id>` | Verify the audit chain and current run acceptance. |
++| `cancel` | Cancel an in-progress analysis. |
++| `help`, `exit` | Show commands or leave the REPL. |
++
++The REPL does not execute shell commands. It calls MAOS services in the local process. Its trust boundary is the current operating-system account and its access to the selected project directory; it does not use the Electron private-IPC session. The reviewer name is recorded as supplied by the local operator and is not independently authenticated by this CLI. The existing project/run/hash approval checks still apply.
++
++## Prepare a local project
++
++Initialize the project with `maos init`, choosing a local provider such as an already installed Ollama runtime. Add an `ANALYST_AGENT` entry to the project's existing `.maos/maos.config.json` `agents` array and point it at the local provider:
++
++```json
++{
++  "id": "ANALYST_AGENT",
++  "provider": "ollama",
++  "model": "<the model actually installed in Ollama>",
++  "timeoutMs": 60000
++}
++```
++
++The corresponding `providers.ollama.baseURL` must be a credential-free loopback endpoint, for example `http://127.0.0.1:11434/v1`. Keep the actual configured model ID. For this local configuration, the Industrial analysis service accepts only that loopback endpoint and does not fall back to another provider. The exact Meta opt-in below is the only hosted exception. MAOS does not download or start a model runtime.
++
++## Complete a review
++
++Example session:
++
++```text
++project C:\projects\bearing-check
++analyze data\bearing-ramp.csv "Count threshold findings and summarize measured peaks"
++status judged-run-agent-<analysis-id>
++approve judged-run-agent-<analysis-id> "Shift Engineer" "Reviewed the replay evidence"
++verify judged-run-agent-<analysis-id>
++report judged-run-agent-<analysis-id>
++```
++
++Analysis reports the configured provider/model, provider-reported model identity, selected source hash, replay-verified numeric findings, receipt, and model-generated explanation labelled **UNVERIFIED**. A CRITICAL/FAIL verdict is an engineering result and may still have a successfully completed run. Approval binds the persisted run and prepared output; rejection does not produce an accepted DOCX. `report` refuses runs whose deliverable is no longer currently accepted.
++
++The CLI prints the registered DOCX path and SHA-256; use `maos-industrial open <path> --project-root <directory>` to open the accepted report. The report is not a certification, operating authorization, or independent verification of model prose.
++
++## Runtime and inference status
++
++The bounded analysis path allows at most four model iterations, one telemetry-analysis tool call, 256 output tokens per model response, zero automatic provider retries, and a 60-second overall deadline. Cancellation is propagated to the configured provider. A local mock transport is used in automated contract tests; those tests do not establish compatibility or quality for a live model. Hosted Meta inference remains disabled until endpoint/model terms, data handling, account billing behavior, and owner authorization are confirmed.
++
++### Explicit Meta Model API opt-in
++
++The only supported hosted configuration is `https://api.meta.ai/v1` with `muse-spark-1.3`. It stays disabled unless the selected provider entry sets `metaApiEnabled` to `true`; set `apiKeyEnv` to the name of an environment variable holding the key. The key is never read from project config. Muse temperature is omitted unless explicitly set to a number from 0 through 2; each response is capped at 256 output tokens, requests have a 60-second deadline and the SDK performs zero retries. Do not enable this configuration or make hosted requests until the owner confirms the terms, data handling and no-overage account gate.
++
++This uses Meta's documented Chat Completions tool-call shape. The API currently accepts `max_tokens` as a deprecated alias for `max_completion_tokens`; MAOS keeps `max_tokens` for the bounded request. See the [Chat Completions quickstart](https://dev.meta.ai/docs/cookbook/quickstart-chat-completions), [tool/function calling guide](https://dev.meta.ai/docs/cookbook/tool-function-calling), and [Chat Completions protocol](https://dev.meta.ai/docs/protocols/chat-completions).
++
++Merge this provider fragment into an existing config, then set `ANALYST_AGENT` to use provider `meta` and model `muse-spark-1.3`:
++
++```json
++{
++  "meta": {
++    "baseURL": "https://api.meta.ai/v1",
++    "metaApiEnabled": true,
++    "apiKeyEnv": "MODEL_API_KEY"
++  }
++}
++```
+diff --git a/src/industrial/industrial-repl.ts b/src/industrial/industrial-repl.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a37861f37254dbfb184fec1955dd83f2700fa6e0
+--- /dev/null
++++ b/src/industrial/industrial-repl.ts
+@@ -0,0 +1,260 @@
++import * as fs from 'node:fs';
++import * as path from 'node:path';
++import * as readline from 'node:readline';
++import type { Readable, Writable } from 'node:stream';
++import chalk from 'chalk';
++import {
++  decideAndResumeJudgedRunAfterApproval,
++  isAcceptedJudgedRun,
++  prepareAgentJudgedRun,
++  readJudgedRunManifest,
++} from './judged-run';
++import { createServiceContainer } from '../service';
++
++export interface IndustrialReplOptions {
++  projectRoot?: string;
++  input?: Readable;
++  output?: Writable;
++}
++
++function write(output: Writable, value: string): void {
++  output.write(`${value}\n`);
++}
++
++function safeTerminalText(value: unknown): string {
++  return String(value).replace(/[\u0000-\u001f\u007f]/g, ' ');
++}
++
++function validateRunId(runId: string): void {
++  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runId)) {
++    throw new Error('Run ID must contain only letters, numbers, dots, underscores, or hyphens.');
++  }
++}
++
++function tokenize(line: string): string[] {
++  const tokens: string[] = [];
++  let token = '';
++  let quote = '';
++
++  for (const character of line.trim()) {
++    if (quote) {
++      if (character === quote) quote = '';
++      else token += character;
++    } else if (character === '"' || character === "'") {
++      quote = character;
++    } else if (/\s/.test(character)) {
++      if (token) tokens.push(token);
++      token = '';
++    } else {
++      token += character;
++    }
++  }
++
++  if (quote) throw new Error('Close the quoted value and retry.');
++  if (token) tokens.push(token);
++  return tokens;
++}
++
++function showHelp(output: Writable, projectRoot: string): void {
++  write(output, [
++    'MAOS Industrial local operator commands:',
++    '  project [directory]                 Show or select a project root',
++    '  analyze <relative.csv> <request>    Analyze the selected project CSV',
++    '  status <run-id>                     Show persisted run and current acceptance',
++    '  approve <run-id> <reviewer> [note]  Approve and finalize the prepared DOCX',
++    '  reject <run-id> <reviewer> [note]   Reject the prepared report',
++    '  report <run-id>                     Show the accepted report path and hash',
++    '  verify <run-id>                     Verify audit and current report acceptance',
++    '  cancel                              Cancel an analysis currently in progress',
++    '  help, exit',
++    '',
++    'Only these commands are accepted; input is never passed to a shell.',
++    'Initialize with `maos init`, choose a local provider, then configure ANALYST_AGENT',
++    'with a credential-free loopback endpoint. Analysis fails closed without it.',
++    `Active project: ${safeTerminalText(projectRoot)}`,
++  ].join('\n'));
++}
++
++async function execute(
++  tokens: string[],
++  context: { projectRoot: string; output: Writable; controller?: AbortController },
++): Promise<'continue' | 'exit'> {
++  const [command, ...args] = tokens;
++  const { output } = context;
++
++  if (command === 'help' || command === '?') {
++    showHelp(output, context.projectRoot);
++  } else if (command === 'exit' || command === 'quit') {
++    return 'exit';
++  } else if (command === 'project') {
++    if (args.length > 1) throw new Error('Usage: project [directory]');
++    if (args.length === 0) {
++      write(output, `Active project: ${safeTerminalText(context.projectRoot)}`);
++    } else {
++      const selected = fs.realpathSync(path.resolve(context.projectRoot, args[0]));
++      if (!fs.statSync(selected).isDirectory()) throw new Error('Project path must be a directory.');
++      context.projectRoot = selected;
++      write(output, `Active project: ${safeTerminalText(context.projectRoot)}`);
++    }
++  } else if (command === 'analyze') {
++    if (args.length < 2) throw new Error('Usage: analyze <relative.csv> <request>');
++    const [sourcePath, ...requestParts] = args;
++    const controller = new AbortController();
++    context.controller = controller;
++    const services = createServiceContainer(context.projectRoot);
++    try {
++      const result = await services.industrialAnalysisAgent.analyze(context.projectRoot, {
++        sourcePath,
++        request: requestParts.join(' '),
++      }, { signal: controller.signal });
++      const judgedRun = prepareAgentJudgedRun(context.projectRoot, services, result.evidence.analysisId);
++      const numeric = result.evidence.result;
++      write(output, [
++        `Analysis provider: ${safeTerminalText(result.provider)}`,
++        `Requested model: ${safeTerminalText(result.requestedModel)}`,
++        `Provider-reported model: ${safeTerminalText(result.reportedModel || 'unavailable')}`,
++        `Selected source: ${safeTerminalText(result.evidence.source.selectedPath)} (${result.evidence.source.sha256})`,
++        `Replay-verified numeric findings: ${JSON.stringify(numeric)}`,
++        `Receipt: ${safeTerminalText(result.evidence.analysisId)} (${result.evidence.receiptSha256})`,
++        `Engineering verdict: ${safeTerminalText(numeric.verdict ?? 'unavailable')}`,
++        `Model-generated explanation — UNVERIFIED: ${safeTerminalText(result.explanation)}`,
++        `Review run: ${judgedRun.runId} (${judgedRun.status}); approval ${judgedRun.approvalId}`,
++      ].join('\n'));
++    } finally {
++      context.controller = undefined;
++    }
++  } else if (command === 'cancel') {
++    if (args.length) throw new Error('Usage: cancel');
++    if (!context.controller) write(output, 'No cancellable analysis is currently running.');
++    else {
++      context.controller.abort();
++      write(output, 'Cancellation requested; the analysis will remain unaccepted.');
++    }
++  } else if (command === 'status' || command === 'report' || command === 'verify') {
++    if (args.length !== 1) throw new Error(`Usage: ${command} <run-id>`);
++    validateRunId(args[0]);
++    const services = createServiceContainer(context.projectRoot);
++    const manifest = readJudgedRunManifest(context.projectRoot, args[0]);
++    if (!manifest) throw new Error(`Run '${safeTerminalText(args[0])}' was not found in the active project.`);
++    const accepted = isAcceptedJudgedRun(context.projectRoot, services, manifest);
++
++    if (command === 'status') {
++      write(output, [
++        `Run: ${manifest.runId}`,
++        `Persisted status: ${manifest.status}`,
++        `Current accepted deliverable: ${accepted ? 'yes' : 'no'}`,
++        `Engineering verdict: ${manifest.verdict}`,
++        `Approval: ${manifest.approvalId}`,
++        ...(manifest.failureReason ? [`Failure: ${safeTerminalText(manifest.failureReason)}`] : []),
++      ].join('\n'));
++    } else if (command === 'report') {
++      if (!accepted || !manifest.deliverablePath || !manifest.deliverableSha256) {
++        throw new Error(`Run '${manifest.runId}' has no currently accepted report.`);
++      }
++      write(output, `Accepted report: ${path.resolve(context.projectRoot, manifest.deliverablePath)}\nSHA-256: ${manifest.deliverableSha256}`);
++    } else {
++      const audit = services.audit.verifyChain();
++      const valid = audit.valid && accepted;
++      write(output, `Audit chain: ${audit.valid ? 'valid' : 'invalid'}\nCurrent report acceptance: ${accepted ? 'valid' : 'unavailable'}\nVerification: ${valid ? 'VERIFIED' : 'FAILED'}`);
++      if (audit.errors.length) write(output, audit.errors.map(safeTerminalText).join('\n'));
++      if (!valid) throw new Error('The run is not currently accepted or the audit chain is invalid.');
++    }
++  } else if (command === 'approve' || command === 'reject') {
++    if (args.length < 2) throw new Error(`Usage: ${command} <run-id> <reviewer> [note]`);
++    const [runId, reviewer, ...noteParts] = args;
++    validateRunId(runId);
++    const services = createServiceContainer(context.projectRoot);
++    const manifest = readJudgedRunManifest(context.projectRoot, runId);
++    if (!manifest) throw new Error(`Run '${safeTerminalText(runId)}' was not found in the active project.`);
++    const result = await decideAndResumeJudgedRunAfterApproval(
++      context.projectRoot,
++      services,
++      manifest.approvalId,
++      {
++        decision: command === 'approve' ? 'approved' : 'rejected',
++        actorId: reviewer,
++        actorRole: 'engineer',
++        notes: noteParts.join(' ') || undefined,
++      },
++    );
++    const accepted = isAcceptedJudgedRun(context.projectRoot, services, result.judgedRun);
++    write(output, [
++      `Approval ${result.approval.status}: ${result.approval.approvalId}`,
++      'Local CLI reviewer identity is operator-supplied and is not independently authenticated.',
++      `Run status: ${result.judgedRun.status}`,
++      `Current accepted deliverable: ${accepted ? 'yes' : 'no'}`,
++      `Engineering verdict: ${result.judgedRun.verdict}`,
++      ...(accepted && result.judgedRun.deliverablePath ? [`Report: ${path.resolve(context.projectRoot, result.judgedRun.deliverablePath)}`] : []),
++    ].join('\n'));
++  } else {
++    throw new Error(`Unknown command '${safeTerminalText(command)}'. Type 'help' for supported commands.`);
++  }
++
++  return 'continue';
++}
++
++export function runIndustrialRepl(options: IndustrialReplOptions = {}): Promise<void> {
++  const input = options.input || process.stdin;
++  const output = options.output || process.stdout;
++  const context: { projectRoot: string; output: Writable; controller?: AbortController } = {
++    projectRoot: fs.realpathSync(path.resolve(options.projectRoot || process.cwd())),
++    output,
++  };
++  const rl = readline.createInterface({ input, output, terminal: Boolean((output as Writable & { isTTY?: boolean }).isTTY) });
++
++  return new Promise((resolve) => {
++    let busy = false;
++    let closing = false;
++    rl.setPrompt('maos-industrial> ');
++    write(output, 'MAOS Industrial local operator. Type `help` for commands.');
++    rl.prompt();
++
++    rl.on('line', (line) => {
++      let tokens: string[];
++      try {
++        tokens = tokenize(line);
++      } catch (error) {
++        write(output, chalk.red(safeTerminalText(error instanceof Error ? error.message : error)));
++        rl.prompt();
++        return;
++      }
++      if (tokens.length === 0) {
++        rl.prompt();
++        return;
++      }
++      if (busy) {
++        if (tokens[0] === 'cancel' && context.controller) void execute(tokens, context).catch(() => undefined);
++        else write(output, 'An operation is in progress. Enter `cancel` to stop analysis or wait for it to finish.');
++        return;
++      }
++
++      busy = true;
++      void execute(tokens, context)
++        .then((result) => {
++          if (result === 'exit') {
++            closing = true;
++            rl.close();
++          }
++        })
++        .catch((error) => {
++          const code = typeof error?.code === 'string' ? ` [${safeTerminalText(error.code)}]` : '';
++          write(output, chalk.red(`Error${code}: ${safeTerminalText(error instanceof Error ? error.message : error)}`));
++        })
++        .finally(() => {
++          busy = false;
++          if (!closing) rl.prompt();
++        });
++      if (context.controller) rl.prompt();
++    });
++
++    rl.on('SIGINT', () => {
++      if (context.controller) context.controller.abort();
++      else rl.close();
++    });
++
++    rl.on('close', () => {
++      if (context.controller) context.controller.abort();
++      resolve();
++    });
++  });
++}
+diff --git a/tests/industrial/industrial-repl.test.ts b/tests/industrial/industrial-repl.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb35a0faeb779adedf0b0fb27f5d3884b55b5b0f
+--- /dev/null
++++ b/tests/industrial/industrial-repl.test.ts
+@@ -0,0 +1,237 @@
++import * as fs from 'node:fs';
++import * as http from 'node:http';
++import * as os from 'node:os';
++import * as path from 'node:path';
++import type { AddressInfo } from 'node:net';
++import { PassThrough } from 'node:stream';
++import { afterEach, describe, expect, it } from 'vitest';
++import { runIndustrialRepl } from '../../src/industrial/industrial-repl';
++import { ProjectServiceHost } from '../../src/service/project-service/host';
++
++const roots: string[] = [];
++const servers: http.Server[] = [];
++const hosts: ProjectServiceHost[] = [];
++const repoRoot = path.resolve(__dirname, '../..');
++
++function makeCompletion(name: string, args: Record<string, unknown>, id: string, content?: string) {
++  return {
++    id: 'chatcmpl-industrial-repl',
++    object: 'chat.completion',
++    created: 1,
++    model: 'mock-repl-model',
++    choices: [{
++      index: 0,
++      message: {
++        role: 'assistant',
++        content: content ?? null,
++        tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
++      },
++      finish_reason: 'tool_calls',
++    }],
++    usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
++  };
++}
++
++async function startMockInference(hang = false): Promise<{ baseURL: string; waitForFirstRequest(): Promise<void> }> {
++  let requestCount = 0;
++  let resolveFirstRequest!: () => void;
++  const firstRequest = new Promise<void>((resolve) => { resolveFirstRequest = resolve; });
++  const server = http.createServer((req, res) => {
++    const chunks: Buffer[] = [];
++    req.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
++    req.on('end', () => {
++      requestCount++;
++      if (requestCount === 1) resolveFirstRequest();
++      if (hang) return;
++      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
++      if (requestCount % 2 === 1) {
++        const user = body.messages.find((message: any) => message.role === 'user');
++        const sourcePath = String(user?.content).match(/Analyze only this user-selected project file: ([^\r\n]+)/)?.[1];
++        res.writeHead(200, { 'content-type': 'application/json' });
++        res.end(JSON.stringify(makeCompletion('analyze_telemetry_csv', { sourcePath }, `call-analysis-${requestCount}`)));
++        return;
++      }
++
++      const callId = `call-analysis-${requestCount - 1}`;
++      const tool = body.messages.find((message: any) => message.role === 'tool' && message.tool_call_id === callId);
++      const evidence = JSON.parse(tool.content);
++      res.writeHead(200, { 'content-type': 'application/json' });
++      res.end(JSON.stringify(makeCompletion('task_complete', {
++        summary: `Replay found ${evidence.result.rowsAnalyzed} rows with verdict ${evidence.result.verdict}; receipt ${evidence.analysisId}.`,
++      }, `call-complete-${requestCount}`)));
++    });
++  });
++  servers.push(server);
++  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
++  return {
++    baseURL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
++    waitForFirstRequest: () => firstRequest,
++  };
++}
++
++function createProject(baseURL: string): { root: string; sourcePath: string } {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-industrial-repl-'));
++  roots.push(root);
++  fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({
++    projectName: 'industrial-repl-test',
++    agents: [{ id: 'ANALYST_AGENT', provider: 'mock', model: 'fixture-model', timeoutMs: 2_000 }],
++    providers: { mock: { baseURL } },
++  }));
++  fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
++  fs.copyFileSync(
++    path.join(repoRoot, 'demo', 'industrial', 'safety_thresholds.json'),
++    path.join(root, 'demo', 'industrial', 'safety_thresholds.json'),
++  );
++  const sourcePath = 'commissioning/bearing-ramp.csv';
++  fs.mkdirSync(path.dirname(path.join(root, sourcePath)), { recursive: true });
++  fs.writeFileSync(path.join(root, sourcePath), [
++    'sample_time,vibration_rms_mm_s,bearing_temperature_c',
++    '2026-02-11T08:00:00Z,1.2,70',
++    '2026-02-11T08:01:00Z,4.8,88',
++    '2026-02-11T08:02:00Z,8.2,96',
++    '2026-02-11T08:03:00Z,3.0,82',
++  ].join('\n'));
++  return { root, sourcePath };
++}
++
++function waitFor(output: PassThrough, readText: () => string, text: string, after = 0): Promise<void> {
++  if (readText().slice(after).includes(text)) return Promise.resolve();
++  return new Promise((resolve, reject) => {
++    const timer = setTimeout(() => finish(new Error(`Timed out waiting for REPL output: ${text}\n${readText()}`)), 5_000);
++    const onData = () => {
++      if (readText().slice(after).includes(text)) finish();
++    };
++    const finish = (error?: Error) => {
++      clearTimeout(timer);
++      output.off('data', onData);
++      if (error) reject(error);
++      else resolve();
++    };
++    output.on('data', onData);
++  });
++}
++
++async function sendCommand(
++  input: PassThrough,
++  output: PassThrough,
++  readText: () => string,
++  command: string,
++  expected: string,
++): Promise<void> {
++  const start = readText().length;
++  input.write(`${command}\n`);
++  await waitFor(output, readText, expected, start);
++  const completed = readText().length;
++  await waitFor(output, readText, 'maos-industrial> ', completed);
++}
++
++afterEach(async () => {
++  await Promise.all(hosts.splice(0).map((host) => host.stop()));
++  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
++    server.closeAllConnections();
++    server.close(() => resolve());
++  })));
++  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
++});
++
++describe('MAOS Industrial bounded REPL', () => {
++  it('runs the selected-file mock analysis through persisted review, report and verification', async () => {
++    const mock = await startMockInference();
++    const project = createProject(mock.baseURL);
++    const input = new PassThrough();
++    const output = new PassThrough();
++    let transcript = '';
++    output.on('data', (chunk: Buffer) => { transcript += chunk.toString('utf8'); });
++    const repl = runIndustrialRepl({ projectRoot: project.root, input, output });
++
++    await sendCommand(input, output, () => transcript, 'shell echo forbidden', 'Unknown command');
++    await sendCommand(input, output, () => transcript,
++      'report ../HACKATHON_SUBMISSION.md',
++      'Run ID must contain only letters, numbers, dots, underscores, or hyphens.');
++    await sendCommand(input, output, () => transcript,
++      'analyze commissioning/bearing-ramp.csv "Review this held-out bearing sample"',
++      'Review run: judged-run-agent-');
++    const runId = transcript.match(/Review run: (judged-run-agent-[^\s]+) \(pending_approval\)/)?.[1];
++    expect(runId).toBeTruthy();
++    expect(transcript).toContain('Provider-reported model: mock-repl-model');
++    expect(transcript).toContain('Engineering verdict: CRITICAL');
++    expect(transcript).toContain('Model-generated explanation — UNVERIFIED');
++    expect(transcript).toContain('Replay-verified numeric findings:');
++
++    const host = new ProjectServiceHost(project.root, { port: 0, allowedOrigins: ['http://127.0.0.1:47123'] });
++    hosts.push(host);
++    const started = await host.start();
++    const session = host.createSession('industrial-repl-state-test-window');
++    const guiRunResponse = await fetch(`http://127.0.0.1:${started.port}/api/v1/industrial/judged-runs/${encodeURIComponent(runId!)}`, {
++      headers: {
++        Origin: 'http://127.0.0.1:47123',
++        Authorization: `Bearer ${session.token}`,
++        'X-Project-Root': project.root,
++        'X-Project-ID': 'industrial-repl-test',
++      },
++    });
++    const guiRun = await guiRunResponse.json() as { data: { runId: string; status: string; verdict: string } };
++    expect(guiRunResponse.status).toBe(200);
++    expect(guiRun.data).toMatchObject({ runId, status: 'pending_approval', verdict: 'FAIL' });
++
++    await sendCommand(input, output, () => transcript, `status ${runId}`, 'Current accepted deliverable: no');
++    expect(transcript).toContain(`Persisted status: ${guiRun.data.status}`);
++    const beforeApproval = transcript.length;
++    await sendCommand(input, output, () => transcript,
++      `approve ${runId} "Shift Engineer" "Reviewed the replay evidence"`,
++      'Current accepted deliverable: yes');
++    expect(transcript.slice(beforeApproval)).toContain('Local CLI reviewer identity is operator-supplied and is not independently authenticated.');
++    await sendCommand(input, output, () => transcript, `report ${runId}`, 'Accepted report:');
++    await sendCommand(input, output, () => transcript, `verify ${runId}`, 'Verification: VERIFIED');
++    await sendCommand(input, output, () => transcript,
++      'analyze commissioning/bearing-ramp.csv "Reject this second synthetic review"',
++      'Review run: judged-run-agent-');
++    const reviewRuns = Array.from(transcript.matchAll(/Review run: (judged-run-agent-[^\s]+) \(pending_approval\)/g));
++    const rejectedRunId = reviewRuns[reviewRuns.length - 1]?.[1];
++    expect(rejectedRunId).toBeTruthy();
++    const beforeRejection = transcript.length;
++    await sendCommand(input, output, () => transcript,
++      `reject ${rejectedRunId} "Shift Engineer" "Evidence was not approved"`,
++      'Run status: rejected');
++    expect(transcript.slice(beforeRejection)).toContain('Local CLI reviewer identity is operator-supplied and is not independently authenticated.');
++    await sendCommand(input, output, () => transcript,
++      `report ${rejectedRunId}`,
++      'has no currently accepted report');
++    input.write('exit\n');
++    input.end();
++    await repl;
++
++    expect(transcript).toContain('Run status: completed');
++    expect(transcript).toContain('Run status: rejected');
++    expect(transcript).toContain('Engineering verdict: FAIL');
++    expect(transcript).not.toMatch(/Unknown command[^\n]*echo/);
++  });
++
++  it('cancels a hanging mock analysis without preparing a review run or accepted report', async () => {
++    const mock = await startMockInference(true);
++    const project = createProject(mock.baseURL);
++    const input = new PassThrough();
++    const output = new PassThrough();
++    let transcript = '';
++    output.on('data', (chunk: Buffer) => { transcript += chunk.toString('utf8'); });
++    const repl = runIndustrialRepl({ projectRoot: project.root, input, output });
++
++    const after = transcript.length;
++    input.write('analyze commissioning/bearing-ramp.csv "Cancel this local mock request"\n');
++    await mock.waitForFirstRequest();
++    await waitFor(output, () => transcript, 'maos-industrial> ', after);
++    const beforeCancel = transcript.length;
++    input.write('cancel\n');
++    await waitFor(output, () => transcript, 'Cancellation requested', beforeCancel);
++    await waitFor(output, () => transcript, 'AGENT_CANCELLED', beforeCancel);
++    await waitFor(output, () => transcript, 'maos-industrial> ', transcript.length);
++    input.write('exit\n');
++    input.end();
++    await repl;
++
++    const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
++    expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
++    expect(fs.existsSync(path.join(project.root, '.maos', 'industrial', 'judged-runs'))).toBe(false);
++  });
++});
+diff --git a/tests/industrial/meta-model-api-contract.test.ts b/tests/industrial/meta-model-api-contract.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..23dd36176a355b27f5bd774fc7f6076e2fb5906c
+--- /dev/null
++++ b/tests/industrial/meta-model-api-contract.test.ts
+@@ -0,0 +1,351 @@
++import * as fs from 'node:fs';
++import * as http from 'node:http';
++import * as os from 'node:os';
++import * as path from 'node:path';
++import { randomUUID } from 'node:crypto';
++import type { AddressInfo } from 'node:net';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { OpenAIProvider } from '../../src/backends/openai-provider';
++import { IndustrialAnalysisAgentError } from '../../src/industrial/analysis-agent-service';
++import { createServiceContainer } from '../../src/service';
++
++const projects: string[] = [];
++const servers: http.Server[] = [];
++const environmentNames: string[] = [];
++const repoRoot = path.resolve(__dirname, '../..');
++const META_URL = 'https://api.meta.ai/v1';
++const MODEL = 'muse-spark-1.3';
++
++type Action = { status?: number; body?: unknown; hang?: boolean };
++
++function completion(toolName: string, args: string, options: { omitModel?: boolean } = {}) {
++  return {
++    id: 'chatcmpl-meta-contract',
++    object: 'chat.completion',
++    created: 1,
++    ...(options.omitModel ? {} : { model: MODEL }),
++    choices: [{
++      index: 0,
++      message: {
++        role: 'assistant',
++        content: null,
++        tool_calls: [{ id: 'call-meta-tool', type: 'function', function: { name: toolName, arguments: args } }],
++      },
++      finish_reason: 'tool_calls',
++    }],
++    usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
++  };
++}
++
++async function startServer(handler: (body: any, request: http.IncomingMessage) => Action | Promise<Action>) {
++  const requests: Array<{ body: any; headers: http.IncomingHttpHeaders; url: string }> = [];
++  const requestWaiters: Array<() => void> = [];
++  const server = http.createServer((req, res) => {
++    const chunks: Buffer[] = [];
++    req.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
++    req.on('end', async () => {
++      let body: any;
++      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = undefined; }
++      requests.push({ body, headers: req.headers, url: req.url || '' });
++      requestWaiters.splice(0).forEach((resolve) => resolve());
++      try {
++        const action = await handler(body, req);
++        if (action.hang || res.destroyed) return;
++        res.writeHead(action.status || 200, { 'content-type': 'application/json' });
++        res.end(JSON.stringify(action.body));
++      } catch {
++        if (!res.destroyed) res.writeHead(500).end();
++      }
++    });
++  });
++  servers.push(server);
++  await new Promise<void>((resolve, reject) => {
++    server.once('error', reject);
++    server.listen(0, '127.0.0.1', resolve);
++  });
++  const port = (server.address() as AddressInfo).port;
++  return {
++    server,
++    requests,
++    baseURL: `http://127.0.0.1:${port}/v1`,
++    waitForRequest: async () => {
++      if (requests.length) return;
++      await new Promise<void>((resolve) => requestWaiters.push(resolve));
++    },
++  };
++}
++
++function makeProject(options: {
++  baseURL: string;
++  model?: string;
++  enabled?: boolean;
++  omitOptIn?: boolean;
++  keyEnv?: string;
++  temperature?: number;
++}) {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-meta-contract-'));
++  projects.push(root);
++  const keyEnv = options.keyEnv || `MAOS_TEST_META_KEY_${randomUUID().replace(/-/g, '').toUpperCase()}`;
++  if (options.enabled !== false) environmentNames.push(keyEnv);
++  fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++  fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
++  fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', 'safety_thresholds.json'), path.join(root, 'demo', 'industrial', 'safety_thresholds.json'));
++  fs.mkdirSync(path.join(root, 'commissioning'), { recursive: true });
++  fs.writeFileSync(path.join(root, 'commissioning', 'bearing-ramp.csv'), [
++    'sample_time,vibration_rms_mm_s,bearing_temperature_c',
++    '2026-02-11T08:00:00Z,1.2,70',
++    '2026-02-11T08:01:00Z,4.8,88',
++    '2026-02-11T08:02:00Z,8.2,96',
++  ].join('\n'));
++  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({
++    schemaVersion: 1,
++    projectName: 'meta-contract-test',
++    providers: {
++      meta: {
++        baseURL: options.baseURL,
++        metaApiEnabled: options.omitOptIn ? undefined : options.enabled !== false,
++        ...(options.enabled === false ? {} : { apiKeyEnv: keyEnv }),
++        ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
++      },
++    },
++    agents: [{
++      id: 'ANALYST_AGENT', role: 'test analyst', provider: 'meta', model: options.model || MODEL,
++      timeoutMs: 7_000, capabilities: ['analysis'], scope: ['.'],
++    }],
++    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: 'meta' },
++  }, null, 2));
++  return { root, keyEnv, sourcePath: 'commissioning/bearing-ramp.csv' };
++}
++
++function installMetaFetchBridge(targetBaseURL: string, requests: Array<{ url: string; init?: RequestInit }>) {
++  const originalFetch = globalThis.fetch;
++  const nativeFetch = originalFetch.bind(globalThis);
++  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
++    const targetUrl = String(input);
++    requests.push({ url: targetUrl, init });
++    if (!targetUrl.startsWith(`${META_URL}/chat/completions`)) throw new Error('Unexpected non-Meta request URL.');
++    const localUrl = `${targetBaseURL}/chat/completions`;
++    return nativeFetch(localUrl, { ...init, redirect: 'error' });
++  }) as typeof globalThis.fetch;
++  return () => { globalThis.fetch = originalFetch; };
++}
++
++function chatTool() {
++  return [{
++    type: 'function' as const,
++    function: {
++      name: 'analyze_telemetry_csv',
++      description: 'Analyze the selected project-local CSV.',
++      parameters: { type: 'object', properties: { sourcePath: { type: 'string' } }, required: ['sourcePath'] },
++    },
++  }];
++}
++
++afterEach(async () => {
++  for (const name of environmentNames.splice(0)) delete process.env[name];
++  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
++    server.closeAllConnections();
++    server.close(() => resolve());
++  })));
++  for (const root of projects.splice(0)) fs.rmSync(root, { recursive: true, force: true });
++});
++
++describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock only)', () => {
++  it.each([
++    ['default Muse temperature is omitted', undefined, false],
++    ['configured Muse temperature is sent', 1, true],
++  ])('uses the documented Chat Completions tool-call round trip when %s', async (_label, temperature, hasTemperature) => {
++    let count = 0;
++    const mock = await startServer((body) => {
++      count++;
++      expect(body.model).toBe(MODEL);
++      expect(body.max_tokens).toBe(256);
++      expect(Object.prototype.hasOwnProperty.call(body, 'temperature')).toBe(hasTemperature);
++      if (hasTemperature) expect(body.temperature).toBe(1);
++      expect(Object.prototype.hasOwnProperty.call(body, 'tool_choice')).toBe(false);
++      expect(body.messages.at(-1).role).toBe(count === 1 ? 'user' : 'tool');
++      if (count === 1) return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' }), { omitModel: true }) };
++      const assistant = body.messages.find((message: any) => message.role === 'assistant' && message.tool_calls);
++      expect(assistant.tool_calls[0].id).toBe('call-meta-tool');
++      const tool = body.messages.find((message: any) => message.role === 'tool');
++      expect(tool.tool_call_id).toBe('call-meta-tool');
++      const evidence = JSON.parse(tool.content);
++      return { body: completion('task_complete', JSON.stringify({ summary: `Replay receipt ${evidence.analysisId}.` }), { omitModel: true }) };
++    });
++    const project = makeProject({ baseURL: META_URL, temperature });
++    const apiKey = 'meta-contract-secret-never-log';
++    process.env[project.keyEnv] = apiKey;
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    try {
++      const result = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      });
++
++      expect(mock.requests).toHaveLength(2);
++      expect(outbound).toHaveLength(2);
++      expect(outbound.every((request) => request.url === `${META_URL}/chat/completions`)).toBe(true);
++      expect(outbound.every((request) => new Headers(request.init?.headers).get('authorization') === `Bearer ${apiKey}`)).toBe(true);
++      expect(result.requestedModel).toBe(MODEL);
++      expect(result.reportedModel).toBeNull();
++      expect(result.evidence.verification.valid).toBe(true);
++      expect(JSON.stringify(result).includes(apiKey)).toBe(false);
++      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords()).includes(apiKey)).toBe(false);
++      expect(fs.readFileSync(path.join(project.root, result.reportPath), 'utf8').includes(apiKey)).toBe(false);
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('fails before fetch when the configured key environment variable is missing', async () => {
++    const mock = await startServer(() => ({ body: completion('task_complete', '{}') }));
++    const project = makeProject({ baseURL: META_URL });
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Analyze the selected CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'MODEL_CREDENTIAL_MISSING' });
++      expect(outbound).toHaveLength(0);
++      expect(mock.requests).toHaveLength(0);
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it.each([
++    ['other host', 'https://example.invalid/v1', MODEL, true, 'PROJECT_CONFIG_INVALID'],
++    ['other model', META_URL, 'muse-spark-1.3-contributor', true, 'PROJECT_CONFIG_INVALID'],
++    ['Meta endpoint with no opt-in field', META_URL, MODEL, true, 'MODEL_ENDPOINT_BLOCKED', true],
++    ['Meta endpoint without opt-in', META_URL, MODEL, false, 'MODEL_ENDPOINT_BLOCKED'],
++    ['remote endpoint without opt-in', 'https://example.invalid/v1', MODEL, false, 'MODEL_ENDPOINT_BLOCKED'],
++  ])('rejects %s without a request', async (_label, baseURL, model, enabled, code, omitOptIn) => {
++    const mock = await startServer(() => ({ body: completion('task_complete', '{}') }));
++    const project = makeProject({ baseURL, model, enabled, omitOptIn });
++    if (enabled) process.env[project.keyEnv] = 'not-used-test-value';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Analyze the selected CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code });
++      expect(outbound).toHaveLength(0);
++      expect(mock.requests).toHaveLength(0);
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('does not accept a malformed tool-call argument response', async () => {
++    const mock = await startServer(() => ({ body: completion('analyze_telemetry_csv', '{"sourcePath":') }));
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = 'meta-test-key';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Analyze the selected CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
++      expect(outbound.length).toBeGreaterThan(0);
++      expect(outbound.length).toBeLessThanOrEqual(4);
++      expect(mock.requests).toHaveLength(outbound.length);
++      expect(fs.existsSync(path.join(project.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports'))).toBe(false);
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it.each([400, 401, 403, 404, 429, 500, 502, 503, 504])('makes one HTTP attempt for %i responses with SDK retries disabled', async (status) => {
++    let attempts = 0;
++    const mock = await startServer(() => {
++      attempts++;
++      return { status, body: { error: { message: 'synthetic provider failure' } } };
++    });
++    const provider = new OpenAIProvider({ name: 'meta-model-api-mock', apiKey: 'test-key', baseURL: mock.baseURL, model: MODEL, maxRetries: 0 });
++    await expect(provider.generate([{ role: 'user', content: 'synthetic test' }], chatTool())).rejects.toThrow();
++    expect(attempts).toBe(1);
++    expect(mock.requests).toHaveLength(1);
++  });
++
++  it.each([429, 503])('makes one HTTP attempt for an integrated Meta %i failure with application retries disabled', async (status) => {
++    const mock = await startServer(() => ({ status, body: { error: { message: 'synthetic provider failure' } } }));
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = 'meta-integration-retry-test-key';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Analyze the selected CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
++      expect(outbound).toHaveLength(1);
++      expect(mock.requests).toHaveLength(1);
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('redacts an API key echoed by a 401 response from errors and stacks', async () => {
++    const key = 'meta-secret-redaction-only';
++    const mock = await startServer(() => ({ status: 401, body: { error: { message: `rejected ${key}` } } }));
++    const provider = new OpenAIProvider({ name: 'meta-model-api-mock', apiKey: key, baseURL: mock.baseURL, model: MODEL, maxRetries: 0 });
++    let failure: Error | undefined;
++    try {
++      await provider.generate([{ role: 'user', content: 'synthetic test' }]);
++    } catch (error) {
++      failure = error as Error;
++    }
++    expect(failure instanceof Error).toBe(true);
++    expect((failure?.message || '').includes(key)).toBe(false);
++    expect((failure?.stack || '').includes(key)).toBe(false);
++  });
++
++  it('propagates caller cancellation to the in-flight Meta-compatible request', async () => {
++    let serverRequest: http.IncomingMessage | undefined;
++    const mock = await startServer((_body, request) => {
++      serverRequest = request;
++      return { hang: true };
++    });
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = 'meta-cancel-test-key';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    const controller = new AbortController();
++    try {
++      const pending = createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Cancel the synthetic request.', sourcePath: project.sourcePath,
++      }, { signal: controller.signal });
++      await mock.waitForRequest();
++      controller.abort();
++      await expect(pending).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_CANCELLED' });
++      expect(outbound).toHaveLength(1);
++      expect(outbound[0].init?.signal?.aborted).toBe(true);
++      expect(serverRequest?.aborted || serverRequest?.destroyed).toBe(true);
++      expect(fs.existsSync(path.join(project.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports'))).toBe(false);
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('enforces the single sixty-second deadline on the configured Meta runtime', async () => {
++    const mock = await startServer(() => ({ hang: true }));
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = 'meta-timeout-test-key';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    vi.useFakeTimers();
++    try {
++      const pending = createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Time out the synthetic request.', sourcePath: project.sourcePath,
++      });
++      const assertion = expect(pending).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_TIMEOUT' });
++      await mock.waitForRequest();
++      await vi.advanceTimersByTimeAsync(60_000);
++      await assertion;
++      expect(outbound).toHaveLength(1);
++      expect(outbound[0].init?.signal?.aborted).toBe(true);
++    } finally {
++      vi.useRealTimers();
++      restoreFetch();
++    }
++  });
++});

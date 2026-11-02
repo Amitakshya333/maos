@@ -1,0 +1,26 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mC:/maos[39m
+
+[90mstdout[2m | tests/backends/baseten-api-provider-boundary.test.ts[2m > [22m[2mBaseten exact opt-in provider policy (loopback/injected transport only)[2m > [22m[2mdoes not let Core retry a transient Baseten failure beyond the provider policy
+[22m[39m📋 [2026-10-30T12:53:37.880Z] [INFO] [baseten-test-agent] Starting task: baseten-test-task
+📋 [2026-10-30T12:53:37.880Z] [INFO] [baseten-test-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+📋 [2026-10-30T12:53:37.880Z] [INFO] [baseten-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+[90mstdout[2m | tests/backends/baseten-api-provider-boundary.test.ts[2m > [22m[2mBaseten exact opt-in provider policy (loopback/injected transport only)[2m > [22m[2mdoes not let Core retry a transient Baseten failure beyond the provider policy
+[22m[39m❌ [2026-10-30T12:53:37.892Z] [ERROR] [baseten-test-agent] Agent error: Error: baseten is temporarily unavailable (HTTP 503).
+Provider: baseten | Model: meta-models/muse-spark-open-1026 | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:253:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at C:/maos/tests/backends/baseten-api-provider-boundary.test.ts:354:20
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+ [32m✓[39m tests/backends/baseten-api-provider-boundary.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 261[2mms[22m[39m
+ [32m✓[39m tests/backends/openai-provider-local-tool-call.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 90[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m30 passed[39m[22m[90m (30)[39m
+[2m   Start at [22m 18:23:33
+[2m   Duration [22m 4.46s[2m (transform 2.04s, setup 0ms, import 3.69s, tests 351ms, environment 0ms)[22m
+

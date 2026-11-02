@@ -1,0 +1,26 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1
+
+ Γ¥» tests/gui/ui1-19-service-lifecycle.test.ts (26 tests | 1 failed) 319ms
+       ├ù rust/test.txt SHA-256 hash is strictly preserved 3ms
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 1 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/gui/ui1-19-service-lifecycle.test.ts > UI1-19: Service Lifecycle and Recovery Controls > 9. Canary Invariant > rust/test.txt SHA-256 hash is strictly preserved
+Error: ENOENT: no such file or directory, open 'C:\Users\AMITAKSHYA SUTAR\.local\share\opencode\worktree\327f80\opencode-tree-1\rust\test.txt'
+ Γ¥» tests/gui/ui1-19-service-lifecycle.test.ts:507:26
+    505|   describe('9. Canary Invariant', () => {
+    506|     it('rust/test.txt SHA-256 hash is strictly preserved', () => {
+    507|       const content = fs.readFileSync(CANARY_PATH);
+       |                          ^
+    508|       const hash = crypto.createHash('sha256').update(content).digest(ΓÇª
+    509|       expect(hash).toBe(CANARY_EXPECTED_HASH);
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/1]ΓÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 25 passed (26)
+   Start at  19:59:14
+   Duration  2.79s (transform 1.70s, setup 0ms, import 2.29s, tests 319ms, environment 0ms)
+

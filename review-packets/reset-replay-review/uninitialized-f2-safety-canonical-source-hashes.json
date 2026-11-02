@@ -1,0 +1,932 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-28T09:37:43.232Z",
+  "repositoryRoot": "C:/maos",
+  "baseRevision": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "patch": "uninitialized-f2-safety-canonical.patch",
+  "patchFormat": "canonical UTF-8 with LF line endings",
+  "patchBytes": 704991,
+  "patchSha256": "41971ac2753b12eb414390cca892a9ad20f441aedfb41e596fcd27bb53dca661",
+  "scopeCount": 100,
+  "trackedCount": 78,
+  "addedCount": 22,
+  "excludedTracked": [
+    ".maos/maos.config.json",
+    ".maos/pool.json",
+    "demo/industrial/MASTER_DEMO_PLAN.md",
+    "demo/industrial/RECORDING_READINESS.md"
+  ],
+  "excludedUntrackedPrefixes": [
+    "HACKATHON_SUBMISSION.md",
+    "docs/",
+    "review-packets/"
+  ],
+  "files": [
+    {
+      "path": ".npmignore",
+      "kind": "tracked",
+      "rawBytes": 234,
+      "rawSha256": "edd6fb1333c997f97c16aeec9682b251a22fc91d2b03c48c642265f5c6d5d9d8",
+      "lfBytes": 234,
+      "lfSha256": "edd6fb1333c997f97c16aeec9682b251a22fc91d2b03c48c642265f5c6d5d9d8",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "demo/industrial/PRESENTATION_SCRIPT.md",
+      "kind": "tracked",
+      "rawBytes": 5794,
+      "rawSha256": "cc2db77256cb883dee65d1f3638e342e423d316858353032e89281efde93ca7e",
+      "lfBytes": 5794,
+      "lfSha256": "cc2db77256cb883dee65d1f3638e342e423d316858353032e89281efde93ca7e",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "demo/industrial/RUNBOOK.md",
+      "kind": "tracked",
+      "rawBytes": 17564,
+      "rawSha256": "f7a5be591e43bf8a27134be61cf0f3fe21c17364780e7b7481d0f6ae7cb1ebfe",
+      "lfBytes": 17564,
+      "lfSha256": "f7a5be591e43bf8a27134be61cf0f3fe21c17364780e7b7481d0f6ae7cb1ebfe",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "desktop/main.cjs",
+      "kind": "added",
+      "rawBytes": 9167,
+      "rawSha256": "502d386fced7504b9b1362832815eb835d1afd282cba4798c9cdf3ba3c9b5104",
+      "lfBytes": 9167,
+      "lfSha256": "502d386fced7504b9b1362832815eb835d1afd282cba4798c9cdf3ba3c9b5104",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "kind": "added",
+      "rawBytes": 6765,
+      "rawSha256": "882b7544c76f950ab45477f836d29902b347a435276a7569a32d3252d313321d",
+      "lfBytes": 6765,
+      "lfSha256": "882b7544c76f950ab45477f836d29902b347a435276a7569a32d3252d313321d",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "desktop/package.json",
+      "kind": "added",
+      "rawBytes": 258,
+      "rawSha256": "4b3346bcdcd0674940c6e52ed7a041e19ae30b55a0855bff7aaa423a495e36dc",
+      "lfBytes": 258,
+      "lfSha256": "4b3346bcdcd0674940c6e52ed7a041e19ae30b55a0855bff7aaa423a495e36dc",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "desktop/preload.cjs",
+      "kind": "added",
+      "rawBytes": 202,
+      "rawSha256": "5b3a2e593124ec6c2d1320dfeb087e2e17b050ce33e567a7baa3770ef0fcee58",
+      "lfBytes": 202,
+      "lfSha256": "5b3a2e593124ec6c2d1320dfeb087e2e17b050ce33e567a7baa3770ef0fcee58",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "desktop/README.md",
+      "kind": "added",
+      "rawBytes": 1417,
+      "rawSha256": "e3651e48bdb17f33344ffc3f94095f633052c614af31a4fe5d225be7bc4ea914",
+      "lfBytes": 1417,
+      "lfSha256": "e3651e48bdb17f33344ffc3f94095f633052c614af31a4fe5d225be7bc4ea914",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "package.json",
+      "kind": "tracked",
+      "rawBytes": 3001,
+      "rawSha256": "8985d2f7598db9c1fddbab8965365f460e35f0e8f7dd3ee0ec4b81b8ddb264f1",
+      "lfBytes": 3001,
+      "lfSha256": "8985d2f7598db9c1fddbab8965365f460e35f0e8f7dd3ee0ec4b81b8ddb264f1",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "profiles/industrial/maos.config.json",
+      "kind": "tracked",
+      "rawBytes": 3985,
+      "rawSha256": "793a96da1609ba8b7df304d362517fb0343a6b4fde70ceeb65a772ad1b7f2b79",
+      "lfBytes": 3985,
+      "lfSha256": "793a96da1609ba8b7df304d362517fb0343a6b4fde70ceeb65a772ad1b7f2b79",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "README.md",
+      "kind": "tracked",
+      "rawBytes": 25209,
+      "rawSha256": "f06f78727d920930ffceef555f0ee70cf32a2ed374c077ef19d6ec8303a085c6",
+      "lfBytes": 24694,
+      "lfSha256": "b65b3174846b28a0f347d3b4d5d930b42c73e5a73fabf46e6b9ecf169ec5791f",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/api/middleware.ts",
+      "kind": "tracked",
+      "rawBytes": 19344,
+      "rawSha256": "682170ebfd8553e664b47046d2c795a4c66d7bd69743bc381b4c9482ac02da51",
+      "lfBytes": 18738,
+      "lfSha256": "b9b67224e78c72f133878578e5711bedcb68097a5be47da7276ee6c4bb535e3d",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/api/openapi-spec.ts",
+      "kind": "tracked",
+      "rawBytes": 42637,
+      "rawSha256": "e7c901f8558d522e88845aca8a200da3b291a3db0482a66f7043b21d54abbcd8",
+      "lfBytes": 41553,
+      "lfSha256": "b6f900edac3825b29e2d94ef77d5bf2285e9311aaa3bd860434894cbe93dc5d5",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/api/router.ts",
+      "kind": "tracked",
+      "rawBytes": 154120,
+      "rawSha256": "03971a880c860515a438ec4a78e29417ebd7c0cc1461552892cc94a84f8f6e2d",
+      "lfBytes": 150412,
+      "lfSha256": "cacad5bdae79c632ec59203d79ed8a395849ee68588eeee7185bc7ae5f2be28d",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/api/server.ts",
+      "kind": "tracked",
+      "rawBytes": 14422,
+      "rawSha256": "a660f656a93adf8d70d0537bb2581e8c5cef143c5bb5f21d126a89b7650bb241",
+      "lfBytes": 14023,
+      "lfSha256": "0c46227b57318181cf2c4d0a0cd795c18c6ef86d128316f942e2974067e3414e",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/backends/anthropic-provider.ts",
+      "kind": "tracked",
+      "rawBytes": 6211,
+      "rawSha256": "b6b1ecaab39fca3b8dbd832fbb36b576f7241d7cff41380f0ad5683c7d74dfc9",
+      "lfBytes": 6211,
+      "lfSha256": "b6b1ecaab39fca3b8dbd832fbb36b576f7241d7cff41380f0ad5683c7d74dfc9",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/backends/openai-provider.ts",
+      "kind": "tracked",
+      "rawBytes": 7744,
+      "rawSha256": "4089a997a4bfa487585bfbed63863c82487e3462b2a31a745df8feaf66061863",
+      "lfBytes": 7744,
+      "lfSha256": "4089a997a4bfa487585bfbed63863c82487e3462b2a31a745df8feaf66061863",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/backends/provider.ts",
+      "kind": "tracked",
+      "rawBytes": 3302,
+      "rawSha256": "1734e2fd15b4eb6a3bd111d23aec7cedd98753aeef11d0fb82c1f7265fe9e21f",
+      "lfBytes": 3302,
+      "lfSha256": "1734e2fd15b4eb6a3bd111d23aec7cedd98753aeef11d0fb82c1f7265fe9e21f",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/cli/dashboard-template.ts",
+      "kind": "tracked",
+      "rawBytes": 45998,
+      "rawSha256": "5329d6c8d85f62821a082d72b248de350853a0cde3be3e8802b83ddf19aeaee7",
+      "lfBytes": 44632,
+      "lfSha256": "2760414772bb6015643f2e37277db34abde5dc270674041d21e7c3a2bd51969d",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/cli/dashboard.ts",
+      "kind": "tracked",
+      "rawBytes": 13607,
+      "rawSha256": "0a306e7f84c7f027589df99438e02011dc2cfd3d634717cc7420f43c4f9e855b",
+      "lfBytes": 13202,
+      "lfSha256": "85715e1e3efa5bf659695bab104c8133ce57f4d991b74f764eaa27ab4b257825",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/cli/index.ts",
+      "kind": "tracked",
+      "rawBytes": 37549,
+      "rawSha256": "bbb978e05bb21997c072ee8dff87bbbea7caad02d1a2804476babc53086334e5",
+      "lfBytes": 36633,
+      "lfSha256": "eace1797da1b30ada0ebd6ae8e12be8ce549f3d15337fc4c13a74dee6f615e20",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "kind": "tracked",
+      "rawBytes": 39550,
+      "rawSha256": "14e0a6750ee41b9831b3be8d6ea084b5f67b07b7865608ba8846ffc6141d46bc",
+      "lfBytes": 39550,
+      "lfSha256": "14e0a6750ee41b9831b3be8d6ea084b5f67b07b7865608ba8846ffc6141d46bc",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/core/agent-runner.ts",
+      "kind": "tracked",
+      "rawBytes": 21782,
+      "rawSha256": "a16f4a1c62f956e9e44586775e24930b6f82d259bca253e6467470371731c0c9",
+      "lfBytes": 21205,
+      "lfSha256": "a007d15d506295716d843f49b151cb5860824e1fe330c4022e3d595902192305",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/core/checkpoint.ts",
+      "kind": "tracked",
+      "rawBytes": 11149,
+      "rawSha256": "fabff29dce7558c2beabb519961c474b44513cfecb2ef2d3c3c925430025b0aa",
+      "lfBytes": 11149,
+      "lfSha256": "fabff29dce7558c2beabb519961c474b44513cfecb2ef2d3c3c925430025b0aa",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/core/event-store.ts",
+      "kind": "tracked",
+      "rawBytes": 17493,
+      "rawSha256": "10f75b25e6d5fc4d153746c6576782b85851ca774f7d261dc83fff968423a8d7",
+      "lfBytes": 16956,
+      "lfSha256": "db58b0ebbb39f81aceeb672723abd0537b65f9be41bebbbaf2df86f3bd0d97f5",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/core/idempotency-store.ts",
+      "kind": "tracked",
+      "rawBytes": 13315,
+      "rawSha256": "df9a2acfe1da5d48cbfd42fed1f26dcaf691c8052a77763a1ff10051546e68e1",
+      "lfBytes": 12937,
+      "lfSha256": "8006b591e8084e208791b2eb6032fa245d3f9ac0c584461a7d7dde45b182beb2",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/core/objective-store.ts",
+      "kind": "tracked",
+      "rawBytes": 11274,
+      "rawSha256": "b09de5bbb905a1c19436df64798d50d210cde870078540b7af2feafa864bd16f",
+      "lfBytes": 11274,
+      "lfSha256": "b09de5bbb905a1c19436df64798d50d210cde870078540b7af2feafa864bd16f",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/core/orchestrator.ts",
+      "kind": "tracked",
+      "rawBytes": 46037,
+      "rawSha256": "92c8aca1574e477d7cf978ccffa487bfe07655d6b90f4832610d1f9920f3d751",
+      "lfBytes": 44903,
+      "lfSha256": "0668aabf8376d7d8269daef273f45ac54ac32e6aff3eade289c97ebfe9ba7ab9",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/core/queue.ts",
+      "kind": "tracked",
+      "rawBytes": 21062,
+      "rawSha256": "798b197aadbb68ae2f00b9365d259b11500da9bfbe6a008ba152403d285e06a4",
+      "lfBytes": 20495,
+      "lfSha256": "c88f9f27dedc682aeea83f7f5f65761c57a5f8220101a73bdf4c0ca631e7e2c1",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/core/retry-queue.ts",
+      "kind": "tracked",
+      "rawBytes": 14140,
+      "rawSha256": "4a5f62aa3b9314147154a60385873bd927b3ddb4fd119355e1f3b3f80f75a5a5",
+      "lfBytes": 14140,
+      "lfSha256": "4a5f62aa3b9314147154a60385873bd927b3ddb4fd119355e1f3b3f80f75a5a5",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/domain/industrial-analysis-agent.ts",
+      "kind": "added",
+      "rawBytes": 815,
+      "rawSha256": "974e686842a6e38d3a33074d42ffdf3a23ec772315e3790b0205f5c0c04065e9",
+      "lfBytes": 815,
+      "lfSha256": "974e686842a6e38d3a33074d42ffdf3a23ec772315e3790b0205f5c0c04065e9",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/domain/office-artifact.ts",
+      "kind": "tracked",
+      "rawBytes": 43563,
+      "rawSha256": "cd48b2248823d07d1db5da8a382153c50ec77c953ef2b6402b85eeb4f8b06d43",
+      "lfBytes": 42404,
+      "lfSha256": "b95cf2951be34f69dc4c50a0a15ba52ec19b9314cb84136c9c8e44d793a675a8",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/domain/schemas.ts",
+      "kind": "tracked",
+      "rawBytes": 24749,
+      "rawSha256": "925332d499546b754b04a17b8be6bbb9ce04de32a053d1cb453414a27859042a",
+      "lfBytes": 23921,
+      "lfSha256": "ea75914cef9dd5fd67b876bd83e42ecbc8194d03e0107b0f340aa4aa754cb4ff",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/api/adapter.ts",
+      "kind": "tracked",
+      "rawBytes": 30843,
+      "rawSha256": "1071718885eaab700feedc4bd7d125bca3089274cc5cd1f1640dfb0dd5ae6813",
+      "lfBytes": 30015,
+      "lfSha256": "1f16b8ed5f949052c9fad997e57095bbe239b97765f5606ac176cea857af1881",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/api/errors.ts",
+      "kind": "tracked",
+      "rawBytes": 5215,
+      "rawSha256": "09fa1a0a867f6feb835bec0919ca72311ead8e64f9501d27bf8edc304e314d9e",
+      "lfBytes": 5057,
+      "lfSha256": "2389d991aede9317085ae77bf27c5bc5ffb6ce1e7d50bf6da37b782894f25696",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/api/event-client.ts",
+      "kind": "tracked",
+      "rawBytes": 10288,
+      "rawSha256": "d800da261a98c086fa8ff20a929824ddc28659753c570ff49f4f02c6f7bea055",
+      "lfBytes": 9932,
+      "lfSha256": "b1d09ed5c05113286c3682a2f473d490ae0f7dea9eb2b7e39901d4027e4aa997",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/api/rest-client.ts",
+      "kind": "tracked",
+      "rawBytes": 69008,
+      "rawSha256": "ddb4f8497fa079b944b64a4fb165f4e0b9333a53c963e51b97afd1c186fa09d6",
+      "lfBytes": 67134,
+      "lfSha256": "47324268358cf5339d7b6d5894bf4ab9861d875819cf832a86803aef4bd2adfd",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/App.tsx",
+      "kind": "tracked",
+      "rawBytes": 11339,
+      "rawSha256": "d306c877b61870e61f962a35bfa5426de05f9f5058275005b5f5ffca9f86c2d6",
+      "lfBytes": 10986,
+      "lfSha256": "b6676823481dc016ead7cdb561587309edec5755247d6dde3d66cf5bfbbff315",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/components/ActivityBar.tsx",
+      "kind": "tracked",
+      "rawBytes": 9380,
+      "rawSha256": "3adbf68220b7e3a0602dcd76ed37b4918fe7f79918f080540761e60b7d4495dd",
+      "lfBytes": 9137,
+      "lfSha256": "64e4d4757d10de356f08fa448c72ad22ad38a81622c8e41fa10d536276901b71",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/components/Header.tsx",
+      "kind": "tracked",
+      "rawBytes": 2677,
+      "rawSha256": "f60a2835341e2cb3d0ce643d110f102273baea73713c4fe7412aa97efd18c78a",
+      "lfBytes": 2677,
+      "lfSha256": "f60a2835341e2cb3d0ce643d110f102273baea73713c4fe7412aa97efd18c78a",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/gui/src/components/NavigationSidebar.tsx",
+      "kind": "tracked",
+      "rawBytes": 5207,
+      "rawSha256": "d557085fe126e0c6c562ad97b965a593b9e5483b88115edf733006a499965c7c",
+      "lfBytes": 5042,
+      "lfSha256": "917ecc5b327217ff652ba2d519fbb81e24f15ad9554e565418af469a8a950fff",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/components/StatusBar.tsx",
+      "kind": "tracked",
+      "rawBytes": 1907,
+      "rawSha256": "48d2104a74d62d8a20fafb5ee1a95e7b1593820891ee2d52dce2488f4ba224c8",
+      "lfBytes": 1907,
+      "lfSha256": "48d2104a74d62d8a20fafb5ee1a95e7b1593820891ee2d52dce2488f4ba224c8",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/gui/src/components/TelemetryReviewPanel.tsx",
+      "kind": "tracked",
+      "rawBytes": 21440,
+      "rawSha256": "1bb4ad9e01aeb96e3ea2f4b45b8500e8a90f8f46ba05b91a4ae13e1cd5c713e1",
+      "lfBytes": 21083,
+      "lfSha256": "2140c8796cf1c52ef9b05f534d75b322c7c0b98865472fe9ed384062f72e736c",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/main.tsx",
+      "kind": "tracked",
+      "rawBytes": 1269,
+      "rawSha256": "936e0e578411c1b7142c738f21ba1d02594a36ccb2b9f2dcc6dad17aaffd1217",
+      "lfBytes": 1234,
+      "lfSha256": "201b9e1e05aa50f779280d0a02126379e4c57ddd36968e1270f28722cf91358a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/native.d.ts",
+      "kind": "added",
+      "rawBytes": 205,
+      "rawSha256": "1b57afff8cc78d81bce77bc5feba295db6468e3dbd7c7547be40bf9ca89e5b3a",
+      "lfBytes": 205,
+      "lfSha256": "1b57afff8cc78d81bce77bc5feba295db6468e3dbd7c7547be40bf9ca89e5b3a",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/gui/src/views/ApprovalsView.tsx",
+      "kind": "tracked",
+      "rawBytes": 46009,
+      "rawSha256": "914cab808a80bdeb637166bfc8f5f510550b8a3c2be4d93bfca6df8b29193bf8",
+      "lfBytes": 44978,
+      "lfSha256": "5f465d63c0fee6c8ae6e65ef626e5c467b33c1311d17ab9d0df7292bef063972",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/views/CockpitView.tsx",
+      "kind": "tracked",
+      "rawBytes": 45326,
+      "rawSha256": "14f13ef08473cace6bdec2e2a40d5de8063e5e4507ed1e3ec674502810ffd710",
+      "lfBytes": 44304,
+      "lfSha256": "5d3f209fc397ed68984b28fce2776e35f4292c46bcf9e23dcb266d330b5ed765",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/gui/src/views/DocumentsView.tsx",
+      "kind": "tracked",
+      "rawBytes": 38889,
+      "rawSha256": "ed30eaf4f5a63296e03ecb249d87c6d2aa56d5e24fd8aec3446ad61750cc322c",
+      "lfBytes": 38047,
+      "lfSha256": "3eeb7d10dfe6f354cb22e6207933cc10ddddae6467922d6bedb562a08b8edfc5",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/analysis-agent-service.ts",
+      "kind": "added",
+      "rawBytes": 14694,
+      "rawSha256": "23dc8dc02602f492a086de1cfef2a17b87338f7ebdd151f87c3ca76f2207e6cb",
+      "lfBytes": 14694,
+      "lfSha256": "23dc8dc02602f492a086de1cfef2a17b87338f7ebdd151f87c3ca76f2207e6cb",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/industrial/atomic-cleanup-coordinator.ts",
+      "kind": "tracked",
+      "rawBytes": 22682,
+      "rawSha256": "67b148d8f63c6343470b747c3058bfae17ea1e473dd2be1d3ee44af6deb739ce",
+      "lfBytes": 22055,
+      "lfSha256": "ea9e5865ea1ea7c2f977c0b6682656c27919aba865872f07acb52b840ccff6b4",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/deterministic-reset.ts",
+      "kind": "tracked",
+      "rawBytes": 16618,
+      "rawSha256": "95a6e7d28073e5512fd00e8e786ec29edd78a3a6cb47f678700297e17a2f2342",
+      "lfBytes": 16133,
+      "lfSha256": "4e8bd17f8798145b35ae28db5df5183dd20685d46ee11b8afe0b166a9b2142ff",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/entrypoint.ts",
+      "kind": "added",
+      "rawBytes": 125,
+      "rawSha256": "eacc7a3de7cc392247f498642bd8e8efc329351914967449b715eed9e0abd40e",
+      "lfBytes": 125,
+      "lfSha256": "eacc7a3de7cc392247f498642bd8e8efc329351914967449b715eed9e0abd40e",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/industrial/industrial-cli.ts",
+      "kind": "tracked",
+      "rawBytes": 43881,
+      "rawSha256": "c21cccf4937718a5e395ee0ff8320e6a552447a5e1e6a34c767247e1dd20a11d",
+      "lfBytes": 42832,
+      "lfSha256": "a12428bc2b6bb85b1f08aede8fb23c75018c8bda86c5629c50c03f56dc8acd40",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/judged-run-lock.ts",
+      "kind": "added",
+      "rawBytes": 6565,
+      "rawSha256": "2c840929b2f2a9f67aec40c73bae0a33eae9bb45339f9c60879a258997a40e64",
+      "lfBytes": 6565,
+      "lfSha256": "2c840929b2f2a9f67aec40c73bae0a33eae9bb45339f9c60879a258997a40e64",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/industrial/judged-run.ts",
+      "kind": "tracked",
+      "rawBytes": 74243,
+      "rawSha256": "a0ac16f8ccd0e99c51b415d4aa83aae833324e50c18ab348864003e26be88dd6",
+      "lfBytes": 72583,
+      "lfSha256": "dc743fb82489fbedcef31f015c201dbcb346f35a3e4fb4972a791309a9e0b598",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/lifecycle.ts",
+      "kind": "tracked",
+      "rawBytes": 29708,
+      "rawSha256": "8d0a2b97578815d66753343ae3b3cc12d809c25a469187f7269c193da5d7196c",
+      "lfBytes": 28802,
+      "lfSha256": "71cb3636e6d695a0ea184da7d5aa3eff90794848eb0702902f9c8069f20e8115",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/rust-engine-bridge.ts",
+      "kind": "tracked",
+      "rawBytes": 11055,
+      "rawSha256": "0feb5bcd476055efe7c158fc0254b94b12a153c535c2a550e0299739867102bb",
+      "lfBytes": 10706,
+      "lfSha256": "c5cc758aeb5fa79495fcbe93b6e4822d720224d8820eef285615d671b12ea1a4",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/service-startup.ts",
+      "kind": "tracked",
+      "rawBytes": 26687,
+      "rawSha256": "e4f3c1eb9982fad29d691d2cc068c3871ad25bf237a6dd9fb09c57dd22b29e7a",
+      "lfBytes": 25887,
+      "lfSha256": "bfc1fd024733245e2d6aa3a14082b9dd1edf2d4e76b56aeaa8d8f0ea3ac423b1",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/telemetry-analysis.ts",
+      "kind": "tracked",
+      "rawBytes": 15600,
+      "rawSha256": "b312665b6217fbe5a264b4b666190b8437be8b6faabb5b3fb84774f2b16b337f",
+      "lfBytes": 15226,
+      "lfSha256": "7977570c58a4b4c2b4df7ae9d3694cb5493142c66787c4ae69aa06b100be95b0",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/integrations/tools.ts",
+      "kind": "tracked",
+      "rawBytes": 99825,
+      "rawSha256": "0db956015559f925425269ccd06c7ee79f30ded48fcdcd41c190a22e162af388",
+      "lfBytes": 97004,
+      "lfSha256": "f6bcfc137dcd8f5b21298ea68b45293f87231e3d0bab63f17127f11a1ad6168a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/artifact-service.ts",
+      "kind": "tracked",
+      "rawBytes": 25683,
+      "rawSha256": "a3eaadd74329f3a472a4c044041a5e9f354b30a7be00ef79d66adf09dd00bd05",
+      "lfBytes": 24982,
+      "lfSha256": "ae5ddd003991b4a22542f431bf6f3578261b23a7c01a09089dd4946d1fda69fd",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/docx-generator-service.ts",
+      "kind": "tracked",
+      "rawBytes": 50924,
+      "rawSha256": "868520cea938b8287a8329c4ddacebe16f3bd9b9acf77e1b0e669d7139ab2650",
+      "lfBytes": 49688,
+      "lfSha256": "104430406567dbf507aac36bc9d177b1696c144a8802b5a44194228a9664326c",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/index.ts",
+      "kind": "tracked",
+      "rawBytes": 23108,
+      "rawSha256": "fd444c36fb258d06ad707ed83be49f21b9125b399f8da5b4f5eaed45ee042612",
+      "lfBytes": 22459,
+      "lfSha256": "79d8ea4d01172b8619649898854595f49a214ac504e24b7ee2f514217dd65a18",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/project-service/entrypoint.ts",
+      "kind": "tracked",
+      "rawBytes": 9581,
+      "rawSha256": "f5dd31f9826c612ddedd5dc7306a4962c515185328870c910715c554f14add4a",
+      "lfBytes": 9249,
+      "lfSha256": "a8cc2c976df990bd7f98c947a24e120cdab3d281ecf2da9892c826dd542110ee",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/retention-service.ts",
+      "kind": "tracked",
+      "rawBytes": 16378,
+      "rawSha256": "6b22c0bdd2032754f3ddc9b5247c4f14fcc511aec9ac10db5d01d2f2ae70b7ea",
+      "lfBytes": 15936,
+      "lfSha256": "1713f5172a976bc3f3171b3b412699a8096a4b0c8d732a9f8f4d7edd93a802b4",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/sovereignty-bundle-service.ts",
+      "kind": "tracked",
+      "rawBytes": 25876,
+      "rawSha256": "1e73b9fea12d8859ad9d2dd599619d7b33d342652ac0911408fcc59ccf32a3ae",
+      "lfBytes": 25105,
+      "lfSha256": "c8925acbb05fa37635b19cf4bb486e55d93fc38c0d6951043942b016e1a12555",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/task-service.ts",
+      "kind": "tracked",
+      "rawBytes": 8120,
+      "rawSha256": "cf267d8a1c30de2290f0e74005c7131532b4d7db5c6c213a612e3912cced3c8e",
+      "lfBytes": 7868,
+      "lfSha256": "b801b13c954b4ca8599c5f0baaacae4e320dff46bed4ebe2fa06bda96bb7042a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/workflow-planning-service.ts",
+      "kind": "tracked",
+      "rawBytes": 4906,
+      "rawSha256": "02b729088c5b6f1df631edb0fea2fc672b278f852d360d0f666c14f837429ac6",
+      "lfBytes": 4738,
+      "lfSha256": "c5602a1b925451ddbfd594f9989e7ace35636b7765ddff91b431acf2fbe3a631",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/workflow-service.ts",
+      "kind": "tracked",
+      "rawBytes": 5202,
+      "rawSha256": "cbd7c659e0d8b627579fed9fac3a09ed14f1d74c1cb9a524ae0c6e748c3a53b7",
+      "lfBytes": 5035,
+      "lfSha256": "bfea4b50095639acd56552c115f99696d0516f0a8877f4c6150295995b746f09",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/utils/paths.ts",
+      "kind": "tracked",
+      "rawBytes": 5026,
+      "rawSha256": "266cedf61afdcde1dbc28779beeaab9912b26a710de12e6bbf6aa6599fcd4ed9",
+      "lfBytes": 5026,
+      "lfSha256": "266cedf61afdcde1dbc28779beeaab9912b26a710de12e6bbf6aa6599fcd4ed9",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/backends/openai-provider-local-tool-call.test.ts",
+      "kind": "added",
+      "rawBytes": 4262,
+      "rawSha256": "de207a06539464a95ed28ad69c8835e8c29452f7dda3877c5d4a9181ac354028",
+      "lfBytes": 4262,
+      "lfSha256": "de207a06539464a95ed28ad69c8835e8c29452f7dda3877c5d4a9181ac354028",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/f2-08-lifecycle.test.ts",
+      "kind": "tracked",
+      "rawBytes": 27704,
+      "rawSha256": "8b6acb9e2286e529e02ffff98d28b2fb4facf967fb7aa9ab37d2b19579b25168",
+      "lfBytes": 27011,
+      "lfSha256": "0d9664e836912febec76b084ba59d5622e342d462c81c96db57caaa2fc303e1c",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f3-01-services.test.ts",
+      "kind": "tracked",
+      "rawBytes": 11859,
+      "rawSha256": "16ff366988d7657e7f8749adf216b530e5f2ac18158f7ae5c704be6e946c426d",
+      "lfBytes": 11522,
+      "lfSha256": "432f5a7568befc2b661033d77c15c38ab67bdb847ea7fadfacdad28bce86ec77",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f3-03-rest-contract.test.ts",
+      "kind": "tracked",
+      "rawBytes": 19792,
+      "rawSha256": "241295661234b692f44f14ca22335083d744e277dcb6b2f886172dfe2a07e1f9",
+      "lfBytes": 19313,
+      "lfSha256": "171ee1e2edbbd06887ea90517ee38b9f62340efecce372ecbd26e9ce01b28377",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f3-05-artifact-store.test.ts",
+      "kind": "tracked",
+      "rawBytes": 22018,
+      "rawSha256": "cb99d54f1fdec407a9d6098d4e37966c2e842d34e4e000954a1bceafdb5487b5",
+      "lfBytes": 21449,
+      "lfSha256": "197fca8c41e90d8c556edc75d90914f558c6489040268acfa2bffaf68bb1bea6",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f3-07-verifier-idempotency.test.ts",
+      "kind": "tracked",
+      "rawBytes": 30243,
+      "rawSha256": "bc43a0859337755e5dc82474607fa51165f45f9c5ddeca81227e94ff30844d2a",
+      "lfBytes": 29507,
+      "lfSha256": "4864188ec754c9a8c0f0ff9712365c35c64b7843468d1cb6f01f7b3ec3dc780b",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/gui/ui1-01-spa-shell.test.ts",
+      "kind": "tracked",
+      "rawBytes": 13374,
+      "rawSha256": "6a92ec63f4a4d011d5a10c363924189f5fbb7982172b0a4bb9c2fa3dbc057efc",
+      "lfBytes": 13096,
+      "lfSha256": "9d3df58f89de247a763f414295b8e2272b2eb682af321485a7abcd2161bf5ef3",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/gui/ui1-02-api-clients.test.ts",
+      "kind": "tracked",
+      "rawBytes": 27346,
+      "rawSha256": "88f1f995e0137051beeace4767b18029f90c7e8cc11d83e43649586276bac8de",
+      "lfBytes": 26626,
+      "lfSha256": "dd0df98d3e0d89eb514837dc25dfaa66816ae18f35519fa96078b854d7c4faa3",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/gui/ui1-04-launcher-handshake.test.ts",
+      "kind": "tracked",
+      "rawBytes": 32027,
+      "rawSha256": "b6dc35f4e19fafc80cae7e08b073ebaa4160e977f64a277f7dcab1d03dc82d81",
+      "lfBytes": 31173,
+      "lfSha256": "3a2c503bc1a37acec5bbf79fee354a2f1d4731ee7e412e487d05244bad503c29",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/gui/ui1-10-evidence-retention.test.ts",
+      "kind": "tracked",
+      "rawBytes": 41383,
+      "rawSha256": "abb4f9488013a45ee47abbd8e9c04b41fd9f2397a7a44a1496b0f777b1872299",
+      "lfBytes": 40372,
+      "lfSha256": "d50b3b5409aa61c058a34e9fcd4893804d1dad602c54e1a3eacdbd22a62ff4ec",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/gui/ui1-24-one-project-v1-1.test.ts",
+      "kind": "tracked",
+      "rawBytes": 17660,
+      "rawSha256": "39cd6abcc783a823ccb1f276d7bff64e785ac03a2685ebb66f4f7f592f9e90e7",
+      "lfBytes": 17263,
+      "lfSha256": "f2ee79ac1efb2d19c3ed79801331879a443f9ab995c737d822d6eaa629989854",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/gui/ui1-25-truthful-readiness.test.ts",
+      "kind": "added",
+      "rawBytes": 1746,
+      "rawSha256": "bdc88a68479f4d8ed2055fb4e30c2e6f7b89f9a0af76df35d668a188fb6e0637",
+      "lfBytes": 1746,
+      "lfSha256": "bdc88a68479f4d8ed2055fb4e30c2e6f7b89f9a0af76df35d668a188fb6e0637",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/gui/ui1-27-native-launcher-bridge.test.ts",
+      "kind": "added",
+      "rawBytes": 6103,
+      "rawSha256": "36726696af27fb3a5924b8bdeef517a0fade7d5effae1ef02d05f0f959767ad2",
+      "lfBytes": 6103,
+      "lfSha256": "36726696af27fb3a5924b8bdeef517a0fade7d5effae1ef02d05f0f959767ad2",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/industrial/analysis-agent-auth-http.test.ts",
+      "kind": "added",
+      "rawBytes": 76714,
+      "rawSha256": "4d28db32694c0923350cfac907c9083a36acd0c56ea810ecc640acb19dfdd060",
+      "lfBytes": 76714,
+      "lfSha256": "4d28db32694c0923350cfac907c9083a36acd0c56ea810ecc640acb19dfdd060",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/industrial/analysis-agent-contract.test.ts",
+      "kind": "added",
+      "rawBytes": 15818,
+      "rawSha256": "f04a2fcc211731cadc5ccb48899e426b445f5c51bedd7d27254b10c8f4ae46bc",
+      "lfBytes": 15818,
+      "lfSha256": "f04a2fcc211731cadc5ccb48899e426b445f5c51bedd7d27254b10c8f4ae46bc",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/industrial/analysis-agent-service.test.ts",
+      "kind": "added",
+      "rawBytes": 14403,
+      "rawSha256": "59b243e918229894810ddfbc34ed3be07d5e95951340cb48ac138a08bbc03320",
+      "lfBytes": 14403,
+      "lfSha256": "59b243e918229894810ddfbc34ed3be07d5e95951340cb48ac138a08bbc03320",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/industrial/f10-02-dashboard-trigger.test.ts",
+      "kind": "tracked",
+      "rawBytes": 9923,
+      "rawSha256": "32ecec86e203cd919ab637bf3c8873d2682aae629c7bf42dccb089d1e3224a52",
+      "lfBytes": 9703,
+      "lfSha256": "5b16ca651e9e7b3e81745935b70a0b9479f7310fd44af1b098963d9a6d91b8b7",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f10-05-deterministic-reset.test.ts",
+      "kind": "tracked",
+      "rawBytes": 32620,
+      "rawSha256": "3369a38eef093b732464179d26d44453e70a3e89fc34b34098f06050ac997409",
+      "lfBytes": 32029,
+      "lfSha256": "d7a6f541b88415dba9a57d34e38ecc44870b6946ecc276c1279ec1ac32e7679a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f10-06-judged-run.test.ts",
+      "kind": "tracked",
+      "rawBytes": 26194,
+      "rawSha256": "811a8771093dcc01959b608cac6206ae9bcb86f64dadba60d648fb1218ae43e1",
+      "lfBytes": 25613,
+      "lfSha256": "42ba42ec4e0c424698935e4c0563c00c9cffd8bf7b4199648f3ab3d549ece23c",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f7-03-workflow-planning.test.ts",
+      "kind": "tracked",
+      "rawBytes": 32578,
+      "rawSha256": "ba3ba4ed556c084c41ef98b426db96a9c0828e4a22242aa8d30f150c2348f9ca",
+      "lfBytes": 31720,
+      "lfSha256": "6368129bcbf41456b2b111bcf43fa651252f81a679917ec00b43729c62c2f4c9",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f9-08-interruption-atomic-cleanup.test.ts",
+      "kind": "tracked",
+      "rawBytes": 40988,
+      "rawSha256": "264b2d3a0bc84c34e67d655e42df88bbe7fc818f84b9bedea6eeb7390e17a179",
+      "lfBytes": 40064,
+      "lfSha256": "0aa217fa9111b7711d56664af12a42370a12814300241768e9f65315085db99a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f9-09-disconnected-full-rehearsal.test.ts",
+      "kind": "tracked",
+      "rawBytes": 63163,
+      "rawSha256": "b84a3559cb4bf131464ec61f6db1855672778a7ef41ae10d459b7e5f156a1a64",
+      "lfBytes": 61690,
+      "lfSha256": "53e1d05c01f0d4cfb0e3359eea782a29065b843dd3777a43530dc382a48c756c",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/gate-g9-sovereignty-gate.test.ts",
+      "kind": "tracked",
+      "rawBytes": 34142,
+      "rawSha256": "8283b17ece8e9f19c220af443add078502db3d00b1aef41d08b06b416532cdc4",
+      "lfBytes": 33393,
+      "lfSha256": "a83f85fb9558ef20545d312757e8910e07aa83a2cab463a53698546c0f05a6ba",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/judged-run-lock.test.ts",
+      "kind": "added",
+      "rawBytes": 5167,
+      "rawSha256": "0d1edf5693f58f6d52726e85a91002972b08df3f29cb41fc5fbadf4192be31ed",
+      "lfBytes": 5167,
+      "lfSha256": "0d1edf5693f58f6d52726e85a91002972b08df3f29cb41fc5fbadf4192be31ed",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "kind": "added",
+      "rawBytes": 5319,
+      "rawSha256": "515f36b9ec9291ad77dd1d2f372315e66c6a427fdf721e84d977d8dd829f6b50",
+      "lfBytes": 5319,
+      "lfSha256": "515f36b9ec9291ad77dd1d2f372315e66c6a427fdf721e84d977d8dd829f6b50",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/industrial/telemetry-analysis.test.ts",
+      "kind": "tracked",
+      "rawBytes": 4232,
+      "rawSha256": "8afd16563a78700c14f8499714017254f23beecd8137e49f4cfb7ca33c7ab622",
+      "lfBytes": 4146,
+      "lfSha256": "cae245373c8ea7575ba2f70ef77abafe75d35be0272ebcd20f83a543dee6d581",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/release/analysis-agent-browser-rehearsal.cjs",
+      "kind": "added",
+      "rawBytes": 23437,
+      "rawSha256": "b5ed5548892d9a95214cf7666eeabe6e92ec406a7289d2c98c73a9136a5f0988",
+      "lfBytes": 23437,
+      "lfSha256": "b5ed5548892d9a95214cf7666eeabe6e92ec406a7289d2c98c73a9136a5f0988",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/release/desktop-agent-deliverable-rehearsal.cjs",
+      "kind": "added",
+      "rawBytes": 36329,
+      "rawSha256": "59e963cabdbb0e02f1593641e83eee1caa382c6dcc8823ee8658e79fd653d272",
+      "lfBytes": 36329,
+      "lfSha256": "59e963cabdbb0e02f1593641e83eee1caa382c6dcc8823ee8658e79fd653d272",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/release/desktop-browser-rehearsal.cjs",
+      "kind": "added",
+      "rawBytes": 26785,
+      "rawSha256": "e1c2f5914571f4b9ccc58f7642c10cba9b7786d5459ee840132f5e7843b01218",
+      "lfBytes": 26785,
+      "lfSha256": "e1c2f5914571f4b9ccc58f7642c10cba9b7786d5459ee840132f5e7843b01218",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "tests/release/run-desktop-package-rehearsals.ps1",
+      "kind": "added",
+      "rawBytes": 12480,
+      "rawSha256": "a7988af91eb85f31ec4894fb1b66d1cf3da159c59fd5030b6736d8b0c659463b",
+      "lfBytes": 12480,
+      "lfSha256": "a7988af91eb85f31ec4894fb1b66d1cf3da159c59fd5030b6736d8b0c659463b",
+      "rawEqualsLfNormalized": true
+    }
+  ],
+  "scopeNotes": [
+    "Includes the source, runtime configuration, UI, desktop bridge and regression files required to reconstruct the reviewed agent-to-deliverable candidate and shared reset/replay fixes.",
+    "Excludes private .maos state, proposal/submission prose, the checklist, this evidence directory, historical packets and frozen RC artifacts.",
+    "The old artifacts/verification packet was ignored by the parent artifacts/ rule; the current packet is stored under review-packets/ outside reset and retention targets.",
+    "Reset only enables queue and output categories; index, sandbox and conversation categories remain disabled pending writer coordination."
+  ]
+}

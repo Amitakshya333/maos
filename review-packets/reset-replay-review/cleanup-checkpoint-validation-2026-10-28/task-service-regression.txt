@@ -1,0 +1,38 @@
+
+ RUN  v4.1.11 C:/maos
+
+ ↓ tests/f3-01-services.test.ts > F3-01 Service Container > should create all 8 services
+ ↓ tests/f3-01-services.test.ts > F3-01 ProjectService > should detect initialized project
+ ↓ tests/f3-01-services.test.ts > F3-01 ProjectService > should detect non-initialized project
+ ↓ tests/f3-01-services.test.ts > F3-01 ProjectService > should load config as domain Project type
+ ↓ tests/f3-01-services.test.ts > F3-01 ProjectService > should return agents
+ ↓ tests/f3-01-services.test.ts > F3-01 ProjectService > should return providers
+ ↓ tests/f3-01-services.test.ts > F3-01 ProjectService > should not detect industrial profile for non-industrial config
+ ↓ tests/f3-01-services.test.ts > F3-01 TaskService > should create a task with domain Task type
+ ↓ tests/f3-01-services.test.ts > F3-01 TaskService > should list tasks
+ ↓ tests/f3-01-services.test.ts > F3-01 TaskService > should return queue counts
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should clean all queues 49ms
+ ↓ tests/f3-01-services.test.ts > F3-01 EventService > should return empty timeline for unknown task
+ ↓ tests/f3-01-services.test.ts > F3-01 EventService > should return empty query results
+ ↓ tests/f3-01-services.test.ts > F3-01 EventService > should return stats with zero events
+ ↓ tests/f3-01-services.test.ts > F3-01 MemoryService > should return empty live memories
+ ↓ tests/f3-01-services.test.ts > F3-01 MemoryService > should return stats
+ ↓ tests/f3-01-services.test.ts > F3-01 MemoryService > should clear without error
+ ↓ tests/f3-01-services.test.ts > F3-01 HealthService > should return agent pool entries
+ ↓ tests/f3-01-services.test.ts > F3-01 HealthService > should return empty retry queue
+ ↓ tests/f3-01-services.test.ts > F3-01 HealthService > should return empty dead letter queue
+ ↓ tests/f3-01-services.test.ts > F3-01 ModelService > should list configured models
+ ↓ tests/f3-01-services.test.ts > F3-01 ModelService > should validate local provider credentials
+ ↓ tests/f3-01-services.test.ts > F3-01 ModelService > should reject unknown provider
+ ↓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import chalk in any service file
+ ↓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import commander in any service file
+ ↓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not call process.exit in any service file
+ ↓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import from cli/ in any service file
+ ↓ tests/f3-01-services.test.ts > F3-01 Boundary: Domain schemas have schemaVersion > should define schemaVersion in all primary schemas
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 27 skipped (28)
+   Start at  14:20:16
+   Duration  2.82s (transform 1.88s, setup 0ms, import 2.59s, tests 50ms, environment 0ms)
+
+EXIT_CODE=0

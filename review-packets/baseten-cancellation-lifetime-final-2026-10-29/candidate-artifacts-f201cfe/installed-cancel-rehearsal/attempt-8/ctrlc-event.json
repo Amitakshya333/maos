@@ -1,0 +1,7 @@
+{
+  "mechanism": "GenerateConsoleCtrlEvent(CTRL_C_EVENT, processGroupId=0)",
+  "apiCallSucceeded": true,
+  "lastError": 0,
+  "sentAt": "2026-10-29T19:00:31.4900782Z",
+  "requestActiveBeforeSend": true
+}

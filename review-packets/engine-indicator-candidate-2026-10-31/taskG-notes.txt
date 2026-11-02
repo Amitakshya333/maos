@@ -1,0 +1,31 @@
+Subject: [engine-indicator] Task G: scope muted-dot assertions to the Engine badge element
+
+The v1 test asserted `html.toContain('status-dot muted')` globally. That
+string is also emitted by the Model badge (same NOT REPORTED default), so a
+regression confined to the Engine badge (e.g. amber again, or a misleading
+healthy-green dot) would still pass. This change makes the Engine indicator
+regression-proof:
+
+- tests/gui/ui1-25-truthful-readiness.test.ts: added engineBadge(html), which
+  extracts the Engine badge div via its unique title attribute
+  ("Engine status is shown only when the API reports it.") and throws loudly
+  if the selector stops matching. The unreported-subsystems test now asserts
+  text + `status-dot muted` + absence of `amber` inside that element only.
+  Added a positive control rendering engineStatus 'ENGINE: HEALTHY' that
+  asserts the Engine element contains neither `muted` nor `amber`, proving
+  the selector discriminates in both directions and the fix does not mute
+  reported statuses.
+- No production-code change in Task G (Header.tsx + layout.css identical to v1).
+
+What was checked (all in candidate maos-engine-indicator-candidate @ 2cfdf9b):
+- ui1-25 suite: 3 passed, exit 0 (vitest via C:\clean\core-b2-02 junction).
+- Mutation check: reverting the Header.tsx muted line makes the strengthened
+  test fail with `expected '<span class="status-dot amber"></span…>' to
+  contain 'status-dot muted'` (exit 1, 1 failed / 2 passed); fix restored
+  byte-identical (SHA-256 verified) and suite green again.
+- typecheck:gui: exit 0.
+- Candidate holds exactly the 3 intended modified files; C:\maos untouched.
+
+Patch hashes:
+- candidate-v1.patch (pre-Task-G): 1B552E14B16F5AFB6DBFAB69F3F561123DC38AD6C9094D064FA2EE672809E76D
+- candidate.patch (with Task G):    D671860955F01268073733DF6D0AEAE092854AA09E61A4F2D214DF4924C5A2AF

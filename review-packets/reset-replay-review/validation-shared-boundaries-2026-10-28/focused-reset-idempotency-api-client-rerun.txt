@@ -1,0 +1,95 @@
+COMMAND: npm exec -- vitest run tests/industrial/f10-05-deterministic-reset.test.ts tests/f3-07-verifier-idempotency.test.ts tests/f3-03-rest-contract.test.ts tests/gui/ui1-02-api-clients.test.ts
+
+ RUN  v4.1.11 C:/maos
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts (25 tests | 4 failed) 6396ms
+       × deletes allowlisted files when live reset is explicitly confirmed 211ms
+       × keeps an active generic publisher temp file out of cleanup and serializes CLI reset across processes 2636ms
+       × reports scanned and actually removed bytes separately when candidates disappear 142ms
+       × counts only successful unlinks when one candidate cannot be removed 153ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Confirmation & Live Execution > deletes allowlisted files when live reset is explicitly confirmed
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:262:83
+    260|       expect(fs.existsSync(taskAPath)).toBe(false);
+    261|       expect(fs.existsSync(path.join(testRoot, 'artifacts', 'generated…
+    262|       expect(fs.existsSync(path.join(testRoot, '.maos', 'sandbox', 'sc…
+       |                                                                                   ^
+    263|
+    264|       // Verify protected files are 100% intact
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > keeps an active generic publisher temp file out of cleanup and serializes CLI reset across processes
+AssertionError: expected 41 to be 11 // Object.is equality
+
+- Expected
++ Received
+
+- 11
++ 41
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:310:50
+    308|         expect(reset.exitCode).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
+    309|         expect((reset.data as any).scannedBytes).toBeGreaterThan(0);
+    310|         expect((reset.data as any).removedBytes).toBe(Buffer.byteLengt…
+       |                                                  ^
+    311|         expect(services.artifact.listArtifacts('run-cross-process')).t…
+    312|       } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > reports scanned and actually removed bytes separately when candidates disappear
+AssertionError: expected 41 to be 11 // Object.is equality
+
+- Expected
++ Received
+
+- 11
++ 41
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:368:37
+    366|         const result = await executeDeterministicReset({ projectRoot: …
+    367|         expect(result.success).toBe(true);
+    368|         expect(result.scannedBytes).toBe(Buffer.byteLength('first') + …
+       |                                     ^
+    369|         expect(result.removedBytes).toBe(Buffer.byteLength('first'));
+    370|         expect(result.totalBytes).toBe(result.removedBytes);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > counts only successful unlinks when one candidate cannot be removed
+AssertionError: expected 41 to be 11 // Object.is equality
+
+- Expected
++ Received
+
+- 11
++ 41
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:389:37
+    387|         const result = await executeDeterministicReset({ projectRoot: …
+    388|         expect(result.success).toBe(false);
+    389|         expect(result.scannedBytes).toBe(Buffer.byteLength('first') + …
+       |                                     ^
+    390|         expect(result.removedBytes).toBe(Buffer.byteLength('second'));
+    391|         expect(result.error).toContain('injected unlink failure');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  4 failed | 105 passed (109)
+   Start at  13:04:55
+   Duration  14.52s (transform 2.16s, setup 0ms, import 5.03s, tests 8.81s, environment 0ms)
+
+EXIT_CODE=1

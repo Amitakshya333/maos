@@ -1,0 +1,4 @@
+COMMAND: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/New-MaosIndustrialInstallBundle.ps1 -PackageArchive <final npm tarball> -SourceRevision 189e786ff0431b02b95ca618bb4791a5ad7b0215 -SourceDeltaSha256 <canonical patch SHA-256> -OutputBundle <new final bundle>
+EXIT_CODE: 0
+
+Created lockfile bootstrap bundle: C:\maos\review-packets\install-reliability-2026-10-29\candidate-locked-bootstrap-final-2026-10-29\maos-industrial-bootstrap-windows-x64.zip

@@ -1,0 +1,17 @@
+C:\Users\AMITAK~1\AppData\Local\Temp\maos-day2-review-packet-8281d37e4ec6417ca744c05c43640dfb\generate-packets.cjs:32
+function fail(message) { throw new Error(message); }
+                         ^
+
+Error: historical normalized source mismatch: docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+    at fail (C:\Users\AMITAK~1\AppData\Local\Temp\maos-day2-review-packet-8281d37e4ec6417ca744c05c43640dfb\generate-packets.cjs:32:32)
+    at Object.<anonymous> (C:\Users\AMITAK~1\AppData\Local\Temp\maos-day2-review-packet-8281d37e4ec6417ca744c05c43640dfb\generate-packets.cjs:44:61)
+    at Module._compile (node:internal/modules/cjs/loader:1760:14)
+    at Object..js (node:internal/modules/cjs/loader:1893:10)
+    at Module.load (node:internal/modules/cjs/loader:1480:32)
+    at Module._load (node:internal/modules/cjs/loader:1299:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.11.0

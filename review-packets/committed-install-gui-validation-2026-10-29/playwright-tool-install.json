@@ -1,0 +1,13 @@
+﻿{
+    "timestamp":  "2026-10-29T14:55:10.1684768+05:30",
+    "command":  "npm ci --omit=prod --no-audit --no-fund",
+    "exitCode":  0,
+    "npmVersion":  "11.6.1",
+    "nodeVersion":  "v24.11.0",
+    "lockSha256":  "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+    "playwrightVersion":  "1.64.1",
+    "electronRuntimeInTools":  true,
+    "secretLikeEnvironmentNamesRemoved":  3,
+    "toolRoot":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\playwright tools committed with spaces",
+    "npmCacheInitiallyEmpty":  true
+}

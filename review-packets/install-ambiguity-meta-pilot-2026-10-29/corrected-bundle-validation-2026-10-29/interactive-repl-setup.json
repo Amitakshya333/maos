@@ -1,0 +1,14 @@
+{
+  "serverScript": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\loopback-mock-server.js",
+  "mockPort": 57796,
+  "eventsFile": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\mock-events.jsonl",
+  "mockPid": 32648,
+  "initialWorkingDirectory": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\operator terminal cwd with spaces",
+  "stdout": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\mock-server.stdout.log",
+  "syntheticCsvRows": 3,
+  "portFile": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\mock-port.json",
+  "alternateProjectRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\alternate project with spaces",
+  "loopbackOnly": true,
+  "projectRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\selected synthetic project with spaces",
+  "stderr": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal 2026-10-29\\mock-server.stderr.log"
+}

@@ -1,0 +1,4 @@
+
+> maosorch@0.3.0 build:backend
+> tsc -p tsconfig.json && node scripts/copy-industrial-python.js
+

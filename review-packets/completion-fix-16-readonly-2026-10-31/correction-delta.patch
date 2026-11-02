@@ -1,0 +1,318 @@
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index da8d185..f31f415 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -308,6 +308,9 @@ export class BrowserRestClient {
+     return { signal: controller.signal, dispose };
+   }
+ 
++  // Error abort reasons propagate verbatim; non-Error reasons (string,
++  // undefined, …) are normalized to an AbortError DOMException so callers
++  // always observe a cancellation — never a TimeoutError — for their abort.
+   private callerAbortError(signal: AbortSignal | undefined): Error | null {
+     if (!signal?.aborted) return null;
+     const reason = signal.reason;
+@@ -317,8 +320,10 @@ export class BrowserRestClient {
+   }
+   /**
+    * Internal HTTP execution helper with timeout, headers, and error handling.
+-   * Caller cancellation stays an abort outcome (the caller's reason);
+-   * only the client's own deadline maps to TimeoutError.
++   * Caller cancellation stays an abort outcome: an Error abort reason
++   * propagates verbatim; a non-Error reason (string, undefined, …) is
++   * normalized to an AbortError DOMException. Only the client's own
++   * deadline maps to TimeoutError.
+    */
+   async request<T>(
+     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+diff --git a/src/gui/src/components/TelemetryReviewPanel.tsx b/src/gui/src/components/TelemetryReviewPanel.tsx
+index 81c6033..35302e8 100644
+--- a/src/gui/src/components/TelemetryReviewPanel.tsx
++++ b/src/gui/src/components/TelemetryReviewPanel.tsx
+@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
+ import { apiAdapter } from '../api';
+ import type { IndustrialAnalysisAgentResponse, IndustrialTelemetryAnalysisResponse, JudgedRunResponse } from '../api/rest-client';
+ import { TelemetryReviewCoordinator, type TelemetryReviewViewState } from './telemetryReviewCoordinator';
+-import { applyReviewPatch } from './telemetryReviewState';
++import { applyReviewPatch, SelectionBinding } from './telemetryReviewState';
+ 
+ function fileAsBase64(file: File): Promise<string> {
+   return new Promise((resolve, reject) => {
+@@ -34,9 +34,12 @@ export const TelemetryReviewPanel: React.FC = () => {
+   const agentController = useRef<AbortController | null>(null);
+   const [fileInputKey, setFileInputKey] = useState(0);
+   // The bound selection: the exact {file, key} pair created at selection
+-  // time. Async callbacks close over this pair — never a separately
+-  // re-read file or key — so a stale callback cannot act for a newer source.
+-  const selectionRef = useRef<{ file: File; key: string } | null>(null);
++  // time, held by the tested SelectionBinding. Async callbacks close over
++  // the pair object — never a separately re-read file or key — so a stale
++  // callback cannot act for a newer source.
++  const selectionBindingRef = useRef<SelectionBinding<File> | null>(null);
++  if (!selectionBindingRef.current) selectionBindingRef.current = new SelectionBinding<File>();
++  const selectionBinding = selectionBindingRef.current;
+   // All review side effects are delegated to the coordinator, which owns the
+   // source binding and staleness guards (COMPLETION-FIX-06/08). This component
+   // only mirrors the view snapshot into React state (via the tested
+@@ -90,18 +93,18 @@ export const TelemetryReviewPanel: React.FC = () => {
+       // Single atomic sample action: the coordinator binds the sample,
+       // clears the old file/input, invalidates priors, and analyzes.
+       // The local selection pair is dropped at the same time.
+-      selectionRef.current = null;
++      selectionBinding.clear();
+       setSelectedFile(null);
+       setFileInputKey((key) => key + 1);
+       await coordinator.runSampleAnalysis();
+       return;
+     }
+-    const selection = selectionRef.current;
+-    if (!selection || selection.file !== selectedFile) {
++    const pair = selectionBinding.current();
++    if (!pair || pair.file !== selectedFile) {
+       setError('Choose a CSV file first, or use the bundled synthetic sample.');
+       return;
+     }
+-    const { file, key } = selection;
++    const { file, key } = pair;
+     await coordinator.runFileAnalysis(key, async () => ({
+       name: file.name,
+       size: file.size,
+@@ -113,11 +116,11 @@ export const TelemetryReviewPanel: React.FC = () => {
+   const askAboutSelectedCsv = async () => {
+     const coordinator = coordinatorRef.current;
+     if (!coordinator || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
+-    const selection = selectionRef.current;
+-    if (!selection || selection.file !== selectedFile) return;
++    const pair = selectionBinding.current();
++    if (!pair || pair.file !== selectedFile) return;
+     const controller = new AbortController();
+     agentController.current = controller;
+-    const { file, key } = selection;
++    const { file, key } = pair;
+     try {
+       await coordinator.askAboutCsv(agentRequest, key, async () => ({
+         name: file.name,
+@@ -182,7 +185,8 @@ export const TelemetryReviewPanel: React.FC = () => {
+               const key = coordinatorRef.current?.selectFile(
+                 file === null ? null : { name: file.name, size: file.size, lastModified: file.lastModified },
+               );
+-              selectionRef.current = file === null || key == null ? null : { file, key };
++              if (file === null || key == null) selectionBinding.clear();
++              else selectionBinding.bind(file, key);
+             }}
+             disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
+             style={{ maxWidth: 230, fontSize: 11 }}
+diff --git a/src/gui/src/components/telemetryReviewCoordinator.ts b/src/gui/src/components/telemetryReviewCoordinator.ts
+index da4b7af..a2d9284 100644
+--- a/src/gui/src/components/telemetryReviewCoordinator.ts
++++ b/src/gui/src/components/telemetryReviewCoordinator.ts
+@@ -244,9 +244,12 @@ export class TelemetryReviewCoordinator {
+     readFile: () => Promise<TelemetryFileSubmit>,
+     options: { signal?: AbortSignal } = {},
+   ): Promise<void> {
++    // Validate BEFORE allocating the operation identity: rejecting a stale
++    // entry must not burn the current operation's id and invalidate a
++    // valid in-flight ask (COMPLETION-FIX-16).
++    if (selectionKey === null || selectionKey !== this.sourceKey || this.sourceKind !== 'file') return;
+     const opId = ++this.askOpId;
+     const lifetime = this.capture(opId);
+-    if (selectionKey === null || selectionKey !== this.sourceKey || this.sourceKind !== 'file') return;
+     this.effects.apply({
+       agentResult: null, reviewRun: null, reviewError: null,
+       analysis: null, agentError: null, agentPhase: 'uploading',
+diff --git a/src/gui/src/components/telemetryReviewState.ts b/src/gui/src/components/telemetryReviewState.ts
+index 5b4fe23..25a5f4b 100644
+--- a/src/gui/src/components/telemetryReviewState.ts
++++ b/src/gui/src/components/telemetryReviewState.ts
+@@ -56,6 +56,40 @@ export function shouldApplyReconnect(selectedKey: string | null): boolean {
+   return selectedKey === null;
+ }
+ 
++/** The exact {file, key} pair created at selection time. */
++export interface FileSelectionPair<F> {
++  file: F;
++  key: string;
++}
++
++/**
++ * Panel selection binding (COMPLETION-FIX-16). Callbacks close over the pair
++ * object returned by bind(); identity comparison (===) — not metadata — is
++ * the staleness test, so a retained callback for a previous selection can
++ * never pair its file with a newer selection's key.
++ */
++export class SelectionBinding<F> {
++  private pair: FileSelectionPair<F> | null = null;
++
++  bind(file: F, key: string): FileSelectionPair<F> {
++    this.pair = { file, key };
++    return this.pair;
++  }
++
++  clear(): void {
++    this.pair = null;
++  }
++
++  current(): FileSelectionPair<F> | null {
++    return this.pair;
++  }
++
++  /** True only when the presented pair is the exact object currently bound. */
++  isCurrent(pair: FileSelectionPair<F> | null): boolean {
++    return pair !== null && pair === this.pair;
++  }
++}
++
+ export type TelemetryReviewPhase = 'idle' | 'uploading' | 'requesting' | 'completed' | 'failed' | 'cancelled';
+ 
+ /** View-state patch shape applied to the panel (mirrors the coordinator's). */
+diff --git a/tests/gui/rest-client-abort.test.ts b/tests/gui/rest-client-abort.test.ts
+index 4762d37..5f8f093 100644
+--- a/tests/gui/rest-client-abort.test.ts
++++ b/tests/gui/rest-client-abort.test.ts
+@@ -77,6 +77,47 @@ describe('BrowserRestClient abort handling', () => {
+     expect(seen).toHaveLength(1);
+   });
+ 
++  it('normalizes a custom string abort reason to AbortError, never TimeoutError', async () => {
++    const fetchFn = hangingFetch();
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    const pending = client.request('GET', '/api/v1/chat/health', undefined, { signal: controller.signal, timeoutMs: 5_000 });
++    controller.abort('user pressed cancel');
++    const err = await pending.catch((e: unknown) => e) as Error;
++    expect(err).toBeInstanceOf(Error);
++    expect(err.name).toBe('AbortError');
++    expect(err.name).not.toBe('TimeoutError');
++    // Non-Error reasons are normalized, not surfaced verbatim.
++    expect(err.message).not.toContain('user pressed cancel');
++  });
++
++  it('does not start a request for a pre-aborted string reason', async () => {
++    const fetchFn = okFetch();
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    controller.abort('already cancelled');
++    const err = await client.request('GET', '/api/v1/chat/health', undefined, { signal: controller.signal }).catch((e: unknown) => e) as Error;
++    expect(err.name).toBe('AbortError');
++    expect(fetchFn).not.toHaveBeenCalled();
++  });
++
++  it('does not start a download for a pre-aborted string reason', async () => {
++    const fetchFn = vi.fn(async () => ({
++      ok: true,
++      status: 200,
++      headers: { get: () => null },
++      text: async () => '',
++      blob: async () => new Blob(['x']),
++    }));
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    controller.abort('already cancelled');
++    const err = await client.downloadArtifactContent('run-1', { signal: controller.signal }).catch((e: unknown) => e) as Error;
++    expect(err.name).toBe('AbortError');
++    expect(err.message).not.toContain('already cancelled');
++    expect(fetchFn).not.toHaveBeenCalled();
++  });
++
+   it('still reports the client deadline as a timeout when the caller did not abort', async () => {
+     const fetchFn = hangingFetch();
+     const client = new BrowserRestClient({
+diff --git a/tests/gui/telemetry-review-coordinator.test.ts b/tests/gui/telemetry-review-coordinator.test.ts
+index 20523d0..2b006f4 100644
+--- a/tests/gui/telemetry-review-coordinator.test.ts
++++ b/tests/gui/telemetry-review-coordinator.test.ts
+@@ -280,6 +280,38 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12)',
+     expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
+   });
+ 
++  it('stale ask rejected while a valid ask is pending does not invalidate it (deferred race)', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const keyB = h.coordinator.selectFile(fileB) as string;
++    // Valid B ask goes pending on its upload.
++    const encB = deferred<TelemetryFileSubmit>();
++    const pendingB = h.coordinator.askAboutCsv('Summarize B.', keyB, () => encB.promise);
++    encB.resolve(submitB());
++    const uploadB = deferred();
++    h.telemetryQueue.push(uploadB);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    expect((h.telemetryCalls[0] as { name?: string }).name).toBe('b.csv');
++    // Stale A ask arrives while B is in flight: rejected before allocating
++    // an operation identity, so B's pending operation stays current.
++    const encA = deferred<TelemetryFileSubmit>();
++    const pendingStale = h.coordinator.askAboutCsv('Summarize A.', keyA, () => encA.promise);
++    encA.resolve(submitA());
++    await pendingStale;
++    expect(h.telemetryCalls).toHaveLength(1);
++    expect(h.csvCalls).toHaveLength(0);
++    // B still completes normally.
++    uploadB.resolve(uploadReceipt('telemetry-b', '.maos/industrial/evidence/b.csv'));
++    const agentCall = deferred();
++    h.csvQueue.push(agentCall);
++    await vi.waitFor(() => expect(h.csvCalls).toHaveLength(1));
++    agentCall.resolve(agentResult());
++    await pendingB;
++    const lastResult = [...h.patches].reverse().find((p) => p.agentResult !== undefined);
++    expect(lastResult?.agentResult).not.toBeNull();
++    expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
++  });
++
+   it('stale panel callbacks for analysis are refused; the bound pair stays valid', async () => {
+     const h = makeHarness();
+     const keyA = h.coordinator.selectFile(fileA) as string;
+diff --git a/tests/gui/telemetry-review-state.test.ts b/tests/gui/telemetry-review-state.test.ts
+index 1ccaf38..5a1812a 100644
+--- a/tests/gui/telemetry-review-state.test.ts
++++ b/tests/gui/telemetry-review-state.test.ts
+@@ -4,6 +4,7 @@ import {
+   buildSourceKey,
+   clearedOnSourceChange,
+   isCurrentResponse,
++  SelectionBinding,
+   shouldApplyReconnect,
+   type TelemetryReviewSetters,
+ } from '../../src/gui/src/components/telemetryReviewState';
+@@ -77,3 +78,43 @@ describe('telemetry source-bound review state (COMPLETION-FIX-04 finding 2)', ()
+     expect(setters.setAgentPhase).toHaveBeenCalledWith('completed');
+   });
+ });
++
++describe('panel selection binding (COMPLETION-FIX-16)', () => {
++  it('binds the exact {file, key} pair and stale pairs fail identity', () => {
++    const binding = new SelectionBinding<{ name: string }>();
++    const fileA = { name: 'a.csv' };
++    const fileB = { name: 'a.csv' }; // identical metadata, distinct object
++
++    const pairA = binding.bind(fileA, 'file#1:a.csv:136:1');
++    expect(binding.current()).toBe(pairA);
++    expect(binding.isCurrent(pairA)).toBe(true);
++
++    const pairB = binding.bind(fileB, 'file#2:a.csv:136:1');
++    expect(pairB).not.toBe(pairA);
++    expect(binding.isCurrent(pairA)).toBe(false);
++    expect(binding.isCurrent(pairB)).toBe(true);
++    expect(binding.current()).toBe(pairB);
++    // A retained stale callback holding pairA can never present B's key
++    // with A's file: identity, not metadata, decides.
++    expect(pairA.key).not.toBe(pairB.key);
++  });
++
++  it('reselecting the same file object mints a new pair identity', () => {
++    const binding = new SelectionBinding<{ name: string }>();
++    const file = { name: 'a.csv' };
++    const first = binding.bind(file, 'file#1:a.csv:136:1');
++    const second = binding.bind(file, 'file#2:a.csv:136:1');
++    expect(second).not.toBe(first);
++    expect(binding.isCurrent(first)).toBe(false);
++    expect(binding.isCurrent(second)).toBe(true);
++  });
++
++  it('clear detaches the pair so no callback can act', () => {
++    const binding = new SelectionBinding<{ name: string }>();
++    const pair = binding.bind({ name: 'a.csv' }, 'file#1:a.csv:136:1');
++    binding.clear();
++    expect(binding.current()).toBeNull();
++    expect(binding.isCurrent(pair)).toBe(false);
++    expect(binding.isCurrent(null)).toBe(false);
++  });
++});

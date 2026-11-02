@@ -1,0 +1,51 @@
+{
+  "candidateRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-bb871cb191184b5de1-correction-20261029\\repo",
+  "baseCommit": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "completePatchSha256": "f0cdb87b69008276c896b8c48633f6e09d17f1885c200e0c2cfab34222ca9e11",
+  "completeManifestSha256": "0cb0f371f2fc51f6940d9a33c132971a9e8c0b54b25c8579f8100ac054d74296",
+  "trackedDeltaPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "manifestPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "pathSetEqual": true,
+  "sourceChecks": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "rawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "rawMatchesManifest": true,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "rawSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "lfNormalizedSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "rawMatchesManifest": true,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "rawSha256": "33b0775c84c6db27445c7072763598982a88a6e04cfa0e84872820446e17f104",
+      "lfNormalizedSha256": "a13de33a8188641d8a0fb28d092c1455daefb671fa002378550c33aa96f32aeb",
+      "rawMatchesManifest": true,
+      "lfMatchesManifest": true
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "rawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "rawMatchesManifest": true,
+      "lfMatchesManifest": true
+    }
+  ],
+  "allSourceHashesMatch": true,
+  "indexEmpty": true
+}

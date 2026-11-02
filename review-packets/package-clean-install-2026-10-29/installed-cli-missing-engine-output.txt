@@ -1,0 +1,13 @@
+{
+  "message": "SERVICES_INIT_FAILED: Engine executable not found: <TEMP_VALIDATION_ROOT>\\rehearsal\\packaged-cli-tests\\industrial-run-project\\rust\\target\\release\\maos-engine.exe. Install the platform-matched release binary at this path. From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, then copy rust/target/release/maos-engine[.exe] to the missing path.",
+  "success": false,
+  "runId": "judged-run-1793215647110-23bafa",
+  "durationMs": 17,
+  "stagesCompleted": [
+    "PREFLIGHT",
+    "POLICY"
+  ],
+  "overallVerdict": "FAIL",
+  "approvalStatus": "pending",
+  "auditVerified": false
+}

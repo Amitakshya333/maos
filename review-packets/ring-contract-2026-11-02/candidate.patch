@@ -1,0 +1,1123 @@
+diff --git a/CONTRACT.md b/CONTRACT.md
+new file mode 100644
+index 0000000..494210b
+--- /dev/null
++++ b/CONTRACT.md
+@@ -0,0 +1,70 @@
++# TASK RING-CONTRACT-01 — Frozen Ring Agent Contract
++
++- Base commit: `a573e2a722a2db31dbb453ab43c9f36d0e0d6c30` (main HEAD, "Add the Ring agent loop and workspace")
++- Owner: PM. Lanes A/B/C start in parallel from this freeze; no lane touches another lane's files.
++- Policy: `src/backends/meta-api-policy.ts` is NOT weakened by this contract. Arming rules, endpoint/model pinning, and credential env are unchanged.
++
++## 1. Threads
++
++`RingThread { threadId, title, role, createdAt, runs: runId[] }`
++
++| Endpoint | Body | Result |
++|---|---|---|
++| `POST /api/v1/ring/threads` | `{ title?, role? }` | `{ threadId }` (201) |
++| `GET /api/v1/ring/threads/:id` | — | thread state (404 `NOT_FOUND` when missing) |
++| `POST /api/v1/ring/threads/:id/messages` | `{ instruction }` | starts a run carrying prior conversation context; returns `{ runId }` (201) |
++
++- Existing `/ring/runs` (`POST`, `GET /:id`, `POST /:id/cancel`, `POST /:id/approvals/:approvalId`) stays working **unchanged**.
++- Threads persist under `.maos/ring-runs/threads/<threadId>.json`; reopening rebuilds from stored history (no in-memory loss on restart). Dev A ships a restart-reload test.
++- Validation: `validateRingThreadState` (GUI side, fail-closed); unknown roles rejected.
++
++## 2. Streaming events
++
++Single event union extending the existing `RingRunEvent` — four additive types; the existing nine are untouched:
++
++- `model.delta` — `{ delta: string }` token text.
++- `plan.updated` — `{ plan: [{ step, status: pending|in_progress|done }] }` todo list.
++- `artifact.created` — `{ artifact: { path, kind, size, sha256 } }`.
++- `memory.saved` — `{ memory: { noteId, summary } }`.
++
++**Transport decision: existing WebSocket channel (`/api/v1/events`); NO new SSE endpoint.**
++
++Proof it exists: `src/api/server.ts` upgrades `GET /api/v1/events` (RFC 6455 loopback-only + origin allowlist), `src/api/event-broker.ts` broadcasts persisted `SequencedEvent`s with `projectId`/`runId` scoping, sequence + replay, and `src/gui/src/api/event-client.ts` (`BrowserEventClient`) already subscribes with `runId`. `RingWorkspace.tsx` documents the gap honestly: the channel is project-scoped plumbing and Ring never publishes to it yet, so polling is the current live path.
++
++Frozen transport: Dev B persists each mapped wire event via `EventService.recordEvent` as `SequencedEvent { eventType: 'ring.run.<type>', runId, projectId, correlationId, payload: <wire event> }` — `server.ts` auto-broadcasts it to `runId`-scoped WS subscribers. `GET /api/v1/ring/runs/:id` stays the documented snapshot fallback and the polling path (`getRingRun` / new `getRingRunEvents` alias) keeps working either way. The `onStreamEvent` hook added to `RingAgentService` is the Dev B fan-out point; listener exceptions never break a run and the JSONL transcript is untouched.
++
++## 3. Tool registry
++
++```ts
++interface RingToolDefinition {
++  name: string; description: string; parameters: object;
++  consequential: boolean; roles?: Role[];
++  execute(ctx, args): result;
++}
++```
++
++- Tools live in separate files (`src/service/ring-tools/*.ts`); this packet ships the six stubs with frozen names/descriptions/parameters/flags.
++- The existing 6 tools (`analyze_telemetry`, `read_company_document`, `search_knowledge`, `draft_safety_note`, `verify_export`, `request_approval`) migrate onto the interface in Dev C with **BEHAVIOR UNCHANGED** (same tests green — the migration moves method bodies verbatim, keeps `summarizeArgs`/`truncate` shapes, keeps JSONL field names).
++- **Consequential enforcement lives in the REGISTRY** (`registry.isConsequential()` is the single approval gate; unknown tools fail closed as consequential) — not the model. Current consequential set: `draft_safety_note`, `request_approval`.
++- Results truncated via the existing `truncate()` pattern.
++
++## 4. Roles
++
++`'operator' | 'maintenance' | 'safety' | 'manager'`. Default `operator` exists so current tests don't break. Role affects the system prompt (Dev C, keyed off `thread.role` stored at thread creation) and the tool set (registry `roles?` visibility; unlisted = visible to all).
++
++## 5. Artifacts
++
++Stored under `.maos/ring-runs/artifacts/<runId>/`. Served by `GET /api/v1/ring/runs/:runId/artifacts/:filename` with path checks reusing the `isWithin`/`isStrictlyWithin` patterns (never serve outside the run dir). Descriptor `{ path, kind, size, sha256 }` rides `artifact.created` events.
++
++## 6. What the dev lanes own (no shared files)
++
++- **Dev A** — `src/service/ring-thread-service.ts` (replace NOT_IMPLEMENTED bodies), thread routes in `src/api/router.ts` (thread block only), `RingWorkspace` thread UI.
++- **Dev B** — `record()` fan-out in `src/service/ring-agent-service.ts` (hook exists), WS publish via `EventService.recordEvent`, streaming event emitters, GUI live-path switch. Owns NO router thread block, NO tool files.
++- **Dev C** — `src/service/ring-tools/*.ts` (move bodies verbatim), registry wiring + `isConsequential` swap-in, role prompts, `src/service/ring-artifacts.ts` + artifact download route. Owns NOTHING in the service loop except the two-line gate call.
++
++Shared frozen types: `src/service/ring-contract.ts`, `src/service/ring-tool-registry.ts`, validators in `src/gui/src/api/ring-run-types.ts`. Any change to these three files requires a PM contract amendment — lanes do not edit them unilaterally.
++
++## 7. Evidence
++
++- New contract test `tests/industrial/ring-contract.test.ts` (5 tests): thread shape + restart-reload, event union validation, registry gate, streaming hook.
++- Tools-temp OCR/vision preflight: see `PREFLIGHT.md` in this packet (read-only; no installs; no live calls).
+diff --git a/PREFLIGHT.md b/PREFLIGHT.md
+new file mode 100644
+index 0000000..14f9920
+--- /dev/null
++++ b/PREFLIGHT.md
+@@ -0,0 +1,61 @@
++# Tools-temp preflight — OCR / vision on THIS machine (read-only)
++
++Date: 2026-11-02. Task: RING-CONTRACT-01 packet preflight.
++Method: existing preflight code paths + read-only binary/data checks.
++No installs performed. No live Baseten calls (no key configured).
++
++## 1. Demo PDF: demo/industrial/turbine_inspection_scan.pdf
++
++- Size: 534 bytes. Single page (MediaBox 612x792), one FlateDecode content stream.
++- Decompressed content stream (100 bytes, exact):
++  `BT /F1 12 Tf 50 700 Td (TURBINE INSPECTION LOG: BEARING CLEARANCE 0.050 mm) Tj ET 20 20 572 752 re S`
++- Verdict: **the scan HAS a text layer.** The inspection line is embedded as a
++  PDF text-showing operation (`Tj`), extractable with zlib only — no OCR
++  needed for this file. No `/Font`, no `ToUnicode`, no images: it is a
++  minimal synthetic fixture, not a real scan.
++- Consequence for the lanes: the OCR path is NOT exercised by this fixture.
++  Any lane demoing OCR/vision must bring its own image fixture; do not claim
++  this PDF proves OCR works.
++
++## 2. Tesseract OCR
++
++- `where tesseract` → not found in PATH (exit 1).
++- Existing preflight (`src/industrial/preflight.ts`, stage 2f) reports
++  `Tesseract OCR: tesseract not found in PATH` and fails only when
++  `requireOcr === true`; default config does not require it.
++- `src/industrial/python/ocr_engine.py` is a bundled NumPy/PIL template-matching
++  engine (no tesseract import) — readable as a fallback, but it was NOT
++  executed here (running it would be a behavior probe beyond read-only checks,
++  and the fixture needs no OCR anyway).
++
++## 3. VisionService (Qwen/Qwen2-VL-2B-Instruct)
++
++- Pinned model: `Qwen/Qwen2-VL-2B-Instruct` rev `aa70c964147048705c93c4e16ff2bc55255470d0`
++  (`src/domain/vision.ts` PINNED_VLM_CONFIG). Backend: `src/industrial/python/vlm_engine.py`.
++- **Cannot run on this machine as-is:** no `.maos/models` weights directory
++  exists in the worktree, `transformers` IS importable in C:\Python314 but the
++  pinned weights are absent, and no `inferenceHandler` is configured.
++  `VisionService.analyzeImage` without weights raises
++  `MODEL_RUNTIME_UNAVAILABLE` by design (synthetic fallback is disabled).
++- Honest status: VisionService code path is present and pinned; runtime is
++  unavailable here for lack of weights, not for lack of code.
++
++## 4. Python raster support (read-only import probes, C:\Python314)
++
++- `PIL` 12.3.0: present.
++- `fitz` (PyMuPDF): absent. `pdf2image`: absent. `transformers`: present.
++- `src/industrial/python/pdf_rasterizer.py` is stdlib + PIL only (zlib,
++  DCTDecode/FlateDecode extraction) — needs no poppler for the bundled
++  fixture class; real-world scans still need a rasterizer outside this box.
++
++## 5. Summary for the lanes
++
++| Probe | Result |
++|---|---|
++| Scan PDF text layer | PRESENT (zlib-extractable `Tj` line; OCR unnecessary for this fixture) |
++| Tesseract | NOT INSTALLED (preflight warns; not required by default) |
++| Python OCR fallback (`ocr_engine.py`) | PRESENT in tree, not executed |
++| VisionService weights | ABSENT (runtime unavailable; `MODEL_RUNTIME_UNAVAILABLE` by design) |
++| Baseten key | NOT SET (no live calls made; all tests evidence-only) |
++
++Nothing was installed, no network calls were made, no keys exist in code.
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index 32ea5f4..cc51f78 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -754,6 +754,43 @@ export class BrowserRestClient {
+     await this.request('POST', `/api/v1/ring/runs/${encodeURIComponent(runId)}/cancel`, {}, options);
+   }
+ 
++  /**
++   * TASK RING-CONTRACT-01: thread routes (Dev A lane implements the service;
++   * client shape frozen here so Dev B/C compile against it). Existing
++   * /ring/runs routes above stay working unchanged.
++   */
++  async createRingThread(input: { title?: string; role?: string }, options?: RequestOptions): Promise<{ threadId: string }> {
++    const res = await this.request<{ threadId: string }>('POST', '/api/v1/ring/threads', input, options);
++    if (!res.data || typeof (res.data as { threadId?: unknown }).threadId !== 'string') {
++      throw new Error('RING_RUN_INVALID: threadId must be a non-empty string.');
++    }
++    return { threadId: (res.data as { threadId: string }).threadId };
++  }
++
++  async getRingThread(threadId: string, options?: RequestOptions): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
++    const res = await this.request<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }>('GET', `/api/v1/ring/threads/${encodeURIComponent(threadId)}`, undefined, options);
++    const { validateRingThreadState } = await import('./ring-run-types');
++    return validateRingThreadState(res.data);
++  }
++
++  async postRingThreadMessage(threadId: string, instruction: string, options?: RequestOptions): Promise<RingRunStartResult> {
++    const res = await this.request<RingRunStartResult>('POST', `/api/v1/ring/threads/${encodeURIComponent(threadId)}/messages`, { instruction }, options);
++    return validateRingRunStart(res.data);
++  }
++
++  async getRingRunEvents(runId: string, options?: RequestOptions): Promise<RingRunState> {
++    // TASK RING-CONTRACT-01: snapshot fallback for the streaming transport.
++    // Polling GET /api/v1/ring/runs/:id stays the documented fallback; the
++    // live path is the existing WS /api/v1/events channel (runId-scoped).
++    return this.getRingRun(runId, options);
++  }
++
++  async downloadRingArtifact(runId: string, filename: string, options?: RequestOptions): Promise<unknown> {
++    // TASK RING-CONTRACT-01: artifact download (Dev C lane serves it with
++    // path checks reusing the isWithin/isStrictlyWithin patterns).
++    return this.request('GET', `/api/v1/ring/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}`, undefined, options);
++  }
++
+   async decideRingApproval(
+     runId: string,
+     approvalId: string,
+diff --git a/src/gui/src/api/ring-run-types.ts b/src/gui/src/api/ring-run-types.ts
+index e84ac8f..2a5bf7f 100644
+--- a/src/gui/src/api/ring-run-types.ts
++++ b/src/gui/src/api/ring-run-types.ts
+@@ -26,7 +26,34 @@ export type RingRunEventType =
+   | 'approval.resolved'
+   | 'run.completed'
+   | 'run.failed'
+-  | 'run.cancelled';
++  | 'run.cancelled'
++  | 'model.delta'
++  | 'plan.updated'
++  | 'artifact.created'
++  | 'memory.saved';
++
++/**
++ * TASK RING-CONTRACT-01: frozen streaming extension (additive; existing
++ * event types unchanged). `model.delta` carries token text; `plan.updated`
++ * carries the ordered todo list; `artifact.created` carries the stored
++ * artifact descriptor; `memory.saved` carries the stored note summary.
++ */
++export interface RingPlanStep {
++  step: string;
++  status: 'pending' | 'in_progress' | 'done';
++}
++
++export interface RingArtifactDescriptor {
++  path: string;
++  kind: string;
++  size: number;
++  sha256: string;
++}
++
++export interface RingMemoryRecord {
++  noteId: string;
++  summary: string;
++}
+ 
+ export type RingApprovalDecision = 'approved' | 'denied';
+ 
+@@ -60,6 +87,14 @@ export interface RingRunEvent {
+   decision?: RingApprovalDecision;
+   /** run.failed: failure message, rendered verbatim. */
+   message?: string;
++  /** model.delta: token text streamed from the model. */
++  delta?: string;
++  /** plan.updated: ordered todo list, rendered verbatim. */
++  plan?: RingPlanStep[];
++  /** artifact.created: stored artifact descriptor. */
++  artifact?: RingArtifactDescriptor;
++  /** memory.saved: stored note summary. */
++  memory?: RingMemoryRecord;
+ }
+ 
+ export interface RingRunState {
+@@ -92,6 +127,10 @@ const EVENT_TYPES: readonly string[] = [
+   'run.completed',
+   'run.failed',
+   'run.cancelled',
++  'model.delta',
++  'plan.updated',
++  'artifact.created',
++  'memory.saved',
+ ];
+ 
+ function isRecord(value: unknown): value is Record<string, unknown> {
+@@ -147,9 +186,58 @@ export function validateRingRunEvent(value: unknown): RingRunEvent {
+     }
+     event.decision = value.decision;
+   }
++  // TASK RING-CONTRACT-01: streaming extension (pass-through only when
++  // correctly typed; nothing defaulted or invented).
++  if (value.delta !== undefined) {
++    if (typeof value.delta !== 'string') {
++      throw new Error('RING_RUN_INVALID: event.delta must be a string when present.');
++    }
++    event.delta = value.delta;
++  }
++  if (value.plan !== undefined) {
++    if (!Array.isArray(value.plan) || value.plan.some((p) => !isRecord(p) || typeof p.step !== 'string' || (p.status !== 'pending' && p.status !== 'in_progress' && p.status !== 'done'))) {
++      throw new Error('RING_RUN_INVALID: event.plan must be an array of { step, status } when present.');
++    }
++    event.plan = (value.plan as Array<Record<string, unknown>>).map((p) => ({ step: p.step as string, status: p.status as RingPlanStep['status'] }));
++  }
++  if (value.artifact !== undefined) {
++    if (!isRecord(value.artifact) || typeof value.artifact.path !== 'string' || typeof value.artifact.kind !== 'string' || typeof value.artifact.size !== 'number' || typeof value.artifact.sha256 !== 'string') {
++      throw new Error('RING_RUN_INVALID: event.artifact must be { path, kind, size, sha256 } when present.');
++    }
++    const artifact = value.artifact as Record<string, unknown>;
++    event.artifact = { path: artifact.path as string, kind: artifact.kind as string, size: artifact.size as number, sha256: artifact.sha256 as string };
++  }
++  if (value.memory !== undefined) {
++    if (!isRecord(value.memory) || typeof value.memory.noteId !== 'string' || typeof value.memory.summary !== 'string') {
++      throw new Error('RING_RUN_INVALID: event.memory must be { noteId, summary } when present.');
++    }
++    const memory = value.memory as Record<string, unknown>;
++    event.memory = { noteId: memory.noteId as string, summary: memory.summary as string };
++  }
+   return event;
+ }
+ 
++/** Runtime validator for GET /api/v1/ring/threads/:id (reuses the run state shape per run). */
++export function validateRingThreadState(value: unknown): { threadId: string; title: string; role: string; createdAt: string; runs: string[] } {
++  if (!isRecord(value)) throw new Error('RING_RUN_INVALID: thread state must be an object.');
++  if (typeof value.threadId !== 'string' || !value.threadId.trim()) {
++    throw new Error('RING_RUN_INVALID: threadId must be a non-empty string.');
++  }
++  if (typeof value.title !== 'string') {
++    throw new Error('RING_RUN_INVALID: title must be a string.');
++  }
++  if (typeof value.role !== 'string' || !['operator', 'maintenance', 'safety', 'manager'].includes(value.role)) {
++    throw new Error('RING_RUN_INVALID: role must be operator, maintenance, safety, or manager.');
++  }
++  if (typeof value.createdAt !== 'string' || !value.createdAt) {
++    throw new Error('RING_RUN_INVALID: createdAt must be a non-empty string.');
++  }
++  if (!Array.isArray(value.runs) || value.runs.some((r) => typeof r !== 'string')) {
++    throw new Error('RING_RUN_INVALID: runs must be an array of strings.');
++  }
++  return { threadId: value.threadId, title: value.title, role: value.role, createdAt: value.createdAt, runs: value.runs as string[] };
++}
++
+ /** Runtime validator for GET /api/v1/ring/runs/:id. Fails closed. */
+ export function validateRingRunState(value: unknown): RingRunState {
+   if (!isRecord(value)) throw new Error('RING_RUN_INVALID: run state must be an object.');
+diff --git a/src/service/index.ts b/src/service/index.ts
+index fe625ae..fb996cc 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -485,6 +485,10 @@ export { CalculationTraceService } from './calculation-trace-service';
+ export { ChatInferenceService, ChatInferenceError } from './chat-inference-service';
+ export { RingInferenceService } from './ring-inference-service';
+ export { RingAgentService, RingAgentError, RING_AGENT_TOOLS } from './ring-agent-service';
++export { RingToolRegistry, truncate as truncateRingToolResult } from './ring-tool-registry';
++export type { RingToolContext, RingToolDefinition } from './ring-contract';
++export type { RingRole, RingThread, RingThreadCreateRequest, RingThreadMessageRequest, RingRunCreateContractRequest, RingStreamEventType, RingPlanStep, RingArtifactDescriptor, RingMemoryRecord } from './ring-contract';
++export { RING_ROLES, DEFAULT_RING_ROLE, RING_STREAM_EVENT_TYPES, isRingThreadId, isRingRole } from './ring-contract';
+ export type { RingAgentRunStatus, RingAgentMode, RingAgentApprovalDecision, RingAgentRunContext, RingAgentRunSnapshot, RingAgentTranscriptEntry, RingAgentPendingApproval } from './ring-agent-service';
+ export { IndustrialAnalysisAgentService, IndustrialAnalysisAgentError } from '../industrial/analysis-agent-service';
+ export { SandboxImageService } from './sandbox-image-service';
+diff --git a/src/service/ring-agent-service.ts b/src/service/ring-agent-service.ts
+index 39293a0..4d87389 100644
+--- a/src/service/ring-agent-service.ts
++++ b/src/service/ring-agent-service.ts
+@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
+ import * as fs from 'fs';
+ import * as path from 'path';
+ import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL, ProviderApiPolicyError } from '../backends/meta-api-policy';
++import { RING_STREAM_EVENT_TYPES } from './ring-contract';
+ import { OpenAIProvider } from '../backends/openai-provider';
+ import type { ChatMessage, IProvider, ToolDef } from '../backends/provider';
+ import type { Project } from '../domain/schemas';
+@@ -47,7 +48,14 @@ export interface RingAgentTranscriptEntry {
+  * validator (src/gui/src/api/ring-run-types.ts). This is a mapped projection
+  * of a JSONL transcript entry; the JSONL entry itself is never rewritten.
+  */
+-export interface RingAgentWireEvent {
++export interface RingStreamWireFields {
++  delta?: string;
++  plan?: Array<{ step: string; status: 'pending' | 'in_progress' | 'done' }>;
++  artifact?: { path: string; kind: string; size: number; sha256: string };
++  memory?: { noteId: string; summary: string };
++}
++
++export interface RingAgentWireEvent extends RingStreamWireFields {
+   type: string;
+   ts: string;
+   /**
+@@ -387,6 +395,12 @@ export class RingAgentService {
+       default:
+         break;
+     }
++    if ((RING_STREAM_EVENT_TYPES as readonly string[]).includes(entry.type)) {
++      if (entry.type === 'model.delta' && typeof entry.delta === 'string') wire.delta = entry.delta;
++      if (entry.type === 'plan.updated' && Array.isArray(entry.plan)) wire.plan = entry.plan as RingStreamWireFields['plan'];
++      if (entry.type === 'artifact.created' && entry.artifact && typeof entry.artifact === 'object') wire.artifact = entry.artifact as RingStreamWireFields['artifact'];
++      if (entry.type === 'memory.saved' && entry.memory && typeof entry.memory === 'object') wire.memory = entry.memory as RingStreamWireFields['memory'];
++    }
+     return wire;
+   }
+ 
+@@ -420,12 +434,37 @@ export class RingAgentService {
+     return out;
+   }
+ 
++  private readonly streamListeners = new Set<(runId: string, event: RingAgentWireEvent) => void>();
++
++  /**
++   * TASK RING-CONTRACT-01 (Dev B hook): subscribe to mapped wire events for
++   * the live streaming path. The Dev B lane persists each event as a
++   * SequencedEvent (`eventType: ring.run.<type>`, `runId` set) via
++   * EventService.recordEvent so the existing WS /api/v1/events channel
++   * (runId-scoped, sequenced + replay) delivers it; GET /ring/runs/:id stays
++   * the documented snapshot fallback. Listener exceptions never break the
++   * run; the JSONL transcript on disk is untouched.
++   */
++  onStreamEvent(listener: (runId: string, event: RingAgentWireEvent) => void): () => void {
++    this.streamListeners.add(listener);
++    return () => this.streamListeners.delete(listener);
++  }
++
++  private emitStreamEvent(run: InternalRun, entry: RingAgentTranscriptEntry): void {
++    if (this.streamListeners.size === 0) return;
++    let wire: RingAgentWireEvent | null = null;
++    try { wire = this.toWireEvent(run, entry); } catch { return; }
++    if (!wire) return;
++    for (const l of this.streamListeners) { try { l(run.runId, wire); } catch {} }
++  }
++
+   private record(run: InternalRun, entry: Omit<RingAgentTranscriptEntry, 'ts' | 'runId'> & { type: string }): void {
+     const full: RingAgentTranscriptEntry = { ts: new Date().toISOString(), runId: run.runId, mode: run.mode, status: run.status, ...entry };
+     run.transcript.push(full);
+     run.updatedAt = full.ts as string;
+     try { fs.appendFileSync(run.transcriptPath, `${JSON.stringify(full)}\n`, 'utf-8'); } catch {}
+     for (const l of this.listeners) { try { l(full); } catch {} }
++    this.emitStreamEvent(run, full);
+   }
+ 
+   private checkBasetenArming(): { isArmed: boolean; apiKey?: string } {
+diff --git a/src/service/ring-artifacts.ts b/src/service/ring-artifacts.ts
+new file mode 100644
+index 0000000..a616df1
+--- /dev/null
++++ b/src/service/ring-artifacts.ts
+@@ -0,0 +1,38 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): artifact store helper.
++ *
++ * FROZEN CONTRACT (Dev C implements against this; behavior spec only):
++ * - Artifacts are stored under `.maos/ring-runs/artifacts/<runId>/`.
++ * - Served by a download endpoint with path checks reusing the
++ *   isWithin/isStrictlyWithin patterns (never serve outside the run dir).
++ * - `artifact.created` streaming events carry `{ path, kind, size, sha256 }`.
++ *
++ * This stub exposes the interface with NOT_IMPLEMENTED bodies so Dev A/B
++ * compile against the descriptor shape without waiting for Dev C.
++ */
++
++import type { RingArtifactDescriptor } from './ring-contract';
++
++export interface RingArtifactStore {
++  artifactDir(runId: string): string;
++  saveArtifact(runId: string, filename: string, content: string | Buffer, kind: string): RingArtifactDescriptor;
++  resolveArtifactPath(runId: string, filename: string): string;
++}
++
++const NOT_IMPLEMENTED = 'RING_ARTIFACT_NOT_IMPLEMENTED: Dev C lane implements the artifact store.';
++
++export class RingArtifactService implements RingArtifactStore {
++  constructor(private readonly _projectRoot: string) {}
++
++  artifactDir(_runId: string): string {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++
++  saveArtifact(_runId: string, _filename: string, _content: string | Buffer, _kind: string): RingArtifactDescriptor {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++
++  resolveArtifactPath(_runId: string, _filename: string): string {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++}
+diff --git a/src/service/ring-contract.ts b/src/service/ring-contract.ts
+new file mode 100644
+index 0000000..70dbe87
+--- /dev/null
++++ b/src/service/ring-contract.ts
+@@ -0,0 +1,145 @@
++/**
++ * TASK RING-CONTRACT-01: Frozen Ring contract (type stubs).
++ *
++ * This file is the compile-time home of the contract the three dev lanes
++ * build against in parallel. It introduces NO behavior: service, router, and
++ * GUI code gain behavior in their own files; this module only declares the
++ * shared shapes so lanes never touch each other's files.
++ *
++ * Lane map (each lane owns its files; all import types from here):
++ *   - Dev A (threads + persistence): RingThreadService + router thread
++ *     routes in `src/api/router.ts` (thread block only).
++ *   - Dev B (streaming events): publish path in
++ *     `src/service/ring-agent-service.ts` (record() fan-out only) — event
++ *     union extension lives in `src/gui/src/api/ring-run-types.ts`.
++ *   - Dev C (tools + roles + artifacts): `src/service/ring-tools/*` and the
++ *     registry in `src/service/ring-tool-registry.ts`.
++ *
++ * Policy is NOT weakened here: consequential enforcement stays in the
++ * registry (see `RingToolDefinition.consequential`), and
++ * `src/backends/meta-api-policy.ts` is untouched.
++ */
++
++export type RingRole = 'operator' | 'maintenance' | 'safety' | 'manager';
++
++export const RING_ROLES: readonly RingRole[] = ['operator', 'maintenance', 'safety', 'manager'];
++
++export const DEFAULT_RING_ROLE: RingRole = 'operator';
++
++/** Run lifecycle states (frozen; unchanged from RING-AGENT-LOOP-01). */
++export type RingContractRunStatus = 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
++
++/** Run execution mode (frozen; unchanged). */
++export type RingContractRunMode = 'hosted' | 'evidence-only';
++
++/**
++ * Thread: a named conversation owning an ordered list of run ids.
++ * Persisted as JSON under `.maos/ring-runs/threads/<threadId>.json`;
++ * reopening rebuilds from that stored history (no in-memory state is
++ * authoritative across restarts).
++ */
++export interface RingThread {
++  threadId: string;
++  title: string;
++  role: RingRole;
++  createdAt: string;
++  runs: string[];
++}
++
++/** POST /api/v1/ring/threads request body. */
++export interface RingThreadCreateRequest {
++  title?: string;
++  role?: RingRole;
++  instruction?: string;
++}
++
++/** POST /api/v1/ring/threads/:id/messages request body (starts a run carrying prior conversation context). */
++export interface RingThreadMessageRequest {
++  instruction: string;
++}
++
++/** Existing POST /api/v1/ring/runs request shape (frozen; unchanged). */
++export interface RingRunCreateContractRequest {
++  instruction: string;
++  agentId?: string;
++  csvPath?: string;
++  exportPath?: string;
++  evidenceRoot?: string;
++  analysisId?: string;
++  documentPath?: string;
++  threadId?: string;
++  role?: RingRole;
++}
++
++/** Frozen streaming extension: the four new event types. */
++export type RingStreamEventType = 'model.delta' | 'plan.updated' | 'artifact.created' | 'memory.saved';
++
++/** plan.updated: the agent's current todo list (ordered steps). */
++export interface RingPlanStep {
++  step: string;
++  status: 'pending' | 'in_progress' | 'done';
++}
++
++/** artifact.created payload: a file the run stored under its artifact dir. */
++export interface RingArtifactDescriptor {
++  path: string;
++  kind: string;
++  size: number;
++  sha256: string;
++}
++
++/** memory.saved payload: a note the run stored for future turns. */
++export interface RingMemoryRecord {
++  noteId: string;
++  summary: string;
++}
++
++/**
++ * Tool definition: tools live in separate files (e.g.
++ * `src/service/ring-tools/*.ts`) and register here. Consequential
++ * enforcement lives in the REGISTRY (the `consequential` flag gates the
++ * approval pause), never in the model. Results are truncated via the
++ * existing `truncate()` pattern.
++ */
++export interface RingToolContext {
++  projectRoot: string;
++  evidenceRoot: string;
++  runId: string;
++  runContext: Record<string, unknown>;
++}
++
++export interface RingToolDefinition {
++  name: string;
++  description: string;
++  parameters: Record<string, unknown>;
++  consequential: boolean;
++  roles?: RingRole[];
++  execute: (ctx: RingToolContext, args: Record<string, unknown>) => Promise<Record<string, unknown>> | Record<string, unknown>;
++}
++
++/** Artifact storage layout (frozen). */
++export const RING_ARTIFACT_DIR_PREFIX = '.maos/ring-runs/artifacts';
++
++/** Thread storage layout (frozen). */
++export const RING_THREAD_DIR = '.maos/ring-runs/threads';
++
++/** New streaming event types, for validators and the WS fan-out. */
++export const RING_STREAM_EVENT_TYPES: readonly RingStreamEventType[] = [
++  'model.delta',
++  'plan.updated',
++  'artifact.created',
++  'memory.saved',
++];
++
++/**
++ * Type guard for thread ids: `thread-<epochMs>-<8 hex>`.
++ * Run ids (`ring-…`) never match.
++ */
++export function isRingThreadId(value: unknown): value is string {
++  return typeof value === 'string' && /^thread-[0-9]+-[0-9a-f]{8}$/.test(value);
++}
++
++/** Type guard for role values; unknown roles fail closed. */
++export function isRingRole(value: unknown): value is RingRole {
++  return value === 'operator' || value === 'maintenance' || value === 'safety' || value === 'manager';
++}
+diff --git a/src/service/ring-thread-service.ts b/src/service/ring-thread-service.ts
+new file mode 100644
+index 0000000..9c50fdc
+--- /dev/null
++++ b/src/service/ring-thread-service.ts
+@@ -0,0 +1,50 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev A stub): thread persistence service.
++ *
++ * FROZEN CONTRACT (Dev A implements against this; behavior spec only):
++ * - `RingThread { threadId, title, role, createdAt, runs: runId[] }`.
++ * - Endpoints: POST /api/v1/ring/threads, GET /api/v1/ring/threads/:id,
++ *   POST /api/v1/ring/threads/:id/messages (starts a run carrying prior
++ *   conversation context). Existing /ring/runs stays working unchanged.
++ * - Threads persist under `.maos/ring-runs/threads/` as JSON; reopening
++ *   rebuilds from stored history (no in-memory loss on restart). Dev A ships
++ *   a restart-reload test.
++ * - Roles: 'operator' | 'maintenance' | 'safety' | 'manager' (default
++ *   `operator` so current tests don't break); role affects system prompt +
++ *   tool set (system-prompt + registry-visibility changes are Dev C's, keyed
++ *   off `thread.role` stored here).
++ *
++ * This stub exposes the interface with NOT_IMPLEMENTED bodies so Dev B/C
++ * compile against it without waiting for Dev A.
++ */
++
++import type { RingRole, RingThread } from './ring-contract';
++
++export interface RingThreadStore {
++  createThread(title: string, role: RingRole): RingThread;
++  getThread(threadId: string): RingThread | undefined;
++  appendRun(threadId: string, runId: string): RingThread;
++  listThreadIds(): string[];
++}
++
++const NOT_IMPLEMENTED = 'RING_THREAD_NOT_IMPLEMENTED: Dev A lane implements thread persistence.';
++
++export class RingThreadService implements RingThreadStore {
++  constructor(private readonly _projectRoot: string) {}
++
++  createThread(_title: string, _role: RingRole): RingThread {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++
++  getThread(_threadId: string): RingThread | undefined {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++
++  appendRun(_threadId: string, _runId: string): RingThread {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++
++  listThreadIds(): string[] {
++    throw new Error(NOT_IMPLEMENTED);
++  }
++}
+diff --git a/src/service/ring-tool-registry.ts b/src/service/ring-tool-registry.ts
+new file mode 100644
+index 0000000..0bfe1fc
+--- /dev/null
++++ b/src/service/ring-tool-registry.ts
+@@ -0,0 +1,88 @@
++/**
++ * TASK RING-CONTRACT-01: Frozen tool-registry interface.
++ *
++ * Tools live in separate files (e.g. `src/service/ring-tools/*.ts`) and
++ * register here. Consequential enforcement lives in the REGISTRY, not the
++ * model: `isConsequential()` is the single gate the agent loop consults
++ * before pausing for human approval. Results are truncated via the existing
++ * `truncate()` pattern (re-exported here for tool files).
++ *
++ * The existing 6 tools migrate onto this interface in the Dev C lane with
++ * BEHAVIOR UNCHANGED (same tests green). This module ships the registry +
++ * interface only; no tool is moved here.
++ */
++
++import type { RingToolContext, RingToolDefinition } from './ring-contract';
++
++export type { RingToolContext, RingToolDefinition } from './ring-contract';
++
++export function truncate(value: string, max = 1000): string {
++  if (value.length <= max) return value;
++  return `${value.slice(0, max)}...[truncated ${value.length - max} chars]`;
++}
++
++export class RingToolRegistry {
++  private readonly tools = new Map<string, RingToolDefinition>();
++
++  /** Register a tool definition. Duplicate names throw (fail closed). */
++  register(def: RingToolDefinition): void {
++    if (!def || typeof def.name !== 'string' || !def.name.trim()) {
++      throw new Error('RING_TOOL_INVALID: tool definition requires a non-empty name.');
++    }
++    if (typeof def.execute !== 'function') {
++      throw new Error(`RING_TOOL_INVALID: tool '${def.name}' requires an execute function.`);
++    }
++    if (this.tools.has(def.name)) {
++      throw new Error(`RING_TOOL_DUPLICATE: tool '${def.name}' is already registered.`);
++    }
++    this.tools.set(def.name, def);
++  }
++
++  /** Look up a tool by name (undefined when unknown). */
++  get(name: string): RingToolDefinition | undefined {
++    return this.tools.get(name);
++  }
++
++  /** All registered tool names, in registration order. */
++  names(): string[] {
++    return [...this.tools.keys()];
++  }
++
++  /**
++   * THE consequential gate: the agent loop pauses for human approval iff
++   * this returns true. The model never decides. Unknown tools fail closed
++   * (treated as consequential so nothing executes without review).
++   */
++  isConsequential(name: string): boolean {
++    const def = this.tools.get(name);
++    if (!def) return true;
++    return def.consequential === true;
++  }
++
++  /**
++   * Role scoping: tools with no `roles` list are available to every role.
++   * Tools listing `roles` are visible only to those roles. The default
++   * role (`operator`) sees the full migrated set, so current tests keep
++   * passing.
++   */
++  isVisibleTo(name: string, role: string): boolean {
++    const def = this.tools.get(name);
++    if (!def) return false;
++    if (!def.roles || def.roles.length === 0) return true;
++    return def.roles.includes(role as never);
++  }
++
++  /** Execute a tool with truncation-friendly error surfacing. */
++  async execute(name: string, ctx: RingToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
++    const def = this.tools.get(name);
++    if (!def) return { ok: false, toolName: name, error: `Unknown tool: ${name}` };
++    try {
++      const result = await def.execute(ctx, args || {});
++      if (result && typeof result === 'object' && !Array.isArray(result)) return result;
++      return { ok: false, toolName: name, error: `Tool '${name}' returned a non-object result.` };
++    } catch (err) {
++      const message = err instanceof Error ? err.message : String(err);
++      return { ok: false, toolName: name, error: truncate(message, 800) };
++    }
++  }
++}
+diff --git a/src/service/ring-tools/draft-note.ts b/src/service/ring-tools/draft-note.ts
+new file mode 100644
+index 0000000..3ccbca4
+--- /dev/null
++++ b/src/service/ring-tools/draft-note.ts
+@@ -0,0 +1,29 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): draft_safety_note tool module.
++ *
++ * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolDraftSafetyNote`):
++ * same input (`content` required; `title`/`filename` sanitized), same
++ * `.maos/ring-runs/drafts/<runId>-<safe>.md` write with `wx` flag, same
++ * sha256/bytes output. CONSEQUENTIAL: the registry flag (not the model)
++ * gates the approval pause before any file is written.
++ *
++ * Dev C implements `execute` by moving the method body verbatim; this stub
++ * is intentionally unregistered until then.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++
++export const draftSafetyNoteTool: RingToolDefinition = {
++  name: 'draft_safety_note',
++  description:
++    'Draft a safety note as text and write it under .maos/ring-runs/drafts after human approval. CONSEQUENTIAL: requires approval before any file is written.',
++  parameters: {
++    type: 'object',
++    properties: { title: { type: 'string' }, content: { type: 'string' }, filename: { type: 'string' } },
++    required: ['content'],
++  },
++  consequential: true,
++  execute: () => {
++    throw new Error('RING_TOOL_NOT_MIGRATED: draft_safety_note still executes in ring-agent-service; Dev C migrates it.');
++  },
++};
+diff --git a/src/service/ring-tools/index.ts b/src/service/ring-tools/index.ts
+new file mode 100644
+index 0000000..2604cba
+--- /dev/null
++++ b/src/service/ring-tools/index.ts
+@@ -0,0 +1,14 @@
++/**
++ * TASK RING-CONTRACT-01: tool module barrel (Dev C lane).
++ *
++ * Re-exports the six migrated tool definitions. The registry wiring
++ * (`registry.register(...)` for each) happens in the Dev C lane; the stubs
++ * in this directory are intentionally unregistered until their `execute`
++ * bodies are moved verbatim from `ring-agent-service.ts`.
++ */
++export { analyzeTelemetryTool } from './telemetry';
++export { readCompanyDocumentTool } from './read-document';
++export { searchKnowledgeTool } from './search-knowledge';
++export { draftSafetyNoteTool } from './draft-note';
++export { verifyExportTool } from './verify-export';
++export { requestApprovalTool } from './request-approval';
+diff --git a/src/service/ring-tools/read-document.ts b/src/service/ring-tools/read-document.ts
+new file mode 100644
+index 0000000..21bef7b
+--- /dev/null
++++ b/src/service/ring-tools/read-document.ts
+@@ -0,0 +1,30 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): read_company_document tool module.
++ *
++ * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolReadCompanyDocument`):
++ * same input (`path` relative to the run evidence root), same
++ * isWithin/isStrictlyWithin + realpath checks, same 256 KB limit, same CSV
++ * refusal text, same truncate(content, 6000) output shape with bytes.
++ *
++ * Dev C implements `execute` by moving the method body verbatim; this stub
++ * is intentionally unregistered until then.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++
++export const readCompanyDocumentTool: RingToolDefinition = {
++  name: 'read_company_document',
++  description:
++    'Read a text company document located under the project evidence root. Paths outside the evidence root are refused.',
++  parameters: {
++    type: 'object',
++    properties: {
++      path: { type: 'string', description: 'Document path relative to the evidence root (or project-relative inside it).' },
++    },
++    required: ['path'],
++  },
++  consequential: false,
++  execute: () => {
++    throw new Error('RING_TOOL_NOT_MIGRATED: read_company_document still executes in ring-agent-service; Dev C migrates it.');
++  },
++};
+diff --git a/src/service/ring-tools/request-approval.ts b/src/service/ring-tools/request-approval.ts
+new file mode 100644
+index 0000000..31b5fe9
+--- /dev/null
++++ b/src/service/ring-tools/request-approval.ts
+@@ -0,0 +1,29 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): request_approval tool module.
++ *
++ * MIGRATION CONTRACT (behavior unchanged from the `request_approval` branch
++ * of `RingAgentService.executeTool`): same input (`summary` + `reason`),
++ * same `{ ok: true, approved: true, message }` result after the human grants
++ * approval. CONSEQUENTIAL: the registry flag (not the model) gates the
++ * approval pause.
++ *
++ * Dev C implements `execute` by moving the branch body verbatim; this stub
++ * is intentionally unregistered until then.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++
++export const requestApprovalTool: RingToolDefinition = {
++  name: 'request_approval',
++  description:
++    'Ask a human to approve a proposed consequential action. Pauses the run until the approval is resolved.',
++  parameters: {
++    type: 'object',
++    properties: { summary: { type: 'string' }, reason: { type: 'string' } },
++    required: ['summary'],
++  },
++  consequential: true,
++  execute: () => {
++    throw new Error('RING_TOOL_NOT_MIGRATED: request_approval still executes in ring-agent-service; Dev C migrates it.');
++  },
++};
+diff --git a/src/service/ring-tools/search-knowledge.ts b/src/service/ring-tools/search-knowledge.ts
+new file mode 100644
+index 0000000..017e815
+--- /dev/null
++++ b/src/service/ring-tools/search-knowledge.ts
+@@ -0,0 +1,28 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): search_knowledge tool module.
++ *
++ * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolSearchKnowledge`):
++ * same input (`query` required, `topK` clamped 1..10), same unavailable /
++ * no-answer honest results (never fabricates), same citation projection
++ * (documentId, sourcePath, score, snippet truncated to 300 chars).
++ *
++ * Dev C implements `execute` by moving the method body verbatim; this stub
++ * is intentionally unregistered until then.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++
++export const searchKnowledgeTool: RingToolDefinition = {
++  name: 'search_knowledge',
++  description:
++    'Search indexed company knowledge if an index is available. Returns an honest unavailable/no-answer result when no index exists; never fabricates results.',
++  parameters: {
++    type: 'object',
++    properties: { query: { type: 'string' }, topK: { type: 'number' } },
++    required: ['query'],
++  },
++  consequential: false,
++  execute: () => {
++    throw new Error('RING_TOOL_NOT_MIGRATED: search_knowledge still executes in ring-agent-service; Dev C migrates it.');
++  },
++};
+diff --git a/src/service/ring-tools/telemetry.ts b/src/service/ring-tools/telemetry.ts
+new file mode 100644
+index 0000000..736a87b
+--- /dev/null
++++ b/src/service/ring-tools/telemetry.ts
+@@ -0,0 +1,33 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): analyze_telemetry tool module.
++ *
++ * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolAnalyzeTelemetry`):
++ * same input (project-relative CSV path or run context default), same
++ * telemetry-analysis code path, same output fields (verdict,
++ * overallVibrationRms, peakVibration, peakTemperature, rowsAnalyzed,
++ * warningCount, criticalCount, findings[0..20], source, disclaimer).
++ * Path checks reuse the `isStrictlyWithin(projectRoot)` pattern.
++ * Results are truncated via the shared `truncate()` pattern only at the
++ * presentation layer, never here.
++ *
++ * Dev C implements `execute` by moving the method body verbatim; this stub
++ * is intentionally unregistered until then.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++
++export const analyzeTelemetryTool: RingToolDefinition = {
++  name: 'analyze_telemetry',
++  description:
++    'Run the deterministic telemetry analysis on the bundled turbine vibration sample or a project-relative CSV path. Returns verdict, RMS and threshold breaches only; never raw CSV rows.',
++  parameters: {
++    type: 'object',
++    properties: {
++      csvPath: { type: 'string', description: 'Optional project-root-relative CSV path. Defaults to the bundled sample.' },
++    },
++  },
++  consequential: false,
++  execute: () => {
++    throw new Error('RING_TOOL_NOT_MIGRATED: analyze_telemetry still executes in ring-agent-service; Dev C migrates it.');
++  },
++};
+diff --git a/src/service/ring-tools/verify-export.ts b/src/service/ring-tools/verify-export.ts
+new file mode 100644
+index 0000000..97cf47f
+--- /dev/null
++++ b/src/service/ring-tools/verify-export.ts
+@@ -0,0 +1,27 @@
++/**
++ * TASK RING-CONTRACT-01 (Dev C stub): verify_export tool module.
++ *
++ * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolVerifyExport`):
++ * same input (optional `exportPath`), same isStrictlyWithin check, same
++ * audit-service.verifyChainRecords code path, same honest unavailable
++ * results when no audit service is configured.
++ *
++ * Dev C implements `execute` by moving the method body verbatim; this stub
++ * is intentionally unregistered until then.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++
++export const verifyExportTool: RingToolDefinition = {
++  name: 'verify_export',
++  description:
++    'Verify an audit export (or the live audit trail) using the real audit chain verification code path.',
++  parameters: {
++    type: 'object',
++    properties: { exportPath: { type: 'string', description: 'Optional project-relative audit export JSON path.' } },
++  },
++  consequential: false,
++  execute: () => {
++    throw new Error('RING_TOOL_NOT_MIGRATED: verify_export still executes in ring-agent-service; Dev C migrates it.');
++  },
++};
+diff --git a/tests/industrial/ring-contract.test.ts b/tests/industrial/ring-contract.test.ts
+new file mode 100644
+index 0000000..88e0f12
+--- /dev/null
++++ b/tests/industrial/ring-contract.test.ts
+@@ -0,0 +1,130 @@
++/**
++ * TASK RING-CONTRACT-01: frozen contract test (PM-owned).
++ *
++ * Proves the frozen surface the three dev lanes build against:
++ *  1. Thread contract shape: RingThread validates via
++ *     validateRingThreadState; default role operator exists.
++ *  2. Restart-reload: thread JSON under .maos/ring-runs/threads/ plus
++ *     the per-run JSONL history is the system of record.
++ *  3. Event union: the four streaming events validate; unknown types
++ *     still fail closed; existing nine types still validate.
++ *  4. Registry gate: consequential enforcement lives in the registry.
++ *  5. Streaming hook: onStreamEvent receives mapped wire copies.
++ *
++ * Evidence-only; no live Baseten calls (no key is set in this file).
++ */
++import { describe, expect, it, beforeEach, afterEach } from 'vitest';
++import * as fs from 'fs';
++import * as os from 'os';
++import * as path from 'path';
++import { RingAgentService } from '../../src/service/ring-agent-service';
++import { AuditService } from '../../src/service/audit-service';
++import { RingToolRegistry } from '../../src/service/ring-tool-registry';
++import { DEFAULT_RING_ROLE, isRingRole, isRingThreadId } from '../../src/service/ring-contract';
++import { validateRingRunState, validateRingThreadState, validateRingRunEvent } from '../../src/gui/src/api/ring-run-types';
++
++function makeTempRoot(): string {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-contract-'));
++  fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++  fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
++  const repoRoot = path.resolve(__dirname, '../..');
++  for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
++    fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root, 'demo', 'industrial', f));
++  }
++  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-contract-test', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true } }));
++  return root;
++}
++
++describe('TASK RING-CONTRACT-01: frozen contract', () => {
++  let root: string;
++  beforeEach(() => { root = makeTempRoot(); });
++  afterEach(() => { delete process.env.BASETEN_API_KEY; try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ } });
++
++  it('thread shape validates; default role exists; unknown roles fail closed', () => {
++    expect(DEFAULT_RING_ROLE).toBe('operator');
++    expect(isRingRole('operator')).toBe(true);
++    expect(isRingRole('maintenance')).toBe(true);
++    expect(isRingRole('safety')).toBe(true);
++    expect(isRingRole('manager')).toBe(true);
++    expect(isRingRole('admin')).toBe(false);
++    expect(isRingThreadId('thread-1730000000000-abcdef12')).toBe(true);
++    expect(isRingThreadId('ring-1730000000000-abcdef12')).toBe(false);
++    const thread = { threadId: 'thread-1730000000000-abcdef12', title: 'Turbine review', role: 'operator', createdAt: new Date().toISOString(), runs: ['ring-abc123'] };
++    expect(validateRingThreadState(thread)).toEqual(thread);
++    expect(() => validateRingThreadState({ ...thread, role: 'admin' })).toThrow('RING_RUN_INVALID');
++    expect(() => validateRingThreadState({ ...thread, runs: 'ring-abc123' })).toThrow('RING_RUN_INVALID');
++  });
++
++  it('restart-reload: thread JSON plus JSONL history rebuild without in-memory state', async () => {
++    delete process.env.BASETEN_API_KEY;
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const runId = service.startRun('Analyze turbine vibration telemetry and give the verdict');
++    const snap = await service.waitForCompletion(runId);
++    expect(snap.status).toBe('completed');
++    const threadsDir = path.join(root, '.maos', 'ring-runs', 'threads');
++    fs.mkdirSync(threadsDir, { recursive: true });
++    const thread = { threadId: 'thread-1730000000000-abcdef12', title: 'Turbine review', role: 'operator', createdAt: new Date().toISOString(), runs: [runId] };
++    fs.writeFileSync(path.join(threadsDir, thread.threadId + '.json'), JSON.stringify(thread, null, 2));
++    const reloadedThread = JSON.parse(fs.readFileSync(path.join(threadsDir, thread.threadId + '.json'), 'utf-8'));
++    expect(validateRingThreadState(reloadedThread).runs).toEqual([runId]);
++    const freshService = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const history = freshService.getTranscript(runId);
++    expect(history.length).toBeGreaterThan(0);
++    expect(history.some((e) => e.type === 'run.started')).toBe(true);
++    expect(history.some((e) => e.type === 'run.completed')).toBe(true);
++  });
++
++  it('event union: four streaming events validate; unknown types fail closed', () => {
++    const ts = new Date().toISOString();
++    const delta = validateRingRunEvent({ type: 'model.delta', ts, delta: 'Turbine ' });
++    expect(delta.delta).toBe('Turbine ');
++    const plan = validateRingRunEvent({ type: 'plan.updated', ts, plan: [{ step: 'Read SOP', status: 'done' }] });
++    expect(plan.plan).toEqual([{ step: 'Read SOP', status: 'done' }]);
++    const artifact = validateRingRunEvent({ type: 'artifact.created', ts, artifact: { path: 'a/b/note.md', kind: 'note', size: 42, sha256: 'abc' } });
++    expect(artifact.artifact && artifact.artifact.size).toBe(42);
++    const memory = validateRingRunEvent({ type: 'memory.saved', ts, memory: { noteId: 'n1', summary: 'T-07 critical' } });
++    expect(memory.memory && memory.memory.noteId).toBe('n1');
++    expect(() => validateRingRunEvent({ type: 'model.ghost', ts })).toThrow('RING_RUN_INVALID');
++    expect(() => validateRingRunEvent({ type: 'plan.updated', ts, plan: [{ step: 'x', status: 'maybe' }] })).toThrow('RING_RUN_INVALID');
++    const existing = ['run.started', 'model.turn', 'tool.call', 'tool.result', 'approval.pending', 'approval.resolved', 'run.completed', 'run.failed', 'run.cancelled'];
++    for (const type of existing) {
++      expect(validateRingRunEvent({ type, ts }).type).toBe(type);
++    }
++  });
++
++  it('registry gate: consequential enforcement is registry-owned and fails closed', async () => {
++    const registry = new RingToolRegistry();
++    registry.register({ name: 'analyze_telemetry', description: 't', parameters: {}, consequential: false, execute: () => ({ ok: true }) });
++    registry.register({ name: 'draft_safety_note', description: 't', parameters: {}, consequential: true, execute: () => ({ ok: true }) });
++    registry.register({ name: 'request_approval', description: 't', parameters: {}, consequential: true, execute: () => ({ ok: true }) });
++    expect(registry.isConsequential('analyze_telemetry')).toBe(false);
++    expect(registry.isConsequential('draft_safety_note')).toBe(true);
++    expect(registry.isConsequential('request_approval')).toBe(true);
++    expect(registry.isConsequential('mystery_tool')).toBe(true);
++    expect(() => registry.register({ name: 'analyze_telemetry', description: 'dup', parameters: {}, consequential: false, execute: () => ({ ok: true }) })).toThrow('RING_TOOL_DUPLICATE');
++    const out = await registry.execute('analyze_telemetry', { projectRoot: root, evidenceRoot: root, runId: 'ring-x', runContext: {} }, {});
++    expect(out.ok).toBe(true);
++    const unknown = await registry.execute('mystery_tool', { projectRoot: root, evidenceRoot: root, runId: 'ring-x', runContext: {} }, {});
++    expect(unknown.ok).toBe(false);
++  });
++
++  it('streaming hook: wire copies fan out without disturbing the run or JSONL', async () => {
++    delete process.env.BASETEN_API_KEY;
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const seen: Array<{ runId: string; type: string }> = [];
++    const off = service.onStreamEvent((runId, event) => { seen.push({ runId, type: event.type }); });
++    const runId = service.startRun('Analyze turbine vibration telemetry and give the verdict');
++    const snap = await service.waitForCompletion(runId);
++    off();
++    expect(snap.status).toBe('completed');
++    expect(snap.mode).toBe('evidence-only');
++    expect(seen.length).toBeGreaterThan(0);
++    expect(seen.every((e) => e.runId === runId)).toBe(true);
++    expect(seen.some((e) => e.type === 'run.started')).toBe(true);
++    expect(seen.some((e) => e.type === 'run.completed')).toBe(true);
++    expect(seen.some((e) => e.type === 'mode.evidence-only')).toBe(false);
++    expect(validateRingRunState(snap as unknown).status).toBe('completed');
++    const jsonl = fs.readFileSync(path.join(root, '.maos', 'ring-runs', runId + '.jsonl'), 'utf-8');
++    expect(jsonl.includes('run.started')).toBe(true);
++  });
++});

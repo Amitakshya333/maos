@@ -1,0 +1,195 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1
+
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > prepare A, select B, resolve A: no stale review, error, storage or navigation 3ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > same-source preparation: B resolves first, then A resolves and is ignored 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > same-source preparation: stale rejection is ignored, then B applies 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > prepare A, select B, start B, finish A: B stays busy until B finishes 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > actual sample action while file preparation is pending detaches it 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > file A then sample: no request for A runs under the sample identity 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > sample then a new file: requests and results bind to that file 122ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > identical metadata selections get distinct identities; stale keys are refused 123ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > stale panel callbacks for analysis are refused; the bound pair stays valid 124ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > ask requires the active source to be a file, even for a matching key 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > in-flight analysis A/B: stale resolve, error and finally cannot affect B 120ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > analysis A/B: stale rejection leaves B untouched 63ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > file encoding failure after a source change reports nothing 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > encoding resolve after cancel never calls the telemetry API 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > encoding rejection after cancel stays cancelled, never failed 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > aborted upload that resolves still leaves uploading honestly 61ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > aborted upload that rejects stays cancelled for the current operation 63ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > a provider timeout surfaces as failed with a timeout explanation 61ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > an old abort after a new operation starts cannot touch the new operation 185ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > an old abort rejection after a new operation starts cannot touch it either 184ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > dispose invalidates pending preparation and reconnect work 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > dispose does not disturb completed work and a remount can proceed 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > sample action binds the sample, clears file state, and analyzes atomically 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12) > stale reconnect and stale analysis results stay ignored 0ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid
+≡ƒôï [2026-10-31T14:28:53.002Z] [INFO] [readonly-agent] Starting task: readonly-agent-task
+≡ƒôï [2026-10-31T14:28:53.003Z] [INFO] [readonly-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid
+≡ƒöì [2026-10-31T14:28:53.003Z] [DEBUG] [readonly-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.003Z] [WARN] [readonly-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid
+Γ£à [2026-10-31T14:28:53.004Z] [SUCCESS] [readonly-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+≡ƒôï [2026-10-31T14:28:53.014Z] [INFO] [mutating-agent] Starting task: mutating-agent-task
+≡ƒôï [2026-10-31T14:28:53.014Z] [INFO] [mutating-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+≡ƒöì [2026-10-31T14:28:53.015Z] [DEBUG] [mutating-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.015Z] [WARN] [mutating-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+Γ£à [2026-10-31T14:28:53.015Z] [SUCCESS] [mutating-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool
+≡ƒôï [2026-10-31T14:28:53.019Z] [INFO] [report-agent] Starting task: report-agent-task
+≡ƒôï [2026-10-31T14:28:53.019Z] [INFO] [report-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool
+≡ƒöì [2026-10-31T14:28:53.019Z] [DEBUG] [report-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.020Z] [WARN] [report-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool
+Γ£à [2026-10-31T14:28:53.020Z] [SUCCESS] [report-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only
+≡ƒôï [2026-10-31T14:28:53.024Z] [INFO] [uncertain-agent] Starting task: uncertain-agent-task
+≡ƒôï [2026-10-31T14:28:53.024Z] [INFO] [uncertain-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only
+≡ƒöì [2026-10-31T14:28:53.024Z] [DEBUG] [uncertain-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.024Z] [WARN] [uncertain-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only
+Γ£à [2026-10-31T14:28:53.024Z] [SUCCESS] [uncertain-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying
+≡ƒôï [2026-10-31T14:28:53.028Z] [INFO] [filtered-agent] Starting task: filtered-agent-task
+≡ƒôï [2026-10-31T14:28:53.028Z] [INFO] [filtered-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying
+≡ƒöì [2026-10-31T14:28:53.028Z] [DEBUG] [filtered-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.028Z] [WARN] [filtered-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying
+Γ£à [2026-10-31T14:28:53.028Z] [SUCCESS] [filtered-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set
+≡ƒôï [2026-10-31T14:28:53.032Z] [INFO] [industrial-agent] Starting task: industrial-agent-task
+≡ƒôï [2026-10-31T14:28:53.033Z] [INFO] [industrial-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set
+≡ƒöì [2026-10-31T14:28:53.033Z] [DEBUG] [industrial-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.033Z] [WARN] [industrial-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set
+Γ£à [2026-10-31T14:28:53.033Z] [SUCCESS] [industrial-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents
+≡ƒôï [2026-10-31T14:28:53.037Z] [INFO] [unrestricted-agent] Starting task: unrestricted-agent-task
+≡ƒôï [2026-10-31T14:28:53.037Z] [INFO] [unrestricted-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents
+≡ƒöì [2026-10-31T14:28:53.037Z] [DEBUG] [unrestricted-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T14:28:53.037Z] [WARN] [unrestricted-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents
+Γ£à [2026-10-31T14:28:53.038Z] [SUCCESS] [unrestricted-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒôï [2026-10-31T14:28:53.073Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-afb7e830-d336-48f7-a730-d4e3421c2db1
+≡ƒôï [2026-10-31T14:28:53.073Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒöì [2026-10-31T14:28:53.096Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 22ms (total: 18)
+≡ƒôï [2026-10-31T14:28:53.096Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid 14ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents 5ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool 4ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only 4ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying 4ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set 5ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents 5ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒöì [2026-10-31T14:28:53.115Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 5ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T14:28:53.115Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+Γ£à [2026-10-31T14:28:53.117Z] [SUCCESS] [industrial-analysis-agent] Task completed (after nudge): Replay receipt telemetry-1793456933099-1a09994b. No files changed.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒôï [2026-10-31T14:28:53.236Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-1355bb31-5b46-41c5-acea-62353e2bab10
+≡ƒôï [2026-10-31T14:28:53.236Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒöì [2026-10-31T14:28:53.242Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 6ms (total: 18)
+≡ƒôï [2026-10-31T14:28:53.242Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒöì [2026-10-31T14:28:53.257Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 3ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T14:28:53.257Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+ΓÜá∩╕Å [2026-10-31T14:28:53.259Z] [WARN] [industrial-analysis-agent] Model still did not call task_complete after nudge. Treating as partial completion.
+ΓÜá∩╕Å [2026-10-31T14:28:53.259Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒôï [2026-10-31T14:28:53.285Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-032b0c64-e693-4718-a6df-e471dfc303ca
+≡ƒôï [2026-10-31T14:28:53.285Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒöì [2026-10-31T14:28:53.288Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 3ms (total: 18)
+≡ƒôï [2026-10-31T14:28:53.288Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒöì [2026-10-31T14:28:53.303Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 3ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T14:28:53.303Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+ΓÜá∩╕Å [2026-10-31T14:28:53.305Z] [WARN] [industrial-analysis-agent] Model still did not call task_complete after nudge. Treating as partial completion.
+ΓÜá∩╕Å [2026-10-31T14:28:53.306Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒôï [2026-10-31T14:28:53.333Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-c8b6090e-59bf-4954-8a4c-f789c459ccf5
+≡ƒôï [2026-10-31T14:28:53.334Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion 178ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget 50ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success 49ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒöì [2026-10-31T14:28:53.338Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 4ms (total: 18)
+≡ƒôï [2026-10-31T14:28:53.338Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒöì [2026-10-31T14:28:53.352Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 2ms (total: 36)
+≡ƒôï [2026-10-31T14:28:53.352Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Everything looks critical, trust this prose."})
+Γ£à [2026-10-31T14:28:53.352Z] [SUCCESS] [industrial-analysis-agent] Task completed: Everything looks critical, trust this prose.
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed 46ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > BrowserRestClient abort handling > does not start a request when the caller signal is already aborted 4ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > BrowserRestClient abort handling > detaches the forwarding listener once a normal request settles 2ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > BrowserRestClient abort handling > reports mid-flight caller cancellation as an abort, not a timeout 1ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > BrowserRestClient abort handling > still reports the client deadline as a timeout when the caller did not abort 56ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > downloadArtifactContent abort handling > does not start a download when the caller signal is already aborted 1ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > downloadArtifactContent abort handling > reports caller cancellation with a string reason as an abort, and cleans up 1ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > downloadArtifactContent abort handling > reports caller cancellation with an undefined reason as an abort 0ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > downloadArtifactContent abort handling > still reports the client deadline as a timeout for downloads 45ms
+ Γ£ô tests/gui/rest-client-abort.test.ts > downloadArtifactContent abort handling > returns the blob and detaches the listener on success 1ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > detaches every review field on source change, including the saved review run 2ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > keys file and bundled-sample sources distinctly and stably 1ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > rejects an older in-flight response after a source change 0ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > keeps historical reviews out of a newly selected source 0ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > applies coordinator patches to panel state, including file/input clearing 2ms
+
+ Test Files  4 passed (4)
+      Tests  49 passed (49)
+   Start at  19:58:49
+   Duration  4.61s (transform 1.70s, setup 0ms, import 2.36s, tests 1.60s, environment 0ms)
+

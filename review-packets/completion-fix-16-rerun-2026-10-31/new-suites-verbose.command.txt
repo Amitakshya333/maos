@@ -1,0 +1,1 @@
+cmd: node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/gui/telemetry-review-coordinator.test.ts tests/gui/telemetry-review-state.test.ts tests/gui/rest-client-abort.test.ts tests/industrial/read-only-completion.test.ts --reporter=verbose

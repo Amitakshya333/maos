@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "candidateStatus": "UNAPPROVED LOCAL BUILD — NOT A PUBLISHER ATTESTATION",
+  "sourceCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "sourceTree": "e3f1ec51b4a264c0ce67d21dab0842c7b30a7940",
+  "platform": "x86_64-pc-windows-msvc",
+  "binary": {
+    "path": "maos-engine.exe",
+    "sizeBytes": 472064,
+    "sha256": "011dd53795d025f11c605ee62bc25b1e85fcf7d5ae69503bbcef2fb3a40129de"
+  },
+  "engineIdentity": {
+    "protocolVersion": "1.0",
+    "version": "0.1.0",
+    "unsafeCode": false,
+    "name": "maos-industrial-engine"
+  },
+  "build": {
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "command": "cargo build --release --locked --offline --manifest-path rust/Cargo.toml",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "sourceFiles": [
+      {
+        "path": "rust/.cargo/config.toml",
+        "sha256": "e8ce1b44f5096e773f13a9f907118a8d76340953f7bd7eab852af637c69fc6b7"
+      },
+      {
+        "path": "rust/Cargo.lock",
+        "sha256": "e78ee4314a30f83cc0c2548d4d4944016006a9e7637222e065c165a6dbdc38f2"
+      },
+      {
+        "path": "rust/Cargo.toml",
+        "sha256": "771d5855dcd457a182832b501bec3abebbdbb7f42e68702015b317529bc93338"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/Cargo.toml",
+        "sha256": "8cceebd58dd79c3d87a0a3b49e0f2dcd82a060e4264ff3aaff62bb0c45b8de1e"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/calculation.rs",
+        "sha256": "f4f60567ded1a083fb3b90e09bffacb62b5bc097abf3af8e94f175710fecf26a"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/evidence.rs",
+        "sha256": "894bdb732e93f8957b4f77230e3aac2e84b8d8508eabaaa8d8d9ee67308da2e2"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/main.rs",
+        "sha256": "5dbd850a2f3bc9a30951a8f8087f33907b04f212d3006a3d6e83ef78e23e6c5f"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/numeric.rs",
+        "sha256": "fc502b3915fa06d770734d1fb95bc59131e12d3e20114687d9551da21171ee2f"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/parser.rs",
+        "sha256": "7aeae2c50d664e29e76e2cb99adb2790e5b3526839440c0f167aca24ddb0d079"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/protocol.rs",
+        "sha256": "802ab5a6ff3edfb700fc9461a344780cb4a63d75d7fad4e7db9ce012d3ebb953"
+      },
+      {
+        "path": "rust/crates/maos-industrial-engine/src/threshold.rs",
+        "sha256": "0c4fda0e161eea416a5d4cdf16868a33031ad5e2a79fa7d642470e2a7ce9f5af"
+      }
+    ]
+  },
+  "licenseAssessment": {
+    "crate": "MIT",
+    "publisherSignature": "none",
+    "thirdParty": "Cargo vendor manifests declare MIT, Apache-2.0, Unlicense, BSL-1.0, Unicode-3.0 alternatives; consolidated notice/redistribution review pending"
+  },
+  "verification": {
+    "approvedArtifactManifestComparison": false,
+    "healthProtocolAndIdentity": true,
+    "sha256ComparedToManifest": true,
+    "publisherTrustEstablished": false
+  }
+}

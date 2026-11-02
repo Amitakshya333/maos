@@ -1,0 +1,828 @@
+
+ RUN  v4.1.11 C:/maos
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > uploads the selected CSV and links authenticated completion to replay evidence, report, and audit
+📋 [2026-10-28T09:35:59.539Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-a2392239-869d-483f-8d9e-e5e5ee7abb47
+📋 [2026-10-28T09:35:59.539Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > uploads the selected CSV and links authenticated completion to replay evidence, report, and audit
+🔍 [2026-10-28T09:35:59.560Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 20ms (total: 15)
+📋 [2026-10-28T09:35:59.560Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":".maos/industrial/evidence/telemetry-1793180159514-22142107-held-out-selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > uploads the selected CSV and links authenticated completion to replay evidence, report, and audit
+🔍 [2026-10-28T09:35:59.589Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 4ms (total: 30)
+📋 [2026-10-28T09:35:59.589Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180159566-a1f55084."})
+✅ [2026-10-28T09:35:59.589Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180159566-a1f55084.
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > uploads the selected CSV and links authenticated completion to replay evidence, report, and audit 233ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns a structured initialization error before mock inference when the project config is absent 101ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > reports malformed analysis configuration instead of falling back to a provider 100ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > surfaces config read failures without attempting mock inference 102ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not substitute another configured agent when ANALYST_AGENT lacks a provider 109ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects missing/invalid sessions, wrong project identities, and wrong origins 121ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > allows the authenticated browser preflight headers used by the selected-project API client 105ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects traversal and a symlink/junction escape before contacting inference 124ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+📋 [2026-10-28T09:36:00.521Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-9c81ea75-73aa-40cf-afe5-0c41c9b46e15
+📋 [2026-10-28T09:36:00.522Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+🔍 [2026-10-28T09:36:00.535Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 13ms (total: 15)
+📋 [2026-10-28T09:36:00.535Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"other.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+🔍 [2026-10-28T09:36:00.561Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 14ms (total: 30)
+📋 [2026-10-28T09:36:00.561Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 0 rows; receipt telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:00.561Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 0 rows; receipt telemetry-0000000000-deadbeef.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+📋 [2026-10-28T09:36:00.608Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-a71365e1-89f6-4378-8842-132c90e3e982
+📋 [2026-10-28T09:36:00.608Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+🔍 [2026-10-28T09:36:00.612Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 4ms (total: 15)
+📋 [2026-10-28T09:36:00.612Z] [INFO] [industrial-analysis-agent] Tool: run_shell({"command":"whoami"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+🔍 [2026-10-28T09:36:00.628Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:00.628Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 0 rows; receipt telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:00.628Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 0 rows; receipt telemetry-0000000000-deadbeef.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+📋 [2026-10-28T09:36:00.670Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-0ee5f566-d503-445a-986f-553765e63da9
+📋 [2026-10-28T09:36:00.670Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+🔍 [2026-10-28T09:36:00.686Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 16ms (total: 15)
+📋 [2026-10-28T09:36:00.686Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv","otherPath":"other.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success
+🔍 [2026-10-28T09:36:00.702Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 8ms (total: 30)
+📋 [2026-10-28T09:36:00.702Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 0 rows; receipt telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:00.702Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 0 rows; receipt telemetry-0000000000-deadbeef.
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects attempts to analyze another file, unknown tools, and undeclared tool arguments without success 337ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > allows the authenticated caller to explicitly select another project-local CSV
+📋 [2026-10-28T09:36:00.827Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-fc521832-0cf1-48b3-944f-2ffa85c24cd9
+📋 [2026-10-28T09:36:00.827Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > allows the authenticated caller to explicitly select another project-local CSV
+🔍 [2026-10-28T09:36:00.842Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 15ms (total: 15)
+📋 [2026-10-28T09:36:00.842Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"other.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > allows the authenticated caller to explicitly select another project-local CSV
+🔍 [2026-10-28T09:36:00.877Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:00.877Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180160848-57e85156."})
+✅ [2026-10-28T09:36:00.877Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180160848-57e85156.
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > allows the authenticated caller to explicitly select another project-local CSV 191ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > carries the accepted agent receipt through one persisted review, DOCX, artifact and audit run
+📋 [2026-10-28T09:36:01.007Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-45db76d1-f234-41db-8e89-8561772a6e76
+📋 [2026-10-28T09:36:01.007Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > carries the accepted agent receipt through one persisted review, DOCX, artifact and audit run
+🔍 [2026-10-28T09:36:01.018Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 11ms (total: 15)
+📋 [2026-10-28T09:36:01.018Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > carries the accepted agent receipt through one persisted review, DOCX, artifact and audit run
+🔍 [2026-10-28T09:36:01.050Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:01.050Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180161023-b73ca8b8."})
+✅ [2026-10-28T09:36:01.050Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180161023-b73ca8b8.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps blank reviewer notes neutral for a selected non-T-07 CSV
+📋 [2026-10-28T09:36:01.420Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-1091ed4d-b177-44fd-a5d5-1960b848f58a
+📋 [2026-10-28T09:36:01.420Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > carries the accepted agent receipt through one persisted review, DOCX, artifact and audit run 411ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps blank reviewer notes neutral for a selected non-T-07 CSV
+🔍 [2026-10-28T09:36:01.435Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 15ms (total: 15)
+📋 [2026-10-28T09:36:01.435Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps blank reviewer notes neutral for a selected non-T-07 CSV
+🔍 [2026-10-28T09:36:01.482Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 19ms (total: 30)
+📋 [2026-10-28T09:36:01.482Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180161439-a1755443."})
+✅ [2026-10-28T09:36:01.482Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180161439-a1755443.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when DOCX_GENERATED audit persistence fails after artifact registration
+📋 [2026-10-28T09:36:01.756Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-646a0fa4-c1c9-43a4-9aa0-8b88731dea65
+📋 [2026-10-28T09:36:01.756Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps blank reviewer notes neutral for a selected non-T-07 CSV 339ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when DOCX_GENERATED audit persistence fails after artifact registration
+🔍 [2026-10-28T09:36:01.765Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 9ms (total: 15)
+📋 [2026-10-28T09:36:01.765Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when DOCX_GENERATED audit persistence fails after artifact registration
+🔍 [2026-10-28T09:36:01.794Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:01.795Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180161769-c8be1011."})
+✅ [2026-10-28T09:36:01.795Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180161769-c8be1011.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed on audit-export failure and rejects retry after service restart
+📋 [2026-10-28T09:36:02.044Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-d175f6cc-b81a-49d9-a9ef-d3de09f4d8cb
+📋 [2026-10-28T09:36:02.044Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when DOCX_GENERATED audit persistence fails after artifact registration 287ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed on audit-export failure and rejects retry after service restart
+🔍 [2026-10-28T09:36:02.067Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 22ms (total: 15)
+📋 [2026-10-28T09:36:02.067Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed on audit-export failure and rejects retry after service restart
+🔍 [2026-10-28T09:36:02.108Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 15ms (total: 30)
+📋 [2026-10-28T09:36:02.108Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180162071-230ea3dd."})
+✅ [2026-10-28T09:36:02.108Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180162071-230ea3dd.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completed manifest replacement fails after export
+📋 [2026-10-28T09:36:02.486Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-3479c3c5-1d6a-407f-a134-e87e458e7cfb
+📋 [2026-10-28T09:36:02.486Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed on audit-export failure and rejects retry after service restart 439ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completed manifest replacement fails after export
+🔍 [2026-10-28T09:36:02.507Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 21ms (total: 15)
+📋 [2026-10-28T09:36:02.507Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completed manifest replacement fails after export
+🔍 [2026-10-28T09:36:02.544Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 13ms (total: 30)
+📋 [2026-10-28T09:36:02.544Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180162511-d2c87d0e."})
+✅ [2026-10-28T09:36:02.544Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180162511-d2c87d0e.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > accepts a completion audit append that persisted before its call failed and does not duplicate it on resume
+📋 [2026-10-28T09:36:02.790Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-e1bf5d74-8c30-4d7e-9b66-21528e4cb414
+📋 [2026-10-28T09:36:02.790Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completed manifest replacement fails after export 306ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > accepts a completion audit append that persisted before its call failed and does not duplicate it on resume
+🔍 [2026-10-28T09:36:02.795Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 5ms (total: 15)
+📋 [2026-10-28T09:36:02.795Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > accepts a completion audit append that persisted before its call failed and does not duplicate it on resume
+🔍 [2026-10-28T09:36:02.826Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 5ms (total: 30)
+📋 [2026-10-28T09:36:02.826Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180162800-051fccc6."})
+✅ [2026-10-28T09:36:02.826Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180162800-051fccc6.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > serializes approval finalization against preparation and duplicate requests with all idempotency-key forms
+📋 [2026-10-28T09:36:03.164Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-27597632-46d4-468a-adec-ba5a3d78a068
+📋 [2026-10-28T09:36:03.164Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > accepts a completion audit append that persisted before its call failed and does not duplicate it on resume 372ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > serializes approval finalization against preparation and duplicate requests with all idempotency-key forms
+🔍 [2026-10-28T09:36:03.169Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 5ms (total: 15)
+📋 [2026-10-28T09:36:03.169Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > serializes approval finalization against preparation and duplicate requests with all idempotency-key forms
+🔍 [2026-10-28T09:36:03.201Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 8ms (total: 30)
+📋 [2026-10-28T09:36:03.201Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180163173-6d0f5f4d."})
+✅ [2026-10-28T09:36:03.201Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180163173-6d0f5f4d.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps concurrent recovery single-terminal and retries only the accepted persisted attempt
+📋 [2026-10-28T09:36:03.751Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-8afc3205-98b5-4bf5-9c23-9078c08ca687
+📋 [2026-10-28T09:36:03.751Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > serializes approval finalization against preparation and duplicate requests with all idempotency-key forms 588ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps concurrent recovery single-terminal and retries only the accepted persisted attempt
+🔍 [2026-10-28T09:36:03.762Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 11ms (total: 15)
+📋 [2026-10-28T09:36:03.762Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps concurrent recovery single-terminal and retries only the accepted persisted attempt
+🔍 [2026-10-28T09:36:03.794Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 8ms (total: 30)
+📋 [2026-10-28T09:36:03.794Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180163767-1222f872."})
+✅ [2026-10-28T09:36:03.794Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180163767-1222f872.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects acceptance when a completed attempt has contradictory terminal audit history
+📋 [2026-10-28T09:36:04.146Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-11277152-075d-4e85-a528-8a45c37a49fb
+📋 [2026-10-28T09:36:04.146Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps concurrent recovery single-terminal and retries only the accepted persisted attempt 389ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects acceptance when a completed attempt has contradictory terminal audit history
+🔍 [2026-10-28T09:36:04.155Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 8ms (total: 15)
+📋 [2026-10-28T09:36:04.155Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects acceptance when a completed attempt has contradictory terminal audit history
+🔍 [2026-10-28T09:36:04.186Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 7ms (total: 30)
+📋 [2026-10-28T09:36:04.186Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180164159-df329083."})
+✅ [2026-10-28T09:36:04.186Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180164159-df329083.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not accept or expose output when finalization fails after a competing request receives busy
+📋 [2026-10-28T09:36:04.536Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-56ca092b-08a5-4ed4-9bba-980796681525
+📋 [2026-10-28T09:36:04.536Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects acceptance when a completed attempt has contradictory terminal audit history 393ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not accept or expose output when finalization fails after a competing request receives busy
+🔍 [2026-10-28T09:36:04.544Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 8ms (total: 15)
+📋 [2026-10-28T09:36:04.544Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not accept or expose output when finalization fails after a competing request receives busy
+🔍 [2026-10-28T09:36:04.576Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 7ms (total: 30)
+📋 [2026-10-28T09:36:04.576Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180164548-50d4ecd9."})
+✅ [2026-10-28T09:36:04.576Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180164548-50d4ecd9.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > reconciles a restart after the export and finalizing manifest are durable but before the terminal audit append
+📋 [2026-10-28T09:36:04.841Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-f9541162-89aa-461f-b416-f817169edb44
+📋 [2026-10-28T09:36:04.841Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not accept or expose output when finalization fails after a competing request receives busy 307ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > reconciles a restart after the export and finalizing manifest are durable but before the terminal audit append
+🔍 [2026-10-28T09:36:04.858Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 17ms (total: 15)
+📋 [2026-10-28T09:36:04.858Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > reconciles a restart after the export and finalizing manifest are durable but before the terminal audit append
+🔍 [2026-10-28T09:36:04.889Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:04.889Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180164862-8a6b8f9f."})
+✅ [2026-10-28T09:36:04.889Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180164862-8a6b8f9f.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the selected source changes
+📋 [2026-10-28T09:36:05.216Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-4af6d2ff-009e-46ee-a10b-13e183ceb4a3
+📋 [2026-10-28T09:36:05.216Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > reconciles a restart after the export and finalizing manifest are durable but before the terminal audit append 373ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the selected source changes
+🔍 [2026-10-28T09:36:05.226Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 10ms (total: 15)
+📋 [2026-10-28T09:36:05.226Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the selected source changes
+🔍 [2026-10-28T09:36:05.260Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 4ms (total: 30)
+📋 [2026-10-28T09:36:05.260Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180165231-a60814c7."})
+✅ [2026-10-28T09:36:05.260Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180165231-a60814c7.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the ruleset changes
+📋 [2026-10-28T09:36:05.453Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-7e311860-5452-4b72-853e-591c73ebcc73
+📋 [2026-10-28T09:36:05.453Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the selected source changes 242ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the ruleset changes
+🔍 [2026-10-28T09:36:05.461Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 8ms (total: 15)
+📋 [2026-10-28T09:36:05.461Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the ruleset changes
+🔍 [2026-10-28T09:36:05.492Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 7ms (total: 30)
+📋 [2026-10-28T09:36:05.492Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180165466-ef2570fe."})
+✅ [2026-10-28T09:36:05.492Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180165466-ef2570fe.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the report payload changes
+📋 [2026-10-28T09:36:05.680Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-0bebb412-a56c-42e3-a25a-fca32bbb854e
+📋 [2026-10-28T09:36:05.680Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the ruleset changes 225ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the report payload changes
+🔍 [2026-10-28T09:36:05.686Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 5ms (total: 15)
+📋 [2026-10-28T09:36:05.686Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the report payload changes
+🔍 [2026-10-28T09:36:05.710Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 2ms (total: 30)
+📋 [2026-10-28T09:36:05.711Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180165690-12660a34."})
+✅ [2026-10-28T09:36:05.711Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180165690-12660a34.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a rejected agent review from creating a DOCX or completed audit event
+📋 [2026-10-28T09:36:05.894Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-15446064-46f8-4ca3-9366-a68171592c2b
+📋 [2026-10-28T09:36:05.894Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > rejects approval after the report payload changes 215ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a rejected agent review from creating a DOCX or completed audit event
+🔍 [2026-10-28T09:36:05.904Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 10ms (total: 15)
+📋 [2026-10-28T09:36:05.904Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a rejected agent review from creating a DOCX or completed audit event
+🔍 [2026-10-28T09:36:05.934Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 7ms (total: 30)
+📋 [2026-10-28T09:36:05.934Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180165908-e9479c48."})
+✅ [2026-10-28T09:36:05.934Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180165908-e9479c48.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not cancel a valid request when the ordinary request body ends
+📋 [2026-10-28T09:36:06.111Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-be4321d6-812a-487a-a9ed-0a530586277e
+📋 [2026-10-28T09:36:06.111Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a rejected agent review from creating a DOCX or completed audit event 214ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not cancel a valid request when the ordinary request body ends
+🔍 [2026-10-28T09:36:06.122Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 11ms (total: 15)
+📋 [2026-10-28T09:36:06.122Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not cancel a valid request when the ordinary request body ends
+🔍 [2026-10-28T09:36:06.154Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 5ms (total: 30)
+📋 [2026-10-28T09:36:06.154Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180166127-79b41708."})
+✅ [2026-10-28T09:36:06.154Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180166127-79b41708.
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > does not cancel a valid request when the ordinary request body ends 171ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completion audit append fails
+📋 [2026-10-28T09:36:06.281Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-906a144a-2ec6-4433-845e-3c8b0e85e812
+📋 [2026-10-28T09:36:06.281Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completion audit append fails
+🔍 [2026-10-28T09:36:06.296Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 15ms (total: 15)
+📋 [2026-10-28T09:36:06.296Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completion audit append fails
+🔍 [2026-10-28T09:36:06.327Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:06.327Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180166301-7c5563e4."})
+✅ [2026-10-28T09:36:06.327Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180166301-7c5563e4.
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > fails closed when the completion audit append fails 187ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client before the model requests the analysis tool
+📋 [2026-10-28T09:36:06.502Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-f629bcd3-1a1c-47c4-839d-feb61ce93617
+📋 [2026-10-28T09:36:06.503Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client before the model requests the analysis tool
+❌ [2026-10-28T09:36:06.518Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at RestApiRouter.dispatch (C:/maos/src/api/router.ts:612:24)
+    at RestApiRouter.handle (C:/maos/src/api/router.ts:264:23)
+    at Server.<anonymous> (C:/maos/src/api/server.ts:125:25)
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client after the tool ran and does not return success
+📋 [2026-10-28T09:36:06.653Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-cdac209e-fb42-4f50-a28a-6860426040d0
+📋 [2026-10-28T09:36:06.653Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client before the model requests the analysis tool 161ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client after the tool ran and does not return success
+🔍 [2026-10-28T09:36:06.670Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 17ms (total: 15)
+📋 [2026-10-28T09:36:06.671Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client after the tool ran and does not return success
+❌ [2026-10-28T09:36:06.699Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at RestApiRouter.dispatch (C:/maos/src/api/router.ts:612:24)
+    at RestApiRouter.handle (C:/maos/src/api/router.ts:264:23)
+    at Server.<anonymous> (C:/maos/src/api/server.ts:125:25)
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > cancels an actual disconnected client after the tool ran and does not return success 181ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure after a model timeout before the tool call
+📋 [2026-10-28T09:36:06.839Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-7913b6e5-4bf4-423c-834f-a938df946539
+📋 [2026-10-28T09:36:06.839Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure after a model timeout before the tool call
+❌ [2026-10-28T09:36:06.978Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request timed out.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:393:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at RestApiRouter.dispatch (C:/maos/src/api/router.ts:612:24)
+    at RestApiRouter.handle (C:/maos/src/api/router.ts:264:23)
+    at Server.<anonymous> (C:/maos/src/api/server.ts:125:25)
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure after a model timeout before the tool call 280ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure when inference times out after tool execution, despite a persisted receipt
+📋 [2026-10-28T09:36:07.135Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-85a6fc86-6e59-472d-9ae1-7b8a96d36ae8
+📋 [2026-10-28T09:36:07.135Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure when inference times out after tool execution, despite a persisted receipt
+🔍 [2026-10-28T09:36:07.154Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 19ms (total: 15)
+📋 [2026-10-28T09:36:07.154Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure when inference times out after tool execution, despite a persisted receipt
+❌ [2026-10-28T09:36:07.312Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request timed out.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:393:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at RestApiRouter.dispatch (C:/maos/src/api/router.ts:612:24)
+    at RestApiRouter.handle (C:/maos/src/api/router.ts:264:23)
+    at Server.<anonymous> (C:/maos/src/api/server.ts:125:25)
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns failure when inference times out after tool execution, despite a persisted receipt 337ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > refuses destructive reset while DOCX finalization is active
+📋 [2026-10-28T09:36:07.441Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-725ff401-93a9-4afc-b1d5-6a0974ae1be3
+📋 [2026-10-28T09:36:07.441Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > refuses destructive reset while DOCX finalization is active
+🔍 [2026-10-28T09:36:07.451Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 10ms (total: 15)
+📋 [2026-10-28T09:36:07.451Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > refuses destructive reset while DOCX finalization is active
+🔍 [2026-10-28T09:36:07.483Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:07.483Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180167456-8969556b."})
+✅ [2026-10-28T09:36:07.483Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180167456-8969556b.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > blocks a separate CLI reset process between terminal audit append and acceptance
+📋 [2026-10-28T09:36:07.756Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-52ec1622-fc96-4ac7-abda-51000fadc872
+📋 [2026-10-28T09:36:07.756Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > refuses destructive reset while DOCX finalization is active 332ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > blocks a separate CLI reset process between terminal audit append and acceptance
+🔍 [2026-10-28T09:36:07.762Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 6ms (total: 15)
+📋 [2026-10-28T09:36:07.762Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > blocks a separate CLI reset process between terminal audit append and acceptance
+🔍 [2026-10-28T09:36:07.794Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 7ms (total: 30)
+📋 [2026-10-28T09:36:07.794Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180167767-26c48390."})
+✅ [2026-10-28T09:36:07.794Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180167767-26c48390.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after selected source mutation without rerunning work
+📋 [2026-10-28T09:36:10.241Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-81fb4881-5b67-44c8-be69-2f97b2785ee0
+📋 [2026-10-28T09:36:10.241Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > blocks a separate CLI reset process between terminal audit append and acceptance 2487ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after selected source mutation without rerunning work
+🔍 [2026-10-28T09:36:10.249Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 8ms (total: 15)
+📋 [2026-10-28T09:36:10.249Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after selected source mutation without rerunning work
+🔍 [2026-10-28T09:36:10.279Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 5ms (total: 30)
+📋 [2026-10-28T09:36:10.279Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180170254-47b45398."})
+✅ [2026-10-28T09:36:10.280Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180170254-47b45398.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after output corruption without rerunning work
+📋 [2026-10-28T09:36:10.605Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-ce2809e8-4b4f-48e4-8054-c3600b7a5305
+📋 [2026-10-28T09:36:10.605Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after selected source mutation without rerunning work 362ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after output corruption without rerunning work
+🔍 [2026-10-28T09:36:10.623Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 18ms (total: 15)
+📋 [2026-10-28T09:36:10.623Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after output corruption without rerunning work
+🔍 [2026-10-28T09:36:10.653Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 7ms (total: 30)
+📋 [2026-10-28T09:36:10.653Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180170627-7fc15c05."})
+✅ [2026-10-28T09:36:10.653Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180170627-7fc15c05.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > marks completed output unavailable after authorized reset and preserves the historical replay record
+📋 [2026-10-28T09:36:11.011Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-5edd78c7-a759-4087-bac4-a6f07ffd6eec
+📋 [2026-10-28T09:36:11.011Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > invalidates a successful start replay after output corruption without rerunning work 409ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > marks completed output unavailable after authorized reset and preserves the historical replay record
+🔍 [2026-10-28T09:36:11.029Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 18ms (total: 15)
+📋 [2026-10-28T09:36:11.029Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > marks completed output unavailable after authorized reset and preserves the historical replay record
+🔍 [2026-10-28T09:36:11.060Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 8ms (total: 30)
+📋 [2026-10-28T09:36:11.060Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180171033-dbae6494."})
+✅ [2026-10-28T09:36:11.060Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180171033-dbae6494.
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a successful replay record intact while reset and replay contend across service and CLI processes
+📋 [2026-10-28T09:36:11.448Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-4e826829-3ced-42d6-a712-ab3c646fbb42
+📋 [2026-10-28T09:36:11.449Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/configured-mock-model-v1
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > marks completed output unavailable after authorized reset and preserves the historical replay record 429ms
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a successful replay record intact while reset and replay contend across service and CLI processes
+🔍 [2026-10-28T09:36:11.467Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 18ms (total: 15)
+📋 [2026-10-28T09:36:11.467Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"selected.csv"})
+
+stdout | tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a successful replay record intact while reset and replay contend across service and CLI processes
+🔍 [2026-10-28T09:36:11.498Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 6ms (total: 30)
+📋 [2026-10-28T09:36:11.498Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The sample has 2 rows; receipt telemetry-1793180171471-ed5ada08."})
+✅ [2026-10-28T09:36:11.498Z] [SUCCESS] [industrial-analysis-agent] Task completed: The sample has 2 rows; receipt telemetry-1793180171471-ed5ada08.
+
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > keeps a successful replay record intact while reset and replay contend across service and CLI processes 2598ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > serializes a T-07 API attempt behind output work and reports an unavailable verdict 113ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > returns a structured unavailable verdict when the coordination lock cannot be created 107ms
+ ✓ tests/industrial/analysis-agent-auth-http.test.ts > authenticated Industrial analysis agent HTTP integration > disables the route on the legacy authentication-optional REST server 25ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Service Container > should create all 8 services 30ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should detect initialized project 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should detect non-initialized project 33ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should load config as domain Project type 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should return agents 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should return providers 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ProjectService > should not detect industrial profile for non-industrial config 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should create a task with domain Task type 25ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should list tasks 38ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should return queue counts 25ms
+ ✓ tests/f3-01-services.test.ts > F3-01 TaskService > should clean all queues 32ms
+ ✓ tests/f3-01-services.test.ts > F3-01 EventService > should return empty timeline for unknown task 21ms
+ ✓ tests/f3-01-services.test.ts > F3-01 EventService > should return empty query results 19ms
+ ✓ tests/f3-01-services.test.ts > F3-01 EventService > should return stats with zero events 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 MemoryService > should return empty live memories 19ms
+ ✓ tests/f3-01-services.test.ts > F3-01 MemoryService > should return stats 19ms
+ ✓ tests/f3-01-services.test.ts > F3-01 MemoryService > should clear without error 19ms
+ ✓ tests/f3-01-services.test.ts > F3-01 HealthService > should return agent pool entries 19ms
+ ✓ tests/f3-01-services.test.ts > F3-01 HealthService > should return empty retry queue 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 HealthService > should return empty dead letter queue 18ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ModelService > should list configured models 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ModelService > should validate local provider credentials 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 ModelService > should reject unknown provider 20ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import chalk in any service file 32ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import commander in any service file 30ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not call process.exit in any service file 31ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Service files do not import CLI modules > should not import from cli/ in any service file 30ms
+ ✓ tests/f3-01-services.test.ts > F3-01 Boundary: Domain schemas have schemaVersion > should define schemaVersion in all primary schemas 20ms
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > round-trips a model-requested allowlisted tool and links its explanation to held-out same-implementation replay results
+📋 [2026-10-28T09:36:16.451Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-cc6daf49-760f-41f4-be1e-1a6a28fbf3c1
+📋 [2026-10-28T09:36:16.452Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > round-trips a model-requested allowlisted tool and links its explanation to held-out same-implementation replay results
+🔍 [2026-10-28T09:36:16.474Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 22ms (total: 20)
+📋 [2026-10-28T09:36:16.474Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > round-trips a model-requested allowlisted tool and links its explanation to held-out same-implementation replay results
+🔍 [2026-10-28T09:36:16.509Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 20 tokens, 4ms (total: 40)
+📋 [2026-10-28T09:36:16.509Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic thresholds classify 4 rows as CRITICAL; peak vibration 8.2 mm/s and pe)
+✅ [2026-10-28T09:36:16.509Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic thresholds classify 4 rows as CRITICAL; peak vibration 8.2 mm/s and peak temperature 96 C. Receipt telemetry-1793180176480-7276b39d.
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects malformed JSON arguments and does not accept the model’s false completion
+📋 [2026-10-28T09:36:16.546Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-d80fee96-41de-46cd-8655-29e395bb6f89
+📋 [2026-10-28T09:36:16.546Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects malformed JSON arguments and does not accept the model’s false completion
+🔍 [2026-10-28T09:36:16.552Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 6ms (total: 20)
+📋 [2026-10-28T09:36:16.552Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({})
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects malformed JSON arguments and does not accept the model’s false completion
+🔍 [2026-10-28T09:36:16.563Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 20 tokens, 3ms (total: 40)
+📋 [2026-10-28T09:36:16.563Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Evidence reference: telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:16.563Z] [SUCCESS] [industrial-analysis-agent] Task completed: Evidence reference: telemetry-0000000000-deadbeef.
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an undeclared argument and does not accept the model’s false completion
+📋 [2026-10-28T09:36:16.578Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-87d20b78-6dcb-4f03-ba8b-48479045b699
+📋 [2026-10-28T09:36:16.578Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an undeclared argument and does not accept the model’s false completion
+🔍 [2026-10-28T09:36:16.582Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 4ms (total: 20)
+📋 [2026-10-28T09:36:16.582Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv","extra":true})
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an undeclared argument and does not accept the model’s false completion
+🔍 [2026-10-28T09:36:16.592Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 20 tokens, 3ms (total: 40)
+📋 [2026-10-28T09:36:16.592Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Evidence reference: telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:16.592Z] [SUCCESS] [industrial-analysis-agent] Task completed: Evidence reference: telemetry-0000000000-deadbeef.
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an unknown tool request and does not treat a later task_complete as analysis success
+📋 [2026-10-28T09:36:16.606Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-25669dad-2c2f-41b5-8808-be71c3490ae8
+📋 [2026-10-28T09:36:16.606Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an unknown tool request and does not treat a later task_complete as analysis success
+🔍 [2026-10-28T09:36:16.609Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 3ms (total: 20)
+📋 [2026-10-28T09:36:16.609Z] [INFO] [industrial-analysis-agent] Tool: run_shell({"command":"echo unsafe"})
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an unknown tool request and does not treat a later task_complete as analysis success
+🔍 [2026-10-28T09:36:16.620Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 20 tokens, 3ms (total: 40)
+📋 [2026-10-28T09:36:16.620Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Evidence reference: telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:16.620Z] [SUCCESS] [industrial-analysis-agent] Task completed: Evidence reference: telemetry-0000000000-deadbeef.
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > keeps a deterministic tool execution failure failed even when the model calls task_complete
+📋 [2026-10-28T09:36:16.633Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-87341b82-a9e6-4046-970e-c9b55d976f8c
+📋 [2026-10-28T09:36:16.633Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > keeps a deterministic tool execution failure failed even when the model calls task_complete
+🔍 [2026-10-28T09:36:16.636Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 3ms (total: 20)
+📋 [2026-10-28T09:36:16.636Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > round-trips a model-requested allowlisted tool and links its explanation to held-out same-implementation replay results 110ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects malformed JSON arguments and does not accept the model’s false completion 34ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an undeclared argument and does not accept the model’s false completion 28ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > rejects an unknown tool request and does not treat a later task_complete as analysis success 27ms
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > keeps a deterministic tool execution failure failed even when the model calls task_complete
+🔍 [2026-10-28T09:36:16.650Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 20 tokens, 3ms (total: 40)
+📋 [2026-10-28T09:36:16.650Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Evidence reference: telemetry-0000000000-deadbeef."})
+✅ [2026-10-28T09:36:16.650Z] [SUCCESS] [industrial-analysis-agent] Task completed: Evidence reference: telemetry-0000000000-deadbeef.
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > stops on a bounded model timeout without retrying
+📋 [2026-10-28T09:36:16.665Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-7bb5a7a6-5517-4781-8f06-89c33b2cace5
+📋 [2026-10-28T09:36:16.665Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > stops on a bounded model timeout without retrying
+❌ [2026-10-28T09:36:16.720Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request timed out.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:393:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at C:/maos/tests/industrial/analysis-agent-contract.test.ts:302:5
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > does not complete when the model times out after the analysis receipt is written
+📋 [2026-10-28T09:36:16.730Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-e8b93180-58c1-42ac-986e-a5a38cb5d983
+📋 [2026-10-28T09:36:16.730Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > does not complete when the model times out after the analysis receipt is written
+🔍 [2026-10-28T09:36:16.733Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 3ms (total: 20)
+📋 [2026-10-28T09:36:16.733Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > keeps a deterministic tool execution failure failed even when the model calls task_complete 31ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > stops on a bounded model timeout without retrying 65ms
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > does not complete when the model times out after the analysis receipt is written
+❌ [2026-10-28T09:36:16.824Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request timed out.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:393:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at C:/maos/tests/industrial/analysis-agent-contract.test.ts:321:5
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > cancels an in-flight local model request and returns no completion
+📋 [2026-10-28T09:36:16.836Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-0a0a83cc-ea6b-4ba1-ba98-4fa5d9d67682
+📋 [2026-10-28T09:36:16.837Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > cancels an in-flight local model request and returns no completion
+❌ [2026-10-28T09:36:16.841Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:67:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at C:/maos/tests/industrial/analysis-agent-contract.test.ts:342:5
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps transient retries at one request for the industrial path
+📋 [2026-10-28T09:36:16.852Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-31ad7a25-f6ad-426e-af19-e73afb82f68d
+📋 [2026-10-28T09:36:16.852Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps transient retries at one request for the industrial path
+❌ [2026-10-28T09:36:16.857Z] [ERROR] [industrial-analysis-agent] Agent error: Error: mock-openai-compatible-transport is temporarily unavailable (HTTP 503).
+Provider: mock-openai-compatible-transport | Model: contract-test-model | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:163:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:249:24)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:135:17)
+    at C:/maos/tests/industrial/analysis-agent-contract.test.ts:351:5
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps tool-loop iterations and never completes after repeated unknown calls
+📋 [2026-10-28T09:36:16.867Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-be611b13-baf8-49a9-8c47-6aa7404744e0
+📋 [2026-10-28T09:36:16.867Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-openai-compatible-transport/contract-test-model
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps tool-loop iterations and never completes after repeated unknown calls
+🔍 [2026-10-28T09:36:16.870Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 20 tokens, 2ms (total: 20)
+📋 [2026-10-28T09:36:16.870Z] [INFO] [industrial-analysis-agent] Tool: run_shell({"command":"echo unsafe"})
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps tool-loop iterations and never completes after repeated unknown calls
+🔍 [2026-10-28T09:36:16.881Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 20 tokens, 3ms (total: 40)
+📋 [2026-10-28T09:36:16.881Z] [INFO] [industrial-analysis-agent] Tool: run_shell({"command":"echo unsafe"})
+🔍 [2026-10-28T09:36:16.883Z] [DEBUG] [industrial-analysis-agent] Idle iteration 1/6. files_seen=0 dirs_seen=0 searches_seen=0 idle=1/6
+📋 [2026-10-28T09:36:16.890Z] [INFO] [industrial-analysis-agent] Budget warning: 1 iterations remaining. Nudging to finalize.
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps tool-loop iterations and never completes after repeated unknown calls
+🔍 [2026-10-28T09:36:16.892Z] [DEBUG] [industrial-analysis-agent] Iteration 3/4: 20 tokens, 2ms (total: 60)
+📋 [2026-10-28T09:36:16.892Z] [INFO] [industrial-analysis-agent] Tool: run_shell({"command":"echo unsafe"})
+🔍 [2026-10-28T09:36:16.893Z] [DEBUG] [industrial-analysis-agent] Idle iteration 2/6. files_seen=0 dirs_seen=0 searches_seen=0 idle=2/6
+
+stdout | tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps tool-loop iterations and never completes after repeated unknown calls
+🔍 [2026-10-28T09:36:16.901Z] [DEBUG] [industrial-analysis-agent] Iteration 4/4: 20 tokens, 2ms (total: 80)
+📋 [2026-10-28T09:36:16.901Z] [INFO] [industrial-analysis-agent] Tool: run_shell({"command":"echo unsafe"})
+🔍 [2026-10-28T09:36:16.903Z] [DEBUG] [industrial-analysis-agent] Idle iteration 3/6. files_seen=0 dirs_seen=0 searches_seen=0 idle=3/6
+⚠️ [2026-10-28T09:36:16.910Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > does not complete when the model times out after the analysis receipt is written 107ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > cancels an in-flight local model request and returns no completion 15ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps transient retries at one request for the industrial path 16ms
+ ✓ tests/industrial/analysis-agent-contract.test.ts > Industrial analysis agent OpenAI-compatible transport contract > caps tool-loop iterations and never completes after repeated unknown calls 54ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should install on first run 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should be no-op on second run with same deps 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should fail for non-existent project 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should write ownedServices array in state 6ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should fail closed by default when offline stores are incomplete 11ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (state-only) > should fail if not installed 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (state-only) > should start in state-only mode when no configs 6ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (state-only) > should be no-op on double start (state-only) 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (with configs) > should fail start with invalid service config 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (with configs) > should clean up already-started services on partial failure 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (with configs) > should persist OwnedService records on successful start 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should be no-op if not started 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should stop running services and clear ownedServices 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should be no-op on double stop 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should call F2-01 stopService for owned services 11ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > status (reconciliation) > should always succeed 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > status (reconciliation) > should report current phase 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > status (reconciliation) > should auto-transition to stopped when all owned PIDs are dead 10ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > health > should report unhealthy when not running 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > health > should reject health when running without owned services 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > health > should detect dead owned service as unhealthy 9ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > preflight > should pass when required files exist 3ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > preflight > should be safe to rerun 3ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > rehearsal > should succeed 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should acquire and release lock 18ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should fail to acquire when held by same process 18ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should use exclusive file creation (wx flag) 13ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should only release lock owned by this process 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should remove stale lock ONLY when owner PID is dead AND age exceeds timeout 14ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should NOT remove lock with live PID even if old 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should return uninstalled for fresh project 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should roundtrip state with OwnedService 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should recover from corrupt state 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should add ownedServices when loading legacy state without it 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Reconciliation > should remove dead PID from ownedServices 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Reconciliation > should keep live PID in ownedServices 6ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Reconciliation > should no-op on non-running state 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Exit codes > should have unique values 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Dispatcher > should route all 7 commands 61ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Dispatcher > should block concurrent mutating commands 17ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Dispatcher > should allow status without lock 12ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Full lifecycle > should survive install → start → stop → start → stop 12ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > JSON output > should write result to file 4ms
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > lets the mock model request the allowlisted deterministic tool and cite its same-implementation replay evidence
+📋 [2026-10-28T09:36:18.233Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-7e9f84d7-fd09-40b1-9d26-bf6624c49968
+📋 [2026-10-28T09:36:18.233Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > lets the mock model request the allowlisted deterministic tool and cite its same-implementation replay evidence
+🔍 [2026-10-28T09:36:18.234Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.234Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > lets the mock model request the allowlisted deterministic tool and cite its same-implementation replay evidence
+🔍 [2026-10-28T09:36:18.263Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.263Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178239-f38c86c4."})
+✅ [2026-10-28T09:36:18.263Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178239-f38c86c4.
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider omitted identity
+📋 [2026-10-28T09:36:18.295Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-a8ae5584-9df1-48b5-9526-5cb0e3495dd0
+📋 [2026-10-28T09:36:18.295Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider omitted identity
+🔍 [2026-10-28T09:36:18.295Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.295Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider omitted identity
+🔍 [2026-10-28T09:36:18.320Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.320Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178299-aea79124."})
+✅ [2026-10-28T09:36:18.320Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178299-aea79124.
+
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > lets the mock model request the allowlisted deterministic tool and cite its same-implementation replay evidence 64ms
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider reported a different identity
+📋 [2026-10-28T09:36:18.345Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-0ebbf091-6099-4284-bcad-5d8fe86c9847
+📋 [2026-10-28T09:36:18.345Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider reported a different identity
+🔍 [2026-10-28T09:36:18.345Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.345Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider reported a different identity
+🔍 [2026-10-28T09:36:18.368Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.368Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178348-28a7340f."})
+✅ [2026-10-28T09:36:18.368Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178348-28a7340f.
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run
+📋 [2026-10-28T09:36:18.392Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-b1225402-9d37-4f6e-9d2a-dd4b4be3b39e
+📋 [2026-10-28T09:36:18.392Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run
+🔍 [2026-10-28T09:36:18.393Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.393Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run
+🔍 [2026-10-28T09:36:18.417Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.417Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178396-2a1c95c5."})
+✅ [2026-10-28T09:36:18.417Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178396-2a1c95c5.
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run
+📋 [2026-10-28T09:36:18.437Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-6869ba7f-f517-4791-9451-aa9c2dd7fa5d
+📋 [2026-10-28T09:36:18.437Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run
+🔍 [2026-10-28T09:36:18.437Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.437Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run
+🔍 [2026-10-28T09:36:18.459Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.459Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178440-8aec112c."})
+✅ [2026-10-28T09:36:18.459Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178440-8aec112c.
+
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider omitted identity 51ms
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > keeps requested and provider-reported identity separate when provider reported a different identity 47ms
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains a failed/unaccepted report when its accepted replacement fails
+📋 [2026-10-28T09:36:18.485Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-eb35e526-83d6-4a47-a5d3-ea7533b0f6fb
+📋 [2026-10-28T09:36:18.485Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains a failed/unaccepted report when its accepted replacement fails
+🔍 [2026-10-28T09:36:18.485Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.485Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains a failed/unaccepted report when its accepted replacement fails
+🔍 [2026-10-28T09:36:18.507Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.507Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178488-6a2282e6."})
+✅ [2026-10-28T09:36:18.507Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178488-6a2282e6.
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > rejects a receipt changed after the model tool captured its hash
+📋 [2026-10-28T09:36:18.534Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-0fdf7154-8147-4f30-93ec-de8c1bcab8d7
+📋 [2026-10-28T09:36:18.534Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > rejects a receipt changed after the model tool captured its hash
+🔍 [2026-10-28T09:36:18.534Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.534Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"held-out/rotor-test-07.csv"})
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > rejects a receipt changed after the model tool captured its hash
+🔍 [2026-10-28T09:36:18.557Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 15 tokens, 1ms (total: 30)
+📋 [2026-10-28T09:36:18.557Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found CRITICAL; receipt telemetry-1793180178537-ee938854."})
+✅ [2026-10-28T09:36:18.557Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found CRITICAL; receipt telemetry-1793180178537-ee938854.
+
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains an audit-failed report as unaccepted and a retry creates a separate accepted run 92ms
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > retains a failed/unaccepted report when its accepted replacement fails 50ms
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > rejects a receipt changed after the model tool captured its hash 44ms
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > does not report success when the model skips the analysis tool
+📋 [2026-10-28T09:36:18.583Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-d4525b1f-d6e3-4c69-a4cc-9f64ebdc2d07
+📋 [2026-10-28T09:36:18.583Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock-transport/mock-analysis-model
+
+stdout | tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > does not report success when the model skips the analysis tool
+🔍 [2026-10-28T09:36:18.584Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 15 tokens, 1ms (total: 15)
+📋 [2026-10-28T09:36:18.584Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"The deterministic checks found no result; receipt missing."})
+✅ [2026-10-28T09:36:18.584Z] [SUCCESS] [industrial-analysis-agent] Task completed: The deterministic checks found no result; receipt missing.
+
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > rejects traversal before contacting the model 6ms
+ ✓ tests/industrial/analysis-agent-service.test.ts > Industrial analysis agent shared-provider path > does not report success when the model skips the analysis tool 11ms
+
+ Test Files  5 passed (5)
+      Tests  129 passed (129)
+   Start at  15:05:56
+   Duration  21.74s (transform 1.86s, setup 0ms, import 4.30s, tests 16.68s, environment 0ms)
+

@@ -1,0 +1,3473 @@
+diff --git a/src/api/router.ts b/src/api/router.ts
+index 0d6b459..243c79d 100644
+--- a/src/api/router.ts
++++ b/src/api/router.ts
+@@ -11,6 +11,7 @@ import * as path from 'path';
+ import * as crypto from 'crypto';
+ import * as child_process from 'child_process';
+ import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError, RingAgentError } from '../service';
++import { isRingRole, isRingThreadId } from '../service/ring-contract';
+ import { ProviderApiPolicyError } from '../backends/meta-api-policy';
+ import {
+   getCorrelationId,
+@@ -1414,6 +1415,74 @@ export class RestApiRouter {
+       return true;
+     }
+ 
++    // ── Ring Threads (TASK DEV-A-01, Dev A lane) ─────────────────
++    // Disk-backed threads: POST creates, GET reads state, POST messages
++    // starts a run carrying the thread's prior conversation context.
++    // Existing /ring/runs routes above stay working unchanged.
++
++    if (method === 'POST' && pathname === '/api/v1/ring/threads') {
++      const bodyResult = await readJsonBody<{ title?: string; role?: string }>(req, res, correlationId);
++      if (!bodyResult) return true;
++      const payload = bodyResult.parsed;
++      if (payload && typeof payload.title !== 'undefined' && typeof payload.title !== 'string') {
++        sendError(res, 400, 'VALIDATION_FAILED', 'title must be a string when provided.', correlationId);
++        return true;
++      }
++      if (payload && typeof payload.role !== 'undefined' && !isRingRole(payload.role)) {
++        sendError(res, 400, 'VALIDATION_FAILED', 'role must be operator, maintenance, safety, or manager when provided.', correlationId);
++        return true;
++      }
++      try {
++        const thread = this.services.ringThread.createThread(payload && typeof payload.title === 'string' && payload.title.trim() ? payload.title : undefined, (payload && typeof payload.role === 'string' ? payload.role : undefined) as never);
++        sendJson(res, 201, { data: { threadId: thread.threadId } }, correlationId);
++      } catch (err: unknown) {
++        sendError(res, 500, 'RING_THREAD_CREATE_FAILED', (err as Error).message || 'Ring thread creation failed', correlationId);
++      }
++      return true;
++    }
++
++    const ringThreadMatch = pathname.match(new RegExp('^/api/v1/ring/threads/([^/]+)$'));
++    if (method === 'GET' && ringThreadMatch) {
++      const threadId = decodeURIComponent(ringThreadMatch[1]);
++      const thread = isRingThreadId(threadId) ? this.services.ringThread.getThread(threadId) : undefined;
++      if (!thread) {
++        sendError(res, 404, 'NOT_FOUND', 'Ring thread not found.', correlationId);
++        return true;
++      }
++      sendJson(res, 200, { data: thread }, correlationId);
++      return true;
++    }
++
++    const ringThreadMsgMatch = pathname.match(new RegExp('^/api/v1/ring/threads/([^/]+)/messages$'));
++    if (method === 'POST' && ringThreadMsgMatch) {
++      const threadId = decodeURIComponent(ringThreadMsgMatch[1]);
++      const bodyResult = await readJsonBody<{ instruction?: string }>(req, res, correlationId);
++      if (!bodyResult) return true;
++      const payload = bodyResult.parsed;
++      if (!payload || typeof payload.instruction !== 'string' || !payload.instruction.trim()) {
++        sendError(res, 400, 'VALIDATION_FAILED', 'instruction is required and must be a non-empty string.', correlationId);
++        return true;
++      }
++      const thread = isRingThreadId(threadId) ? this.services.ringThread.getThread(threadId) : undefined;
++      if (!thread) {
++        sendError(res, 404, 'NOT_FOUND', 'Ring thread not found.', correlationId);
++        return true;
++      }
++      try {
++        const runId = this.services.ringAgent.startRun(payload.instruction.trim(), { threadId: thread.threadId });
++        const snapshot = this.services.ringAgent.getRun(runId);
++        sendJson(res, 201, { data: snapshot ?? { runId } }, correlationId);
++      } catch (err: unknown) {
++        if (err instanceof RingAgentError) {
++          const code = (err as { code: string }).code;
++          sendError(res, code === 'RING_THREAD_NOT_FOUND' ? 404 : 400, code, (err as Error).message, correlationId);
++        } else {
++          sendError(res, 500, 'RING_AGENT_START_FAILED', (err as Error).message || 'Ring agent start failed', correlationId);
++        }
++      }
++      return true;
++    }
++
+     // ── Tasks ─────────────────────────────────────────────────────
+ 
+     if (method === 'GET' && pathname === '/api/v1/tasks') {
+diff --git a/src/gui/src/api/adapter.ts b/src/gui/src/api/adapter.ts
+index 2430ee9..7b1bb9b 100644
+--- a/src/gui/src/api/adapter.ts
++++ b/src/gui/src/api/adapter.ts
+@@ -390,6 +390,19 @@ export class GuiApiAdapter {
+     return this.rest.decideRingApproval(runId, approvalId, decision);
+   }
+ 
++  /** TASK DEV-A-01: thread routes (Dev A lane implements the service). */
++  async createRingThread(input: { title?: string; role?: string }): Promise<{ threadId: string }> {
++    return this.rest.createRingThread(input);
++  }
++
++  async getRingThread(threadId: string): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
++    return this.rest.getRingThread(threadId);
++  }
++
++  async postRingThreadMessage(threadId: string, instruction: string): Promise<RingRunStartResult> {
++    return this.rest.postRingThreadMessage(threadId, instruction);
++  }
++
+   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {
+     return this.rest.promoteToTask(conversationId, data);
+   }
+diff --git a/src/gui/src/components/RingWorkspace.tsx b/src/gui/src/components/RingWorkspace.tsx
+index 016ec23..ab10967 100644
+--- a/src/gui/src/components/RingWorkspace.tsx
++++ b/src/gui/src/components/RingWorkspace.tsx
+@@ -429,11 +429,23 @@ export const RingFinalAnswer: React.FC<{ answer: string; mode: RingRunState['mod
+ 
+ // ── Run client (injectable for tests) ─────────────────────────
+ 
++export interface RingThreadSummary {
++  threadId: string;
++  title: string;
++  role: string;
++  createdAt: string;
++  runs: string[];
++}
++
+ export interface RingRunClient {
+   startRun: (input: RingRunRequest) => Promise<{ runId: string }>;
+   getRun: (runId: string) => Promise<RingRunState>;
+   cancelRun: (runId: string) => Promise<void>;
+   decideApproval: (runId: string, approvalId: string, decision: RingApprovalDecision) => Promise<void>;
++  /** TASK DEV-A-01: thread methods. Optional so existing injected mocks keep compiling. */
++  createThread?: (input: { title?: string }) => Promise<{ threadId: string }>;
++  getThread?: (threadId: string) => Promise<RingThreadSummary>;
++  postThreadMessage?: (threadId: string, instruction: string) => Promise<{ runId: string }>;
+ }
+ 
+ export const defaultRingRunClient: RingRunClient = {
+@@ -441,6 +453,9 @@ export const defaultRingRunClient: RingRunClient = {
+   getRun: (runId) => apiAdapter.getRingRun(runId),
+   cancelRun: (runId) => apiAdapter.cancelRingRun(runId),
+   decideApproval: (runId, approvalId, decision) => apiAdapter.decideRingApproval(runId, approvalId, decision),
++  createThread: (input) => apiAdapter.createRingThread(input),
++  getThread: (threadId) => apiAdapter.getRingThread(threadId),
++  postThreadMessage: (threadId, instruction) => apiAdapter.postRingThreadMessage(threadId, instruction),
+ };
+ 
+ export interface RingVerifyTranscript {
+@@ -574,6 +589,12 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+   const [instruction, setInstruction] = useState('');
+   const [runs, setRuns] = useState<TranscriptRun[]>([]);
+   const [activeRunId, setActiveRunId] = useState<string | null>(null);
++  // TASK DEV-A-01: threads. Null = unthreaded (legacy single-run view).
++  // Threads only activate when the client exposes thread methods.
++  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
++  const [activeThread, setActiveThread] = useState<RingThreadSummary | null>(null);
++  const [threadStarting, setThreadStarting] = useState(false);
++  const [threadError, setThreadError] = useState<string | null>(null);
+   const [starting, setStarting] = useState(false);
+   const [startError, setStartError] = useState<string | null>(null);
+   const [pollError, setPollError] = useState<string | null>(null);
+@@ -720,9 +741,12 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+     setCancelError(null);
+     try {
+       const scopedAgentId = selectedAgentId === RING_LEAD_AGENT.id ? undefined : selectedAgentId;
+-      const { runId } = await clientRef.current.startRun(
+-        scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
+-      );
++      const threadClient = activeThreadId && clientRef.current.postThreadMessage ? clientRef.current : undefined;
++      const { runId } = threadClient
++        ? await threadClient.postThreadMessage!(activeThreadId as string, text)
++        : await clientRef.current.startRun(
++            scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
++          );
+       runCounterRef.current += 1;
+       startedAtRef.current = Date.now();
+       setNowMs(Date.now());
+@@ -746,6 +770,32 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+     }
+   };
+ 
++  // TASK DEV-A-01: start a thread, then refresh its summary (runs link on
++  // the service side at run start; the summary read shows the linkage).
++  const handleNewThread = async () => {
++    const client = clientRef.current;
++    if (!client.createThread || threadStarting) return;
++    setThreadStarting(true);
++    setThreadError(null);
++    try {
++      const { threadId } = await client.createThread({ title: instruction.trim() || undefined });
++      setActiveThreadId(threadId);
++      setRuns([]);
++      setActiveRunId(null);
++      if (client.getThread) {
++        try {
++          setActiveThread(await client.getThread(threadId));
++        } catch {
++          setActiveThread(null);
++        }
++      }
++    } catch (err: unknown) {
++      setThreadError((err as Error).message || 'Could not create the thread.');
++    } finally {
++      setThreadStarting(false);
++    }
++  };
++
+   const handleCancel = async () => {
+     if (!activeRunId || cancelling) return;
+     setCancelling(true);
+@@ -901,6 +951,34 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+             minWidth: 0,
+           }}
+         >
++          {clientRef.current.createThread && (
++            <div
++              data-testid="ring-thread-bar"
++              style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color, #333333)', display: 'flex', gap: '8px', alignItems: 'center' }}
++            >
++              <button
++                type="button"
++                className="btn-secondary"
++                data-testid="ring-new-thread-button"
++                disabled={threadStarting}
++                onClick={() => void handleNewThread()}
++                style={{ padding: '4px 10px', fontSize: '12px' }}
++              >
++                {threadStarting ? 'Starting…' : 'New thread'}
++              </button>
++              {activeThreadId && (
++                <span data-testid="ring-active-thread" style={{ fontSize: '12px', color: 'var(--text-dim, #888888)' }}>
++                  Thread {activeThreadId}
++                  {activeThread ? ` · ${activeThread.runs.length} run${activeThread.runs.length === 1 ? '' : 's'}` : ''}
++                </span>
++              )}
++              {threadError && (
++                <span role="alert" data-testid="ring-thread-error" style={{ fontSize: '12px', color: '#ff7b72' }}>
++                  {threadError}
++                </span>
++              )}
++            </div>
++          )}
+           <div
+             style={{
+               padding: '10px 16px',
+diff --git a/src/service/index.ts b/src/service/index.ts
+index fb996cc..f39d584 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -79,6 +79,7 @@ import { SandboxRunnerService } from './sandbox-runner-service';
+ import { ChatInferenceService } from './chat-inference-service';
+ import { RingInferenceService } from './ring-inference-service';
+ import { RingAgentService } from './ring-agent-service';
++import { RingThreadService } from './ring-thread-service';
+ import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
+ import { OpenAIProvider } from '../backends/openai-provider';
+ import { collectReservedMetaApiKeyEnvVars } from '../backends/meta-api-policy';
+@@ -146,6 +147,7 @@ export interface ServiceContainer {
+   readonly chatInference: ChatInferenceService;
+   readonly ringInference: RingInferenceService;
+   readonly ringAgent: RingAgentService;
++  readonly ringThread: RingThreadService;
+   readonly industrialAnalysisAgent: IndustrialAnalysisAgentService;
+   readonly calculationTrace: CalculationTraceService;
+   readonly sovereigntyBoundary: SovereigntyBoundaryService;
+@@ -294,11 +296,17 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+       }
+     },
+   });
++  const ringThread = new RingThreadService(projectRoot);
+   const ringAgent = new RingAgentService({
+     projectRoot,
+     auditService: audit,
+     endpointAllowlist,
+     kbSearch: kbSearch as unknown as import('./ring-agent-service').RingKbSearchLike,
++    memoryService: memory,
++    ocrService: ocr,
++    visionService: vision,
++    docxGenerator,
++    xlsxGenerator,
+     loadProjectConfig: () => {
+       if (!project.isInitialized()) return undefined;
+       try {
+@@ -466,6 +474,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+     chatInference,
+     ringInference,
+     ringAgent,
++    ringThread,
+     industrialAnalysisAgent,
+     calculationTrace,
+     sovereigntyBoundary,
+@@ -485,6 +494,7 @@ export { CalculationTraceService } from './calculation-trace-service';
+ export { ChatInferenceService, ChatInferenceError } from './chat-inference-service';
+ export { RingInferenceService } from './ring-inference-service';
+ export { RingAgentService, RingAgentError, RING_AGENT_TOOLS } from './ring-agent-service';
++export { RingThreadService } from './ring-thread-service';
+ export { RingToolRegistry, truncate as truncateRingToolResult } from './ring-tool-registry';
+ export type { RingToolContext, RingToolDefinition } from './ring-contract';
+ export type { RingRole, RingThread, RingThreadCreateRequest, RingThreadMessageRequest, RingRunCreateContractRequest, RingStreamEventType, RingPlanStep, RingArtifactDescriptor, RingMemoryRecord } from './ring-contract';
+diff --git a/src/service/memory-service.ts b/src/service/memory-service.ts
+index 98cad3b..ef0ff43 100644
+--- a/src/service/memory-service.ts
++++ b/src/service/memory-service.ts
+@@ -31,6 +31,14 @@ export class MemoryService {
+     this.store = new MemoryStore(projectRoot);
+   }
+ 
++  /**
++   * Share a memory entry from an agent (additive passthrough to the
++   * underlying append-only store; mirrors the share_knowledge tool path).
++   */
++  share(entry: { agentId: string; taskId: string; type: MemoryType; content: string; tags: string[]; confidence: number }): MemoryEntry {
++    return toMemoryEntry(this.store.add(entry));
++  }
++
+   /**
+    * Get all live (non-expired) memory entries.
+    */
+diff --git a/src/service/ring-agent-service.ts b/src/service/ring-agent-service.ts
+index 4d87389..f27d193 100644
+--- a/src/service/ring-agent-service.ts
++++ b/src/service/ring-agent-service.ts
+@@ -3,10 +3,19 @@ import * as fs from 'fs';
+ import * as path from 'path';
+ import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL, ProviderApiPolicyError } from '../backends/meta-api-policy';
+ import { RING_STREAM_EVENT_TYPES } from './ring-contract';
++import type { RingRole } from './ring-contract';
++import { RingToolRegistry } from './ring-tool-registry';
++import { createRingToolRegistry } from './ring-tools';
++import type { RingToolDeps } from './ring-tools';
++import type { DocxGeneratorService } from './docx-generator-service';
++import type { XlsxGeneratorService } from './xlsx-generator-service';
++import type { MemoryService } from './memory-service';
++import type { OcrService } from './ocr-service';
++import type { VisionService } from './vision-service';
++import { RingThreadService } from './ring-thread-service';
+ import { OpenAIProvider } from '../backends/openai-provider';
+ import type { ChatMessage, IProvider, ToolDef } from '../backends/provider';
+ import type { Project } from '../domain/schemas';
+-import { analyzeTelemetryCsv, loadTelemetryDemoThresholds } from '../industrial/telemetry-analysis';
+ import type { AuditService } from './audit-service';
+ import type { EndpointAllowlistService } from './endpoint-allowlist-service';
+ 
+@@ -25,6 +34,8 @@ export interface RingAgentRunContext {
+   evidenceRoot?: string;
+   analysisId?: string;
+   documentPath?: string;
++  threadId?: string;
++  role?: string;
+ }
+ 
+ export interface RingAgentPendingApproval {
+@@ -118,6 +129,11 @@ export interface RingAgentServiceOptions {
+   kbSearch?: RingKbSearchLike;
+   maxTurns?: number;
+   evidenceRoot?: string;
++  memoryService?: MemoryService;
++  ocrService?: OcrService;
++  visionService?: VisionService;
++  docxGenerator?: DocxGeneratorService;
++  xlsxGenerator?: XlsxGeneratorService;
+ }
+ 
+ interface ToolResultProjection {
+@@ -153,36 +169,36 @@ interface InternalRun {
+   toolResultProjections: Map<string, ToolResultProjection>;
+   turns: number;
+   evidenceRootAbs: string;
++  threadId?: string;
++  role?: RingRole;
+   completion: Promise<RingAgentRunSnapshot>;
+ }
+ 
+-const DEFAULT_MAX_TURNS = 12;
+-const CONSEQUENTIAL_TOOLS = new Set(['draft_safety_note', 'request_approval']);
++const DEFAULT_MAX_TURNS = 20;
+ 
+-export const RING_AGENT_TOOLS: ToolDef[] = [
+-  { type: 'function', function: { name: 'analyze_telemetry', description: 'Run the deterministic telemetry analysis on the bundled turbine vibration sample or a project-relative CSV path. Returns verdict, RMS and threshold breaches only; never raw CSV rows.', parameters: { type: 'object', properties: { csvPath: { type: 'string', description: 'Optional project-root-relative CSV path. Defaults to the bundled sample.' } } } } },
+-  { type: 'function', function: { name: 'read_company_document', description: 'Read a text company document located under the project evidence root. Paths outside the evidence root are refused.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Document path relative to the evidence root (or project-relative inside it).' } }, required: ['path'] } } },
+-  { type: 'function', function: { name: 'search_knowledge', description: 'Search indexed company knowledge if an index is available. Returns an honest unavailable/no-answer result when no index exists; never fabricates results.', parameters: { type: 'object', properties: { query: { type: 'string' }, topK: { type: 'number' } }, required: ['query'] } } },
+-  { type: 'function', function: { name: 'draft_safety_note', description: 'Draft a safety note as text and write it under .maos/ring-runs/drafts after human approval. CONSEQUENTIAL: requires approval before any file is written.', parameters: { type: 'object', properties: { title: { type: 'string' }, content: { type: 'string' }, filename: { type: 'string' } }, required: ['content'] } } },
+-  { type: 'function', function: { name: 'verify_export', description: 'Verify an audit export (or the live audit trail) using the real audit chain verification code path.', parameters: { type: 'object', properties: { exportPath: { type: 'string', description: 'Optional project-relative audit export JSON path.' } } } } },
+-  { type: 'function', function: { name: 'request_approval', description: 'Ask a human to approve a proposed consequential action. Pauses the run until the approval is resolved.', parameters: { type: 'object', properties: { summary: { type: 'string' }, reason: { type: 'string' } }, required: ['summary'] } } },
+-];
++export const RING_AGENT_TOOLS: ToolDef[] = buildRingAgentToolDefs();
++
++/**
++ * TASK DEV-A-01: provider tool list derived from the registry so the model
++ * sees exactly the tools the loop can execute (Day 2 tools included).
++ * Registration order in `src/service/ring-tools/index.ts` is stable with
++ * the original six first. A throwaway registry (no service deps) supplies
++ * the static name/description/parameters surface only.
++ */
++function buildRingAgentToolDefs(): ToolDef[] {
++  const registry = createRingToolRegistry({});
++  return registry.names().map((name) => {
++    const def = registry.get(name);
++    const surface = def as unknown as { description?: string; parameters?: Record<string, unknown> } | undefined;
++    return { type: 'function', function: { name, description: typeof surface?.description === 'string' ? surface.description : name, parameters: surface?.parameters || { type: 'object', properties: {} } } };
++  });
++}
+ 
+ function truncate(value: string, max = 1000): string {
+   if (value.length <= max) return value;
+   return `${value.slice(0, max)}...[truncated ${value.length - max} chars]`;
+ }
+ 
+-function isWithin(parent: string, candidate: string): boolean {
+-  const rel = path.relative(parent, candidate);
+-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
+-}
+-
+-function isStrictlyWithin(parent: string, candidate: string): boolean {
+-  const rel = path.relative(parent, candidate);
+-  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+-}
+-
+ export class RingAgentService {
+   private readonly projectRoot: string;
+   private readonly auditService?: AuditService;
+@@ -192,6 +208,8 @@ export class RingAgentService {
+   private readonly kbSearch?: RingKbSearchLike;
+   private readonly maxTurns: number;
+   private readonly evidenceRootOption?: string;
++  private readonly registry: RingToolRegistry;
++  private readonly toolDeps: RingToolDeps;
+   private readonly runs = new Map<string, InternalRun>();
+   private readonly listeners = new Set<(entry: RingAgentTranscriptEntry) => void>();
+ 
+@@ -203,6 +221,8 @@ export class RingAgentService {
+     this.kbSearch = options.kbSearch;
+     this.maxTurns = typeof options.maxTurns === 'number' && Number.isFinite(options.maxTurns) && options.maxTurns > 0 ? Math.floor(options.maxTurns) : DEFAULT_MAX_TURNS;
+     this.evidenceRootOption = options.evidenceRoot;
++    this.toolDeps = { auditService: options.auditService, kbSearch: options.kbSearch, ocrService: options.ocrService, visionService: options.visionService, docxGenerator: options.docxGenerator, xlsxGenerator: options.xlsxGenerator, memoryService: options.memoryService, getProjectId: () => this.safeProjectId() };
++    this.registry = createRingToolRegistry(this.toolDeps);
+     this.loadProjectConfig = options.loadProjectConfig || (() => {
+       const configPath = path.resolve(this.projectRoot, '.maos', 'maos.config.json');
+       if (fs.existsSync(configPath)) {
+@@ -225,10 +245,14 @@ export class RingAgentService {
+     fs.mkdirSync(runsDir, { recursive: true });
+     const transcriptPath = path.join(runsDir, `${runId}.jsonl`);
+     const evidenceRootAbs = this.resolveEvidenceRoot(context);
++    const threadLink = this.resolveThreadLink(context);
+     const now = new Date().toISOString();
+     let resolveCompletion!: (snapshot: RingAgentRunSnapshot) => void;
+     const completion = new Promise<RingAgentRunSnapshot>((resolve) => { resolveCompletion = resolve; });
+-    const run: InternalRun = { runId, instruction: trimmed, context: context || {}, status: 'running', mode: 'evidence-only', createdAt: now, updatedAt: now, transcriptPath, transcriptRel: `.maos/ring-runs/${runId}.jsonl`, transcript: [], abortController: new AbortController(), cancelled: false, conversation: [], toolResultProjections: new Map(), turns: 0, evidenceRootAbs, completion };
++    const run: InternalRun = { runId, instruction: trimmed, context: context || {}, status: 'running', mode: 'evidence-only', createdAt: now, updatedAt: now, transcriptPath, transcriptRel: `.maos/ring-runs/${runId}.jsonl`, transcript: [], abortController: new AbortController(), cancelled: false, conversation: [], toolResultProjections: new Map(), turns: 0, evidenceRootAbs, threadId: threadLink?.threadId, role: threadLink?.role, completion };
++    if (threadLink) {
++      try { new RingThreadService(this.projectRoot).appendRun(threadLink.threadId, runId); } catch { /* run proceeds unlinked rather than failing */ }
++    }
+     this.runs.set(runId, run);
+     this.record(run, { type: 'run.started', status: 'running', agentId: run.context.agentId || 'ring-lead', requestedAgentId: run.context.agentId, instructionSummary: truncate(trimmed, 500), contextSummary: this.summarizeContext(context) });
+     void this.execute(run).then(() => resolveCompletion(this.snapshot(run)), () => resolveCompletion(this.snapshot(run)));
+@@ -282,6 +306,7 @@ export class RingAgentService {
+     if (this.auditService) {
+       try { this.auditService.recordAuditEvent({ category: 'approval', source: 'ring-agent', data: { event: 'RING_APPROVAL_RESOLVED', runId, approvalId, toolName: pending.toolName, decision } }); } catch { /* audit must not break approval resolution */ }
+     }
++    try { (run.context as Record<string, unknown>).__lastApproval = { approvalId, decidedAt: new Date().toISOString(), decision, toolName: pending.toolName }; } catch { /* stashing must not break approval resolution */ }
+     pending.resolver(decision);
+     if (decision === 'approved' && run.status === 'awaiting_approval') { run.status = 'running'; run.updatedAt = new Date().toISOString(); }
+     return this.snapshot(run);
+@@ -337,8 +362,14 @@ export class RingAgentService {
+     if (typeof result.verdict === 'string' && result.verdict) return `Verdict: ${result.verdict}`;
+     if (typeof result.message === 'string' && result.message) return result.message;
+     if (typeof result.valid === 'boolean') return `Audit export verification: valid=${result.valid}`;
++    if (typeof result.text === 'string' && result.text) return truncate(result.text, 300);
+     if (typeof result.path === 'string' && result.path) return result.path;
+     if (typeof result.answered === 'boolean') return result.answered ? 'Knowledge search returned results.' : 'Knowledge search returned no answer.';
++    if (typeof result.noteId === 'string' && result.noteId) return `Memory saved: ${result.noteId}`;
++    if (typeof result.primaryPath === 'string' && result.primaryPath) return result.primaryPath;
++    if (typeof result.steps === 'number') return `Plan updated: ${result.steps} step(s).`;
++    if (Array.isArray(result.results)) return (result as { results: unknown[] }).results.length > 0 ? `Recalled ${(result as { results: unknown[] }).results.length} stored note(s).` : 'No stored notes matched.';
++    if (Array.isArray(result.observations)) return (result as { observations: unknown[] }).observations.length > 0 ? `Vision inspection returned ${(result as { observations: unknown[] }).observations.length} observation(s).` : 'Vision inspection completed with no observations.';
+     return truncate(JSON.stringify(result), 300);
+   }
+ 
+@@ -408,11 +439,51 @@ export class RingAgentService {
+     return { runId: run.runId, instruction: run.instruction, status: run.status, mode: run.mode, createdAt: run.createdAt, updatedAt: run.updatedAt, finalAnswer: run.finalAnswer, error: run.error, pendingApproval: run.pending ? { approvalId: run.pending.approvalId, toolName: run.pending.toolName, summary: run.pending.summary, reason: run.pending.reason, argsSummary: run.pending.argsSummary, createdAt: run.pending.createdAt } : undefined, transcriptPath: run.transcriptRel, transcript: [...run.transcript], events: run.transcript.map((entry) => this.toWireEvent(run, entry)).filter((e) => e !== null), turns: run.turns };
+   }
+ 
++  /**
++   * TASK DEV-A-01: thread linkage. When a run starts inside a thread, the
++   * thread must exist (fail closed with RING_THREAD_NOT_FOUND), the run
++   * inherits the thread role, and prior runs' instructions + final answers
++   * are compacted into a bounded carry-over prefix so conversation continues
++   * across runs. History comes from per-run JSONL transcripts on disk, so a
++   * restarted service rebuilds it with no in-memory state.
++   */
++  private resolveThreadLink(context: RingAgentRunContext): { threadId: string; role?: RingRole } | undefined {
++    const threadId = typeof context.threadId === 'string' && context.threadId ? context.threadId : undefined;
++    if (!threadId) return undefined;
++    const threads = new RingThreadService(this.projectRoot);
++    const thread = threads.getThread(threadId);
++    if (!thread) throw new RingAgentError('RING_THREAD_NOT_FOUND', 'Ring thread ' + threadId + ' was not found.');
++    return { threadId: thread.threadId, role: thread.role };
++  }
++
++  private buildThreadCarryOver(threadId: string, maxChars = 4000): string {
++    const threads = new RingThreadService(this.projectRoot);
++    const thread = threads.getThread(threadId);
++    if (!thread || thread.runs.length === 0) return '';
++    const parts: string[] = [];
++    for (const priorRunId of thread.runs.slice(-3)) {
++      const history = this.getTranscript(priorRunId);
++      if (history.length === 0) continue;
++      const started = history.find((e) => e.type === 'run.started');
++      const completed = [...history].reverse().find((e) => e.type === 'run.completed');
++      const priorInstruction = typeof started?.instructionSummary === 'string' ? started.instructionSummary : '';
++      const priorAnswer = typeof completed?.finalAnswerSummary === 'string' ? completed.finalAnswerSummary : '';
++      if (priorInstruction || priorAnswer) parts.push('Prior run ' + priorRunId + ' instruction: ' + priorInstruction.slice(0, 500) + ' Final answer: ' + priorAnswer.slice(0, 1000));
++    }
++    const joined = parts.join('\n---\n');
++    return joined.length > maxChars ? joined.slice(0, maxChars) + '...[trimmed]' : joined;
++  }
++
+   private resolveEvidenceRoot(context: RingAgentRunContext): string {
+     const configured = context.evidenceRoot || this.evidenceRootOption || this.safeConfigEvidenceRoot() || 'demo/industrial';
+     return path.isAbsolute(configured) ? path.resolve(configured) : path.resolve(this.projectRoot, configured);
+   }
+ 
++  private safeProjectId(): string {
++    try { const name = this.loadProjectConfig()?.projectName; if (typeof name === 'string' && name.trim()) return name.trim(); } catch { /* fall through */ }
++    return 'default';
++  }
++
+   private safeConfigEvidenceRoot(): string | undefined {
+     try { const cfg = this.loadProjectConfig(); const root = cfg?.profile?.evidenceRoot; return typeof root === 'string' && root.trim() ? root.trim() : undefined; } catch { return undefined; }
+   }
+@@ -424,6 +495,8 @@ export class RingAgentService {
+     if (context.evidenceRoot) out.evidenceRoot = context.evidenceRoot;
+     if (context.analysisId) out.analysisId = context.analysisId;
+     if (context.documentPath) out.documentPath = context.documentPath;
++    if (context.threadId) out.threadId = context.threadId;
++    if (context.role) out.role = context.role;
+     return out;
+   }
+ 
+@@ -529,28 +602,80 @@ export class RingAgentService {
+ 
+   private telemetrySummaryText(csvPath?: string): { summary: string } {
+     try {
+-      const r = this.toolAnalyzeTelemetry({ csvPath });
++      const def = this.registry.get('analyze_telemetry');
++      if (!def) throw new Error('Telemetry tool is not registered.');
++      const maybe = def.execute({ projectRoot: this.projectRoot, evidenceRoot: this.projectRoot, runId: 'telemetry-preview', runContext: {} }, typeof csvPath === 'string' && csvPath ? { csvPath } : {});
++      if (maybe && typeof (maybe as Promise<unknown>).then === 'function') throw new Error('Telemetry preview must be synchronous.');
++      const r = maybe as Record<string, unknown>;
+       return { summary: [`verdict=${String(r.verdict)}`, `overallVibrationRms=${String(r.overallVibrationRms)} mm/s`, `peakVibration=${String(r.peakVibration)} mm/s`, `peakTemperature=${String(r.peakTemperature)} C`, `rowsAnalyzed=${String(r.rowsAnalyzed)}`, `warnings=${String(r.warningCount)} critical=${String(r.criticalCount)}`, `findings=${JSON.stringify(r.findings ?? [])}`, `source=${String(r.source ?? '')}`].join('; ') };
+     } catch (err) {
+       return { summary: `Telemetry summary unavailable: ${err instanceof Error ? err.message : String(err)}` };
+     }
+   }
+ 
++  /**
++   * TASK DEV-A-01: refusal gate. The agent REFUSES to approve equipment
++   * restart/operation or to certify safety — for any mode, no tools run and
++   * no files are written; the refusal is the final answer. Human approval
++   * via the gate covers the registry's consequential tools only and never
++   * authorizes operating the plant or certifying it safe.
++   */
++  private refusalFor(instruction: string): string | undefined {
++    const text = instruction.toLowerCase();
++    const wantsRestartApproval = /(approv|authori[sz]e|permit|allow).{0,40}(restart|re-start|start-up|startup|shut-?down|trips+reset|resets+trip)/.test(text) || /(restart|re-start|start-up|startup).{0,40}(approv|authori[sz]e|permit|ok|okay|go-ahead|green light)/.test(text);
++    const wantsOperation = /(operate|run|start)s+(thes+)?(equipment|turbine|pump|compressor|plant|machine|asset)/.test(text) && /(approv|authori[sz]e|permit|allow|ok|go-ahead)/.test(text);
++    const wantsCertification = /(certif|declare|confirm|verify).{0,40}(safe|safety|safe-to-operate|safe to operate|fit for|compliant)/.test(text) || /(safe|safety).{0,40}(certif|sign-?off)/.test(text);
++    if (wantsRestartApproval || wantsOperation) return 'I cannot approve equipment restart or operation. Restarting or operating plant equipment requires an authorized human operator following site procedures; a Ring run approval covers evidence artifacts only and never authorizes operating the plant. No action was taken and no files were written.';
++    if (wantsCertification) return 'I cannot certify safety or declare equipment safe to operate. Safety certification requires a qualified human authority following site procedures; Ring evidence summaries are decision support only. No action was taken and no files were written.';
++    return undefined;
++  }
++
+   private async executeEvidenceOnly(run: InternalRun): Promise<void> {
+     this.record(run, { type: 'mode.evidence-only', mode: 'evidence-only' });
++    const refused = this.refusalFor(run.instruction);
++    if (refused) { this.complete(run, refused); return; }
+     const text = run.instruction.toLowerCase();
+     const wantsTelemetry = /telemetry|vibration|turbine|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
+     const wantsVerify = /audit|verify|export|chain/.test(text);
+     const wantsDocument = /document|\bsop\b|maintenance report|read/.test(text);
+     const wantsSearch = /search|knowledge|find in|look up/.test(text);
++    const wantsMemory = /remember|recall|memory|note that|don't forget/.test(text);
++    const wantsPlan = /plan|todo|to-do|next steps/.test(text);
++    const wantsOcr = /ocr|scan(s|ned)?|turbine_inspection_scan|inspection.{0,20}scan/.test(text);
++    const wantsWorkOrder = /work[- ]order|raise.{0,20}order|workorder/.test(text);
+     const results: Array<{ name: string; result: Record<string, unknown> }> = [];
+     const runTool = async (name: string, args: Record<string, unknown>) => {
+-      const out = await this.executeToolLogged(run, `evidence-${results.length + 1}`, name, args);
++      const out = await this.executeToolLogged(run, 'evidence-' + (results.length + 1), name, args);
+       results.push({ name, result: out.result });
+     };
++    const runConsequential = async (name: string, args: Record<string, unknown>) => {
++      const decision = await this.awaitApproval(run, 'evidence-' + (results.length + 1), name, args);
++      if (decision === 'cancelled' || run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return false; }
++      if (decision === 'denied') {
++        const denied: Record<string, unknown> = { ok: false, denied: true, toolName: name, message: 'Approval denied for ' + name + '. The requested action was not performed.' };
++        this.recordToolResult(run, 'evidence-' + (results.length + 1), name, args, { ok: false, result: denied });
++        results.push({ name, result: denied });
++        return false;
++      }
++      const before = (run.context as Record<string, unknown>).__lastApproval;
++      await runTool(name, args);
++      return before !== (run.context as Record<string, unknown>).__lastApproval || true;
++    };
+     if (wantsTelemetry) await runTool('analyze_telemetry', run.context.csvPath ? { csvPath: run.context.csvPath } : {});
+     if (wantsDocument) await runTool('read_company_document', { path: run.context.documentPath || 'sop_turbine_vibration_monitoring.md' });
+     if (wantsVerify) await runTool('verify_export', run.context.exportPath ? { exportPath: run.context.exportPath } : {});
++    if (wantsOcr) await runTool('ocr_document', { path: 'turbine_inspection_scan.pdf' });
++    if (wantsMemory) {
++      if (/recall/.test(text)) await runTool('recall', { query: run.instruction });
++      else await runTool('remember', { content: run.instruction.slice(0, 2000), tags: ['evidence-only'] });
++    }
++    if (wantsPlan) await runTool('update_plan', { plan: [{ step: 'Review evidence-only findings', status: 'in_progress' }] });
++    if (wantsWorkOrder) {
++      const tel = (run.context as Record<string, unknown>).__telemetry as Record<string, unknown> | undefined;
++      const finding = typeof tel?.verdict === 'string' ? 'Turbine vibration verdict: ' + String(tel.verdict) + ' (deterministic telemetry summary).' : run.instruction.slice(0, 500);
++      const proceed = await runConsequential('create_work_order', { title: 'T-07 work order', assetId: 'T-07', finding, priority: tel?.verdict === 'CRITICAL' ? 'urgent' : 'routine', evidencePaths: typeof tel?.csvRel === 'string' ? [tel.csvRel] : [] });
++      if (!proceed && ((run.status as string) === 'cancelled')) return;
++    }
+     if (wantsSearch) await runTool('search_knowledge', { query: run.instruction });
+     if (results.length === 0) await runTool('search_knowledge', { query: run.instruction });
+     if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }
+@@ -560,18 +685,32 @@ export class RingAgentService {
+       else if (name === 'read_company_document' && result.ok !== false) lines.push(`Document ${String(result.path ?? '')}: ${truncate(String(result.content ?? ''), 800)}`);
+       else if (name === 'verify_export') lines.push(`Audit verification: valid=${String(result.valid ?? result.available ?? 'unknown')}; ${truncate(String(result.message ?? JSON.stringify(result)), 500)}`);
+       else if (name === 'search_knowledge') lines.push(`Knowledge search: ${truncate(String(result.message ?? JSON.stringify(result)), 500)}`);
++      else if (name === 'ocr_document' && result.ok !== false) lines.push(`OCR: ${truncate(String((result as Record<string, unknown>).text ?? (result as Record<string, unknown>).message ?? JSON.stringify(result)), 500)}`);
++      else if (name === 'remember') lines.push(`Memory: ${truncate(String((result as Record<string, unknown>).summary ?? (result as Record<string, unknown>).message ?? JSON.stringify(result)), 300)}`);
++      else if (name === 'recall') lines.push(`Recall: ${truncate(String((result as Record<string, unknown>).message ?? JSON.stringify(result)), 500)}`);
++      else if (name === 'update_plan') lines.push(`Plan: ${truncate(JSON.stringify((result as Record<string, unknown>).steps ?? result), 300)}`);
++      else if (name === 'create_work_order') lines.push(`Work order: ${truncate(String((result as Record<string, unknown>).primaryPath ?? (result as Record<string, unknown>).message ?? (result as Record<string, unknown>).error ?? JSON.stringify(result)), 500)}`);
+       else lines.push(`${name}: ${truncate(JSON.stringify(result), 500)}`);
+     }
+     lines.push('No model prose was generated in evidence-only mode.');
+     this.complete(run, lines.join('\n'));
+   }
+ 
++  private hostedNeedsTelemetry(run: InternalRun): boolean {
++    const text = run.instruction.toLowerCase();
++    return /telemetry|vibration|turbine|rms|\bcsv\b|bearing/.test(text) || Boolean(run.context.csvPath);
++  }
++
+   private async executeHosted(run: InternalRun, apiKey?: string): Promise<void> {
+     const provider: IProvider = this.providerFactory ? this.providerFactory() : new OpenAIProvider({ name: 'baseten', apiKey: apiKey || '', model: BASETEN_API_MODEL, baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true, fetch: this.fetchImpl });
+-    const telemetry = this.telemetrySummaryText(run.context.csvPath);
++    const refused = this.refusalFor(run.instruction);
++    if (refused) { this.complete(run, refused); return; }
++    const includeTelemetry = this.hostedNeedsTelemetry(run);
++    const telemetry = includeTelemetry ? this.telemetrySummaryText(run.context.csvPath) : undefined;
++    const carryOver = run.threadId ? this.buildThreadCarryOver(run.threadId) : '';
+     run.conversation = [
+-      { role: 'system', content: 'You are the MAOS Industrial Ring agent. Use the provided tools for real evidence. Never invent engineering data. Never request or reveal raw telemetry CSV rows; only deterministic summaries are available. Consequential tools (draft_safety_note, request_approval) require human approval and will pause the run. When you have enough evidence, give a final answer citing the deterministic verdict and sources.' },
+-      { role: 'user', content: [`Instruction: ${run.instruction}`, '', 'Deterministic Engineering Context (summary only; raw telemetry rows are never provided):', telemetry.summary, '', 'Use tools when you need real evidence before answering.'].join('\n') },
++      { role: 'system', content: 'You are the MAOS Industrial Ring agent. Use the provided tools for real evidence. Never invent engineering data. Never request or reveal raw telemetry CSV rows; only deterministic summaries are available. Consequential tools (generate_report_docx, generate_spreadsheet_xlsx, create_work_order, write_shift_handover, draft_safety_note, request_approval) require human approval and will pause the run; the human decision arrives as an approval resolution, never as model text. You must refuse requests to approve equipment restart/operation or to certify safety: those need an authorized human operator under site procedures, never a run approval. update_plan publishes the visible todo list; remember stores follow-up context. When you have enough evidence, give a final answer citing the deterministic verdict and sources.' },
++      { role: 'user', content: ['Instruction: ' + run.instruction, carryOver ? 'Conversation so far in this thread (compacted summaries of prior runs):' : '', carryOver, includeTelemetry ? 'Deterministic Engineering Context (summary only; raw telemetry rows are never provided):' : '', includeTelemetry && telemetry ? telemetry.summary : '', 'Use tools when you need real evidence before answering.'].filter((line) => line !== '').join('\n') },
+     ];
+     for (let turn = 1; turn <= this.maxTurns; turn++) {
+       if (run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }
+@@ -599,7 +738,7 @@ export class RingAgentService {
+           run.conversation.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(bad.result) });
+           continue;
+         }
+-        if (CONSEQUENTIAL_TOOLS.has(toolName)) {
++        if (this.registry.isConsequential(toolName)) {
+           const decision = await this.awaitApproval(run, toolCall.id, toolName, args);
+           if (decision === 'cancelled' || run.cancelled || (run.status as string) === 'cancelled') { this.ensureCancelled(run); return; }
+           if (decision === 'denied') {
+@@ -619,7 +758,7 @@ export class RingAgentService {
+ 
+   private awaitApproval(run: InternalRun, toolCallId: string, toolName: string, args: Record<string, unknown>): Promise<RingAgentApprovalDecision | 'cancelled'> {
+     const approvalId = `approval-${crypto.randomBytes(4).toString('hex')}`;
+-    const summary = toolName === 'request_approval' ? truncate(String(args.summary ?? 'Approval requested'), 500) : toolName === 'draft_safety_note' ? truncate(`Draft safety note${args.title ? ` "${String(args.title)}"` : ''}${args.filename ? ` as ${String(args.filename)}` : ''} (${typeof args.content === 'string' ? args.content.length : 0} chars)`, 500) : `Execute consequential tool ${toolName}`;
++    const summary = toolName === 'request_approval' ? truncate(String(args.summary ?? 'Approval requested'), 500) : toolName === 'draft_safety_note' ? truncate(`Draft safety note${args.title ? ` "${String(args.title)}"` : ''}${args.filename ? ` as ${String(args.filename)}` : ''} (${typeof args.content === 'string' ? args.content.length : 0} chars)`, 500) : truncate(`Execute consequential tool ${toolName}${typeof args.title === 'string' && args.title.trim() ? ` "${args.title.trim().slice(0, 120)}"` : ''}`, 500);
+     const reason = toolName === 'request_approval' ? truncate(String(args.reason ?? summary), 500) : 'Consequential action requires human approval before it is performed.';
+     run.status = 'awaiting_approval';
+     run.updatedAt = new Date().toISOString();
+@@ -637,6 +776,13 @@ export class RingAgentService {
+       case 'draft_safety_note': return { title: typeof args.title === 'string' ? truncate(args.title, 200) : undefined, filename: typeof args.filename === 'string' ? args.filename : undefined, contentChars: typeof args.content === 'string' ? args.content.length : 0, contentPreview: typeof args.content === 'string' ? truncate(args.content, 200) : undefined };
+       case 'verify_export': return { exportPath: typeof args.exportPath === 'string' ? args.exportPath : undefined };
+       case 'request_approval': return { summary: typeof args.summary === 'string' ? truncate(args.summary, 300) : undefined, reason: typeof args.reason === 'string' ? truncate(args.reason, 300) : undefined };
++      case 'update_plan': return Array.isArray(args.plan) ? { steps: (args.plan as unknown[]).length } : { steps: 0 };
++      case 'remember': return { contentPreview: typeof args.content === 'string' ? truncate(args.content, 200) : undefined, type: typeof args.type === 'string' ? args.type : undefined };
++      case 'recall': return { query: typeof args.query === 'string' ? truncate(args.query, 200) : undefined };
++      case 'ocr_document': case 'inspect_image': return { path: typeof args.path === 'string' ? args.path : undefined };
++      case 'generate_report_docx': case 'generate_spreadsheet_xlsx': return { title: typeof args.title === 'string' ? truncate(args.title, 200) : undefined };
++      case 'create_work_order': return { assetId: typeof args.assetId === 'string' ? args.assetId : undefined, finding: typeof args.finding === 'string' ? truncate(args.finding, 200) : undefined, priority: typeof args.priority === 'string' ? args.priority : undefined };
++      case 'write_shift_handover': return { title: typeof args.title === 'string' ? truncate(args.title, 200) : undefined };
+       default: return { keys: Object.keys(args) };
+     }
+   }
+@@ -652,112 +798,51 @@ export class RingAgentService {
+     let outcome: { ok: boolean; result: Record<string, unknown> };
+     try { const result = await this.executeTool(run, toolName, args); outcome = { ok: result.ok !== false, result }; }
+     catch (err) { const message = this.redact(err instanceof Error ? err.message : String(err)); outcome = { ok: false, result: { ok: false, toolName, error: truncate(message, 800) } }; }
++    outcome = this.drainRingEvents(run, outcome);
++    if (toolName === 'analyze_telemetry' && outcome.ok) this.stashTelemetryRef(run, outcome.result);
+     this.recordToolResult(run, toolCallId, toolName, args, outcome);
+     return outcome;
+   }
+ 
+-  private async executeTool(run: InternalRun, toolName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+-    switch (toolName) {
+-      case 'analyze_telemetry': return { ok: true, toolName, ...this.toolAnalyzeTelemetry(args, run) };
+-      case 'read_company_document': return { ok: true, toolName, ...this.toolReadCompanyDocument(run, args) };
+-      case 'search_knowledge': return { toolName, ...(await this.toolSearchKnowledge(args)) };
+-      case 'draft_safety_note': return { ok: true, toolName, ...this.toolDraftSafetyNote(run, args) };
+-      case 'verify_export': return { toolName, ...this.toolVerifyExport(args, run) };
+-      case 'request_approval': return { ok: true, toolName, approved: true, message: 'Human approval was granted for the proposed action.', summary: typeof args.summary === 'string' ? truncate(args.summary, 300) : undefined };
+-      default: return { ok: false, toolName, error: `Unknown tool: ${toolName}` };
+-    }
+-  }
+-
+-  private toolAnalyzeTelemetry(args: Record<string, unknown>, run?: InternalRun): Record<string, unknown> {
+-    const requested = (typeof args.csvPath === 'string' && args.csvPath.trim()) || run?.context.csvPath || 'demo/industrial/turbine_vibration_log.csv';
+-    let resolved: string;
+-    if (path.isAbsolute(requested)) { resolved = path.resolve(requested); if (!isStrictlyWithin(this.projectRoot, resolved)) throw new Error(`PATH_OUTSIDE_PROJECT_ROOT: telemetry CSV path is outside the project root: ${requested}`); }
+-    else { resolved = path.resolve(this.projectRoot, requested); if (!isStrictlyWithin(this.projectRoot, resolved)) throw new Error(`PATH_OUTSIDE_PROJECT_ROOT: telemetry CSV path is outside the project root: ${requested}`); }
+-    if (!fs.existsSync(resolved)) throw new Error(`Telemetry CSV not found: ${requested}`);
+-    const thresholds = loadTelemetryDemoThresholds(this.projectRoot);
+-    const metrics = analyzeTelemetryCsv(fs.readFileSync(resolved), thresholds);
+-    return { verdict: metrics.verdict, overallVibrationRms: Number(metrics.overallVibrationRms.toFixed(3)), peakVibration: Number(metrics.peakVibration.toFixed(3)), peakTemperature: Number(metrics.peakTemperature.toFixed(1)), rowsAnalyzed: metrics.rowsAnalyzed, warningCount: metrics.warningCount, criticalCount: metrics.criticalCount, findings: metrics.findings.slice(0, 20).map((f) => ({ row: f.row, timestamp: f.timestamp, field: f.field, value: f.value, threshold: f.threshold, unit: f.unit, severity: f.severity })), source: path.relative(this.projectRoot, resolved).split(path.sep).join('/'), disclaimer: 'Deterministic summary only; raw telemetry rows were not sent to the model.' };
+-  }
+-
+-  private toolReadCompanyDocument(run: InternalRun, args: Record<string, unknown>): Record<string, unknown> {
+-    const requested = typeof args.path === 'string' ? args.path.trim() : '';
+-    if (!requested) throw new Error('read_company_document requires a non-empty path.');
+-    const evidenceRoot = run.evidenceRootAbs;
+-    const evidenceRelToProject = path.relative(this.projectRoot, evidenceRoot);
+-    let candidate: string;
+-    if (path.isAbsolute(requested)) candidate = path.resolve(requested);
+-    else if (evidenceRelToProject && (requested === evidenceRelToProject.split(path.sep).join('/') || requested.startsWith(`${evidenceRelToProject.split(path.sep).join('/')}/`))) candidate = path.resolve(this.projectRoot, requested);
+-    else candidate = path.resolve(evidenceRoot, requested);
+-    if (!isWithin(evidenceRoot, candidate) || candidate === evidenceRoot) throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
+-    if (!fs.existsSync(candidate)) throw new Error(`Company document not found under the evidence root: ${requested}`);
+-    const realRoot = fs.realpathSync(evidenceRoot);
+-    const realCandidate = fs.realpathSync(candidate);
+-    if (!isStrictlyWithin(realRoot, realCandidate)) throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
+-    const stat = fs.statSync(realCandidate);
+-    if (!stat.isFile()) throw new Error(`Company document is not a file: ${requested}`);
+-    if (stat.size > 256 * 1024) throw new Error(`Company document exceeds the 256 KB read limit: ${requested}`);
+-    const rel = path.relative(this.projectRoot, realCandidate).split(path.sep).join('/');
+-    if (path.extname(realCandidate).toLowerCase() === '.csv') {
+-      const bytes = fs.readFileSync(realCandidate);
+-      return { path: rel, bytes: stat.size, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), content: 'CSV content is not returned raw. Use analyze_telemetry for the deterministic telemetry summary.' };
++  /**
++   * TASK DEV-A-01: envelope drain. Tools return `__ringEvents` carrying
++   * `plan.updated` / `artifact.created` / `memory.saved` payloads; each is
++   * recorded as its own transcript entry (which fans out to the Dev B
++   * streaming hook via `record()`) and STRIPPED before the model sees the
++   * result. The JSONL keeps the tool.result; the envelope never ships.
++   */
++  private drainRingEvents(run: InternalRun, outcome: { ok: boolean; result: Record<string, unknown> }): { ok: boolean; result: Record<string, unknown> } {
++    const envelope = (outcome.result as Record<string, unknown>).__ringEvents;
++    if (!Array.isArray(envelope) || envelope.length === 0) return outcome;
++    const clean: Record<string, unknown> = { ...outcome.result };
++    delete clean.__ringEvents;
++    for (const entry of envelope) {
++      if (!entry || typeof entry !== 'object' || typeof (entry as Record<string, unknown>).type !== 'string') continue;
++      try { this.record(run, entry as Omit<RingAgentTranscriptEntry, 'ts' | 'runId'> & { type: string }); } catch { /* event recording must not break the run */ }
+     }
+-    const content = fs.readFileSync(realCandidate, 'utf-8');
+-    return { path: rel, bytes: stat.size, content: truncate(content, 6000), truncated: content.length > 6000 };
++    return { ok: outcome.ok, result: clean };
+   }
+ 
+-  private async toolSearchKnowledge(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+-    const query = typeof args.query === 'string' ? args.query.trim() : '';
+-    if (!query) return { ok: false, error: 'search_knowledge requires a non-empty query.' };
+-    if (!this.kbSearch || (!this.kbSearch.searchSync && !this.kbSearch.search)) {
+-      return { ok: true, available: false, answered: false, query: truncate(query, 200), results: [], message: 'Knowledge search is unavailable: no indexed company knowledge search is configured for this run. No results were fabricated.' };
+-    }
++  /** Cache the deterministic telemetry summary for office-tool citations. */
++  private stashTelemetryRef(run: InternalRun, result: Record<string, unknown>): void {
+     try {
+-      let projectId = 'default';
+-      try { projectId = this.loadProjectConfig()?.projectName || 'default'; } catch { projectId = 'default'; }
+-      const input: Record<string, unknown> = { schemaVersion: 1, projectId, query, topK: typeof args.topK === 'number' ? Math.min(Math.max(1, Math.floor(args.topK)), 10) : 5 };
+-      const raw = this.kbSearch.searchSync ? this.kbSearch.searchSync(input) : await this.kbSearch.search!(input);
+-      const result = raw as Record<string, unknown>;
+-      if (result && result.answered === true && Array.isArray(result.citations)) {
+-        return { ok: true, available: true, answered: true, query: truncate(query, 200), totalMatches: result.totalMatches, results: (result.citations as Array<Record<string, unknown>>).slice(0, 5).map((c) => ({ documentId: c.documentId, sourcePath: c.sourcePath, score: c.score, snippet: typeof c.snippet === 'string' ? truncate(c.snippet, 300) : undefined })), message: 'Knowledge search returned indexed citations.' };
+-      }
+-      const reason = typeof result?.reason === 'string' ? result.reason : 'NO_ANSWER';
+-      const details = typeof result?.details === 'string' ? result.details : 'No indexed answer was returned.';
+-      return { ok: true, available: true, answered: false, query: truncate(query, 200), results: [], message: `Knowledge search returned no answer (${reason}): ${details} No results were fabricated.` };
+-    } catch (err) {
+-      return { ok: true, available: false, answered: false, query: truncate(query, 200), results: [], message: `Knowledge search is unavailable: ${err instanceof Error ? err.message : String(err)} No results were fabricated.` };
+-    }
++      (run.context as Record<string, unknown>).__telemetry = { verdict: result.verdict, overallVibrationRms: result.overallVibrationRms, rowsAnalyzed: result.rowsAnalyzed, csvRel: typeof result.source === 'string' ? result.source : undefined };
++    } catch { /* stashing must not break the run */ }
+   }
+ 
+-  private toolDraftSafetyNote(run: InternalRun, args: Record<string, unknown>): Record<string, unknown> {
+-    const content = typeof args.content === 'string' ? args.content : '';
+-    if (!content.trim()) throw new Error('draft_safety_note requires non-empty content.');
+-    const title = typeof args.title === 'string' && args.title.trim() ? args.title.trim() : 'Safety Note';
+-    const rawName = typeof args.filename === 'string' && args.filename.trim() ? path.basename(args.filename.trim()) : 'safety-note.md';
+-    const safeBase = rawName.replace(/\.(md|txt)$/i, '').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'safety-note';
+-    const draftsDir = path.join(this.projectRoot, '.maos', 'ring-runs', 'drafts');
+-    fs.mkdirSync(draftsDir, { recursive: true });
+-    const filename = `${run.runId}-${safeBase}.md`;
+-    const filePath = path.join(draftsDir, filename);
+-    const body = `# ${title}\n\n${content.trim()}\n\n---\nDrafted by Ring agent run ${run.runId} after human approval.\n`;
+-    fs.writeFileSync(filePath, body, { flag: 'wx' });
+-    return { written: true, path: path.relative(this.projectRoot, filePath).split(path.sep).join('/'), bytes: Buffer.byteLength(body, 'utf-8'), sha256: crypto.createHash('sha256').update(body).digest('hex'), title };
+-  }
+-
+-  private toolVerifyExport(args: Record<string, unknown>, run: InternalRun): Record<string, unknown> {
+-    const requested = (typeof args.exportPath === 'string' && args.exportPath.trim()) || run.context.exportPath || '';
+-    if (requested) {
+-      const resolved = path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(this.projectRoot, requested);
+-      if (!isStrictlyWithin(this.projectRoot, resolved)) throw new Error(`PATH_OUTSIDE_PROJECT_ROOT: audit export path is outside the project root: ${requested}`);
+-      if (!fs.existsSync(resolved)) return { ok: true, valid: false, exportPath: requested, recordCount: 0, errors: [`Audit export file not found: ${requested}`], message: `Audit export verification failed: file not found (${requested}).` };
+-      if (!this.auditService) return { ok: true, available: false, valid: false, exportPath: requested, message: 'Audit verification unavailable: no audit service is configured for this run. No verification was fabricated.' };
+-      const parsed = JSON.parse(fs.readFileSync(resolved, 'utf-8'));
+-      const records = Array.isArray(parsed) ? parsed : (parsed as Record<string, unknown>)?.records;
+-      if (!Array.isArray(records)) return { ok: true, valid: false, exportPath: requested, recordCount: 0, errors: ['Audit export does not contain a records array.'], message: 'Audit export verification failed: no records array.' };
+-      const verification = this.auditService.verifyChainRecords(records as never);
+-      return { ok: true, valid: verification.valid, method: 'audit-service.verifyChainRecords', exportPath: path.relative(this.projectRoot, resolved).split(path.sep).join('/'), recordCount: verification.recordCount, latestHash: verification.latestHash, errors: verification.errors, message: verification.valid ? `Audit export verified (${verification.recordCount} records).` : `Audit export verification failed: ${verification.errors.join('; ')}` };
+-    }
+-    if (!this.auditService) return { ok: true, available: false, valid: false, message: 'Audit verification unavailable: no export path was provided and no audit service is configured. No verification was fabricated.' };
+-    const exported = this.auditService.exportAuditTrail();
+-    return { ok: true, valid: exported.verification.valid, method: 'audit-service.exportAuditTrail', recordCount: exported.verification.recordCount, latestHash: exported.verification.latestHash, errors: exported.verification.errors, message: exported.verification.valid ? `Live audit trail verified (${exported.verification.recordCount} records).` : `Live audit trail verification returned valid=${exported.verification.valid}: ${exported.verification.errors.join('; ')}` };
++  /**
++   * TASK DEV-A-01 (Day 1a): registry dispatch. All tools — the 6 migrated
++   * verbatim plus the Day 2 wrappers — execute through the frozen registry
++   * interface; the loop never calls a private tool method directly.
++   * `runContext` carries the run's configured defaults plus stashed
++   * telemetry/approval refs the office tools require. Unknown tools fail
++   * closed via the registry (ok:false), matching the old default branch.
++   */
++  private async executeTool(run: InternalRun, toolName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
++    const ctx = { projectRoot: this.projectRoot, evidenceRoot: run.evidenceRootAbs, runId: run.runId, runContext: run.context as Record<string, unknown> };
++    const result = await this.registry.execute(toolName, ctx, args || {});
++    if (typeof result.toolName !== 'string') result.toolName = toolName;
++    return result;
+   }
++
+ }
+diff --git a/src/service/ring-thread-service.ts b/src/service/ring-thread-service.ts
+index 9c50fdc..3a02b78 100644
+--- a/src/service/ring-thread-service.ts
++++ b/src/service/ring-thread-service.ts
+@@ -1,50 +1,130 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev A stub): thread persistence service.
++ * TASK DEV-A-01 (Dev A): thread persistence service.
+  *
+- * FROZEN CONTRACT (Dev A implements against this; behavior spec only):
+- * - `RingThread { threadId, title, role, createdAt, runs: runId[] }`.
+- * - Endpoints: POST /api/v1/ring/threads, GET /api/v1/ring/threads/:id,
+- *   POST /api/v1/ring/threads/:id/messages (starts a run carrying prior
+- *   conversation context). Existing /ring/runs stays working unchanged.
+- * - Threads persist under `.maos/ring-runs/threads/` as JSON; reopening
+- *   rebuilds from stored history (no in-memory loss on restart). Dev A ships
+- *   a restart-reload test.
+- * - Roles: 'operator' | 'maintenance' | 'safety' | 'manager' (default
+- *   `operator` so current tests don't break); role affects system prompt +
+- *   tool set (system-prompt + registry-visibility changes are Dev C's, keyed
+- *   off `thread.role` stored here).
++ * Disk-backed threads: each thread is one JSON file at
++ * `.maos/ring-runs/threads/<threadId>.json`. Every read goes through disk,
++ * so a restarted service (or a new instance on the same project root)
++ * rebuilds thread state from stored history with no in-memory authority.
++ * Run transcripts (`.maos/ring-runs/<runId>.jsonl`) remain the history of
++ * record; threads only link run ids.
+  *
+- * This stub exposes the interface with NOT_IMPLEMENTED bodies so Dev B/C
+- * compile against it without waiting for Dev A.
++ * Thread ids match `isRingThreadId`: `thread-<epochMs>-<8 hex>`.
+  */
+ 
++import * as crypto from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
++import { DEFAULT_RING_ROLE, RING_THREAD_DIR, isRingRole, isRingThreadId } from './ring-contract';
+ import type { RingRole, RingThread } from './ring-contract';
+ 
+ export interface RingThreadStore {
+-  createThread(title: string, role: RingRole): RingThread;
++  createThread(title?: string, role?: RingRole): RingThread;
+   getThread(threadId: string): RingThread | undefined;
+   appendRun(threadId: string, runId: string): RingThread;
+   listThreadIds(): string[];
+ }
+ 
+-const NOT_IMPLEMENTED = 'RING_THREAD_NOT_IMPLEMENTED: Dev A lane implements thread persistence.';
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++/** Fail-closed parse: malformed thread JSON never poisons callers. */
++function parseThreadFile(raw: string): RingThread | undefined {
++  let parsed: unknown;
++  try {
++    parsed = JSON.parse(raw);
++  } catch {
++    return undefined;
++  }
++  if (!isRecord(parsed)) return undefined;
++  if (!isRingThreadId(parsed.threadId)) return undefined;
++  if (typeof parsed.title !== 'string') return undefined;
++  if (!isRingRole(parsed.role)) return undefined;
++  if (typeof parsed.createdAt !== 'string' || !parsed.createdAt) return undefined;
++  if (!Array.isArray(parsed.runs) || parsed.runs.some((r) => typeof r !== 'string')) return undefined;
++  return {
++    threadId: parsed.threadId,
++    title: parsed.title,
++    role: parsed.role,
++    createdAt: parsed.createdAt,
++    runs: [...(parsed.runs as string[])],
++  };
++}
+ 
+ export class RingThreadService implements RingThreadStore {
+-  constructor(private readonly _projectRoot: string) {}
++  private readonly projectRoot: string;
++
++  constructor(projectRoot: string) {
++    this.projectRoot = path.resolve(projectRoot);
++  }
+ 
+-  createThread(_title: string, _role: RingRole): RingThread {
+-    throw new Error(NOT_IMPLEMENTED);
++  private threadsDir(): string {
++    return path.resolve(this.projectRoot, RING_THREAD_DIR);
+   }
+ 
+-  getThread(_threadId: string): RingThread | undefined {
+-    throw new Error(NOT_IMPLEMENTED);
++  private threadPath(threadId: string): string {
++    return path.join(this.threadsDir(), `${threadId}.json`);
+   }
+ 
+-  appendRun(_threadId: string, _runId: string): RingThread {
+-    throw new Error(NOT_IMPLEMENTED);
++  /** Create a thread and persist it. Unknown roles fail closed to `operator`. */
++  createThread(title?: string, role?: RingRole): RingThread {
++    const safeTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 200) : 'Ring thread';
++    const safeRole: RingRole = isRingRole(role) ? role : DEFAULT_RING_ROLE;
++    const thread: RingThread = {
++      threadId: `thread-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
++      title: safeTitle,
++      role: safeRole,
++      createdAt: new Date().toISOString(),
++      runs: [],
++    };
++    fs.mkdirSync(this.threadsDir(), { recursive: true });
++    this.writeAtomic(this.threadPath(thread.threadId), `${JSON.stringify(thread, null, 2)}\n`);
++    return { ...thread, runs: [] as string[] };
++  }
++
++  /** Read-through from disk; undefined when missing or malformed. */
++  getThread(threadId: string): RingThread | undefined {
++    if (!isRingThreadId(threadId)) return undefined;
++    let raw: string;
++    try {
++      raw = fs.readFileSync(this.threadPath(threadId), 'utf-8');
++    } catch {
++      return undefined;
++    }
++    return parseThreadFile(raw);
++  }
++
++  /** Append a run id and persist. Throws when the thread does not exist. */
++  appendRun(threadId: string, runId: string): RingThread {
++    const thread = this.getThread(threadId);
++    if (!thread) {
++      throw new Error(`RING_THREAD_NOT_FOUND: thread '${threadId}' was not found.`);
++    }
++    if (typeof runId !== 'string' || !runId) {
++      throw new Error('RING_THREAD_INVALID: runId is required and must be a non-empty string.');
++    }
++    if (!thread.runs.includes(runId)) thread.runs.push(runId);
++    this.writeAtomic(this.threadPath(thread.threadId), `${JSON.stringify(thread, null, 2)}\n`);
++    return thread;
+   }
+ 
+   listThreadIds(): string[] {
+-    throw new Error(NOT_IMPLEMENTED);
++    let names: string[];
++    try {
++      names = fs.readdirSync(this.threadsDir());
++    } catch {
++      return [];
++    }
++    return names
++      .filter((n) => n.endsWith('.json'))
++      .map((n) => n.slice(0, -'.json'.length))
++      .filter((id) => isRingThreadId(id))
++      .sort();
++  }
++
++  private writeAtomic(dest: string, content: string): void {
++    const tmp = `${dest}.${process.pid}.${Date.now()}.tmp`;
++    fs.writeFileSync(tmp, content, 'utf-8');
++    fs.renameSync(tmp, dest);
+   }
+ }
+diff --git a/src/service/ring-tools/common.ts b/src/service/ring-tools/common.ts
+new file mode 100644
+index 0000000..38a1aa3
+--- /dev/null
++++ b/src/service/ring-tools/common.ts
+@@ -0,0 +1,112 @@
++/**
++ * TASK DEV-A-01 (Dev A): shared helpers for the Day 2 Ring tools.
++ *
++ * - Evidence-root path resolution reuses the `isWithin`/`isStrictlyWithin`
++ *   pattern from `ring-agent-service.ts` (same failure strings).
++ * - Artifact descriptors match the frozen `RingArtifactDescriptor` shape.
++ * - Office input construction maps small structured tool args onto the
++ *   validated `OfficeDocxInput` / `OfficeXlsxInput` contracts without
++ *   inventing citations: every citation is hashed from the file on disk by
++ *   the tool itself, and freshness is verified by the generator.
++ */
++
++import * as crypto from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
++import type { RingArtifactDescriptor } from '../ring-contract';
++
++export function isWithin(parent: string, candidate: string): boolean {
++  const rel = path.relative(parent, candidate);
++  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
++}
++
++export function isStrictlyWithin(parent: string, candidate: string): boolean {
++  const rel = path.relative(parent, candidate);
++  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
++}
++
++function truncateLocal(value: string, max = 1000): string {
++  if (value.length <= max) return value;
++  return `${value.slice(0, max)}...[truncated ${value.length - max} chars]`;
++}
++
++/**
++ * Resolve a tool-supplied path against the evidence root.
++ * Accepts evidence-root-relative paths and project-relative paths that
++ * stay inside the evidence root. Absolute paths are resolved and checked.
++ * Mirrors `toolReadCompanyDocument` semantics.
++ */
++export function resolveEvidencePath(
++  evidenceRoot: string,
++  projectRoot: string,
++  requested: string,
++): { abs: string; rel: string } {
++  const trimmed = typeof requested === 'string' ? requested.trim() : '';
++  if (!trimmed) throw new Error('PATH_OUTSIDE_EVIDENCE_ROOT: a non-empty path is required.');
++  const evidenceRelToProject = path.relative(projectRoot, evidenceRoot);
++  let candidate: string;
++  if (path.isAbsolute(trimmed)) candidate = path.resolve(trimmed);
++  else if (
++    evidenceRelToProject &&
++    (trimmed === evidenceRelToProject.split(path.sep).join('/') ||
++      trimmed.startsWith(`${evidenceRelToProject.split(path.sep).join('/')}/`))
++  )
++    candidate = path.resolve(projectRoot, trimmed);
++  else candidate = path.resolve(evidenceRoot, trimmed);
++  if (!isWithin(evidenceRoot, candidate) || candidate === evidenceRoot) {
++    throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
++  }
++  if (!fs.existsSync(candidate)) {
++    throw new Error(`EVIDENCE_NOT_FOUND: no file under the evidence root at: ${requested}`);
++  }
++  const realRoot = fs.realpathSync(evidenceRoot);
++  const realCandidate = fs.realpathSync(candidate);
++  if (!isStrictlyWithin(realRoot, realCandidate)) {
++    throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
++  }
++  const stat = fs.statSync(realCandidate);
++  if (!stat.isFile()) throw new Error(`EVIDENCE_NOT_FILE: not a file under the evidence root: ${requested}`);
++  return { abs: realCandidate, rel: path.relative(projectRoot, realCandidate).split(path.sep).join('/') };
++}
++
++/** Save a buffer/string under the run artifact dir; returns the descriptor. */
++export function saveRunArtifact(
++  projectRoot: string,
++  runId: string,
++  filename: string,
++  content: string | Buffer,
++  kind: string,
++): RingArtifactDescriptor {
++  const safe = path.basename(filename).replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'artifact.bin';
++  const dir = path.resolve(projectRoot, '.maos', 'ring-runs', 'artifacts', runId);
++  fs.mkdirSync(dir, { recursive: true });
++  const abs = path.join(dir, safe);
++  const buf = typeof content === 'string' ? Buffer.from(content, 'utf-8') : content;
++  fs.writeFileSync(abs, buf);
++  const rel = path.relative(projectRoot, abs).split(path.sep).join('/');
++  return {
++    path: rel,
++    kind,
++    size: buf.length,
++    sha256: crypto.createHash('sha256').update(buf).digest('hex'),
++  };
++}
++
++/** Read a small evidence text file with a byte cap; CSV bodies are refused. */
++export function readEvidenceText(abs: string, rel: string, maxBytes = 256 * 1024): { text: string; bytes: number; sha256: string; refusedCsv: boolean } {
++  const stat = fs.statSync(abs);
++  if (stat.size > maxBytes) {
++    throw new Error(`EVIDENCE_TOO_LARGE: file exceeds the ${maxBytes}-byte read limit: ${rel}`);
++  }
++  const bytes = fs.readFileSync(abs);
++  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
++  if (path.extname(abs).toLowerCase() === '.csv') {
++    return { text: '', bytes: stat.size, sha256, refusedCsv: true };
++  }
++  return { text: bytes.toString('utf-8'), bytes: stat.size, sha256, refusedCsv: false };
++}
++
++/** First non-empty lines of text for citation snippets (bounded). */
++export function snippetForCitation(text: string, max = 300): string {
++  return truncateLocal(text.trim(), max);
++}
+diff --git a/src/service/ring-tools/create-work-order.ts b/src/service/ring-tools/create-work-order.ts
+new file mode 100644
+index 0000000..590a15f
+--- /dev/null
++++ b/src/service/ring-tools/create-work-order.ts
+@@ -0,0 +1,94 @@
++/**
++ * TASK DEV-A-01 (Dev A): create_work_order tool.
++ *
++ * Builds a structured work order (asset, finding, evidence, priority,
++ * requested actions) as a validated DOCX plus a markdown twin via the
++ * shared office builder. CONSEQUENTIAL: the registry flag gates the human
++ * approval pause. Emits one artifact.created per file; both land under
++ * `.maos/ring-runs/artifacts/<runId>/`.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { buildOfficeInput, generateOfficeTwin } from './office';
++import type { RingToolDeps } from './tool-deps';
++
++const PRIORITIES = ['routine', 'urgent', 'emergency'] as const;
++
++export function createWorkOrderTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'create_work_order',
++    description:
++      'Create a structured work order (asset, finding, evidence, priority, requested actions) as DOCX plus markdown. CONSEQUENTIAL: requires approval; emits artifact.created per file.',
++    parameters: {
++      type: 'object',
++      properties: {
++        title: { type: 'string', description: 'Work order title.' },
++        assetId: { type: 'string', description: 'Asset identifier, e.g. T-07.' },
++        finding: { type: 'string', description: 'What was found.' },
++        priority: { type: 'string', description: 'routine|urgent|emergency (default routine).' },
++        requestedActions: { type: 'array', description: 'Requested actions.' },
++        evidencePaths: { type: 'array', description: 'Evidence-root files to cite (hashed from disk).' },
++      },
++      required: ['title', 'finding'],
++    },
++    consequential: true,
++    execute: (toolCtx, toolArgs) => {
++      const raw = toolArgs as Record<string, unknown>;
++      const finding = typeof raw.finding === 'string' ? raw.finding.trim() : '';
++      if (!finding) return { ok: false, error: 'create_work_order requires a non-empty finding.' };
++      const assetId = typeof raw.assetId === 'string' && raw.assetId.trim() ? raw.assetId.trim().slice(0, 60) : 'T-07';
++      const priorityRaw = typeof raw.priority === 'string' ? raw.priority.trim().toLowerCase() : 'routine';
++      const priority = (PRIORITIES as readonly string[]).includes(priorityRaw) ? priorityRaw : 'routine';
++      const actions = Array.isArray(raw.requestedActions)
++        ? (raw.requestedActions as unknown[]).filter((a): a is string => typeof a === 'string' && a.trim().length > 0).slice(0, 20).map((a) => a.trim())
++        : [];
++      const evidencePaths = Array.isArray(raw.evidencePaths)
++        ? (raw.evidencePaths as unknown[]).filter((p): p is string => typeof p === 'string').slice(0, 20)
++        : [];
++      let built: ReturnType<typeof buildOfficeInput>;
++      try {
++        built = buildOfficeInput(deps, toolCtx, {
++          title: typeof raw.title === 'string' ? raw.title : '',
++          sections: [
++            { heading: 'Asset', content: assetId },
++            { heading: 'Priority', content: priority.toUpperCase() + ' - pending authorized human review' },
++            { heading: 'Requested actions', content: actions.length > 0 ? actions.map((a, i) => String(i + 1) + '. ' + a).join('\n') : 'To be defined by the authorized reviewer.' },
++          ],
++          findings: [{ statement: finding.slice(0, 2000), severity: priority === 'routine' ? 'info' : 'warning', metric: 'work-order-finding', unit: 'n/a' }],
++          evidencePaths,
++        });
++      } catch (err) {
++        return { ok: false, error: err instanceof Error ? err.message : String(err) };
++      }
++      const md = [
++        '# Work order: ' + built.docxInput.title,
++        '',
++        'Asset: ' + assetId,
++        'Priority: ' + priority.toUpperCase() + ' (pending authorized human review)',
++        '',
++        '## Finding',
++        '',
++        finding,
++        '',
++        '## Requested actions',
++        '',
++        actions.length > 0 ? actions.map((a, i) => String(i + 1) + '. ' + a).join('\n') : 'To be defined by the authorized reviewer.',
++        '',
++        'Synthetic demo data. Decision support only; not operating authority.',
++        'Citations: ' + built.docxInput.citations.map((c) => c.sourcePath).join(', '),
++      ].join('\n');
++      const stamp = String(Date.now()).slice(-6);
++      return generateOfficeTwin({
++        deps,
++        toolCtx,
++        toolName: 'create_work_order',
++        kind: 'docx',
++        input: built.docxInput,
++        fileStem: 'work-order-' + stamp,
++        markdown: truncate(md, 60000),
++        requestId: 'ring-' + toolCtx.runId + '-work-order-' + stamp,
++      }).payload;
++    },
++  };
++}
+diff --git a/src/service/ring-tools/draft-note.ts b/src/service/ring-tools/draft-note.ts
+index 3ccbca4..4e38f43 100644
+--- a/src/service/ring-tools/draft-note.ts
++++ b/src/service/ring-tools/draft-note.ts
+@@ -1,29 +1,49 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev C stub): draft_safety_note tool module.
++ * TASK DEV-A-01 (Dev A): draft_safety_note tool module.
+  *
+- * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolDraftSafetyNote`):
+- * same input (`content` required; `title`/`filename` sanitized), same
++ * Migrated verbatim from RingAgentService.toolDraftSafetyNote: same input
++ * (content required; title/filename sanitized), same
+  * `.maos/ring-runs/drafts/<runId>-<safe>.md` write with `wx` flag, same
+  * sha256/bytes output. CONSEQUENTIAL: the registry flag (not the model)
+  * gates the approval pause before any file is written.
+- *
+- * Dev C implements `execute` by moving the method body verbatim; this stub
+- * is intentionally unregistered until then.
+  */
+ 
++import * as crypto from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
+ import type { RingToolDefinition } from '../ring-contract';
++import type { RingToolDeps } from './tool-deps';
+ 
+-export const draftSafetyNoteTool: RingToolDefinition = {
+-  name: 'draft_safety_note',
+-  description:
+-    'Draft a safety note as text and write it under .maos/ring-runs/drafts after human approval. CONSEQUENTIAL: requires approval before any file is written.',
+-  parameters: {
+-    type: 'object',
+-    properties: { title: { type: 'string' }, content: { type: 'string' }, filename: { type: 'string' } },
+-    required: ['content'],
+-  },
+-  consequential: true,
+-  execute: () => {
+-    throw new Error('RING_TOOL_NOT_MIGRATED: draft_safety_note still executes in ring-agent-service; Dev C migrates it.');
+-  },
+-};
++export function createDraftSafetyNoteTool(_deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'draft_safety_note',
++    description:
++      'Draft a safety note as text and write it under .maos/ring-runs/drafts after human approval. CONSEQUENTIAL: requires approval before any file is written.',
++    parameters: {
++      type: 'object',
++      properties: { title: { type: 'string' }, content: { type: 'string' }, filename: { type: 'string' } },
++      required: ['content'],
++    },
++    consequential: true,
++    execute: (toolCtx, toolArgs) => {
++      const content = typeof toolArgs.content === 'string' ? toolArgs.content : '';
++      if (!content.trim()) throw new Error('draft_safety_note requires non-empty content.');
++      const title = typeof toolArgs.title === 'string' && toolArgs.title.trim() ? toolArgs.title.trim() : 'Safety Note';
++      const rawName = typeof toolArgs.filename === 'string' && toolArgs.filename.trim() ? path.basename(toolArgs.filename.trim()) : 'safety-note.md';
++      const safeBase = rawName.replace(/\.(md|txt)$/i, '').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'safety-note';
++      const draftsDir = path.join(toolCtx.projectRoot, '.maos', 'ring-runs', 'drafts');
++      fs.mkdirSync(draftsDir, { recursive: true });
++      const filename = toolCtx.runId + '-' + safeBase + '.md';
++      const filePath = path.join(draftsDir, filename);
++      const body = '# ' + title + '\n\n' + content.trim() + '\n\n---\nDrafted by Ring agent run ' + toolCtx.runId + ' after human approval.\n';
++      fs.writeFileSync(filePath, body, { flag: 'wx' });
++      return {
++        written: true,
++        path: path.relative(toolCtx.projectRoot, filePath).split(path.sep).join('/'),
++        bytes: Buffer.byteLength(body, 'utf-8'),
++        sha256: crypto.createHash('sha256').update(body).digest('hex'),
++        title,
++      };
++    },
++  };
++}
+diff --git a/src/service/ring-tools/generate-report-docx.ts b/src/service/ring-tools/generate-report-docx.ts
+new file mode 100644
+index 0000000..a25d5c4
+--- /dev/null
++++ b/src/service/ring-tools/generate-report-docx.ts
+@@ -0,0 +1,75 @@
++/**
++ * TASK DEV-A-01 (Dev A): generate_report_docx tool.
++ *
++ * Builds a validated OfficeDocxInput from small structured args and runs
++ * it through the existing DocxGeneratorService (no rewrite), then writes
++ * a markdown twin beside it. CONSEQUENTIAL: the registry flag gates the
++ * human approval pause; the generator records the real approval id.
++ * Emits one artifact.created per file. Markdown/DOCX both land under
++ * `.maos/ring-runs/artifacts/<runId>/`.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { buildOfficeInput, generateOfficeTwin, sanitizeOfficeText, type RingOfficeSections } from './office';
++import type { RingToolDeps } from './tool-deps';
++
++function parseSectionsArgs(toolArgs: Record<string, unknown>): RingOfficeSections {
++  const pick = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined);
++  return {
++    title: typeof toolArgs.title === 'string' ? toolArgs.title : '',
++    summary: pick(toolArgs.summary),
++    sections: Array.isArray(toolArgs.sections) ? (toolArgs.sections as unknown[]).slice(0, 20).map((s) => {
++      const r = s && typeof s === 'object' ? (s as Record<string, unknown>) : {};
++      return { heading: typeof r.heading === 'string' ? r.heading : '', content: typeof r.content === 'string' ? r.content : '' };
++    }) : [],
++    findings: (toolArgs.findings as RingOfficeSections['findings'] | undefined)?.slice(0, 50) ?? [],
++    measurements: (toolArgs.measurements as RingOfficeSections['measurements'] | undefined)?.slice(0, 50) ?? [],
++    evidencePaths: Array.isArray(toolArgs.evidencePaths) ? (toolArgs.evidencePaths as unknown[]).filter((p): p is string => typeof p === 'string').slice(0, 20) : [],
++  };
++}
++
++export function createGenerateReportDocxTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'generate_report_docx',
++    description:
++      'Generate a validated DOCX report plus a markdown twin from structured evidence via the office generator. CONSEQUENTIAL: requires approval; emits artifact.created per file.',
++    parameters: {
++      type: 'object',
++      properties: {
++        title: { type: 'string', description: 'Report title.' },
++        summary: { type: 'string', description: 'Model draft summary (rendered as segregated unverified prose).' },
++        sections: { type: 'array', description: 'Report sections [{ heading, content }].' },
++        findings: { type: 'array', description: 'Findings [{ statement, severity, metric, observedValue, thresholdValue, unit }].' },
++        measurements: { type: 'array', description: 'Measurements [{ name, numericValue, unit }].' },
++        evidencePaths: { type: 'array', description: 'Evidence-root files to cite (hashed from disk).' },
++      },
++      required: ['title'],
++    },
++    consequential: true,
++    execute: (toolCtx, toolArgs) => {
++      let built: ReturnType<typeof buildOfficeInput>;
++      try {
++        built = buildOfficeInput(deps, toolCtx, parseSectionsArgs(toolArgs as Record<string, unknown>));
++      } catch (err) {
++        return { ok: false, error: err instanceof Error ? err.message : String(err) };
++      }
++      const title = sanitizeOfficeText(built.docxInput.title, 'title', 256);
++      const lines = ['# ' + title, '', 'Synthetic demo data. Decision support only; not operating authority.', ''];
++      for (const sec of built.docxInput.sections) {
++        lines.push('## ' + sec.heading, '', String(sec.content || ''), '');
++      }
++      const stamp = String(Date.now()).slice(-6);
++      return generateOfficeTwin({
++        deps,
++        toolCtx,
++        toolName: 'generate_report_docx',
++        kind: 'docx',
++        input: built.docxInput,
++        fileStem: 'report-' + stamp,
++        markdown: truncate(lines.join('\n'), 60000),
++        requestId: 'ring-' + toolCtx.runId + '-report-docx-' + stamp,
++      }).payload;
++    },
++  };
++}
+diff --git a/src/service/ring-tools/generate-spreadsheet-xlsx.ts b/src/service/ring-tools/generate-spreadsheet-xlsx.ts
+new file mode 100644
+index 0000000..660e8bc
+--- /dev/null
++++ b/src/service/ring-tools/generate-spreadsheet-xlsx.ts
+@@ -0,0 +1,66 @@
++/**
++ * TASK DEV-A-01 (Dev A): generate_spreadsheet_xlsx tool.
++ *
++ * Builds a validated OfficeXlsxInput from small structured args and runs
++ * it through the existing XlsxGeneratorService (no rewrite), then writes
++ * a markdown twin beside it. CONSEQUENTIAL: the registry flag gates the
++ * human approval pause. Emits one artifact.created per file; both land
++ * under `.maos/ring-runs/artifacts/<runId>/`.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { buildOfficeInput, generateOfficeTwin, type RingOfficeSections } from './office';
++import type { RingToolDeps } from './tool-deps';
++
++export function createGenerateSpreadsheetXlsxTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'generate_spreadsheet_xlsx',
++    description:
++      'Generate a validated XLSX workbook plus a markdown twin from structured evidence via the office generator. CONSEQUENTIAL: requires approval; emits artifact.created per file.',
++    parameters: {
++      type: 'object',
++      properties: {
++        title: { type: 'string', description: 'Workbook title.' },
++        summary: { type: 'string', description: 'Model draft summary (rendered as segregated unverified prose).' },
++        sections: { type: 'array', description: 'Sections [{ heading, content }].' },
++        findings: { type: 'array', description: 'Findings [{ statement, severity, metric, observedValue, thresholdValue, unit }].' },
++        measurements: { type: 'array', description: 'Measurements [{ name, numericValue, unit }].' },
++        evidencePaths: { type: 'array', description: 'Evidence-root files to cite (hashed from disk).' },
++      },
++      required: ['title'],
++    },
++    consequential: true,
++    execute: (toolCtx, toolArgs) => {
++      const raw = toolArgs as Record<string, unknown>;
++      let built: ReturnType<typeof buildOfficeInput>;
++      try {
++        built = buildOfficeInput(deps, toolCtx, {
++          title: typeof raw.title === 'string' ? raw.title : '',
++          summary: typeof raw.summary === 'string' ? raw.summary : undefined,
++          sections: (Array.isArray(raw.sections) ? raw.sections : []) as RingOfficeSections['sections'],
++          findings: (Array.isArray(raw.findings) ? raw.findings : []) as RingOfficeSections['findings'],
++          measurements: (Array.isArray(raw.measurements) ? raw.measurements : []) as RingOfficeSections['measurements'],
++          evidencePaths: (Array.isArray(raw.evidencePaths) ? raw.evidencePaths : []) as string[],
++        });
++      } catch (err) {
++        return { ok: false, error: err instanceof Error ? err.message : String(err) };
++      }
++      const lines = ['# ' + built.xlsxInput.title + ' (spreadsheet twin)', '', 'Synthetic demo data. Decision support only; not operating authority.', ''];
++      for (const m of built.xlsxInput.measurements) {
++        lines.push('- ' + m.name + ': ' + String(m.numericValue) + ' ' + m.unit);
++      }
++      const stamp = String(Date.now()).slice(-6);
++      return generateOfficeTwin({
++        deps,
++        toolCtx,
++        toolName: 'generate_spreadsheet_xlsx',
++        kind: 'xlsx',
++        input: built.xlsxInput,
++        fileStem: 'spreadsheet-' + stamp,
++        markdown: truncate(lines.join('\n'), 60000),
++        requestId: 'ring-' + toolCtx.runId + '-spreadsheet-xlsx-' + stamp,
++      }).payload;
++    },
++  };
++}
+diff --git a/src/service/ring-tools/index.ts b/src/service/ring-tools/index.ts
+index 2604cba..5db87e5 100644
+--- a/src/service/ring-tools/index.ts
++++ b/src/service/ring-tools/index.ts
+@@ -1,14 +1,71 @@
+ /**
+- * TASK RING-CONTRACT-01: tool module barrel (Dev C lane).
++ * TASK DEV-A-01 (Dev A): tool module barrel + registry wiring.
+  *
+- * Re-exports the six migrated tool definitions. The registry wiring
+- * (`registry.register(...)` for each) happens in the Dev C lane; the stubs
+- * in this directory are intentionally unregistered until their `execute`
+- * bodies are moved verbatim from `ring-agent-service.ts`.
++ * Registers the six migrated tools (behavior unchanged) plus the Day 2
++ * tools. Registration order is stable: the original six first (provider
++ * prompt stability), then the new tools. Consequential enforcement lives
++ * in the REGISTRY (`isConsequential` is the single approval gate), never
++ * in the model; unknown tools fail closed as consequential.
+  */
+-export { analyzeTelemetryTool } from './telemetry';
+-export { readCompanyDocumentTool } from './read-document';
+-export { searchKnowledgeTool } from './search-knowledge';
+-export { draftSafetyNoteTool } from './draft-note';
+-export { verifyExportTool } from './verify-export';
+-export { requestApprovalTool } from './request-approval';
++
++import { RingToolRegistry } from '../ring-tool-registry';
++import { createAnalyzeTelemetryTool } from './telemetry';
++import { createReadCompanyDocumentTool } from './read-document';
++import { createSearchKnowledgeTool } from './search-knowledge';
++import { createDraftSafetyNoteTool } from './draft-note';
++import { createVerifyExportTool } from './verify-export';
++import { createRequestApprovalTool } from './request-approval';
++import { createUpdatePlanTool } from './update-plan';
++import { createRememberTool } from './remember';
++import { createRecallTool } from './recall';
++import { createOcrDocumentTool } from './ocr-document';
++import { createInspectImageTool } from './inspect-image';
++import { createGenerateReportDocxTool } from './generate-report-docx';
++import { createGenerateSpreadsheetXlsxTool } from './generate-spreadsheet-xlsx';
++import { createWorkOrderTool } from './create-work-order';
++import { createWriteShiftHandoverTool } from './write-shift-handover';
++import type { RingToolDeps } from './tool-deps';
++
++export { createAnalyzeTelemetryTool } from './telemetry';
++export { createReadCompanyDocumentTool } from './read-document';
++export { createSearchKnowledgeTool } from './search-knowledge';
++export { createDraftSafetyNoteTool } from './draft-note';
++export { createVerifyExportTool } from './verify-export';
++export { createRequestApprovalTool } from './request-approval';
++export { createUpdatePlanTool } from './update-plan';
++export { createRememberTool } from './remember';
++export { createRecallTool } from './recall';
++export { createOcrDocumentTool } from './ocr-document';
++export { createInspectImageTool } from './inspect-image';
++export { createGenerateReportDocxTool } from './generate-report-docx';
++export { createGenerateSpreadsheetXlsxTool } from './generate-spreadsheet-xlsx';
++export { createWorkOrderTool } from './create-work-order';
++export { createWriteShiftHandoverTool } from './write-shift-handover';
++export type { RingToolDeps } from './tool-deps';
++
++const FACTORIES = [
++  createAnalyzeTelemetryTool,
++  createReadCompanyDocumentTool,
++  createSearchKnowledgeTool,
++  createDraftSafetyNoteTool,
++  createVerifyExportTool,
++  createRequestApprovalTool,
++  createUpdatePlanTool,
++  createRememberTool,
++  createRecallTool,
++  createOcrDocumentTool,
++  createInspectImageTool,
++  createGenerateReportDocxTool,
++  createGenerateSpreadsheetXlsxTool,
++  createWorkOrderTool,
++  createWriteShiftHandoverTool,
++];
++
++/** Build a registry with all Ring tools registered in stable order. */
++export function createRingToolRegistry(deps: RingToolDeps): RingToolRegistry {
++  const registry = new RingToolRegistry();
++  for (const factory of FACTORIES) {
++    registry.register(factory(deps));
++  }
++  return registry;
++}
+diff --git a/src/service/ring-tools/inspect-image.ts b/src/service/ring-tools/inspect-image.ts
+new file mode 100644
+index 0000000..81c7afc
+--- /dev/null
++++ b/src/service/ring-tools/inspect-image.ts
+@@ -0,0 +1,97 @@
++/**
++ * TASK DEV-A-01 (Dev A): inspect_image tool (VisionService wrapper).
++ *
++ * Analyzes an equipment photo or screenshot under the evidence root via
++ * the existing VisionService (no rewrite). When the vision model runtime
++ * is unavailable (weights absent), returns an honest unavailable result
++ * instead of fabricating observations. Non-consequential (read-only).
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { VlmError } from '../../domain/vision';
++import { resolveEvidencePath } from './common';
++import { auditToolExecution, resolveProjectId, type RingToolDeps } from './tool-deps';
++
++export function createInspectImageTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'inspect_image',
++    description:
++      'Analyze an equipment photo or screenshot under the evidence root via the vision service. Honest unavailable result when the vision model is not installed.',
++    parameters: {
++      type: 'object',
++      properties: {
++        path: { type: 'string', description: 'Image path relative to the evidence root (PNG or JPEG).' },
++        prompt: { type: 'string', description: 'What to look for in the image.' },
++      },
++      required: ['path'],
++    },
++    consequential: false,
++    execute: (toolCtx, toolArgs) => {
++      const requested = typeof toolArgs.path === 'string' ? toolArgs.path : '';
++      let resolved: { abs: string; rel: string };
++      try {
++        resolved = resolveEvidencePath(toolCtx.evidenceRoot, toolCtx.projectRoot, requested);
++      } catch (err) {
++        return { ok: false, error: err instanceof Error ? err.message : String(err) };
++      }
++      const prompt = typeof toolArgs.prompt === 'string' && toolArgs.prompt.trim()
++        ? toolArgs.prompt.trim().slice(0, 1000)
++        : 'Describe visible equipment condition, damage, wear, leaks, or safety concerns.';
++      if (!deps.visionService) {
++        return {
++          ok: true,
++          available: false,
++          answered: false,
++          path: resolved.rel,
++          message: 'Vision inspection is unavailable: no vision service is configured for this run. No observations were fabricated.',
++        };
++      }
++      try {
++        const result = deps.visionService.analyzeImageSync(
++          {
++            schemaVersion: 1,
++            projectId: resolveProjectId(deps),
++            sourcePath: resolved.rel,
++            prompt,
++            taskType: 'general-observation',
++            maxOutputTokens: 500,
++            requestId: 'ring-' + toolCtx.runId,
++          },
++          'ring-agent',
++        );
++        const observations = Array.isArray(result.observations)
++          ? result.observations.slice(0, 10).map((o) => ({
++              observationType: o.observationType,
++              value: truncate(String(o.value), 500),
++              confidence: o.confidence,
++              requiresReview: o.requiresReview,
++            }))
++          : [];
++        auditToolExecution(deps, toolCtx, 'inspect_image', true, { path: resolved.rel });
++        return {
++          ok: true,
++          available: true,
++          path: resolved.rel,
++          observations,
++          observationCount: observations.length,
++          requiresReviewCount: observations.filter((o) => o.requiresReview).length,
++          message: observations.length > 0
++            ? 'Vision inspection returned ' + observations.length + ' observation(s); requiresReview items need a human look.'
++            : 'Vision inspection completed with no observations. No observations were fabricated.',
++        };
++      } catch (err) {
++        if (err instanceof VlmError && String((err as { code?: string }).code) === 'MODEL_RUNTIME_UNAVAILABLE') {
++          return {
++            ok: true,
++            available: false,
++            answered: false,
++            path: resolved.rel,
++            message: 'Vision inspection is unavailable on this machine: ' + err.message + ' No observations were fabricated.',
++          };
++        }
++        return { ok: false, error: 'Vision inspection failed on ' + resolved.rel + ': ' + (err instanceof Error ? err.message : String(err)) };
++      }
++    },
++  };
++}
+diff --git a/src/service/ring-tools/ocr-document.ts b/src/service/ring-tools/ocr-document.ts
+new file mode 100644
+index 0000000..652f7a3
+--- /dev/null
++++ b/src/service/ring-tools/ocr-document.ts
+@@ -0,0 +1,222 @@
++/**
++ * TASK DEV-A-01 (Dev A): ocr_document tool (OcrService wrapper).
++ *
++ * Reads a scanned document or PDF under the evidence root (path checks
++ * reuse the isWithin/isStrictlyWithin pattern) and returns extracted text.
++ * Resolution order (documented, honest):
++ *   1. PDFs: embedded text-layer extraction first (deterministic; the demo
++ *      scan PDF carries a real text layer, so no OCR is needed for it).
++ *   2. Real `OcrService.ocrDocumentSync` for true scans / images.
++ *   3. Honest unavailable/error results when neither works. Nothing is
++ *      fabricated: empty extraction reports that, engine failures surface
++ *      as errors, missing service as unavailable.
++ * Non-consequential (read-only).
++ */
++
++import * as crypto from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
++import { inflateSync } from 'zlib';
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { readEvidenceText, resolveEvidencePath } from './common';
++import { auditToolExecution, type RingToolDeps } from './tool-deps';
++
++const MAX_PDF_BYTES = 10 * 1024 * 1024;
++
++/** Decode PDF string escapes (mirrors kb-ingestion decodePdfString). */
++function decodePdfString(s: string): string {
++  return s
++    .replace(/\\n/g, '\n')
++    .replace(/\\r/g, '\r')
++    .replace(/\\t/g, '\t')
++    .replace(/\\\(/g, '(')
++    .replace(/\\\)/g, ')')
++    .replace(/\\\\/g, '\\');
++}
++function extractPdfTextOperands(btContent: string): string {
++  const parts: string[] = [];
++  const tjPattern = /\(([^)]*)\)\s*(?:Tj|'|")/g;
++  let m: RegExpExecArray | null;
++  while ((m = tjPattern.exec(btContent)) !== null) {
++    parts.push(decodePdfString(m[1]));
++  }
++  const tjArrayPattern = /\[([^\]]*)\]\s*TJ/g;
++  while ((m = tjArrayPattern.exec(btContent)) !== null) {
++    const stringPattern = /\(([^)]*)\)/g;
++    let sm: RegExpExecArray | null;
++    while ((sm = stringPattern.exec(m[1])) !== null) {
++      parts.push(decodePdfString(sm[1]));
++    }
++  }
++  return parts.join('');
++}
++
++/**
++ * Deterministic embedded-text extraction for PDFs (stdlib + zlib only).
++ * Returns null when the file has no usable text layer.
++ */
++function extractPdfTextLayer(abs: string): string | null {
++  const bytes = fs.readFileSync(abs);
++  if (bytes.length < 5 || bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return null;
++  if (bytes.includes(Buffer.from('/Encrypt'))) {
++    throw new Error('OCR_ENCRYPTED: PDF appears to be encrypted; text cannot be extracted without decryption.');
++  }
++  const latin = bytes.toString('latin1');
++  const segments: string[] = [];
++  const streamPattern = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
++  let sm: RegExpExecArray | null;
++  while ((sm = streamPattern.exec(latin)) !== null) {
++    const dictStart = Math.max(0, sm.index - 400);
++    const dict = latin.slice(dictStart, sm.index);
++    const raw = Buffer.from(sm[1], 'latin1');
++    let decoded: string | null = null;
++    if (/\/Fl(ateDecode)?\b/.test(dict)) {
++      try {
++        decoded = inflateSync(raw).toString('latin1');
++      } catch {
++        decoded = null;
++      }
++    } else {
++      decoded = sm[1];
++    }
++    if (decoded) segments.push(decoded);
++  }
++  const textSegments: string[] = [];
++  const textObjectPattern = /BT\s([\s\S]*?)ET/g;
++  for (const seg of segments) {
++    let tm: RegExpExecArray | null;
++    while ((tm = textObjectPattern.exec(seg)) !== null) {
++      const text = extractPdfTextOperands(tm[1]);
++      if (text.trim()) textSegments.push(text);
++    }
++  }
++  // Fallback: raw Tj operands outside BT/ET (minimal synthetic fixtures).
++  if (textSegments.length === 0) {
++    const joined = segments.join('\n');
++    const fallback = extractPdfTextOperands(joined);
++    if (fallback.trim()) textSegments.push(fallback);
++  }
++  const full = textSegments.join('\n').trim();
++  return full ? full : null;
++}
++
++export function createOcrDocumentTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'ocr_document',
++    description:
++      'Extract text from a scanned document or PDF under the evidence root via the OCR service (embedded text layer first, real OCR for true scans). Honest unavailable result when OCR cannot run.',
++    parameters: {
++      type: 'object',
++      properties: {
++        path: { type: 'string', description: 'Document path relative to the evidence root (PDF or image).' },
++      },
++      required: ['path'],
++    },
++    consequential: false,
++    execute: (toolCtx, toolArgs) => {
++      const requested = typeof toolArgs.path === 'string' ? toolArgs.path : '';
++      let resolved: { abs: string; rel: string };
++      try {
++        resolved = resolveEvidencePath(toolCtx.evidenceRoot, toolCtx.projectRoot, requested);
++      } catch (err) {
++        return { ok: false, error: err instanceof Error ? err.message : String(err) };
++      }
++      const ext = path.extname(resolved.abs).toLowerCase();
++      // 1. PDF text layer: deterministic, exact, no engine needed.
++      if (ext === '.pdf') {
++        try {
++          if (fs.statSync(resolved.abs).size <= MAX_PDF_BYTES) {
++            const layered = extractPdfTextLayer(resolved.abs);
++            if (layered) {
++              const fileBytes = fs.readFileSync(resolved.abs);
++              const out = {
++                ok: true,
++                path: resolved.rel,
++                text: truncate(layered, 6000),
++                truncated: layered.length > 6000,
++                pages: 1,
++                method: 'text-layer',
++                source: 'embedded-pdf-text',
++                bytes: fileBytes.length,
++                sha256: crypto.createHash('sha256').update(fileBytes).digest('hex'),
++                disclaimer: 'Text extracted deterministically from the embedded PDF text layer; no OCR engine was needed.',
++              };
++              auditToolExecution(deps, toolCtx, 'ocr_document', true, { path: resolved.rel, method: 'text-layer' });
++              return out;
++            }
++          }
++        } catch (err) {
++          const message = err instanceof Error ? err.message : String(err);
++          if (message.startsWith('OCR_ENCRYPTED')) return { ok: false, error: message };
++          // Otherwise fall through to the real OCR engine.
++        }
++      } else {
++        // Non-PDF evidence text that is directly readable needs no OCR engine.
++        if (['.txt', '.md', '.json'].includes(ext)) {
++          try {
++            const read = readEvidenceText(resolved.abs, resolved.rel);
++            const out = {
++              ok: true,
++              path: resolved.rel,
++              text: truncate(read.text, 6000),
++              truncated: read.text.length > 6000,
++              pages: 1,
++              method: 'plain-text',
++              source: 'evidence-file',
++              bytes: read.bytes,
++              sha256: read.sha256,
++              disclaimer: 'Plain evidence text read directly; no OCR engine was needed.',
++            };
++            auditToolExecution(deps, toolCtx, 'ocr_document', true, { path: resolved.rel, method: 'plain-text' });
++            return out;
++          } catch (err) {
++            return { ok: false, error: err instanceof Error ? err.message : String(err) };
++          }
++        }
++      }
++      // 2. Real OCR engine for true scans / images / layer-less PDFs.
++      if (!deps.ocrService) {
++        return {
++          ok: true,
++          available: false,
++          answered: false,
++          path: resolved.rel,
++          message: 'OCR is unavailable: no OCR service is configured for this run and the document has no directly extractable text. No text was fabricated.',
++        };
++      }
++      try {
++        const doc = deps.ocrService.ocrDocumentSync(resolved.rel);
++        const text = typeof doc.text === 'string' ? doc.text : '';
++        if (!text.trim()) {
++          return {
++            ok: true,
++            available: true,
++            answered: false,
++            path: resolved.rel,
++            totalPages: doc.totalPages,
++            message: 'OCR completed but extracted no text from ' + resolved.rel + '. No text was fabricated.',
++          };
++        }
++        const out = {
++          ok: true,
++          available: true,
++          answered: true,
++          path: resolved.rel,
++          text: truncate(text, 6000),
++          truncated: text.length > 6000,
++          totalPages: doc.totalPages,
++          averageConfidence: doc.averageConfidence,
++          warnings: doc.warnings,
++          method: 'ocr-engine',
++          source: 'ocr-service',
++          disclaimer: 'Text produced by the OCR engine from a scanned document; verify against the source image on camera.',
++        };
++        auditToolExecution(deps, toolCtx, 'ocr_document', true, { path: resolved.rel, method: 'ocr-engine' });
++        return out;
++      } catch (err) {
++        return { ok: false, error: 'OCR engine failed on ' + resolved.rel + ': ' + (err instanceof Error ? err.message : String(err)) };
++      }
++    },
++  };
++}
+diff --git a/src/service/ring-tools/office.ts b/src/service/ring-tools/office.ts
+new file mode 100644
+index 0000000..e7b9172
+--- /dev/null
++++ b/src/service/ring-tools/office.ts
+@@ -0,0 +1,375 @@
++/**
++ * TASK DEV-A-01 (Dev A): shared office-artifact builder for Ring tools.
++ *
++ * Maps small structured tool args onto the validated OfficeDocxInput /
++ * OfficeXlsxInput contracts. Citations are never invented: every citation
++ * is hashed from the evidence file on disk by the tool itself, CSV bodies
++ * are never embedded (mirroring the read_company_document refusal), and
++ * model-supplied prose lands in segregated unverified prose blocks.
++ * The Ring registry approval gate (not the model) authorizes generation;
++ * the generator's approval block records the real human approval id.
++ */
++
++import * as crypto from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
++import type {
++  OfficeCitation,
++  OfficeDocxInput,
++  OfficeFinding,
++  OfficeMeasurement,
++  OfficeReportSection,
++  OfficeXlsxInput,
++} from '../../domain/office-artifact';
++import type { RingArtifactDescriptor } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { readEvidenceText, resolveEvidencePath, saveRunArtifact, snippetForCitation } from './common';
++import { auditToolExecution, resolveProjectId, type RingToolDeps } from './tool-deps';
++
++export interface RingOfficeSections {
++  title: string;
++  summary?: string;
++  sections?: Array<{ heading: string; content?: string }>;
++  findings?: Array<{
++    statement: string;
++    severity?: string;
++    metric?: string;
++    observedValue?: string | number;
++    thresholdValue?: string | number;
++    unit?: string;
++  }>;
++  measurements?: Array<{ name: string; numericValue: number; unit: string }>;
++  evidencePaths?: string[];
++  tables?: Array<{ title?: string; columns?: string[]; rows: Array<Array<string | number | boolean | null>> }>;
++}
++
++export interface RingRunApprovalRef {
++  approvalId: string;
++  decidedAt: string;
++}
++
++export interface RingTelemetryRef {
++  verdict?: string;
++  overallVibrationRms?: number;
++  rowsAnalyzed?: number;
++  csvRel?: string;
++}
++
++function failFast(message: string): never {
++  throw new Error(message);
++}
++
++function asRecord(value: unknown): Record<string, unknown> {
++  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
++}
++
++/** Reject titles/headings the office validator would refuse (fail fast). */
++export function sanitizeOfficeText(value: string, field: string, maxLen: number): string {
++  const text = typeof value === 'string' ? value.trim() : '';
++  if (!text) failFast('OFFICE_' + field.toUpperCase() + '_REQUIRED: a non-empty ' + field + ' is required.');
++  if (text.length > maxLen) failFast('OFFICE_' + field.toUpperCase() + '_TOO_LONG: ' + field + ' exceeds ' + maxLen + ' characters.');
++  if (/^[=+\-@\t\r]/.test(text)) {
++    failFast('OFFICE_FORMULA_INJECTION: ' + field + ' must not start with a formula character.');
++  }
++  return text;
++}
++
++function readApprovalRef(runContext: unknown): RingRunApprovalRef {
++  const ref = asRecord(runContext).__lastApproval;
++  const rec = asRecord(ref);
++  if (typeof rec.approvalId !== 'string' || !rec.approvalId) {
++    failFast('OFFICE_APPROVAL_REQUIRED: no recorded human approval for this generation; the approval gate must resolve first.');
++  }
++  return { approvalId: rec.approvalId, decidedAt: typeof rec.decidedAt === 'string' ? rec.decidedAt : new Date().toISOString() };
++}
++
++function readTelemetryRef(runContext: unknown): RingTelemetryRef | undefined {
++  const tel = asRecord(asRecord(runContext).__telemetry);
++  if (!tel || typeof tel.verdict !== 'string') return undefined;
++  return {
++    verdict: tel.verdict,
++    overallVibrationRms: typeof tel.overallVibrationRms === 'number' ? tel.overallVibrationRms : undefined,
++    rowsAnalyzed: typeof tel.rowsAnalyzed === 'number' ? tel.rowsAnalyzed : undefined,
++    csvRel: typeof tel.csvRel === 'string' ? tel.csvRel : undefined,
++  };
++}
++
++function containsMacroOrUrl(text: string): boolean {
++  const lower = text.toLowerCase();
++  return (
++    lower.includes('vba') || lower.includes('vbscript') || lower.includes('powershell') ||
++    lower.includes('cmd.exe') || lower.includes('http://') || lower.includes('https://')
++  );
++}
++
++interface BuiltCitations {
++  citations: OfficeCitation[];
++  evidenceLines: string[];
++}
++
++/** Hash cited evidence files from disk; CSV bodies are never embedded. */
++function buildCitations(
++  evidenceRoot: string,
++  projectRoot: string,
++  evidencePaths: string[] | undefined,
++  telemetry: RingTelemetryRef | undefined,
++): BuiltCitations {
++  const citations: OfficeCitation[] = [];
++  const evidenceLines: string[] = [];
++  const seen = new Set<string>();
++  let n = 0;
++  const addCitation = (rel: string, snippet: string, sourceArtifactId?: string) => {
++    if (seen.has(rel)) return 'cit-' + String([...seen].indexOf(rel) + 1).padStart(3, '0');
++    n += 1;
++    const id = 'cit-' + String(n).padStart(3, '0');
++    const abs = path.resolve(projectRoot, rel);
++    const hash = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
++    citations.push({
++      citationId: id,
++      sourceArtifactId,
++      sourcePath: rel,
++      sourceHash: hash,
++      snippet: snippetForCitation(snippet),
++      verifiedAt: new Date().toISOString(),
++    });
++    seen.add(rel);
++    return id;
++  };
++  if (telemetry && telemetry.csvRel) {
++    const csvAbs = path.resolve(projectRoot, telemetry.csvRel);
++    if (fs.existsSync(csvAbs)) {
++      const parts = ['Deterministic telemetry summary: verdict=' + String(telemetry.verdict)];
++      if (typeof telemetry.overallVibrationRms === 'number') parts.push('overallVibrationRms=' + String(telemetry.overallVibrationRms) + ' mm/s');
++      if (typeof telemetry.rowsAnalyzed === 'number') parts.push('rowsAnalyzed=' + String(telemetry.rowsAnalyzed));
++      parts.push('(raw CSV rows are never embedded; see the evidence file for full detail)');
++      const id = addCitation(telemetry.csvRel, parts.join('; '), 'telemetry-csv');
++      void id;
++      evidenceLines.push('Telemetry verdict ' + String(telemetry.verdict) + ' from ' + telemetry.csvRel + '.');
++    }
++  }
++  for (const requested of evidencePaths || []) {
++    if (typeof requested !== 'string' || !requested.trim()) continue;
++    const resolved = resolveEvidencePath(evidenceRoot, projectRoot, requested);
++    const read = readEvidenceText(resolved.abs, resolved.rel);
++    const snippet = read.refusedCsv
++      ? 'CSV content is not returned raw. Deterministic telemetry summary only.'
++      : read.text;
++    addCitation(resolved.rel, snippet || '(empty file)', undefined);
++    evidenceLines.push('Cited ' + resolved.rel + ' (' + read.bytes + ' bytes).');
++  }
++  return { citations, evidenceLines };
++}
++
++export interface BuiltOfficeInput {
++  docxInput: OfficeDocxInput;
++  xlsxInput: OfficeXlsxInput;
++  approvalId: string;
++}
++
++/**
++ * Build deterministic docx/xlsx inputs from small structured args.
++ * Model-supplied prose is segregated as unverified; measurements and
++ * findings cite tool-hashed evidence. Throws honest errors for bad input.
++ */
++export function buildOfficeInput(
++  deps: RingToolDeps,
++  toolCtx: { projectRoot: string; evidenceRoot: string; runId: string; runContext: unknown },
++  args: RingOfficeSections,
++): BuiltOfficeInput {
++  const title = sanitizeOfficeText(args.title || '', 'title', 256);
++  const approval = readApprovalRef(toolCtx.runContext);
++  const telemetry = readTelemetryRef(toolCtx.runContext);
++  const evidencePaths = Array.isArray(args.evidencePaths) ? args.evidencePaths.filter((p) => typeof p === 'string').slice(0, 20) : [];
++  const { citations, evidenceLines } = buildCitations(toolCtx.evidenceRoot, toolCtx.projectRoot, evidencePaths, telemetry);
++  const firstCitation = citations[0]?.citationId;
++
++  const measurements: OfficeMeasurement[] = [];
++  for (const m of args.measurements || []) {
++    const rec = asRecord(m);
++    if (typeof rec.name !== 'string' || !rec.name.trim()) continue;
++    if (typeof rec.numericValue !== 'number' || !Number.isFinite(rec.numericValue)) {
++      failFast('OFFICE_MEASUREMENT_INVALID: measurement numericValue must be a finite number.');
++    }
++    if (typeof rec.unit !== 'string' || !rec.unit.trim()) {
++      failFast('OFFICE_MEASUREMENT_UNIT: measurement unit is required.');
++    }
++    if (!firstCitation) failFast('OFFICE_MEASUREMENT_CITATION: measurements require at least one cited evidence file.');
++    measurements.push({ id: 'meas-' + (measurements.length + 1), name: rec.name.trim().slice(0, 120), numericValue: rec.numericValue, unit: rec.unit.trim().slice(0, 40), status: 'unverified', citationIds: [firstCitation] });
++  }
++
++  const findings: OfficeFinding[] = [];
++  for (const f of args.findings || []) {
++    const rec = asRecord(f);
++    if (typeof rec.statement !== 'string' || !rec.statement.trim()) continue;
++    const statement = rec.statement.trim().slice(0, 2000);
++    if (containsMacroOrUrl(statement)) failFast('OFFICE_FINDING_UNSAFE: finding statement contains a forbidden macro or URL pattern.');
++    const sev = typeof rec.severity === 'string' ? rec.severity.trim().toLowerCase() : 'info';
++    if (!firstCitation) failFast('OFFICE_FINDING_CITATION: findings require at least one cited evidence file.');
++    findings.push({
++      id: 'find-' + (findings.length + 1),
++      category: 'observation',
++      statement,
++      severity: sev === 'critical' ? 'critical' : sev === 'warning' ? 'warning' : 'info',
++      status: 'WARNING',
++      metric: typeof rec.metric === 'string' ? rec.metric.slice(0, 120) : undefined,
++      observedValue: typeof rec.observedValue === 'string' || typeof rec.observedValue === 'number' ? rec.observedValue : undefined,
++      thresholdValue: typeof rec.thresholdValue === 'string' || typeof rec.thresholdValue === 'number' ? rec.thresholdValue : undefined,
++      unit: typeof rec.unit === 'string' && rec.unit.trim() ? rec.unit.trim().slice(0, 40) : undefined,
++      citationIds: [firstCitation],
++      verified: false,
++    });
++  }
++
++  const sections: OfficeReportSection[] = [];
++  const evidenceContent = evidenceLines.length > 0 ? evidenceLines.join('\n') : 'No evidence files were cited for this artifact.';
++  sections.push({
++    id: 'sec-evidence',
++    heading: 'Evidence summary',
++    content: truncate(evidenceContent, 4000),
++    order: 1,
++    findingIds: findings.map((f) => f.id),
++    citationIds: citations.map((c) => c.citationId),
++  });
++  let order = 2;
++  for (const s of args.sections || []) {
++    const rec = asRecord(s);
++    if (typeof rec.heading !== 'string' || !rec.heading.trim()) continue;
++    const heading = sanitizeOfficeText(rec.heading, 'section heading', 256);
++    const content = typeof rec.content === 'string' ? rec.content.slice(0, 65536) : '';
++    if (content && containsMacroOrUrl(content)) failFast('OFFICE_SECTION_UNSAFE: section content contains a forbidden macro or URL pattern.');
++    sections.push({ id: 'sec-' + order, heading, content, order });
++    order += 1;
++  }
++
++  const units = [...new Set([...measurements.map((m) => m.unit), ...findings.map((f) => f.unit).filter((u): u is string => Boolean(u))])].slice(0, 50);
++  const projectId = resolveProjectId(deps);
++  const generatedAt = new Date().toISOString();
++  const base = {
++    schemaVersion: 1 as const,
++    projectId,
++    runId: toolCtx.runId,
++    title,
++    author: { id: 'ring-agent', name: 'MAOS Ring Agent', role: 'decision-support' },
++    sections,
++    findings,
++    measurements,
++    units,
++    calculations: [],
++    warnings: [],
++    limitations: ['Synthetic demo data. Decision support only; not operating authority. Human review required before action.'],
++    citations,
++    sourceArtifactIds: [] as string[],
++    sourceHashes: {} as Record<string, string>,
++    references: [],
++    evidenceState: {
++      hasUnresolvedConflicts: false,
++      isQuarantined: false,
++      reviewedByHuman: true,
++      reviewerId: 'human-operator',
++      reviewerNotes: 'Ring run ' + toolCtx.runId + ' generation approved by human via approval ' + approval.approvalId + '.',
++    },
++    generatedAt,
++    approval: {
++      required: false,
++      status: 'approved' as const,
++      approvalId: approval.approvalId,
++      approvedBy: 'human-operator',
++      approvedAt: approval.decidedAt,
++    },
++    proseBlocks: [],
++    conclusions: [],
++  };
++  const summary = typeof args.summary === 'string' ? args.summary.trim().slice(0, 4000) : '';
++  const proseBlocks = summary
++    ? [{ id: 'prose-1', label: 'Model draft summary (unverified)', text: summary, isModelGenerated: true, verifiedAgainstData: false, approvedByReviewer: false }]
++    : [];
++  return {
++    docxInput: { ...base, artifactType: 'docx' as const, proseBlocks },
++    xlsxInput: { ...base, artifactType: 'xlsx' as const, proseBlocks },
++    approvalId: approval.approvalId,
++  };
++}
++
++export interface OfficeTwinResult {
++  /** Tool result payload (before the service strips __ringEvents). */
++  payload: Record<string, unknown>;
++}
++
++interface GeneratorLike {
++  generateDocx?: (params: Record<string, unknown>) => { ok: boolean; relativePath?: string; artifactHash?: string; bytesWritten?: number; message?: string; error?: string };
++  generateXlsx?: (params: Record<string, unknown>) => { ok: boolean; relativePath?: string; artifactHash?: string; bytesWritten?: number; message?: string; error?: string };
++}
++
++/**
++ * Run the office generator, then write the markdown twin beside it.
++ * Returns the tool payload with an __ringEvents envelope (one
++ * artifact.created per file). The service records the events and strips
++ * the envelope before the model sees the result.
++ */
++export function generateOfficeTwin(options: {
++  deps: RingToolDeps;
++  toolCtx: { projectRoot: string; runId: string };
++  toolName: string;
++  kind: 'docx' | 'xlsx';
++  input: OfficeDocxInput | OfficeXlsxInput;
++  fileStem: string;
++  markdown: string;
++  requestId: string;
++}): OfficeTwinResult {
++  const { deps, toolCtx, toolName, kind, input, fileStem, markdown, requestId } = options;
++  const generator = (kind === 'docx' ? deps.docxGenerator : deps.xlsxGenerator) as unknown as GeneratorLike | undefined;
++  const serviceName = kind === 'docx' ? 'DOCX' : 'XLSX';
++  if (!generator || (kind === 'docx' ? !generator.generateDocx : !generator.generateXlsx)) {
++    return {
++      payload: {
++        ok: true,
++        available: false,
++        message: serviceName + ' generation is unavailable: no ' + serviceName.toLowerCase() + ' generator service is configured for this run. Nothing was written.',
++      },
++    };
++  }
++  const safeStem = fileStem.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'artifact';
++  const outputRelPath = '.maos/ring-runs/artifacts/' + toolCtx.runId + '/' + safeStem + '.' + kind;
++  const params: Record<string, unknown> = {
++    schemaVersion: 1,
++    projectId: input.projectId,
++    input,
++    outputPath: outputRelPath,
++    requestId,
++  };
++  let genResult: { ok: boolean; relativePath?: string; artifactHash?: string; bytesWritten?: number; message?: string; error?: string };
++  try {
++    genResult = kind === 'docx' ? generator.generateDocx!(params) : generator.generateXlsx!(params);
++  } catch (err) {
++    return { payload: { ok: false, error: serviceName + ' generation failed: ' + (err instanceof Error ? err.message : String(err)) } };
++  }
++  if (!genResult || genResult.ok !== true || !genResult.relativePath) {
++    return { payload: { ok: false, error: serviceName + ' generation failed: ' + String(genResult?.error || genResult?.message || 'unknown error') } };
++  }
++  const abs = path.resolve(toolCtx.projectRoot, genResult.relativePath);
++  let size = typeof genResult.bytesWritten === 'number' ? genResult.bytesWritten : 0;
++  let sha256 = typeof genResult.artifactHash === 'string' ? genResult.artifactHash : '';
++  try {
++    const buf = fs.readFileSync(abs);
++    size = buf.length;
++    sha256 = crypto.createHash('sha256').update(buf).digest('hex');
++  } catch {
++    /* keep generator-reported values */
++  }
++  const officeDescriptor: RingArtifactDescriptor = { path: genResult.relativePath, kind, size, sha256 };
++  const mdDescriptor = saveRunArtifact(toolCtx.projectRoot, toolCtx.runId, safeStem + '.md', markdown, 'markdown');
++  auditToolExecution(deps, toolCtx, toolName, true, { artifacts: [officeDescriptor.path, mdDescriptor.path] });
++  return {
++    payload: {
++      ok: true,
++      primaryPath: officeDescriptor.path,
++      artifacts: [officeDescriptor, mdDescriptor],
++      title: input.title,
++      approvalId: input.approval.approvalId,
++      __ringEvents: [
++        { type: 'artifact.created', artifact: { path: officeDescriptor.path, kind: officeDescriptor.kind, size: officeDescriptor.size, sha256: officeDescriptor.sha256 } },
++        { type: 'artifact.created', artifact: { path: mdDescriptor.path, kind: mdDescriptor.kind, size: mdDescriptor.size, sha256: mdDescriptor.sha256 } },
++      ],
++    },
++  };
++}
+diff --git a/src/service/ring-tools/read-document.ts b/src/service/ring-tools/read-document.ts
+index 21bef7b..04a3c7d 100644
+--- a/src/service/ring-tools/read-document.ts
++++ b/src/service/ring-tools/read-document.ts
+@@ -1,30 +1,71 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev C stub): read_company_document tool module.
++ * TASK DEV-A-01 (Dev A): read_company_document tool module.
+  *
+- * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolReadCompanyDocument`):
+- * same input (`path` relative to the run evidence root), same
++ * Migrated verbatim from `RingAgentService.toolReadCompanyDocument`: same
++ * input (`path` relative to the run evidence root), same
+  * isWithin/isStrictlyWithin + realpath checks, same 256 KB limit, same CSV
+- * refusal text, same truncate(content, 6000) output shape with bytes.
+- *
+- * Dev C implements `execute` by moving the method body verbatim; this stub
+- * is intentionally unregistered until then.
++ * refusal text, same truncate(content, 6000) output shape.
+  */
+ 
++import * as crypto from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
+ import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { isStrictlyWithin, isWithin } from './common';
++import type { RingToolDeps } from './tool-deps';
+ 
+-export const readCompanyDocumentTool: RingToolDefinition = {
+-  name: 'read_company_document',
+-  description:
+-    'Read a text company document located under the project evidence root. Paths outside the evidence root are refused.',
+-  parameters: {
+-    type: 'object',
+-    properties: {
+-      path: { type: 'string', description: 'Document path relative to the evidence root (or project-relative inside it).' },
++export function createReadCompanyDocumentTool(_deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'read_company_document',
++    description:
++      'Read a text company document located under the project evidence root. Paths outside the evidence root are refused.',
++    parameters: {
++      type: 'object',
++      properties: {
++        path: { type: 'string', description: 'Document path relative to the evidence root (or project-relative inside it).' },
++      },
++      required: ['path'],
++    },
++    consequential: false,
++    execute: (ctx, args) => {
++      const requested = typeof args.path === 'string' ? (args.path as string).trim() : '';
++      if (!requested) throw new Error('read_company_document requires a non-empty path.');
++      const evidenceRoot = ctx.evidenceRoot;
++      const evidenceRelToProject = path.relative(ctx.projectRoot, evidenceRoot);
++      let candidate: string;
++      if (path.isAbsolute(requested)) candidate = path.resolve(requested);
++      else if (
++        evidenceRelToProject &&
++        (requested === evidenceRelToProject.split(path.sep).join('/') ||
++          requested.startsWith(`${evidenceRelToProject.split(path.sep).join('/')}/`))
++      )
++        candidate = path.resolve(ctx.projectRoot, requested);
++      else candidate = path.resolve(evidenceRoot, requested);
++      if (!isWithin(evidenceRoot, candidate) || candidate === evidenceRoot) {
++        throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
++      }
++      if (!fs.existsSync(candidate)) throw new Error(`Company document not found under the evidence root: ${requested}`);
++      const realRoot = fs.realpathSync(evidenceRoot);
++      const realCandidate = fs.realpathSync(candidate);
++      if (!isStrictlyWithin(realRoot, realCandidate)) {
++        throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
++      }
++      const stat = fs.statSync(realCandidate);
++      if (!stat.isFile()) throw new Error(`Company document is not a file: ${requested}`);
++      if (stat.size > 256 * 1024) throw new Error(`Company document exceeds the 256 KB read limit: ${requested}`);
++      const rel = path.relative(ctx.projectRoot, realCandidate).split(path.sep).join('/');
++      if (path.extname(realCandidate).toLowerCase() === '.csv') {
++        const bytes = fs.readFileSync(realCandidate);
++        return {
++          path: rel,
++          bytes: stat.size,
++          sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
++          content: 'CSV content is not returned raw. Use analyze_telemetry for the deterministic telemetry summary.',
++        };
++      }
++      const content = fs.readFileSync(realCandidate, 'utf-8');
++      return { path: rel, bytes: stat.size, content: truncate(content, 6000), truncated: content.length > 6000 };
+     },
+-    required: ['path'],
+-  },
+-  consequential: false,
+-  execute: () => {
+-    throw new Error('RING_TOOL_NOT_MIGRATED: read_company_document still executes in ring-agent-service; Dev C migrates it.');
+-  },
+-};
++  };
++}
+diff --git a/src/service/ring-tools/recall.ts b/src/service/ring-tools/recall.ts
+new file mode 100644
+index 0000000..f7e51b7
+--- /dev/null
++++ b/src/service/ring-tools/recall.ts
+@@ -0,0 +1,52 @@
++/**
++ * TASK DEV-A-01 (Dev A): recall tool (MemoryService wrapper).
++ *
++ * Searches stored equipment notes and preferences by substring via the
++ * existing MemoryService (no rewrite). Returns short summaries only.
++ * Non-consequential. Honest unavailable result when no memory service
++ * is configured.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { auditToolExecution, type RingToolDeps } from './tool-deps';
++
++export function createRecallTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'recall',
++    description:
++      'Search stored equipment notes and preferences from prior turns. Returns short summaries; never fabricates notes.',
++    parameters: {
++      type: 'object',
++      properties: {
++        query: { type: 'string', description: 'Substring to search for in stored notes.' },
++        topK: { type: 'number', description: 'Max notes to return (1..10, default 5).' },
++      },
++      required: ['query'],
++    },
++    consequential: false,
++    execute: (toolCtx, toolArgs) => {
++      if (!deps.memoryService) {
++        return { ok: true, available: false, answered: false, results: [], message: 'Memory is unavailable: no memory service is configured for this run. No notes were fabricated.' };
++      }
++      const query = typeof toolArgs.query === 'string' ? toolArgs.query.trim() : '';
++      if (!query) return { ok: false, error: 'recall requires a non-empty query.' };
++      const topK = typeof toolArgs.topK === 'number' ? Math.min(Math.max(1, Math.floor(toolArgs.topK)), 10) : 5;
++      const matches = deps.memoryService.search(query).slice(0, topK);
++      const results = matches.map((m) => ({
++        noteId: m.id,
++        summary: truncate(m.content, 300),
++        type: m.type,
++        tags: m.tags,
++      }));
++      auditToolExecution(deps, toolCtx, 'recall', true, { query: truncate(query, 200), matches: results.length });
++      return {
++        ok: true,
++        available: true,
++        query: truncate(query, 200),
++        results,
++        message: results.length > 0 ? 'Recalled ' + results.length + ' stored note(s).' : 'No stored notes matched the query. No notes were fabricated.',
++      };
++    },
++  };
++}
+diff --git a/src/service/ring-tools/remember.ts b/src/service/ring-tools/remember.ts
+new file mode 100644
+index 0000000..bd6107c
+--- /dev/null
++++ b/src/service/ring-tools/remember.ts
+@@ -0,0 +1,63 @@
++/**
++ * TASK DEV-A-01 (Dev A): remember tool (MemoryService wrapper).
++ *
++ * Stores an equipment note or user preference for future turns via the
++ * existing MemoryService (no rewrite; additive `share()` passthrough).
++ * Records a `memory.saved` streaming event carrying the stored note id
++ * and summary. Non-consequential.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { auditToolExecution, type RingToolDeps } from './tool-deps';
++
++const VALID_TYPES = ['DISCOVERY', 'DECISION', 'WARNING', 'FILE_MAP'] as const;
++
++export function createRememberTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'remember',
++    description:
++      'Store an equipment note or user preference for future turns via the shared team memory. Returns the stored note id and summary.',
++    parameters: {
++      type: 'object',
++      properties: {
++        content: { type: 'string', description: 'Note text (1..2000 chars). Equipment facts, user preferences, follow-up context.' },
++        type: { type: 'string', description: 'One of DISCOVERY, DECISION, WARNING, FILE_MAP. Defaults to DISCOVERY.' },
++        tags: { type: 'array', items: { type: 'string' }, description: 'Searchable tags, e.g. ["T-07", "vibration"].' },
++      },
++      required: ['content'],
++    },
++    consequential: false,
++    execute: (toolCtx, toolArgs) => {
++      if (!deps.memoryService) {
++        return { ok: true, available: false, message: 'Memory is unavailable: no memory service is configured for this run. Nothing was stored.' };
++      }
++      const content = typeof toolArgs.content === 'string' ? toolArgs.content.trim() : '';
++      if (!content) return { ok: false, error: 'remember requires non-empty content.' };
++      if (content.length > 2000) return { ok: false, error: 'remember content exceeds the 2000-character limit.' };
++      const rawType = typeof toolArgs.type === 'string' ? toolArgs.type.trim().toUpperCase() : 'DISCOVERY';
++      const type = (VALID_TYPES as readonly string[]).includes(rawType) ? (rawType as (typeof VALID_TYPES)[number]) : 'DISCOVERY';
++      const tags = Array.isArray(toolArgs.tags)
++        ? (toolArgs.tags as unknown[]).filter((t): t is string => typeof t === 'string' && t.trim().length > 0).slice(0, 10).map((t) => t.trim())
++        : [];
++      const entry = deps.memoryService.share({
++        agentId: 'ring-agent',
++        taskId: toolCtx.runId,
++        type,
++        content,
++        tags,
++        confidence: 1,
++      });
++      const summary = truncate(content, 200);
++      auditToolExecution(deps, toolCtx, 'remember', true, { noteId: entry.id });
++      return {
++        ok: true,
++        noteId: entry.id,
++        summary,
++        // Service-side envelope: recorded as memory.saved, stripped before
++        // the result reaches the model.
++        __ringEvents: [{ type: 'memory.saved', memory: { noteId: entry.id, summary } }],
++      };
++    },
++  };
++}
+diff --git a/src/service/ring-tools/request-approval.ts b/src/service/ring-tools/request-approval.ts
+index 31b5fe9..7307bf2 100644
+--- a/src/service/ring-tools/request-approval.ts
++++ b/src/service/ring-tools/request-approval.ts
+@@ -1,29 +1,35 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev C stub): request_approval tool module.
++ * TASK DEV-A-01 (Dev A): request_approval tool module.
+  *
+- * MIGRATION CONTRACT (behavior unchanged from the `request_approval` branch
+- * of `RingAgentService.executeTool`): same input (`summary` + `reason`),
+- * same `{ ok: true, approved: true, message }` result after the human grants
++ * Migrated verbatim from the request_approval branch of
++ * RingAgentService.executeTool: same input (summary + reason), same
++ * `{ ok: true, approved: true, message }` result after the human grants
+  * approval. CONSEQUENTIAL: the registry flag (not the model) gates the
+- * approval pause.
+- *
+- * Dev C implements `execute` by moving the branch body verbatim; this stub
+- * is intentionally unregistered until then.
++ * approval pause; this body only runs after the pause resolves approved.
+  */
+ 
+ import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import type { RingToolDeps } from './tool-deps';
+ 
+-export const requestApprovalTool: RingToolDefinition = {
+-  name: 'request_approval',
+-  description:
+-    'Ask a human to approve a proposed consequential action. Pauses the run until the approval is resolved.',
+-  parameters: {
+-    type: 'object',
+-    properties: { summary: { type: 'string' }, reason: { type: 'string' } },
+-    required: ['summary'],
+-  },
+-  consequential: true,
+-  execute: () => {
+-    throw new Error('RING_TOOL_NOT_MIGRATED: request_approval still executes in ring-agent-service; Dev C migrates it.');
+-  },
+-};
++export function createRequestApprovalTool(_deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'request_approval',
++    description:
++      'Ask a human to approve a proposed consequential action. Pauses the run until the approval is resolved.',
++    parameters: {
++      type: 'object',
++      properties: { summary: { type: 'string' }, reason: { type: 'string' } },
++      required: ['summary'],
++    },
++    consequential: true,
++    execute: (_toolCtx, toolArgs) => {
++      return {
++        ok: true,
++        approved: true,
++        message: 'Human approval was granted for the proposed action.',
++        summary: typeof toolArgs.summary === 'string' ? truncate(toolArgs.summary, 300) : undefined,
++      };
++    },
++  };
++}
+diff --git a/src/service/ring-tools/search-knowledge.ts b/src/service/ring-tools/search-knowledge.ts
+index 017e815..44e57b6 100644
+--- a/src/service/ring-tools/search-knowledge.ts
++++ b/src/service/ring-tools/search-knowledge.ts
+@@ -1,28 +1,82 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev C stub): search_knowledge tool module.
++ * TASK DEV-A-01 (Dev A): search_knowledge tool module.
+  *
+- * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolSearchKnowledge`):
+- * same input (`query` required, `topK` clamped 1..10), same unavailable /
+- * no-answer honest results (never fabricates), same citation projection
+- * (documentId, sourcePath, score, snippet truncated to 300 chars).
+- *
+- * Dev C implements `execute` by moving the method body verbatim; this stub
+- * is intentionally unregistered until then.
++ * Migrated verbatim from RingAgentService.toolSearchKnowledge: same input
++ * (query required, topK clamped 1..10), same unavailable/no-answer honest
++ * results (never fabricates), same citation projection (documentId,
++ * sourcePath, score, snippet truncated to 300 chars).
+  */
+ 
+ import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { resolveProjectId, type RingToolDeps } from './tool-deps';
+ 
+-export const searchKnowledgeTool: RingToolDefinition = {
+-  name: 'search_knowledge',
+-  description:
+-    'Search indexed company knowledge if an index is available. Returns an honest unavailable/no-answer result when no index exists; never fabricates results.',
+-  parameters: {
+-    type: 'object',
+-    properties: { query: { type: 'string' }, topK: { type: 'number' } },
+-    required: ['query'],
+-  },
+-  consequential: false,
+-  execute: () => {
+-    throw new Error('RING_TOOL_NOT_MIGRATED: search_knowledge still executes in ring-agent-service; Dev C migrates it.');
+-  },
+-};
++export function createSearchKnowledgeTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'search_knowledge',
++    description:
++      'Search indexed company knowledge if an index is available. Returns an honest unavailable/no-answer result when no index exists; never fabricates results.',
++    parameters: {
++      type: 'object',
++      properties: { query: { type: 'string' }, topK: { type: 'number' } },
++      required: ['query'],
++    },
++    consequential: false,
++    execute: async (toolCtx, toolArgs) => {
++      const query = typeof toolArgs.query === 'string' ? toolArgs.query.trim() : '';
++      if (!query) return { ok: false, error: 'search_knowledge requires a non-empty query.' };
++      if (!deps.kbSearch || (!deps.kbSearch.searchSync && !deps.kbSearch.search)) {
++        return {
++          ok: true,
++          available: false,
++          answered: false,
++          query: truncate(query, 200),
++          results: [],
++          message: 'Knowledge search is unavailable: no indexed company knowledge search is configured for this run. No results were fabricated.',
++        };
++      }
++      try {
++        const projectId = resolveProjectId(deps);
++        const topK = typeof toolArgs.topK === 'number' ? Math.min(Math.max(1, Math.floor(toolArgs.topK)), 10) : 5;
++        const input: Record<string, unknown> = { schemaVersion: 1, projectId, query, topK };
++        const raw = deps.kbSearch.searchSync ? deps.kbSearch.searchSync(input) : await deps.kbSearch.search!(input);
++        const result = raw as Record<string, unknown>;
++        if (result && result.answered === true && Array.isArray(result.citations)) {
++          return {
++            ok: true,
++            available: true,
++            answered: true,
++            query: truncate(query, 200),
++            totalMatches: result.totalMatches,
++            results: (result.citations as Array<Record<string, unknown>>).slice(0, 5).map((c) => ({
++              documentId: c.documentId,
++              sourcePath: c.sourcePath,
++              score: c.score,
++              snippet: typeof c.snippet === 'string' ? truncate(c.snippet, 300) : undefined,
++            })),
++            message: 'Knowledge search returned indexed citations.',
++          };
++        }
++        const reason = typeof result?.reason === 'string' ? result.reason : 'NO_ANSWER';
++        const details = typeof result?.details === 'string' ? result.details : 'No indexed answer was returned.';
++        return {
++          ok: true,
++          available: true,
++          answered: false,
++          query: truncate(query, 200),
++          results: [],
++          message: 'Knowledge search returned no answer (' + reason + '): ' + details + ' No results were fabricated.',
++        };
++      } catch (err) {
++        return {
++          ok: true,
++          available: false,
++          answered: false,
++          query: truncate(query, 200),
++          results: [],
++          message: 'Knowledge search is unavailable: ' + (err instanceof Error ? err.message : String(err)) + ' No results were fabricated.',
++        };
++      }
++    },
++  };
++}
+diff --git a/src/service/ring-tools/telemetry.ts b/src/service/ring-tools/telemetry.ts
+index 736a87b..40856ba 100644
+--- a/src/service/ring-tools/telemetry.ts
++++ b/src/service/ring-tools/telemetry.ts
+@@ -1,33 +1,73 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev C stub): analyze_telemetry tool module.
++ * TASK DEV-A-01 (Dev A): analyze_telemetry tool module.
+  *
+- * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolAnalyzeTelemetry`):
+- * same input (project-relative CSV path or run context default), same
+- * telemetry-analysis code path, same output fields (verdict,
+- * overallVibrationRms, peakVibration, peakTemperature, rowsAnalyzed,
+- * warningCount, criticalCount, findings[0..20], source, disclaimer).
+- * Path checks reuse the `isStrictlyWithin(projectRoot)` pattern.
+- * Results are truncated via the shared `truncate()` pattern only at the
+- * presentation layer, never here.
+- *
+- * Dev C implements `execute` by moving the method body verbatim; this stub
+- * is intentionally unregistered until then.
++ * Migrated verbatim from `RingAgentService.toolAnalyzeTelemetry`: same
++ * input (project-relative CSV path or run context default), same
++ * telemetry-analysis code path, same output fields. Path checks reuse the
++ * `isStrictlyWithin(projectRoot)` pattern. `ctx.runContext.csvPath` carries
++ * the run's configured default, exactly as `run.context.csvPath` did.
+  */
+ 
++import * as fs from 'fs';
++import * as path from 'path';
+ import type { RingToolDefinition } from '../ring-contract';
++import { analyzeTelemetryCsv, loadTelemetryDemoThresholds } from '../../industrial/telemetry-analysis';
++import { isStrictlyWithin } from './common';
++import type { RingToolDeps } from './tool-deps';
+ 
+-export const analyzeTelemetryTool: RingToolDefinition = {
+-  name: 'analyze_telemetry',
+-  description:
+-    'Run the deterministic telemetry analysis on the bundled turbine vibration sample or a project-relative CSV path. Returns verdict, RMS and threshold breaches only; never raw CSV rows.',
+-  parameters: {
+-    type: 'object',
+-    properties: {
+-      csvPath: { type: 'string', description: 'Optional project-root-relative CSV path. Defaults to the bundled sample.' },
++export function createAnalyzeTelemetryTool(_deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'analyze_telemetry',
++    description:
++      'Run the deterministic telemetry analysis on the bundled turbine vibration sample or a project-relative CSV path. Returns verdict, RMS and threshold breaches only; never raw CSV rows.',
++    parameters: {
++      type: 'object',
++      properties: {
++        csvPath: { type: 'string', description: 'Optional project-root-relative CSV path. Defaults to the bundled sample.' },
++      },
++    },
++    consequential: false,
++    execute: (ctx, args) => {
++      const runCsvPath = (ctx.runContext as Record<string, unknown> | undefined)?.csvPath;
++      const requested =
++        (typeof args.csvPath === 'string' && (args.csvPath as string).trim()) ||
++        (typeof runCsvPath === 'string' && runCsvPath.trim()) ||
++        'demo/industrial/turbine_vibration_log.csv';
++      let resolved: string;
++      if (path.isAbsolute(requested)) {
++        resolved = path.resolve(requested);
++        if (!isStrictlyWithin(ctx.projectRoot, resolved)) {
++          throw new Error(`PATH_OUTSIDE_PROJECT_ROOT: telemetry CSV path is outside the project root: ${requested}`);
++        }
++      } else {
++        resolved = path.resolve(ctx.projectRoot, requested);
++        if (!isStrictlyWithin(ctx.projectRoot, resolved)) {
++          throw new Error(`PATH_OUTSIDE_PROJECT_ROOT: telemetry CSV path is outside the project root: ${requested}`);
++        }
++      }
++      if (!fs.existsSync(resolved)) throw new Error(`Telemetry CSV not found: ${requested}`);
++      const thresholds = loadTelemetryDemoThresholds(ctx.projectRoot);
++      const metrics = analyzeTelemetryCsv(fs.readFileSync(resolved), thresholds);
++      return {
++        verdict: metrics.verdict,
++        overallVibrationRms: Number(metrics.overallVibrationRms.toFixed(3)),
++        peakVibration: Number(metrics.peakVibration.toFixed(3)),
++        peakTemperature: Number(metrics.peakTemperature.toFixed(1)),
++        rowsAnalyzed: metrics.rowsAnalyzed,
++        warningCount: metrics.warningCount,
++        criticalCount: metrics.criticalCount,
++        findings: metrics.findings.slice(0, 20).map((f) => ({
++          row: f.row,
++          timestamp: f.timestamp,
++          field: f.field,
++          value: f.value,
++          threshold: f.threshold,
++          unit: f.unit,
++          severity: f.severity,
++        })),
++        source: path.relative(ctx.projectRoot, resolved).split(path.sep).join('/'),
++        disclaimer: 'Deterministic summary only; raw telemetry rows were not sent to the model.',
++      };
+     },
+-  },
+-  consequential: false,
+-  execute: () => {
+-    throw new Error('RING_TOOL_NOT_MIGRATED: analyze_telemetry still executes in ring-agent-service; Dev C migrates it.');
+-  },
+-};
++  };
++}
+diff --git a/src/service/ring-tools/tool-deps.ts b/src/service/ring-tools/tool-deps.ts
+new file mode 100644
+index 0000000..a631a36
+--- /dev/null
++++ b/src/service/ring-tools/tool-deps.ts
+@@ -0,0 +1,63 @@
++/**
++ * TASK DEV-A-01 (Dev A): shared dependency surface for Ring tools.
++ *
++ * Tools are pure `(ctx, args)` functions over the frozen `RingToolContext`
++ * (`{ projectRoot, evidenceRoot, runId, runContext }`). Anything beyond
++ * that surface (service handles, project id) arrives through this deps
++ * object, closed over by each tool factory in `index.ts`. No frozen file
++ * is touched.
++ */
++
++import type { AuditService } from '../audit-service';
++import type { DocxGeneratorService } from '../docx-generator-service';
++import type { XlsxGeneratorService } from '../xlsx-generator-service';
++import type { MemoryService } from '../memory-service';
++import type { OcrService } from '../ocr-service';
++import type { VisionService } from '../vision-service';
++import type { RingKbSearchLike } from '../ring-agent-service';
++
++export interface RingToolDeps {
++  auditService?: AuditService;
++  kbSearch?: RingKbSearchLike;
++  ocrService?: OcrService;
++  visionService?: VisionService;
++  docxGenerator?: DocxGeneratorService;
++  xlsxGenerator?: XlsxGeneratorService;
++  memoryService?: MemoryService;
++  /** Resolves the project id for office inputs; defaults to 'default'. */
++  getProjectId?: () => string;
++}
++
++export function resolveProjectId(deps: RingToolDeps): string {
++  try {
++    const id = deps.getProjectId?.();
++    if (typeof id === 'string' && id.trim()) return id.trim();
++  } catch {
++    /* fall through to default */
++  }
++  return 'default';
++}
++
++/**
++ * Best-effort audit for a tool execution. Audit must never break a tool:
++ * every failure is swallowed. Mirrors the existing ring pattern
++ * (`RING_APPROVAL_RESOLVED` is recorded try/catch in ring-agent-service).
++ */
++export function auditToolExecution(
++  deps: RingToolDeps,
++  ctx: { runId: string },
++  toolName: string,
++  ok: boolean,
++  extra?: Record<string, unknown>,
++): void {
++  if (!deps.auditService) return;
++  try {
++    deps.auditService.recordAuditEvent({
++      category: 'tool',
++      source: 'ring-agent',
++      data: { event: 'RING_TOOL_EXECUTED', runId: ctx.runId, toolName, ok, ...(extra || {}) },
++    });
++  } catch {
++    /* audit must not break tool execution */
++  }
++}
+diff --git a/src/service/ring-tools/update-plan.ts b/src/service/ring-tools/update-plan.ts
+new file mode 100644
+index 0000000..5c313af
+--- /dev/null
++++ b/src/service/ring-tools/update-plan.ts
+@@ -0,0 +1,77 @@
++/**
++ * TASK DEV-A-01 (Dev A): update_plan tool.
++ *
++ * The model publishes and ticks its visible to-do list. Each call records
++ * a `plan.updated` streaming event carrying the ordered steps; the wire
++ * validator passes the steps through verbatim. Non-consequential (it only
++ * writes to the run transcript, never to disk or the outside world).
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { auditToolExecution, type RingToolDeps } from './tool-deps';
++
++export type RingPlanStatus = 'pending' | 'in_progress' | 'done';
++
++export interface RingPlanUpdateStep {
++  step: string;
++  status: RingPlanStatus;
++}
++
++const VALID_STATUSES: readonly string[] = ['pending', 'in_progress', 'done'];
++
++function isValidStep(value: unknown): value is RingPlanUpdateStep {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
++  const s = value as Record<string, unknown>;
++  return (
++    typeof s.step === 'string' &&
++    s.step.trim().length > 0 &&
++    s.step.length <= 200 &&
++    typeof s.status === 'string' &&
++    (VALID_STATUSES as string[]).includes(s.status)
++  );
++}
++
++export function createUpdatePlanTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'update_plan',
++    description:
++      'Publish or tick the visible to-do list for this run. Emits a plan.updated event with the ordered steps. Non-consequential.',
++    parameters: {
++      type: 'object',
++      properties: {
++        plan: {
++          type: 'array',
++          description: 'Ordered to-do steps, each { step, status: pending|in_progress|done }.',
++          items: {
++            type: 'object',
++            properties: { step: { type: 'string' }, status: { type: 'string' } },
++            required: ['step', 'status'],
++          },
++        },
++      },
++      required: ['plan'],
++    },
++    consequential: false,
++    execute: (toolCtx, toolArgs) => {
++      const raw = (toolArgs as Record<string, unknown>).plan;
++      if (!Array.isArray(raw) || raw.length === 0 || raw.length > 20) {
++        return { ok: false, error: 'update_plan requires a plan array of 1..20 steps.' };
++      }
++      if (!raw.every(isValidStep)) {
++        return { ok: false, error: 'update_plan steps must be { step: non-empty string (<=200 chars), status: pending|in_progress|done }.' };
++      }
++      const plan: RingPlanUpdateStep[] = raw.map((s) => ({
++        step: (s.step as string).trim(),
++        status: s.status as RingPlanStatus,
++      }));
++      auditToolExecution(deps, toolCtx, 'update_plan', true, { steps: plan.length });
++      return {
++        ok: true,
++        steps: plan.length,
++        // Service-side envelope: recorded as plan.updated, stripped before
++        // the result reaches the model.
++        __ringEvents: [{ type: 'plan.updated', plan }],
++      };
++    },
++  };
++}
+diff --git a/src/service/ring-tools/verify-export.ts b/src/service/ring-tools/verify-export.ts
+index 97cf47f..4776105 100644
+--- a/src/service/ring-tools/verify-export.ts
++++ b/src/service/ring-tools/verify-export.ts
+@@ -1,27 +1,79 @@
+ /**
+- * TASK RING-CONTRACT-01 (Dev C stub): verify_export tool module.
++ * TASK DEV-A-01 (Dev A): verify_export tool module.
+  *
+- * MIGRATION CONTRACT (behavior unchanged from `RingAgentService.toolVerifyExport`):
+- * same input (optional `exportPath`), same isStrictlyWithin check, same
++ * Migrated verbatim from RingAgentService.toolVerifyExport: same input
++ * (optional exportPath), same isStrictlyWithin check, same
+  * audit-service.verifyChainRecords code path, same honest unavailable
+  * results when no audit service is configured.
+- *
+- * Dev C implements `execute` by moving the method body verbatim; this stub
+- * is intentionally unregistered until then.
+  */
+ 
++import * as fs from 'fs';
++import * as path from 'path';
+ import type { RingToolDefinition } from '../ring-contract';
++import { isStrictlyWithin } from './common';
++import type { RingToolDeps } from './tool-deps';
+ 
+-export const verifyExportTool: RingToolDefinition = {
+-  name: 'verify_export',
+-  description:
+-    'Verify an audit export (or the live audit trail) using the real audit chain verification code path.',
+-  parameters: {
+-    type: 'object',
+-    properties: { exportPath: { type: 'string', description: 'Optional project-relative audit export JSON path.' } },
+-  },
+-  consequential: false,
+-  execute: () => {
+-    throw new Error('RING_TOOL_NOT_MIGRATED: verify_export still executes in ring-agent-service; Dev C migrates it.');
+-  },
+-};
++export function createVerifyExportTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'verify_export',
++    description:
++      'Verify an audit export (or the live audit trail) using the real audit chain verification code path.',
++    parameters: {
++      type: 'object',
++      properties: { exportPath: { type: 'string', description: 'Optional project-relative audit export JSON path.' } },
++    },
++    consequential: false,
++    execute: (toolCtx, toolArgs) => {
++      const runExportPath = (toolCtx.runContext as Record<string, unknown> | undefined)?.exportPath;
++      const requested =
++        (typeof toolArgs.exportPath === 'string' && toolArgs.exportPath.trim()) ||
++        (typeof runExportPath === 'string' && runExportPath.trim()) ||
++        '';
++      if (requested) {
++        const resolved = path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(toolCtx.projectRoot, requested);
++        if (!isStrictlyWithin(toolCtx.projectRoot, resolved)) {
++          throw new Error('PATH_OUTSIDE_PROJECT_ROOT: audit export path is outside the project root: ' + requested);
++        }
++        if (!fs.existsSync(resolved)) {
++          return { ok: true, valid: false, exportPath: requested, recordCount: 0, errors: ['Audit export file not found: ' + requested], message: 'Audit export verification failed: file not found (' + requested + ').' };
++        }
++        if (!deps.auditService) {
++          return { ok: true, available: false, valid: false, exportPath: requested, message: 'Audit verification unavailable: no audit service is configured for this run. No verification was fabricated.' };
++        }
++        const parsed = JSON.parse(fs.readFileSync(resolved, 'utf-8'));
++        const records = Array.isArray(parsed) ? parsed : (parsed as Record<string, unknown>)?.records;
++        if (!Array.isArray(records)) {
++          return { ok: true, valid: false, exportPath: requested, recordCount: 0, errors: ['Audit export does not contain a records array.'], message: 'Audit export verification failed: no records array.' };
++        }
++        const verification = deps.auditService.verifyChainRecords(records as never);
++        return {
++          ok: true,
++          valid: verification.valid,
++          method: 'audit-service.verifyChainRecords',
++          exportPath: path.relative(toolCtx.projectRoot, resolved).split(path.sep).join('/'),
++          recordCount: verification.recordCount,
++          latestHash: verification.latestHash,
++          errors: verification.errors,
++          message: verification.valid
++            ? 'Audit export verified (' + verification.recordCount + ' records).'
++            : 'Audit export verification failed: ' + verification.errors.join('; '),
++        };
++      }
++      if (!deps.auditService) {
++        return { ok: true, available: false, valid: false, message: 'Audit verification unavailable: no export path was provided and no audit service is configured. No verification was fabricated.' };
++      }
++      const exported = deps.auditService.exportAuditTrail();
++      return {
++        ok: true,
++        valid: exported.verification.valid,
++        method: 'audit-service.exportAuditTrail',
++        recordCount: exported.verification.recordCount,
++        latestHash: exported.verification.latestHash,
++        errors: exported.verification.errors,
++        message: exported.verification.valid
++          ? 'Live audit trail verified (' + exported.verification.recordCount + ' records).'
++          : 'Live audit trail verification returned valid=' + String(exported.verification.valid) + ': ' + exported.verification.errors.join('; '),
++      };
++    },
++  };
++}
+diff --git a/src/service/ring-tools/write-shift-handover.ts b/src/service/ring-tools/write-shift-handover.ts
+new file mode 100644
+index 0000000..d937530
+--- /dev/null
++++ b/src/service/ring-tools/write-shift-handover.ts
+@@ -0,0 +1,87 @@
++/**
++ * TASK DEV-A-01 (Dev A): write_shift_handover tool.
++ *
++ * Builds a structured shift handover note (outgoing/incoming shifts, open
++ * items, watch-outs) as a validated DOCX plus a markdown twin via the
++ * shared office builder. CONSEQUENTIAL: the registry flag gates the human
++ * approval pause. Emits one artifact.created per file; both land under
++ * `.maos/ring-runs/artifacts/<runId>/`.
++ */
++
++import type { RingToolDefinition } from '../ring-contract';
++import { truncate } from '../ring-tool-registry';
++import { buildOfficeInput, generateOfficeTwin } from './office';
++import type { RingToolDeps } from './tool-deps';
++
++export function createWriteShiftHandoverTool(deps: RingToolDeps): RingToolDefinition {
++  return {
++    name: 'write_shift_handover',
++    description:
++      'Write a structured shift handover note (shifts, open items, watch-outs) as DOCX plus markdown. CONSEQUENTIAL: requires approval; emits artifact.created per file.',
++    parameters: {
++      type: 'object',
++      properties: {
++        title: { type: 'string', description: 'Handover title.' },
++        outgoingShift: { type: 'string', description: 'Outgoing shift label.' },
++        incomingShift: { type: 'string', description: 'Incoming shift label.' },
++        openItems: { type: 'array', description: 'Open items for the next shift.' },
++        watchOuts: { type: 'array', description: 'Watch-outs and cautions.' },
++        evidencePaths: { type: 'array', description: 'Evidence-root files to cite (hashed from disk).' },
++      },
++      required: ['title'],
++    },
++    consequential: true,
++    execute: (toolCtx, toolArgs) => {
++      const raw = toolArgs as Record<string, unknown>;
++      const pick = (v: unknown): string => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 500) : '');
++      const list = (v: unknown): string[] =>
++        Array.isArray(v) ? (v as unknown[]).filter((a): a is string => typeof a === 'string' && a.trim().length > 0).slice(0, 20).map((a) => a.trim()) : [];
++      const outgoing = pick(raw.outgoingShift) || 'Day shift';
++      const incoming = pick(raw.incomingShift) || 'Night shift';
++      const openItems = list(raw.openItems);
++      const watchOuts = list(raw.watchOuts);
++      const evidencePaths = list(raw.evidencePaths);
++      let built: ReturnType<typeof buildOfficeInput>;
++      try {
++        built = buildOfficeInput(deps, toolCtx, {
++          title: typeof raw.title === 'string' ? raw.title : '',
++          sections: [
++            { heading: 'Outgoing shift', content: outgoing },
++            { heading: 'Incoming shift', content: incoming },
++            { heading: 'Open items', content: openItems.length > 0 ? openItems.map((a, i) => String(i + 1) + '. ' + a).join('\n') : 'None recorded.' },
++            { heading: 'Watch-outs', content: watchOuts.length > 0 ? watchOuts.map((a, i) => String(i + 1) + '. ' + a).join('\n') : 'None recorded.' },
++          ],
++          evidencePaths,
++        });
++      } catch (err) {
++        return { ok: false, error: err instanceof Error ? err.message : String(err) };
++      }
++      const md = [
++        '# Shift handover: ' + built.docxInput.title,
++        '',
++        'Outgoing: ' + outgoing + '  |  Incoming: ' + incoming,
++        '',
++        '## Open items',
++        '',
++        openItems.length > 0 ? openItems.map((a, i) => String(i + 1) + '. ' + a).join('\n') : 'None recorded.',
++        '',
++        '## Watch-outs',
++        '',
++        watchOuts.length > 0 ? watchOuts.map((a, i) => String(i + 1) + '. ' + a).join('\n') : 'None recorded.',
++        '',
++        'Synthetic demo data. Decision support only; not operating authority.',
++      ].join('\n');
++      const stamp = String(Date.now()).slice(-6);
++      return generateOfficeTwin({
++        deps,
++        toolCtx,
++        toolName: 'write_shift_handover',
++        kind: 'docx',
++        input: built.docxInput,
++        fileStem: 'handover-' + stamp,
++        markdown: truncate(md, 60000),
++        requestId: 'ring-' + toolCtx.runId + '-handover-' + stamp,
++      }).payload;
++    },
++  };
++}
+diff --git a/tests/gui/ring-workspace.test.ts b/tests/gui/ring-workspace.test.ts
+index 1b2d7cc..44bc0bd 100644
+--- a/tests/gui/ring-workspace.test.ts
++++ b/tests/gui/ring-workspace.test.ts
+@@ -348,6 +348,45 @@ describe('ring approval cards', () => {
+   });
+ });
+ 
++describe('ring threads (Dev A lane)', () => {
++  it('thread UI: new thread button posts to the thread routes and scopes runs', async () => {
++    const threadCalls: Array<{ title?: string }> = [];
++    const messageCalls: Array<{ threadId: string; instruction: string }> = [];
++    const { client } = makeClient([HOSTED_RUNNING]);
++    const threadClient: RingRunClient = {
++      ...client,
++      createThread: async (input) => { threadCalls.push(input); return { threadId: 'thread-1' }; },
++      getThread: async (threadId) => ({ threadId, title: 'T-07 review', role: 'operator', createdAt: '2026-11-02T00:00:00Z', runs: [] }),
++      postThreadMessage: async (threadId, instruction) => { messageCalls.push({ threadId, instruction }); return { runId: 'run-1' }; },
++    };
++    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: threadClient, pollIntervalMs: 60000 });
++    try {
++      expect(view.container.querySelector('[data-testid="ring-thread-bar"]')).toBeTruthy();
++      await act(async () => { view.container.querySelector<HTMLButtonElement>('[data-testid="ring-new-thread-button"]')!.click(); await new Promise((r) => setTimeout(r, 0)); });
++      expect(threadCalls.length).toBe(1);
++      expect(view.container.querySelector('[data-testid="ring-active-thread"]')?.textContent).toContain('thread-1');
++      await sendInstruction(view.container, 'Brief me on T-07');
++      expect(messageCalls).toEqual([{ threadId: 'thread-1', instruction: 'Brief me on T-07' }]);
++    } finally {
++      view.unmount();
++    }
++  });
++
++  it('without thread methods the thread bar stays hidden and runs stay unthreaded', async () => {
++    const { client, calls } = makeClient([HOSTED_RUNNING]);
++    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: client, pollIntervalMs: 60000 });
++    try {
++      expect(view.container.querySelector('[data-testid="ring-thread-bar"]')).toBeNull();
++      const analyst = view.container.querySelector<HTMLButtonElement>('[data-testid="ring-agent-ANALYST_AGENT"]');
++      await act(async () => analyst!.click());
++      await sendInstruction(view.container, 'Check turbine 7');
++      expect(calls.starts).toEqual([{ instruction: 'Check turbine 7', agentId: 'ANALYST_AGENT' }]);
++    } finally {
++      view.unmount();
++    }
++  });
++});
++
+ describe('ring evidence-only honesty', () => {
+   it('shows the evidence-only banner and no fake model text appears', async () => {
+     const { client } = makeClient([EVIDENCE_ONLY_DONE]);
+diff --git a/tests/industrial/ring-dev-a.test.ts b/tests/industrial/ring-dev-a.test.ts
+new file mode 100644
+index 0000000..a5d6541
+--- /dev/null
++++ b/tests/industrial/ring-dev-a.test.ts
+@@ -0,0 +1,275 @@
++/**
++ * TASK DEV-A-01 (Dev A): brain lane tests.
++ *
++ * Evidence-only unless a loopback-mock provider is injected (no hosted
++ * endpoint, no BASETEN_API_KEY, no live calls):
++ *  1. threads persist under .maos/ring-runs/threads/ and carry
++ *     conversation across runs; a restarted service instance rebuilds
++ *     thread + transcript state from disk.
++ *  2. streaming: tool/plan/artifact/memory events fan out live via
++ *     onStreamEvent in both modes; no model.delta is fabricated.
++ *  3. registry: six migrated tools behave unchanged through the
++ *     registry (unknown tools fail closed as consequential).
++ *  4. Day 2 tools wrap existing services: ocr text-layer, vision
++ *     honest-unavailable, remember/recall round-trip, update_plan.
++ *  5. demo path: brief T-07 -> work order -> approval -> DOCX artifact,
++ *     evidence-only AND hosted(loopback-mock).
++ *  6. refusal: restart-approval / safety-certification requests are
++ *     refused with no tools and no files.
++ *  7. context fix: telemetry summary only when the question needs it.
++ */
++import { describe, expect, it, beforeEach, afterEach } from 'vitest';
++import * as fs from 'fs';
++import * as os from 'os';
++import * as path from 'path';
++import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL } from '../../src/backends/meta-api-policy';
++import type { IProvider, ProviderResponse } from '../../src/backends/provider';
++import { AuditService } from '../../src/service/audit-service';
++import { AuditService } from '../../src/service/audit-service';
++import { seedEngineFixture } from './ring-dev-audit-proxy.test';
++import { MemoryService } from '../../src/service/memory-service';
++import { RingAgentService } from '../../src/service/ring-agent-service';
++import { RingThreadService } from '../../src/service/ring-thread-service';
++import { RingToolRegistry } from '../../src/service/ring-tool-registry';
++import { validateRingRunState } from '../../src/gui/src/api/ring-run-types';
++
++function makeTempRoot(): string {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-dev-a-'));
++  fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++  fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
++  const repoRoot = path.resolve(__dirname, '../..');
++  for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv', 'turbine_inspection_scan.pdf']) {
++    fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root, 'demo', 'industrial', f));
++  }
++  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-dev-a-test', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true }, providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } }, agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }] }));
++  return root;
++}
++
++function mockProvider(responses: ProviderResponse[]): IProvider {
++  let call = 0;
++  return {
++    name: 'fake-baseten-loopback',
++    model: BASETEN_API_MODEL,
++    generate: async () => responses[Math.min(call++, responses.length - 1)],
++  };
++}
++
++function providerResponse(content: string | null, toolCalls?: ProviderResponse['toolCalls']): ProviderResponse {
++  return { content, toolCalls: toolCalls ?? [], usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, model: BASETEN_API_MODEL, latencyMs: 1, finishReason: toolCalls?.length ? 'tool_calls' : 'stop' };
++}
++
++const toolCall = (id: string, name: string, args: Record<string, unknown>) => ({ id, type: 'function' as const, function: { name, arguments: JSON.stringify(args) } });
++
++describe('TASK DEV-A-01: Ring brain', () => {
++  let root: string;
++  beforeEach(() => { root = makeTempRoot(); });
++  afterEach(() => { delete process.env[BASETEN_API_KEY_ENV]; try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ } });
++
++  it('threads persist and carry conversation; restart rebuilds from disk', async () => {
++    delete process.env[BASETEN_API_KEY_ENV];
++    const threads = new RingThreadService(root);
++    const thread = threads.createThread('T-07 review', 'operator');
++    expect(thread.threadId).toMatch(/^thread-[0-9]+-[0-9a-f]{8}$/);
++    expect(fs.existsSync(path.join(root, '.maos', 'ring-runs', 'threads', thread.threadId + '.json'))).toBe(true);
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const runId1 = service.startRun('Analyze turbine vibration telemetry and give the verdict', { threadId: thread.threadId });
++    const snap1 = await service.waitForCompletion(runId1);
++    expect(snap1.status).toBe('completed');
++    expect(snap1.finalAnswer).toContain('CRITICAL');
++    // second run in the same thread carries the prior verdict
++    const runId2 = service.startRun('Summarize where we stand', { threadId: thread.threadId });
++    await service.waitForCompletion(runId2);
++    // RESTART: brand-new service + thread service on the same root
++    const freshThreads = new RingThreadService(root);
++    const reloaded = freshThreads.getThread(thread.threadId);
++    expect(reloaded?.runs).toEqual([runId1, runId2]);
++    const freshService = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const history = freshService.getTranscript(runId1);
++    expect(history.some((e) => e.type === 'run.started')).toBe(true);
++    expect(history.some((e) => e.type === 'run.completed')).toBe(true);
++    // thread with unknown id fails closed
++    try { service.startRun('hi', { threadId: 'thread-123-nope' }); expect.unreachable('unknown thread must fail closed'); } catch (err) { expect((err as { code?: string }).code).toBe('RING_THREAD_NOT_FOUND'); }
++  });
++
++  it('streaming fans out tool and plan/memory events live; nothing is faked', async () => {
++    delete process.env[BASETEN_API_KEY_ENV];
++    const memory = new MemoryService(root);
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), memoryService: memory });
++    const seen: Array<{ type: string }> = [];
++    const off = service.onStreamEvent((_runId, event) => { seen.push({ type: event.type }); });
++    const runId = service.startRun('Analyze turbine vibration telemetry, remember that T-07 is critical, and update the plan');
++    const snap = await service.waitForCompletion(runId);
++    off();
++    expect(snap.status).toBe('completed');
++    const types = seen.map((e) => e.type);
++    expect(types).toContain('run.started');
++    expect(types).toContain('tool.call');
++    expect(types).toContain('tool.result');
++    expect(types).toContain('run.completed');
++    // evidence-only never fabricates model token deltas or model turns
++    expect(types.includes('model.delta')).toBe(false);
++    expect(types.includes('model.turn')).toBe(false);
++    // snapshot validates through the real UI validator
++    expect(validateRingRunState(snap as unknown).status).toBe('completed');
++  });
++
++  it('hosted loopback-mock streams tool calls live with zero network', async () => {
++    const provider = mockProvider([
++      providerResponse('Checking telemetry.', [toolCall('call_tel_1', 'analyze_telemetry', {})]),
++      providerResponse('Telemetry is CRITICAL at 2.637 mm/s.', []),
++    ]);
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
++    const seen: string[] = [];
++    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); });
++    const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
++    const snap = await service.waitForCompletion(runId);
++    off();
++    expect(snap.status).toBe('completed');
++    expect(snap.mode).toBe('hosted');
++    expect(snap.finalAnswer).toContain('CRITICAL');
++    expect(seen).toContain('model.turn');
++    expect(seen).toContain('tool.call');
++    expect(seen).toContain('tool.result');
++    // no token streaming exists on the provider contract, so no model.delta
++    expect(seen.includes('model.delta')).toBe(false);
++    expect(validateRingRunState(snap as unknown).status).toBe('completed');
++  });
++
++  it('registry dispatches the six migrated tools unchanged; unknowns fail closed', async () => {
++    const registry = new RingToolRegistry();
++    const { createRingToolRegistry } = await import('../../src/service/ring-tools');
++    const full = createRingToolRegistry({});
++    for (const name of ['analyze_telemetry', 'read_company_document', 'search_knowledge', 'draft_safety_note', 'verify_export', 'request_approval']) {
++      const def = full.get(name);
++      expect(def, name + ' registered').toBeTruthy();
++      registry.register(def!);
++    }
++    expect(registry.isConsequential('analyze_telemetry')).toBe(false);
++    expect(registry.isConsequential('draft_safety_note')).toBe(true);
++    expect(registry.isConsequential('request_approval')).toBe(true);
++    expect(registry.isConsequential('create_work_order')).toBe(true);
++    expect(registry.isConsequential('no_such_tool')).toBe(true);
++    // migrated analyze_telemetry keeps its deterministic output shape
++    const out = await registry.execute('analyze_telemetry', { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} }, {});
++    expect(out.verdict).toBe('CRITICAL');
++    expect(out.overallVibrationRms).toBe(2.637);
++    expect(typeof out.source).toBe('string');
++    // read_company_document still refuses paths outside the evidence root
++    const refused = await registry.execute('read_company_document', { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} }, { path: '../maos.config.json' });
++    expect(refused.ok).toBe(false);
++    expect(String(refused.error)).toContain('PATH_OUTSIDE_EVIDENCE_ROOT');
++  });
++
++  it('ocr reads the demo scan text layer; vision is honestly unavailable; memory round-trips', async () => {
++    delete process.env[BASETEN_API_KEY_ENV];
++    const memory = new MemoryService(root);
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), memoryService: memory });
++    const runId = service.startRun('Read the turbine inspection scan PDF, remember that bearing clearance is 0.050 mm, then recall T-07 notes');
++    const snap = await service.waitForCompletion(runId);
++    expect(snap.status).toBe('completed');
++    const ocr = snap.transcript.find((e) => e.type === 'tool.result' && e.toolName === 'ocr_document');
++    expect(ocr?.ok).toBe(true);
++    expect(String(ocr?.summary)).toContain('TURBINE INSPECTION LOG');
++    expect(String(snap.finalAnswer)).toContain('TURBINE INSPECTION LOG');
++    // vision with no weights: honest unavailable, never fabricated
++    const { createRingToolRegistry } = await import('../../src/service/ring-tools');
++    const registry = createRingToolRegistry({});
++    const seen = await registry.execute('inspect_image', { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} }, { path: 'turbine_inspection_scan.pdf' });
++    expect(seen.ok).toBe(true);
++    expect(seen.available).toBe(false);
++    expect(JSON.stringify(seen).toLowerCase()).not.toContain('bearing wear');
++  });
++
++  it('demo path evidence-only: brief T-07, work order, approval, DOCX artifact', async () => {
++    const haveEngine = seedEngineFixture(root);
++    delete process.env[BASETEN_API_KEY_ENV];
++    const { createServiceContainer } = await import('../../src/service');
++    const services = createServiceContainer(root);
++    const audit = new AuditService(root);
++    const service = new RingAgentService({ projectRoot: root, auditService: audit, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
++    const seen: string[] = [];
++    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); });
++    const runId = service.startRun('Brief me on T-07 then raise a work order for the vibration finding');
++    const awaiting = await service.waitForRun(runId, 30000);
++    expect(awaiting.status).toBe('awaiting_approval');
++    expect(awaiting.pendingApproval?.toolName).toBe('create_work_order');
++    service.resolveApproval(runId, awaiting.pendingApproval!.approvalId, 'approved');
++    const done = await service.waitForCompletion(runId, 30000);
++    off();
++    expect(done.status).toBe('completed');
++    expect(seen).toContain('approval.pending');
++    expect(seen).toContain('approval.resolved');
++    if (haveEngine) {
++      expect(seen).toContain('artifact.created');
++      const created = done.transcript.filter((e) => e.type === 'artifact.created');
++      expect(created.length).toBeGreaterThan(0);
++      const docx = done.events.find((e) => e.type === 'artifact.created' && e.artifact?.kind === 'docx');
++      expect(docx?.artifact?.path).toBeTruthy();
++      const abs = path.resolve(root, docx!.artifact!.path);
++      expect(fs.existsSync(abs)).toBe(true);
++      expect(fs.statSync(abs).size).toBeGreaterThan(500);
++    } else {
++      const wo = done.transcript.find((e) => e.type === 'tool.result' && e.toolName === 'create_work_order');
++      expect(wo?.ok).toBe(false);
++      expect(String(wo?.error)).toContain('Engine executable not found');
++      expect(String(done.finalAnswer)).toContain('Engine executable not found');
++    }
++    expect(validateRingRunState(done as unknown).status).toBe('completed');
++  });
++
++  it('demo path hosted loopback-mock: brief, work order, approval, DOCX', async () => {
++    const provider = mockProvider([
++      providerResponse('Telemetry checked.', [toolCall('call_brief_1', 'analyze_telemetry', {})]),
++      providerResponse('Raising the work order.', [toolCall('call_wo_1', 'create_work_order', { title: 'T-07 work order', assetId: 'T-07', finding: 'Turbine T-07 CRITICAL vibration requires inspection.', priority: 'urgent', evidencePaths: ['turbine_vibration_log.csv'] })]),
++      providerResponse('Work order created and approved.', []),
++    ]);
++    const { createServiceContainer } = await import('../../src/service');
++    const services = createServiceContainer(root);
++    const haveEngineHosted = seedEngineFixture(root);
++    const auditHosted = new AuditService(root);
++    const service = new RingAgentService({ projectRoot: root, auditService: auditHosted, providerFactory: () => provider, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
++    const runId = service.startRun('Brief me on T-07 then raise a work order for the vibration finding');
++    const awaiting = await service.waitForRun(runId, 30000);
++    expect(awaiting.status).toBe('awaiting_approval');
++    expect(awaiting.pendingApproval?.toolName).toBe('create_work_order');
++    service.resolveApproval(runId, awaiting.pendingApproval!.approvalId, 'approved');
++    const done = await service.waitForCompletion(runId, 30000);
++    expect(done.status).toBe('completed');
++    if (haveEngineHosted) {
++      const docx = done.events.find((e) => e.type === 'artifact.created' && e.artifact?.kind === 'docx');
++      expect(docx?.artifact?.path).toBeTruthy();
++      expect(fs.existsSync(path.resolve(root, docx!.artifact!.path))).toBe(true);
++    } else {
++      const wo = done.transcript.find((e) => e.type === 'tool.result' && e.toolName === 'create_work_order');
++      expect(wo?.ok).toBe(false);
++      expect(String(wo?.error)).toContain('Engine executable not found');
++    }
++    expect(validateRingRunState(done as unknown).status).toBe('completed');
++  });
++
++  it('refuses equipment restart approval and safety certification with no side effects', async () => {
++    delete process.env[BASETEN_API_KEY_ENV];
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const runId = service.startRun('Approve restarting turbine T-07 and certify it safe to operate');
++    const snap = await service.waitForCompletion(runId);
++    expect(snap.status).toBe('completed');
++    expect(String(snap.finalAnswer).toLowerCase()).toContain('cannot');
++    expect(snap.transcript.some((e) => e.type === 'tool.call')).toBe(false);
++    expect(snap.transcript.some((e) => e.type === 'approval.pending')).toBe(false);
++    const artifactsDir = path.join(root, '.maos', 'ring-runs', 'artifacts', runId);
++    expect(fs.existsSync(artifactsDir)).toBe(false);
++  });
++
++  it('telemetry summary only rides along when the question needs it', async () => {
++    const bodies: Array<Record<string, unknown>> = [];
++    const provider: IProvider = { name: 'fake-baseten-loopback', model: BASETEN_API_MODEL, generate: async (messages) => { bodies.push({ messages }); return providerResponse('Safety note drafted.', []); } };
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
++    const runId = service.startRun('Draft a safety note about shift handover');
++    const snap = await service.waitForCompletion(runId);
++    expect(snap.status).toBe('completed');
++    const bodyText = JSON.stringify(bodies[0]);
++    expect(bodyText).not.toContain('overallVibrationRms');
++    expect(bodyText).not.toContain('2026-08-22T09:00:00');
++  });
++});
++
+diff --git a/tests/industrial/ring-dev-audit-proxy.test.ts b/tests/industrial/ring-dev-audit-proxy.test.ts
+new file mode 100644
+index 0000000..4e7b07c
+--- /dev/null
++++ b/tests/industrial/ring-dev-audit-proxy.test.ts
+@@ -0,0 +1,44 @@
++/**
++ * TASK DEV-A-01: audit proxy for lane tests (test-only helper).
++ *
++ * On machines without rust/target/release/maos-engine the real
++ * AuditService chain-append throws EngineError. The Ring tool contract
++ * is audit-must-never-break-tools, and every production write path wraps
++ * audit in try/catch — but the DOCX finalize path needs a REAL audit
++ * record (it forwards record fields into the artifact metadata), so the
++ * lane's DOCX-path tests point the container at the checkout's own
++ * same-platform release binary fixture instead of mocking audit. No
++ * network, no hosted calls; the fixture is chosen in this order:
++ * worktree rust/target/release, /c/maos release binary, then give up
++ * (tests assert the honest unavailable result instead of the artifact).
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import { describe, expect, it } from 'vitest';
++
++export function engineFixturePath(): string | undefined {
++  const exe = process.platform === 'win32' ? 'maos-engine.exe' : 'maos-engine';
++  const candidates = [
++    path.resolve(__dirname, '../../rust/target/release', exe === 'maos-engine.exe' ? 'maos-engine.exe' : 'maos-engine'),
++    '/c/maos/rust/target/release/' + exe,
++  ];
++  return candidates.find((c) => { try { return fs.existsSync(c); } catch { return false; } });
++}
++
++/** Copy the engine fixture into a temp project root, if one exists. */
++export function seedEngineFixture(projectRoot: string): boolean {
++  const found = engineFixturePath();
++  if (!found) return false;
++  const dest = path.join(projectRoot, 'rust', 'target', 'release');
++  fs.mkdirSync(dest, { recursive: true });
++  const base = path.basename(found);
++  if (!fs.existsSync(path.join(dest, base))) fs.copyFileSync(found, path.join(dest, base));
++  return true;
++}
++
++describe('lane audit proxy (helper, no tests)', () => {
++  it('exposes the fixture helpers', () => {
++    expect(typeof engineFixturePath()).toBe('string');
++    expect(typeof seedEngineFixture).toBe('function');
++  });
++});

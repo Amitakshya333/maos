@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "baseSnapshot": {
+    "description": "Exact rejected four-file candidate snapshot, reconstructed and verified against the prior manifest.",
+    "priorManifestSha256": "2f089126d37461c4bcb60633bfd35f3845a2b3274d99567c28984a147af64a92",
+    "priorPatchSha256": "dbb62ab351b474cd158071b34f47be173f890cb869391b6befa0e9ddb45b8ad1"
+  },
+  "patchFile": "lifetime-delta-from-rejected-four-file-snapshot.patch",
+  "patchSha256": "9549f53fabe97fc241593d744a5b018ac29a27ff0ed0133a6f4427b42535773b",
+  "files": [
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "priorRawSha256": "bd45584ac789e1401b8487d38a80dfbb7bfb9e6eb125328b28bd9c8ea1088c8c",
+      "priorLfNormalizedSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "currentRawSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "currentLfNormalizedSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3"
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "priorRawSha256": "ab8702cb9dac9f211e1abc2a1595fdcc5e2817dce93fbafc6749c6b564eb6eab",
+      "priorLfNormalizedSha256": "35f0c25a9ed7f1f89042a79064a5b0e34dcecbe141431094db7e84f41895fe84",
+      "currentRawSha256": "33b0775c84c6db27445c7072763598982a88a6e04cfa0e84872820446e17f104",
+      "currentLfNormalizedSha256": "a13de33a8188641d8a0fb28d092c1455daefb671fa002378550c33aa96f32aeb"
+    }
+  ]
+}

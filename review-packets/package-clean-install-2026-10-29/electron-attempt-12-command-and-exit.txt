@@ -1,0 +1,7 @@
+COMMAND: node <temp>\rehearsal\test-tools\desktop-agent-installed-package-rehearsal-debug.cjs --package-root <temp>\locked-install\node_modules\maosorch --evidence-path <temp>\rehearsal\evidence\package-agent-electron-attempt-12.json
+PACKAGE_ROOT: installed tarball copy
+RUST_ENGINE: separately built prerequisite from exact clean source checkout
+INFERENCE: loopback synthetic mock only
+USER_DATA: explicit --user-data-dir beneath the isolated temp root
+HARNESS CHANGE: session-capture-only wait; dynamic selected-file locator after Electron restart
+EXIT_CODE: 0

@@ -1,0 +1,56 @@
+COMMAND: node_modules/.bin/vitest.cmd run tests/cli/doctor.test.ts tests/cli/meta-provider-entrypoints.test.ts tests/industrial/package-runtime-assets.test.ts
+EXIT_CODE: 1
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-install-clean-source-37609be196584def850343ff8a22565d/source
+
+ ❯ tests/cli/doctor.test.ts (7 tests | 2 failed) 975ms
+     × requires and verifies engine identity and protocol for Industrial projects 187ms
+     × handles malformed configuration as a readiness failure without throwing 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/cli/doctor.test.ts > maos doctor readiness > requires and verifies engine identity and protocol for Industrial projects
+Error: [vitest] No "EngineError" export is defined on the "../../src/industrial/rust-engine-bridge" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+vi.mock(import("../../src/industrial/rust-engine-bridge"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+ ❯ Module.runDoctor src/cli/doctor.ts:202:37
+    200|       results.push({ label: 'Rust engine', status: 'pass', required: t…
+    201|     } catch (err: any) {
+    202|       const detail = err instanceof EngineError && err.category === 'm…
+       |                                     ^
+    203|         ? err.message
+    204|         : 'Rust engine identity/protocol check failed. Replace it with…
+ ❯ tests/cli/doctor.test.ts:136:32
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/cli/doctor.test.ts > maos doctor readiness > handles malformed configuration as a readiness failure without throwing
+AssertionError: expected 'maos.config.json is invalid or unread…' to contain 'malformed'
+
+Expected: "malformed"
+Received: "maos.config.json is invalid or unreadable at C:\Users\AMITAK~1\AppData\Local\Temp\maos-doctor-WzaBXY\.maos\maos.config.json. Repair it or run: maos init"
+
+ ❯ tests/cli/doctor.test.ts:150:77
+    148|
+    149|     expect(result.exitCode).toBe(1);
+    150|     expect(result.checks.find((check) => check.label === 'Config')?.de…
+       |                                                                             ^
+    151|   });
+    152| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  2 failed | 16 passed (18)
+   Start at  02:35:30
+   Duration  12.00s (transform 2.31s, setup 0ms, import 4.95s, tests 6.28s, environment 0ms)
+

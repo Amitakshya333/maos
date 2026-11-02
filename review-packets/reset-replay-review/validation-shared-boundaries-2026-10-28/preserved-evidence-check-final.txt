@@ -1,0 +1,11 @@
+COMMAND=node -e SHA-256 comparison for 30 packet files and 4 protected evidence files listed in VALIDATION_START.json
+{
+  "snapshotAt": "2026-10-28T13:03:26.307+05:30",
+  "repositoryRoot": "C:/maos",
+  "head": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "checked": 34,
+  "passed": 34,
+  "failed": []
+}
+
+EXIT_CODE=0

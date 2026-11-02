@@ -1,0 +1,1 @@
+﻿npm.cmd test -- tests/cli/project-git-context.test.ts tests/cli/doctor.test.ts tests/cli/meta-provider-entrypoints.test.ts tests/industrial/package-runtime-assets.test.ts

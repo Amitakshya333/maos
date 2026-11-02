@@ -1,0 +1,5 @@
+--- attempt-4/run-installed-pilot-rehearsal.ps1
++++ attempt-6/run-installed-pilot-rehearsal.ps1
+@@
+-    if (GetConsoleWindow() == IntPtr.Zero && !AllocConsole()) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "AllocConsole failed.");
++    if (GetConsoleWindow() == IntPtr.Zero) { FreeConsole(); if (!AllocConsole()) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "AllocConsole failed after detaching inherited console."); }

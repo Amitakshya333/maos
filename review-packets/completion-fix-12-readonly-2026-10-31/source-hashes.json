@@ -1,0 +1,122 @@
+{
+  "baseCommit": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "candidate": "C:\\Users\\AMITAKSHYA SUTAR\\.local\\share\\opencode\\worktree\\327f80\\opencode-tree-1",
+  "generatedAtUtc": "2026-10-31",
+  "indexState": "empty (git diff --cached --quiet exits 0)",
+  "normalization": {
+    "gitattributes": "* text=auto eol=lf",
+    "note": "Working-tree files are LF-native: raw SHA-256 equals LF-normalized SHA-256 for every path; no CRLF conversion applies.",
+    "rawEqualsLf": true
+  },
+  "parentIdentity": {
+    "packet": "review-packets/completion-fix-10-readonly-2026-10-31/",
+    "completePatch": "review-packets/completion-fix-10-readonly-2026-10-31/complete-correction.patch",
+    "completePatchSha256": "15BBDE4055C4308566F4ABC6011FD4B8ED70C3A4A9035E00A7CC35D5F9870F9F",
+    "sourceManifest": "source-hashes.json",
+    "sourceManifestSha256": "637116DC1A0C2AB56A7D6F0FC0EC2CCF8F29A6F08E027C840672504632457C33",
+    "blobIds": [
+      "f8e876f9f9e95b491cd7aa1f0daa434a9657c365",
+      "ca36e5dd90e2d12a510b99d1ce95c16b7fd8de73",
+      "24c6274f0cf42be24629e40665ab1094f4fd2c7d",
+      "528c4e1e2ed597556b95a2918cf1fd1549c9e7c5",
+      "5b4fe23b84250fbd6d9c171d568c935b98dc4227",
+      "1ccaf38c52b58a3cb142d65fb2e766690c682112",
+      "a04167afd4f000837217825afd0af0a070c54a9c",
+      "cbc519eed6ed68d9027b96c8ae431d3849ce8350",
+      "6b187299fcf95c6016ae9506beae742d83f4d5ee"
+    ],
+    "note": "FIX-10 is preserved as rejected history; it was never committed, so no commit SHA describes it. Identity = FIX-10 complete patch + FIX-10 source manifest (both byte-verified) + the 9 blob IDs. Reproduce: clean 2cfdf9b checkout, apply the FIX-10 complete patch, compare git blob hashes (this packet did exactly that). Cross-check performed during verification: FIX-10 manifest blob IDs versus FIX-10 patch output are identical for all 9 paths (see validation/fix10-manifest-vs-patch.txt); an e6627955 value for telemetryReviewState.ts appearing in earlier review notes refers to the older FIX-06 snapshot, not to FIX-10"
+  },
+  "patch": {
+    "path": "complete-correction.patch",
+    "sha256": "B2767D261969DBFEEC77DD1581CDD7579694205FB76DA54592A15D58DAB5A041",
+    "stat": "9 files changed, 1727 insertions(+), 86 deletions(-)"
+  },
+  "correctionDelta": {
+    "path": "correction-delta.patch",
+    "sha256": "0398DE65FCC6FF69E1A90F1B61421F4AC9EE0F632F234478FF88461883AA24F9",
+    "stat": "5 files changed, 266 insertions(+), 197 deletions(-)",
+    "note": "Rejected FIX-10 snapshot to current candidate; appliable."
+  },
+  "paths": [
+    {
+      "path": "src/core/agent-runner.ts",
+      "blob": "f8e876f9f9e95b491cd7aa1f0daa434a9657c365",
+      "sha256": "cf9b4dd9f6c627e8133c16622ef8e93ed7010a7c8d033836c2101373f08d758e",
+      "sha256LfNormalized": "cf9b4dd9f6c627e8133c16622ef8e93ed7010a7c8d033836c2101373f08d758e",
+      "status": "unchanged-since-FIX-10"
+    },
+    {
+      "path": "src/gui/src/api/rest-client.ts",
+      "blob": "7d12a3b00cc8815bd36caab012641f4bc04f2d35",
+      "sha256": "ca846d0268b91596d3b82f6414b00d3a05801f08de541e897c45ad77e7a11cf1",
+      "sha256LfNormalized": "ca846d0268b91596d3b82f6414b00d3a05801f08de541e897c45ad77e7a11cf1",
+      "status": "modified"
+    },
+    {
+      "path": "src/gui/src/components/TelemetryReviewPanel.tsx",
+      "blob": "861c065a02e90218d98648aa6e0a5540b57c0201",
+      "sha256": "066843f57039fd872e4ba98dd2c07c3a302b17a178927bb907d636588218520d",
+      "sha256LfNormalized": "066843f57039fd872e4ba98dd2c07c3a302b17a178927bb907d636588218520d",
+      "status": "modified"
+    },
+    {
+      "path": "tests/industrial/read-only-completion.test.ts",
+      "blob": "528c4e1e2ed597556b95a2918cf1fd1549c9e7c5",
+      "sha256": "0dc943a52114b9d9d65b617104656e93a809af02c50a9534879897410f73d258",
+      "sha256LfNormalized": "0dc943a52114b9d9d65b617104656e93a809af02c50a9534879897410f73d258",
+      "status": "unchanged-since-FIX-10"
+    },
+    {
+      "path": "src/gui/src/components/telemetryReviewState.ts",
+      "blob": "5b4fe23b84250fbd6d9c171d568c935b98dc4227",
+      "sha256": "514c9addb756dde081c3a1eafb7ca8bf5471d2a088621fae7e00164ea6a639f5",
+      "sha256LfNormalized": "514c9addb756dde081c3a1eafb7ca8bf5471d2a088621fae7e00164ea6a639f5",
+      "status": "unchanged-since-FIX-10"
+    },
+    {
+      "path": "tests/gui/telemetry-review-state.test.ts",
+      "blob": "1ccaf38c52b58a3cb142d65fb2e766690c682112",
+      "sha256": "42e8911331dc0f3541bdf58a6f55e4a5f654e5905035cfc6aaee48060debd77b",
+      "sha256LfNormalized": "42e8911331dc0f3541bdf58a6f55e4a5f654e5905035cfc6aaee48060debd77b",
+      "status": "unchanged-since-FIX-10"
+    },
+    {
+      "path": "src/gui/src/components/telemetryReviewCoordinator.ts",
+      "blob": "d963016d831b435d742a1ad415fe39c1d603eba9",
+      "sha256": "8964ff129555137191c962523d164ad9fe4eb2ec8c669eb351449bbc5bd26342",
+      "sha256LfNormalized": "8964ff129555137191c962523d164ad9fe4eb2ec8c669eb351449bbc5bd26342",
+      "status": "modified"
+    },
+    {
+      "path": "tests/gui/telemetry-review-coordinator.test.ts",
+      "blob": "54d389cfec36564648fc3384b66d2105507f2dca",
+      "sha256": "64f42884da6ecdd7a1f4831737c65b4e7238baaea3138777acdb819eba8b6c25",
+      "sha256LfNormalized": "64f42884da6ecdd7a1f4831737c65b4e7238baaea3138777acdb819eba8b6c25",
+      "status": "modified"
+    },
+    {
+      "path": "tests/gui/rest-client-abort.test.ts",
+      "blob": "769a5ab55cef9b11ca54cf6c7d8cabc7c9e7ecb1",
+      "sha256": "9972196100f34d833780021d500abe266e1afcc70fe46a21b2d2f23af5cbc95f",
+      "sha256LfNormalized": "9972196100f34d833780021d500abe266e1afcc70fe46a21b2d2f23af5cbc95f",
+      "status": "modified"
+    }
+  ],
+  "reconstruction": {
+    "applyCheckCorrectionExit": 0,
+    "applyCheckCompleteExit": 0,
+    "reconstructedBlobHashes": [
+      "f8e876f9f9e95b491cd7aa1f0daa434a9657c365",
+      "7d12a3b00cc8815bd36caab012641f4bc04f2d35",
+      "861c065a02e90218d98648aa6e0a5540b57c0201",
+      "528c4e1e2ed597556b95a2918cf1fd1549c9e7c5",
+      "5b4fe23b84250fbd6d9c171d568c935b98dc4227",
+      "1ccaf38c52b58a3cb142d65fb2e766690c682112",
+      "d963016d831b435d742a1ad415fe39c1d603eba9",
+      "54d389cfec36564648fc3384b66d2105507f2dca",
+      "769a5ab55cef9b11ca54cf6c7d8cabc7c9e7ecb1"
+    ],
+    "result": "Correction delta verified appliable onto fresh FIX-10 snapshot; complete patch verified appliable onto clean base (exits recorded in validation/reconstruction.txt). All nine reconstructed blob hashes equal the candidate blob hashes; this manifest was generated from the same measured values and cross-checked against them."
+  }
+}

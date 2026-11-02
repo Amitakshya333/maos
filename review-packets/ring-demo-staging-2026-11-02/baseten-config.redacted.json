@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "baseten": {
+      "apiKey": "",
+      "baseURL": "https://inference.baseten.co/v1",
+      "model": "meta-models/muse-spark-open-1026",
+      "basetenApiEnabled": true,
+      "apiKeyEnv": "BASETEN_API_KEY",
+      "costPerMillionTokens": 0
+    }
+  },
+  "profile": {
+    "id": "industrial",
+    "displayName": "MAOS Industrial",
+    "mode": "sovereign-local",
+    "zeroCloud": true,
+    "evidenceRoot": "demo/industrial"
+  }
+}

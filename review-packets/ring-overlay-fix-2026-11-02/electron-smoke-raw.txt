@@ -1,0 +1,5 @@
+
+[30412:1102/175844.686:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Access is denied. (0x5)
+[30412:1102/175844.688:ERROR:net\disk_cache\disk_cache.cc:293] Unable to create cache
+[30412:1102/175844.688:ERROR:gpu\ipc\host\gpu_disk_cache.cc:737] Gpu Cache Creation failed: -2
+RING_SMOKE_JSON:{"checks":[{"name":"multi-monitor enumerated","ok":true,"detail":"1 display(s)"},{"name":"hotkey default is Ctrl+Shift+Space (not Ctrl+Space / Alt+Space)","ok":true,"detail":"CommandOrControl+Shift+Space"},{"name":"overlay window created","ok":true,"detail":""},{"name":"overlay has bounds","ok":true,"detail":"{\"x\":568,\"y\":112,\"width\":400,\"height\":640}"},{"name":"overlay is frameless/translucent/always-on-top (options)","ok":true,"detail":"frame:false transparent:true alwaysOnTop:true skipTaskbar:true (set at construction)"},{"name":"smoke harness","ok":false,"detail":"ERR_FAILED (-2) loading 'http://127.0.0.1:60130/#/ring-overlay'"}],"displays":[{"bounds":{"x":0,"y":0,"width":1536,"height":864},"primary":true,"scaleFactor":1.25}]}

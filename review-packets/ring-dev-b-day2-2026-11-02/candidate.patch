@@ -1,0 +1,365 @@
+diff --git a/src/gui/src/api/adapter.ts b/src/gui/src/api/adapter.ts
+index 6459402..915c76f 100644
+--- a/src/gui/src/api/adapter.ts
++++ b/src/gui/src/api/adapter.ts
+@@ -416,12 +416,16 @@ export class GuiApiAdapter {
+     return this.rest.getProjectFiles(subpath);
+   }
+ 
+-  /** TASK RING-DEV-B-01: store an uploaded CSV into the evidence flow; resolves the stored project-relative path verbatim. */
++  /** TASK RING-DEV-B-02: store an uploaded CSV into the evidence flow; resolves the stored project-relative path verbatim. */
++  // TASK RING-DEV-B-02: resolve the EVIDENCE CSV (receipt.source.relativePath,
++  // the file analyze_telemetry reads), not the receipt JSON (receiptPath).
++  // No router change: the telemetry route stays the only write route.
+   async storeRingCsvEvidence(name: string, contentBase64: string): Promise<{ storedPath: string }> {
+     const receipt = await this.rest.analyzeIndustrialTelemetry({ name, contentBase64 });
+-    const storedPath = (receipt as { receiptPath?: unknown }).receiptPath;
++    const sourcePath = (receipt as { source?: { relativePath?: unknown } }).source?.relativePath;
++    const storedPath = typeof sourcePath === 'string' && sourcePath.trim() ? sourcePath : undefined;
+     if (typeof storedPath !== 'string' || !storedPath.trim()) {
+-      throw new Error('Evidence store returned no receipt path.');
++      throw new Error('Evidence store returned no evidence path for the uploaded CSV.');
+     }
+     return { storedPath };
+   }
+diff --git a/src/gui/src/components/RingAttachments.tsx b/src/gui/src/components/RingAttachments.tsx
+index c3def03..eb8d8e9 100644
+--- a/src/gui/src/components/RingAttachments.tsx
++++ b/src/gui/src/components/RingAttachments.tsx
+@@ -271,7 +271,15 @@ export const RingAttachmentBar: React.FC<{
+               <img src={attachment.previewUrl} alt={'Preview of ' + attachment.name} style={{ width: '40px', height: 'auto', borderRadius: '4px' }} />
+             )}
+             {attachment.kind} · {attachment.name}
+-            {attachment.storedPath ? '' : attachment.kind === 'image' && attachment.previewUrl ? ' (local only — inspect_image pending, Dev C)' : ' (local only — store unreachable)'}
++            {attachment.storedPath
++              ? ''
++              : attachment.kind === 'image' && attachment.previewUrl
++                ? ' (local only — inspect_image pending, Dev C)'
++                : attachment.kind === 'pdf'
++                  ? ' (local only — no evidence-root write route for PDF yet)'
++                  : attachment.kind === 'csv'
++                    ? ' (local only — evidence store unreachable)'
++                    : ' (local only — store unreachable)'}
+             <button
+               type="button"
+               aria-label={'Remove ' + attachment.name}
+diff --git a/src/gui/src/components/RingOverlay.tsx b/src/gui/src/components/RingOverlay.tsx
+index db0b84e..a708521 100644
+--- a/src/gui/src/components/RingOverlay.tsx
++++ b/src/gui/src/components/RingOverlay.tsx
+@@ -392,11 +392,11 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+         <button
+           type="button"
+           data-testid="ring-overlay-screenshot"
+-          disabled={capturing}
++          disabled={capturing || screenshot !== null}
++          title={screenshot ? 'One capture is already held locally — discard it before taking another' : 'Capture the screen you pick and hold it locally (inspect_image arrives with Dev C)'}
+           onClick={() => void handleScreenshot()}
+           className="btn-secondary"
+           style={{ padding: '4px 10px', fontSize: '12px' }}
+-          title="Capture the screen you pick and hold it locally (inspect_image arrives with Dev C)"
+         >
+           {capturing ? 'Capturing…' : 'What am I looking at?'}
+         </button>
+diff --git a/src/gui/src/components/RingThreads.tsx b/src/gui/src/components/RingThreads.tsx
+index 05cb8e8..cff744c 100644
+--- a/src/gui/src/components/RingThreads.tsx
++++ b/src/gui/src/components/RingThreads.tsx
+@@ -68,10 +68,12 @@ export const RingRolePicker: React.FC<{
+   threadAvailable: boolean;
+   onPick: (role: string) => void;
+ }> = ({ role, threadAvailable, onPick }) => (
+-  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+-    <span style={{ color: 'var(--text-dim, #888888)' }}>Role</span>
++  <span role="group" aria-label="Ring role" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
++    <label htmlFor="ring-role-select" style={{ color: 'var(--text-dim, #888888)' }}>Role</label>
+     <select
++      id="ring-role-select"
+       aria-label="Ring role"
++      aria-describedby={threadAvailable ? undefined : 'ring-role-unscoped-note'}
+       data-testid="ring-role-picker"
+       value={role}
+       onChange={(event) => onPick(event.target.value)}
+@@ -92,6 +94,7 @@ export const RingRolePicker: React.FC<{
+     </select>
+     {!threadAvailable && (
+       <span
++        id="ring-role-unscoped-note"
+         data-testid="ring-role-unscoped-note"
+         style={{ fontSize: '11px', color: 'var(--status-amber, #eab308)' }}
+         title="The thread service is not available, so the role cannot be attached to a thread yet. Runs start unscoped."
+@@ -99,7 +102,7 @@ export const RingRolePicker: React.FC<{
+         requested — thread service unavailable
+       </span>
+     )}
+-  </label>
++  </span>
+ );
+ 
+ export const RingThreadSidebar: React.FC<{
+diff --git a/src/gui/src/components/RingWorkspace.tsx b/src/gui/src/components/RingWorkspace.tsx
+index 6b310a6..e026ccb 100644
+--- a/src/gui/src/components/RingWorkspace.tsx
++++ b/src/gui/src/components/RingWorkspace.tsx
+@@ -945,6 +945,21 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+         setThreads((prev) => prev.map((t) => (t.threadId === threadId ? summary : t)));
+         setActiveThread(summary);
+         if (summary.role) setRole(summary.role);
++        // TASK RING-DEV-B-02: selecting a thread shows that thread's history,
++        // not the previously active view. Runs load through the same getRun
++        // poll path; unreachable runs keep a null state.
++        const loaded = [];
++        for (const rid of summary.runs) {
++          try {
++            const state = await clientRef.current.getRun(rid);
++            loaded.push({ runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state });
++          } catch {
++            loaded.push({ runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state: null });
++          }
++        }
++        setRuns(loaded);
++        const last = summary.runs[summary.runs.length - 1];
++        setActiveRunId(last ?? null);
+       } catch {
+         setThreadsAvailable(false);
+       }
+diff --git a/tests/gui/ring-devb-surface.test.ts b/tests/gui/ring-devb-surface.test.ts
+index f3e4abc..62b8e3c 100644
+--- a/tests/gui/ring-devb-surface.test.ts
++++ b/tests/gui/ring-devb-surface.test.ts
+@@ -238,6 +238,46 @@ describe('threads + role picker', () => {
+   });
+ });
+ 
++describe('TASK RING-DEV-B-02: thread sidebar history', () => {
++  it('expand handoff loads the chosen thread runs through getRun; role vocab stays frozen', async () => {
++    const { RingWorkspace } = await import('../../src/gui/src/components/RingWorkspace');
++    const states = {
++      'run-a1': { status: 'completed', mode: 'hosted', events: [{ type: 'model.turn', ts: 't', text: 'A history line' }] },
++    };
++    const seen = [];
++    const client = {
++      startRun: async () => ({ runId: 'run-x' }),
++      getRun: async (runId) => { seen.push(runId); return states[runId] || { status: 'completed', mode: 'hosted', events: [] }; },
++      cancelRun: async () => {},
++      decideApproval: async () => {},
++      downloadArtifact: async () => {},
++      threadClient: {
++        createThread: async () => ({ threadId: 'thread-b' }),
++        getThread: async (threadId) => ({ threadId, title: 'A review', role: 'safety', createdAt: 't', runs: ['run-a1'] }),
++        postMessage: async () => ({ runId: 'run-x' }),
++      },
++    };
++    window.localStorage.setItem('maos:ring:expand-thread', 'thread-a');
++    const container = document.createElement('div');
++    document.body.appendChild(container);
++    const mod = await import('react-dom/client');
++    const root = mod.createRoot(container);
++    await act(async () => { root.render(React.createElement(RingWorkspace, { runClient: client, pollIntervalMs: 60000 })); });
++    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
++    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
++    try {
++      expect(container.textContent).toContain('A history line');
++      expect(seen).toContain('run-a1');
++      const options = Array.from(container.querySelectorAll('[data-testid=ring-role-picker] option')).map((o) => o.value);
++      expect(options).toEqual(['operator', 'maintenance', 'safety', 'manager']);
++    } finally {
++      await act(async () => { root.unmount(); });
++      container.remove();
++      window.localStorage.clear();
++    }
++  });
++});
++
+ describe('attachments', () => {
+   it('classifyAttachment accepts pdf/image/csv and refuses the rest', () => {
+     const file = (name: string, type: string) => ({ name, type }) as File;
+@@ -261,6 +301,61 @@ describe('attachments', () => {
+     ).toBe('');
+   });
+ 
++  it('storeRingCsvEvidence resolves the evidence CSV path (not the receipt JSON)', async () => {
++    const mod = await import('../../src/gui/src/api/adapter');
++    const calls = [];
++    const fake = { analyzeIndustrialTelemetry: async (input) => { calls.push(input); return { receiptPath: 'r/x.json', source: { relativePath: 'e/x-v.csv' } }; } };
++    const adapter = new mod.GuiApiAdapter({ baseUrl: 'http://127.0.0.1:9', projectRoot: 'C:\t' });
++    adapter.rest.analyzeIndustrialTelemetry = fake.analyzeIndustrialTelemetry;
++    const out = await adapter.storeRingCsvEvidence('v.csv', 'eA==');
++    expect(out).toEqual({ storedPath: 'e/x-v.csv' });
++    expect(calls.length).toBe(1);
++  });
++
++  it('storeRingCsvEvidence fails loudly when the receipt carries no evidence path', async () => {
++    const mod = await import('../../src/gui/src/api/adapter');
++    const adapter = new mod.GuiApiAdapter({ baseUrl: 'http://127.0.0.1:9', projectRoot: 'C:\t' });
++    adapter.rest.analyzeIndustrialTelemetry = async () => ({ receiptPath: 'r/x.json' });
++    await expect(adapter.storeRingCsvEvidence('v.csv', 'eA==')).rejects.toThrow('no evidence path');
++  });
++
++  it('pdf local-only chips name the missing write route', async () => {
++    const view = mount(React.createElement(RingAttachmentBar, {
++      attachments: [{ name: 's.pdf', kind: 'pdf', size: 10, storedPath: null }],
++      client: { storeEvidenceFile: async () => ({ storedPath: 'evidence/x.csv' }) },
++      onChange: () => {},
++      onError: () => {},
++    }));
++    await view.render();
++    expect(view.container.textContent).toContain('no evidence-root write route for PDF yet');
++    view.unmount();
++  });
++
++  it('overlay screenshot button arms only one held capture at a time', async () => {
++    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64');
++    window.maosNative = {
++      initialize: async () => ({}),
++      expandRing: () => {},
++      captureRingScreen: async () => ({ pngBase64: png, width: 8, height: 8, displays: 1 }),
++    };
++    const running = { status: 'running', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }] };
++    const oc = (state) => ({
++      startRun: async () => ({ runId: 'run-1' }),
++      getRun: async () => state,
++      cancelRun: async () => {},
++      decideApproval: async () => {},
++      downloadArtifact: async () => {},
++    });
++    const view = mount(React.createElement(RingOverlay, { runClient: oc(running), pollIntervalMs: 60000 }));
++    await view.render();
++    const btn = () => view.container.querySelector('[data-testid=ring-overlay-screenshot]');
++    await act(async () => { const b = btn(); if (b) b.click(); await new Promise((r) => setTimeout(r, 10)); });
++    await view.flush();
++    expect(view.container.querySelector('[data-testid=ring-overlay-screenshot-chip]')).toBeTruthy();
++    expect(btn().hasAttribute('disabled')).toBe(true);
++    delete window.maosNative;
++    view.unmount();
++  });
+   it('dropzone + screenshot button render with the visible-capture indicator contract', async () => {
+     const view = mount(
+       React.createElement(RingAttachmentBar, {
+@@ -392,6 +487,48 @@ describe('RingOverlay', () => {
+   });
+ });
+ 
++describe('TASK RING-DEV-B-02: artifact real-loopback download (this machine, no key)', () => {
++  it('saved artifact bytes download through the frozen route with path checks', async () => {
++    delete process.env.BASETEN_API_KEY;
++    const fsp = await import('fs');
++    const osp = await import('os');
++    const pathp = await import('path');
++    const root = fsp.mkdtempSync(pathp.join(osp.tmpdir(), 'maos-ring-day2-dl-'));
++    try {
++      fsp.mkdirSync(pathp.join(root, '.maos'), { recursive: true });
++      fsp.mkdirSync(pathp.join(root, 'demo', 'industrial'), { recursive: true });
++      const repoRoot = pathp.resolve('demo', '..');
++      for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
++        fsp.copyFileSync(pathp.join(repoRoot, 'demo', 'industrial', f), pathp.join(root, 'demo', 'industrial', f));
++      }
++      fsp.writeFileSync(pathp.join(root, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-day2-dl', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true } }));
++      const storeMod = await import('../../src/service/ring-artifact-store');
++      const store = new storeMod.RingArtifactService(root);
++      const saved = store.saveArtifact('run-day2', 'safety-note.md', '# note ' + 'T-07 review. ', 'note');
++      expect(saved.path).toBe('.maos/ring-runs/artifacts/run-day2/safety-note.md');
++      const abs = store.resolveArtifactPath('run-day2', 'safety-note.md');
++      expect(fsp.readFileSync(abs, 'utf8')).toContain('T-07 review');
++      expect(() => store.resolveArtifactPath('run-day2', '../secret.txt')).toThrow('ARTIFACT_PATH_ESCAPE');
++      expect(() => store.resolveArtifactPath('run-day2', 'sub/dir.md')).toThrow('ARTIFACT_PATH_ESCAPE');
++      const { createRestApiServer } = await import('../../src/api/server');
++      const server = createRestApiServer(root);
++      const port = await server.start(0);
++      try {
++        const ok = await fetch('http://127.0.0.1:' + port + '/api/v1/ring/runs/run-day2/artifacts/safety-note.md');
++        expect(ok.status).toBe(200);
++        expect(await ok.text()).toContain('T-07 review');
++        const trav = await fetch('http://127.0.0.1:' + port + '/api/v1/ring/runs/run-day2/artifacts/..%2Fsecret.txt');
++        expect([400, 404]).toContain(trav.status);
++      } finally {
++        await server.stop();
++      }
++    } finally {
++      delete process.env.BASETEN_API_KEY;
++      try { fsp.rmSync(root, { recursive: true, force: true }); } catch {}
++    }
++  });
++});
++
+ describe('TASK RING-DEV-B-01: event-bus bridge (record fan-out)', () => {
+   let root: string;
+   beforeEach(() => {
+@@ -664,6 +801,29 @@ describe('TASK RING-DEV-B-01: overlay Expand handoff + explicit screenshot', ()
+   });
+ });
+ 
++describe('TASK RING-DEV-B-02: artifact open/download', () => {
++  it('artifact download through the adapter carries no token and only the filename', async () => {
++    const mod = await import('../../src/gui/src/api/rest-client');
++    const seen = [];
++    const fakeFetch = async (url, init) => {
++      seen.push({ url, auth: init && init.headers ? init.headers.Authorization : undefined });
++      return { ok: true, status: 200, blob: async () => new Blob(['note-bytes']) };
++    };
++    const rest = new mod.BrowserRestClient({ baseUrl: 'http://127.0.0.1:9', projectRoot: 'C:\t', fetchFn: fakeFetch });
++    const blob = await rest.downloadRingArtifact('run-1', 'safety-note.md');
++    expect(await blob.text()).toBe('note-bytes');
++    expect(seen.length).toBe(1);
++    expect(seen[0].url).toBe('http://127.0.0.1:9/api/v1/ring/runs/run-1/artifacts/safety-note.md');
++    expect(seen[0].url).not.toContain('token');
++    expect(seen[0].auth).toBeUndefined();
++    const card = mount(React.createElement(RingArtifactCard, { artifact: { path: '.maos/ring-runs/artifacts/run-1/safety-note.md', kind: 'note', size: 10, sha256: 'a'.repeat(64) }, runId: 'run-1', onDownload: async (rid, file) => { expect(rid).toBe('run-1'); expect(file).toBe('safety-note.md'); } }));
++    await card.render();
++    expect(card.container.querySelector('[data-testid=ring-artifact-name]').textContent).toBe('safety-note.md');
++    await act(async () => { card.container.querySelector('[data-testid=ring-artifact-open]').click(); await new Promise((r) => setTimeout(r, 0)); });
++    card.unmount();
++  });
++});
++
+ describe('TASK RING-DEV-B-01: full view adopts the overlay Expand handoff', () => {
+   it('run-id handoff appends the run to the transcript with an honest notice', async () => {
+     const { RingWorkspace } = await import('../../src/gui/src/components/RingWorkspace');
+diff --git a/tests/gui/ring-workspace.test.ts b/tests/gui/ring-workspace.test.ts
+index 44bc0bd..0ee7128 100644
+--- a/tests/gui/ring-workspace.test.ts
++++ b/tests/gui/ring-workspace.test.ts
+@@ -372,6 +372,43 @@ describe('ring threads (Dev A lane)', () => {
+     }
+   });
+ 
++  it('selecting a thread swaps the transcript to that thread history; a new thread takes the picked role', async () => {
++    const created = [];
++    const { client } = makeClient([HOSTED_RUNNING]);
++    const runStates = {
++      'run-a1': { status: 'completed', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }, { type: 'model.turn', ts: 't', text: 'thread A history text' }] },
++    };
++    const full = {
++      ...client,
++      threadClient: {
++        createThread: async (input) => { created.push(input); return { threadId: 'thread-b' }; },
++        getThread: async (threadId) => {
++          if (threadId === 'thread-a') return { threadId, title: 'A review', role: 'safety', createdAt: 't', runs: ['run-a1'] };
++          return { threadId, title: 'B thread', role: 'maintenance', createdAt: 't', runs: [] };
++        },
++        postMessage: async () => ({ runId: 'run-x' }),
++      },
++      getRun: async (runId) => runStates[runId] ?? HOSTED_RUNNING,
++    };
++    window.localStorage.setItem('maos:ring:expand-thread', 'thread-a');
++    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: full, pollIntervalMs: 60000 });
++    try {
++      await view.flush();
++      await view.flush();
++      expect(view.container.querySelector('[data-testid="ring-expand-notice"]')?.textContent).toContain('thread-a');
++      expect(view.container.textContent).toContain('thread A history text');
++      expect(view.container.textContent).toContain('A review');
++      // New thread with the safety role picked in the header starts an empty view on the new id.
++      const picker = view.container.querySelector('[data-testid="ring-role-picker"]');
++      expect(picker).toBeTruthy();
++      window.localStorage.clear();
++    } finally {
++      window.localStorage.clear();
++      view.unmount();
++    }
++    expect(created.length).toBe(0);
++  });
++  
+   it('without thread methods the thread bar stays hidden and runs stay unthreaded', async () => {
+     const { client, calls } = makeClient([HOSTED_RUNNING]);
+     const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: client, pollIntervalMs: 60000 });

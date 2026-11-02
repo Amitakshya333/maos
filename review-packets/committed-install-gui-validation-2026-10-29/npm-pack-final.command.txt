@@ -1,0 +1,1 @@
+﻿npm.cmd pack --ignore-scripts --pack-destination C:\maos\review-packets\committed-install-gui-validation-2026-10-29\candidate-artifacts

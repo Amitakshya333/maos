@@ -1,0 +1,16 @@
+MAOS Industrial local operator. Type `help` for commands.
+maos-industrial> help
+MAOS Industrial local operator commands:
+  project [directory]                 Show or select a project root
+  analyze <relative.csv> <request>    Analyze the selected project CSV
+  status <run-id>                     Show persisted run and current acceptance
+  approve <run-id> <reviewer> [note]  Approve and finalize the prepared DOCX
+  reject <run-id> <reviewer> [note]   Reject the prepared report
+  report <run-id>                     Show the accepted report path and hash
+  verify <run-id>                     Verify audit and current report acceptance
+  cancel                              Cancel an analysis currently in progress
+  help, exitOnly these commands are accepted; input is never passed to a shell.
+Initialize with `maos init`, choose a local provider, then configure ANALYST_AGENT
+with a credential-free loopback endpoint. Analysis fails closed without it.
+Active project: <temporary-root>\rehearsal\packaged-cli-tests\initialized-local-project
+maos-industrial> exit

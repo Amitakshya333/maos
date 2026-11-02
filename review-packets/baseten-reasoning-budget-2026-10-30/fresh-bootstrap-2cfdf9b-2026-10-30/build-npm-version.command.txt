@@ -1,0 +1,1 @@
+C:\Windows\system32\cmd.exe /d /s /c "C:\Program Files\nodejs\npm.cmd" --version

@@ -1,0 +1,10 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "node.exe",
+  "args": [
+    "-e",
+    "const fs=require('fs'),cp=require('child_process'),crypto=require('crypto');const p='C:/clean/core-b2-02/rust/target/release/maos-engine.exe',b=fs.readFileSync(p);const identity={path:p,sha256:crypto.createHash('sha256').update(b).digest('hex'),bytes:b.length,sourceBase:'f9525055c56a7f7771dd2fa029c147c2960a98a3',sourceReconstructedTip:'2cfdf9b81f56eada7df2041625da18e44531151e',sourceTree:'53305f48e6a7fb039bcf72fa38ab102bcccb9cb8',rustToolchain:'1.95.0',buildCwd:'C:/clean/core-b2-02/rust',offline:true};fs.writeFileSync('C:/maos/review-packets/b2-cleanroom-retry-2026-10-31/engine-build-identity.json',JSON.stringify(identity,null,2));console.log(JSON.stringify(identity));const r=cp.spawnSync(p,[],{input:JSON.stringify({version:'1.0',operation:'health'})+'\\n',encoding:'utf8',timeout:10000});process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');if(r.status!==0)throw Error('Engine health exit '+r.status);const health=JSON.parse(r.stdout.trim());if(health.version!=='1.0'||health.data?.version!=='0.1.0'||health.data?.protocol_version!=='1.0'||health.data?.status!=='ok')throw Error('Engine health contract mismatch');"
+  ],
+  "startedAt": "2026-10-31T16:03:29.939Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

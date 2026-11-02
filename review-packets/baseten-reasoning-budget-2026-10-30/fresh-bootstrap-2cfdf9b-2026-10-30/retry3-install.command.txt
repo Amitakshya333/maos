@@ -1,0 +1,1 @@
+C:\Program Files\PowerShell\7\pwsh.exe -NoProfile -NonInteractive -File C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS bundle 2cfdf9b retry3\Install-MaosIndustrial.ps1 -BundleRoot C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS bundle 2cfdf9b retry3 -InstallRoot C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3

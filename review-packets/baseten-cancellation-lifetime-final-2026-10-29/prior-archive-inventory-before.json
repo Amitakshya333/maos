@@ -1,0 +1,160 @@
+{
+  "capturedBeforeNewCandidate": true,
+  "archives": [
+    {
+      "path": "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\candidate-artifacts\\maos-industrial-bootstrap-windows-x64-commit-27dd1711-2026-10-29.zip",
+      "bytes": 1256137,
+      "sha256": "1f333348e92ea988e8fa9ef3be37dd362e69e6d1ab380d3e653f731240b8b61b"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\candidate-artifacts\\maosorch-0.3.0.tgz",
+      "bytes": 1223971,
+      "sha256": "b4fb03a58b6f13fdbac1f97fa7c48bdb94cb9ee37709fef6cede40bec5f9a778"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\candidate-artifacts\\maos-industrial-bootstrap-windows-x64-commit-d526bfe-2026-10-29.zip",
+      "bytes": 1256200,
+      "sha256": "a1bdd2bc00978b80cc4578a68de06bf426bf1cb5e6a9dbbd17b67125941b99fc"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\candidate-artifacts\\maosorch-0.3.0.tgz",
+      "bytes": 1224049,
+      "sha256": "3e4f8ee275194ae1f408768e6d798d11ba1cedd8f18c9ffaae2f745154312afb"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts\\maos-industrial-bootstrap-windows-x64-git-context-2026-10-29.zip",
+      "bytes": 1255155,
+      "sha256": "aac2afa0466a55dbf90d3500eaadeb67de044773377d024aa33f7adb1b465c80"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts\\maosorch-0.3.0.tgz",
+      "bytes": 1223621,
+      "sha256": "a8bcb149c8a5c081611c1764ef1ba7e86a1d824a9b32d59c07a8f6cd65e83aeb"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final\\maos-industrial-bootstrap-windows-x64-git-context-final-2026-10-29.zip",
+      "bytes": 1255319,
+      "sha256": "2090f13a70492e10df945a43863e00db7aa635440fbbdc205465bb69fbf0eb60"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final\\maosorch-0.3.0.tgz",
+      "bytes": 1223706,
+      "sha256": "bc7ed56913a5afe3ae7bfe344004f2dee71c57371d3e4385b6bdb17fc55a7e0e"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final2\\maos-industrial-bootstrap-windows-x64-git-context-final-2-2026-10-29.zip",
+      "bytes": 1255719,
+      "sha256": "9c55973910c8e4e6a04b0f91981decc8ff3346e91d16263d58e8fb5b80f7b0ad"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final2\\maosorch-0.3.0.tgz",
+      "bytes": 1223893,
+      "sha256": "2def02d94f806d591c552b9d9e993d18b949d9415ef8b441ebf7b5bd1c1632d9"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final3\\maos-industrial-bootstrap-windows-x64-install-correction-189e786-01c456f4-2026-10-29.zip",
+      "bytes": 1255722,
+      "sha256": "b2b04382e971c3ca41921519ce06d74ce1cc364ae42e1995faf574d6081011d8"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final3\\maosorch-0.3.0.tgz",
+      "bytes": 1223893,
+      "sha256": "2def02d94f806d591c552b9d9e993d18b949d9415ef8b441ebf7b5bd1c1632d9"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final4\\maos-industrial-bootstrap-windows-x64-corrected-install-bb8ca8e9-2026-10-29.zip",
+      "bytes": 1255730,
+      "sha256": "0db5cb952afc47421e54f9dfe8ce611364dbde5ebea6fe0785a71d51fd9a3307"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final4\\maosorch-0.3.0.tgz",
+      "bytes": 1223897,
+      "sha256": "edb1330aec5755ceaed504aa97154ad6d8d6693ca82ad9d8a1d28aa6a5d13e69"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final5\\maos-industrial-bootstrap-windows-x64-install-final-73451c02-2026-10-29.zip",
+      "bytes": 1256176,
+      "sha256": "0261e60a3a04f754720107f45da0f0a8d9a68331fd9c9d9704f32cf012978526"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final5\\maosorch-0.3.0.tgz",
+      "bytes": 1224098,
+      "sha256": "50b41f02d928404b10ef5f2a8c8f02118c8c24046db9da008356966ccc17f768"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final6\\maos-industrial-bootstrap-windows-x64-install-final-ea2ffa2c-2026-10-29.zip",
+      "bytes": 1256171,
+      "sha256": "e453b0b230d4919ec181d02fa5d8f0131231a2e5530005c7259d495ee88ed785"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final6\\maosorch-0.3.0.tgz",
+      "bytes": 1224098,
+      "sha256": "50b41f02d928404b10ef5f2a8c8f02118c8c24046db9da008356966ccc17f768"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate\\maosorch-0.3.0.tgz",
+      "bytes": 1220488,
+      "sha256": "4078172578682e02f4fccc9942fe654b2b0914c562362ac68cd8b79ab24a63d5"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-final\\maos-industrial-windows-x64.zip",
+      "bytes": 1251652,
+      "sha256": "775460409defa2b7b32ddf4ea15c43597e6a91cc5be8dd609fac7cfe7b44507d"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-final\\maosorch-0.3.0.tgz",
+      "bytes": 1220611,
+      "sha256": "ed344e43bb524fdb6d31a45f1e1a56dbe3c742f6c4d9ed37e7558e08b925ea0a"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-2026-10-29\\maos-industrial-bootstrap-windows-x64.zip",
+      "bytes": 1253064,
+      "sha256": "bd731ef367d37808cf97c74f4f2bf30571066d938f1b789c38374b5ad112ede9"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-2026-10-29\\maosorch-0.3.0.tgz",
+      "bytes": 1221942,
+      "sha256": "3f9cef961762bb8c9ea249e34ddf0415163e3acee25b7b90a4f0700b43671428"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-corrected-2026-10-29\\maos-industrial-bootstrap-windows-x64.zip",
+      "bytes": 1253311,
+      "sha256": "c6b1a855563dd6620f9dad2791f546fe258fe3913810f343b38bdf27b0ae36f8"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-corrected-2026-10-29\\maosorch-0.3.0.tgz",
+      "bytes": 1222092,
+      "sha256": "8a4d15762e36060324168a7f012c6ebdb386423389c4ad930e7f0409482af153"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-final-2026-10-29\\maos-industrial-bootstrap-windows-x64.zip",
+      "bytes": 1253356,
+      "sha256": "1b531957168d4f7e5b49e363652755c71ed0de396f5c83649888604d6710b49b"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-final-2026-10-29\\maosorch-0.3.0.tgz",
+      "bytes": 1222136,
+      "sha256": "91efb18c5d12168e614895a2b2a7a9ead55a8aca6030ef399d7126d6a0ec2e00"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-release-2026-10-29\\maos-industrial-bootstrap-windows-x64.zip",
+      "bytes": 1253617,
+      "sha256": "1c6fcb695b495d5d79d3a22f2fb1ba56ec49183ae2ae7d30fa5fe439d676d36f"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-release-2026-10-29\\maosorch-0.3.0.tgz",
+      "bytes": 1222398,
+      "sha256": "8f57f15bbbd96da493cf35646836aa2784a9d23165f3177a9819f2d7ffdae27a"
+    },
+    {
+      "path": "C:\\maos\\review-packets\\package-clean-install-2026-10-29\\candidate\\maosorch-0.3.0-commit-189e786ff0431b02b95ca618bb4791a5ad7b0215.tgz",
+      "bytes": 1217278,
+      "sha256": "1dfcb0edd2de9f17b1a8bc499b223b03a821ace69585dea44073b71775097aa6"
+    }
+  ],
+  "knownPriorPilotBundleNotFound": {
+    "reportedBytes": 1265219,
+    "reportedSha256": "353a719f2708669b3f978ac6aa023f72323cb96027dc34ec2a21cbe8e7429b9c",
+    "presentAmongReviewPacketArchives": false
+  }
+}

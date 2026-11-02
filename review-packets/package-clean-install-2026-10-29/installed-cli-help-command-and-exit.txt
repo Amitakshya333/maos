@@ -1,0 +1,2 @@
+COMMAND: <installed-package>/.bin/maos-industrial --help (cwd=<temporary-project>)
+EXIT_CODE: 0

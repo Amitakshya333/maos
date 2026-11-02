@@ -1,0 +1,17 @@
+{
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "fullPatchSha256": "84c96a70f965db922d660ae635767e35c61974012fad7c180ce3af93a9796ce7",
+  "correctionPatchSha256": "366376f331672c956b18ddc42cfcf5940437bd3b21f7b177e596a5788338eb04",
+  "fullApplyCheckExitCode": 0,
+  "fullApplyExitCode": 0,
+  "correctionApplyCheckExitCode": 0,
+  "correctionApplyExitCode": 0,
+  "sourceFileCount": 17,
+  "comparedAgainst": "current source manifest rawSha256/lfSha256 fields",
+  "fullRawByteEqualCount": 15,
+  "fullLfNormalizedEqualCount": 17,
+  "correctionRawByteEqualCount": 15,
+  "correctionLfNormalizedEqualCount": 17,
+  "mismatches": [],
+  "checkedAt": "2026-10-29T12:42:45.1822573+05:30"
+}

@@ -1,0 +1,29 @@
+COMMAND: git clone --shared --no-checkout C:\maos <temporary-proof>
+EXIT_CODE: 0
+COMMAND: git checkout --detach 239a0042b08a3960d3c89f890f01ab194ff82f1f
+EXIT_CODE: 0
+COMMAND: git apply --check <historical 15-file patch>
+EXIT_CODE: 0
+COMMAND: git apply <historical 15-file patch>
+EXIT_CODE: 0
+COMMAND: compare source hashes and exact git status path set with historical manifest
+EXIT_CODE: 0
+BASE=239a0042b08a3960d3c89f890f01ab194ff82f1f
+PATH_COUNT=15; STATUS_PATHS=15; PATH_SET_MATCH=True; INDEX_PATHS=0
+RAW_MATCHES=9/15; LF_NORMALIZED_MATCHES=15/15
+PATHS:
+docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+src/api/openapi-spec.ts
+src/api/router.ts
+src/backends/openai-provider.ts
+src/cli/index.ts
+src/core/agent-runner.ts
+src/domain/schemas.ts
+src/industrial/analysis-agent-service.ts
+src/industrial/industrial-repl.ts
+src/service/index.ts
+tests/backends/openai-provider-local-tool-call.test.ts
+tests/industrial/analysis-agent-auth-http.test.ts
+tests/industrial/analysis-agent-contract.test.ts
+tests/industrial/industrial-repl.test.ts
+tests/industrial/meta-model-api-contract.test.ts

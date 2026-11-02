@@ -1,0 +1,42 @@
+{
+  "commit": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "parent": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "subject": "Fix pilot cancellation callback lifetime",
+  "branch": "main",
+  "committedPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "exactAllowlist": true,
+  "committedBlobs": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "gitBlob": "556593d7615fdb7e78fa663429d2ec8165184b84",
+      "sha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "matchesReviewedLfHash": true
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "gitBlob": "4b4eaace3c686dcb89e33952d9bc2413c73fa196",
+      "sha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "matchesReviewedLfHash": true
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "gitBlob": "82e38ede4c008681401e265057b0a4473da84730",
+      "sha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb",
+      "matchesReviewedLfHash": true
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "gitBlob": "af78c4cf011f2703005311583900c0088baae3aa",
+      "sha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "matchesReviewedLfHash": true
+    }
+  ],
+  "indexEmpty": true,
+  "allowlistedWorkingTreeClean": true,
+  "result": "PASS"
+}

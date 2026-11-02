@@ -1,0 +1,8 @@
+{
+  "exitCode": 0,
+  "stdout": "v24.11.0",
+  "stderr": "",
+  "hookLogPresent": false,
+  "hookLog": null,
+  "nodeOptions": "set to test-only require hook with path quoting"
+}

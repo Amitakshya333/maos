@@ -1,0 +1,6 @@
+
+> maosorch@0.3.0 prepare
+> node scripts/prepare-hooks.js
+
+HUSKY=0 skip install
+added 252 packages in 12s

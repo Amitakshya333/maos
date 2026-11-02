@@ -1,0 +1,4 @@
+COMMAND: node verify-packets.cjs <task-temp-root> <clean-full-copy>
+TEMP_ROOT: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-day2-packet-rebuild-b669046105314e9991595907fb1f5552
+FULL_REBUILD: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-day2-packet-rebuild-b669046105314e9991595907fb1f5552\full-rebuilt-final
+EXIT_CODE: 0

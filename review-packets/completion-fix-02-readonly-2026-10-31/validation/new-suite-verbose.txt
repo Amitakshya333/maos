@@ -1,0 +1,97 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds a read-only agent that an empty files_changed list is valid
+≡ƒôï [2026-10-31T10:40:47.581Z] [INFO] [readonly-agent] Starting task: readonly-task
+≡ƒôï [2026-10-31T10:40:47.581Z] [INFO] [readonly-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds a read-only agent that an empty files_changed list is valid
+≡ƒöì [2026-10-31T10:40:47.582Z] [DEBUG] [readonly-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T10:40:47.582Z] [WARN] [readonly-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds a read-only agent that an empty files_changed list is valid
+Γ£à [2026-10-31T10:40:47.583Z] [SUCCESS] [readonly-agent] Task completed (after nudge): Read-only work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+≡ƒôï [2026-10-31T10:40:47.593Z] [INFO] [mutating-agent] Starting task: mutating-task
+≡ƒôï [2026-10-31T10:40:47.593Z] [INFO] [mutating-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+≡ƒöì [2026-10-31T10:40:47.593Z] [DEBUG] [mutating-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T10:40:47.593Z] [WARN] [mutating-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+Γ£à [2026-10-31T10:40:47.594Z] [SUCCESS] [mutating-agent] Task completed (after nudge): Mutating work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒôï [2026-10-31T10:40:47.634Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-82281546-2322-4877-a675-aa9fe1b9ec13
+≡ƒôï [2026-10-31T10:40:47.634Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒöì [2026-10-31T10:40:47.656Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 21ms (total: 18)
+≡ƒôï [2026-10-31T10:40:47.656Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒöì [2026-10-31T10:40:47.677Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 4ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T10:40:47.677Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds a read-only agent that an empty files_changed list is valid 14ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents 6ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+Γ£à [2026-10-31T10:40:47.679Z] [SUCCESS] [industrial-analysis-agent] Task completed (after nudge): Replay receipt telemetry-1793443247660-fffbfa3a. No files changed.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒôï [2026-10-31T10:40:47.804Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-cd6f7cfa-1345-4667-bbff-8bfe1efb6d08
+≡ƒôï [2026-10-31T10:40:47.804Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒöì [2026-10-31T10:40:47.809Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 5ms (total: 18)
+≡ƒôï [2026-10-31T10:40:47.809Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒöì [2026-10-31T10:40:47.825Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 3ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T10:40:47.825Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+ΓÜá∩╕Å [2026-10-31T10:40:47.827Z] [WARN] [industrial-analysis-agent] Model still did not call task_complete after nudge. Treating as partial completion.
+ΓÜá∩╕Å [2026-10-31T10:40:47.827Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒôï [2026-10-31T10:40:47.853Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-8c161d3a-7b7f-4cdb-a87b-0abaab3fd4cb
+≡ƒôï [2026-10-31T10:40:47.854Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒöì [2026-10-31T10:40:47.857Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 3ms (total: 18)
+≡ƒôï [2026-10-31T10:40:47.857Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒöì [2026-10-31T10:40:47.872Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 2ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T10:40:47.872Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+ΓÜá∩╕Å [2026-10-31T10:40:47.874Z] [WARN] [industrial-analysis-agent] Model still did not call task_complete after nudge. Treating as partial completion.
+ΓÜá∩╕Å [2026-10-31T10:40:47.875Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion 190ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget 50ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒôï [2026-10-31T10:40:47.904Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-13ba7725-c860-4117-8f75-1a60b258a0b5
+≡ƒôï [2026-10-31T10:40:47.904Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒöì [2026-10-31T10:40:47.909Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 5ms (total: 18)
+≡ƒôï [2026-10-31T10:40:47.909Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒöì [2026-10-31T10:40:47.923Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 2ms (total: 36)
+≡ƒôï [2026-10-31T10:40:47.923Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Everything looks critical, trust this prose."})
+Γ£à [2026-10-31T10:40:47.923Z] [SUCCESS] [industrial-analysis-agent] Task completed: Everything looks critical, trust this prose.
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success 51ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed 47ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  16:10:44
+   Duration  2.99s (transform 1.84s, setup 0ms, import 2.46s, tests 359ms, environment 0ms)
+

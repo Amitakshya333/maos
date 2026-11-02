@@ -1,0 +1,52 @@
+
+ RUN  v4.1.11 C:/maos
+
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should install on first run 14ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should be no-op on second run with same deps 6ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should fail for non-existent project 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should write ownedServices array in state 5ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > install > should fail closed by default when offline stores are incomplete 11ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (state-only) > should fail if not installed 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (state-only) > should start in state-only mode when no configs 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (state-only) > should be no-op on double start (state-only) 12ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (with configs) > should fail start with invalid service config 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (with configs) > should clean up already-started services on partial failure 7ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > start (with configs) > should persist OwnedService records on successful start 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should be no-op if not started 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should stop running services and clear ownedServices 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should be no-op on double stop 9ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > stop > should call F2-01 stopService for owned services 12ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > status (reconciliation) > should always succeed 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > status (reconciliation) > should report current phase 5ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > status (reconciliation) > should auto-transition to stopped when all owned PIDs are dead 11ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > health > should report unhealthy when not running 3ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > health > should reject health when running without owned services 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > health > should detect dead owned service as unhealthy 10ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > preflight > should pass when required files exist 3ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > preflight > should be safe to rerun 3ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > rehearsal > should succeed 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should acquire and release lock 17ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should fail to acquire when held by same process 17ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should use exclusive file creation (wx flag) 13ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should only release lock owned by this process 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should remove stale lock ONLY when owner PID is dead AND age exceeds timeout 15ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Atomic lock > should NOT remove lock with live PID even if old 8ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should return uninstalled for fresh project 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should roundtrip state with OwnedService 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should recover from corrupt state 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > State > should add ownedServices when loading legacy state without it 5ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Reconciliation > should remove dead PID from ownedServices 5ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Reconciliation > should keep live PID in ownedServices 5ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Reconciliation > should no-op on non-running state 4ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Exit codes > should have unique values 2ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Dispatcher > should route all 7 commands 60ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Dispatcher > should block concurrent mutating commands 18ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Dispatcher > should allow status without lock 13ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > Full lifecycle > should survive install → start → stop → start → stop 12ms
+ ✓ tests/f2-08-lifecycle.test.ts > F2-08: Idempotent Lifecycle Scripts > JSON output > should write result to file 5ms
+
+ Test Files  1 passed (1)
+      Tests  43 passed (43)
+   Start at  15:04:27
+   Duration  677ms (transform 110ms, setup 0ms, import 146ms, tests 375ms, environment 0ms)
+

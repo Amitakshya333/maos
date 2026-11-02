@@ -1,0 +1,8 @@
+COMMAND: node <temp>\rehearsal\test-tools\desktop-agent-installed-package-rehearsal-debug.cjs --package-root <temp>\locked-install\node_modules\maosorch --evidence-path <temp>\rehearsal\evidence\package-agent-electron-attempt-10.json
+PACKAGE_ROOT: installed tarball copy
+RUST_ENGINE: separately built prerequisite from exact clean source checkout
+INFERENCE: loopback synthetic mock only
+USER_DATA: explicit --user-data-dir beneath the isolated temp root
+HARNESS CHANGE: excluded /api/v1/events from asynchronous header drain; retained REST header capture
+OUTCOME: interrupted by operator after runner again stalled while waiting for all asynchronous request observers before Electron restart; the app had successfully reached the pending-review queue. No application assertion failure observed.
+EXIT_CODE: 1 (Ctrl+C)

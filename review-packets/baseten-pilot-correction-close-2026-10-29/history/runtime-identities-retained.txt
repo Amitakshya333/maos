@@ -1,0 +1,15 @@
+Source commit: bb871cb191184b5de1b790d42fc452a29f8f072e
+Bundle path: C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\install-correction-build\maos\review-packets\meta-apikeyenv-diagnostic-redaction-2026-10-29\checkpoint-validation-bb871cb191184b5de1\maos-industrial-win-x64-bb871cb191184b5de1.zip
+Bundle bytes: 1265219
+Bundle SHA-256: 353a719f2708669b3f978ac6aa023f72323cb96027dc34ec2a21cbe8e7429b9c
+Installed app path: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-bb871cb191184b5de1-install-aad25a749dbc4ad0bc7d82d267d57f32\Installed Industrial App With Spaces
+Electron runtime version: 45.0.0
+Node.js version: v24.11.0
+PowerShell 7 version: 7.6.9
+Windows PowerShell version: 5.1.26100.9711
+External engine path: C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\baseten-gate-validation-2026-10-29\rust\target\release\maos-engine.exe
+External engine bytes: 472064
+External engine SHA-256: 3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2
+External engine Authenticode: NotSigned
+Engine reported version/protocol in retained prior identity check: v0.1.0 / protocol 1.0; this run used the same hash.
+Engine source revision/build inputs: not established; the supplied engine location contains only the target output, not source or a trusted build manifest.

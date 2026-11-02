@@ -1,0 +1,10 @@
+package.json and package-lock.json identity or direct dependencies do not match.
+At C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-baseten-budget-2cfdf9b-checkout\scripts\New-Ma
+osIndustrialInstallBundle.ps1:21 char:28
++ ... DE -ne 0) { throw 'package.json and package-lock.json identity or dir ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (package.json an...s do not match.:String) [], Run 
+   timeException
+    + FullyQualifiedErrorId : package.json and package-lock.json identity or direct dependencies d 
+   o not match.
+ 

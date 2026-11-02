@@ -1,0 +1,17 @@
+{
+  "status": "SUPERSEDED INTERMEDIATE BUILD — not installed or presented as final",
+  "sourceDeltaSha256": "021e5740903f6caa60f453a2f05317cc00a1e1c898a5eaf0dc0d64f9807b593e",
+  "completeManifestSha256": "b60325ecd197318cee765653dd5c93da98366c250b9e01e3cce647af8a982d26",
+  "package": {
+    "name": "maosorch-0.3.0.tgz",
+    "bytes": 1223621,
+    "sha256": "a8bcb149c8a5c081611c1764ef1ba7e86a1d824a9b32d59c07a8f6cd65e83aeb"
+  },
+  "bundle": {
+    "name": "maos-industrial-bootstrap-windows-x64-git-context-2026-10-29.zip",
+    "bytes": 1255155,
+    "sha256": "aac2afa0466a55dbf90d3500eaadeb67de044773377d024aa33f7adb1b465c80"
+  },
+  "reason": "Moved the installer long-path preflight ahead of all destination access so over-limit targets fail before checking/creating the destination.",
+  "recordedAt": "2026-10-29T12:41:56.3321903+05:30"
+}

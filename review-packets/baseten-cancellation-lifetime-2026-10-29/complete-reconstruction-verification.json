@@ -1,0 +1,61 @@
+{
+  "declaredBase": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "reconstructionPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-bb871-complete-reconstruction-final-20261029-01",
+  "baseMethod": "Copied exact Git blobs for the four scoped paths only; did not extract private .maos or unrelated content.",
+  "applyCheck": "PASS",
+  "apply": "PASS",
+  "changedPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "expectedPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "pathSetEqual": true,
+  "comparisons": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "reconstructedRawSha256": "f80674da117a5cfd611aece8409d0386559f7012c5d2b465bda509593760759b",
+      "candidateRawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "rawByteEqual": false,
+      "reconstructedLfSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "candidateLfSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "lfNormalizedEqual": true
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "reconstructedRawSha256": "ccec1e915eb426c6227bf7c65a36da580d0975f208305e9878c93ff729994f47",
+      "candidateRawSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "rawByteEqual": false,
+      "reconstructedLfSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "candidateLfSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "lfNormalizedEqual": true
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "reconstructedRawSha256": "d2716dcc080a55dbfcb6b387e9d884040e6e313c94e8c27699477e1c5dee5501",
+      "candidateRawSha256": "33b0775c84c6db27445c7072763598982a88a6e04cfa0e84872820446e17f104",
+      "rawByteEqual": false,
+      "reconstructedLfSha256": "a13de33a8188641d8a0fb28d092c1455daefb671fa002378550c33aa96f32aeb",
+      "candidateLfSha256": "a13de33a8188641d8a0fb28d092c1455daefb671fa002378550c33aa96f32aeb",
+      "lfNormalizedEqual": true
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "reconstructedRawSha256": "ef6fe2e180c318e9451c2ec5ac100d21112e77babd9cf69a76faec8acac4cafb",
+      "candidateRawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "rawByteEqual": false,
+      "reconstructedLfSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "candidateLfSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedEqual": true
+    }
+  ],
+  "allLfNormalizedEqual": true,
+  "rawEqualPaths": [],
+  "indexEmpty": true
+}

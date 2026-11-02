@@ -1,0 +1,17 @@
+TRACE: launcher session captured
+TRACE: rejected decision locate and open modal for telemetry-1793219849408-261b0c84
+TRACE: rejected modal opened for telemetry-1793219849408-261b0c84
+TRACE: confirming rejected for telemetry-1793219849408-261b0c84
+TRACE: confirmed click rejected for telemetry-1793219849408-261b0c84
+TRACE: launcher session captured
+TRACE: launcher session captured
+TRACE: approved decision locate and open modal for telemetry-1793219850140-d81f153b
+TRACE: approved modal opened for telemetry-1793219850140-d81f153b
+TRACE: confirming approved for telemetry-1793219850140-d81f153b
+TRACE: confirmed click approved for telemetry-1793219850140-d81f153b
+HARNESS_CHECKPOINT: cockpit route active after stale approval
+TRACE: approved decision locate and open modal for telemetry-1793219853616-17ca1a2d
+TRACE: approved modal opened for telemetry-1793219853616-17ca1a2d
+TRACE: confirming approved for telemetry-1793219853616-17ca1a2d
+TRACE: confirmed click approved for telemetry-1793219853616-17ca1a2d
+{"status":"PASS","evidencePath":"<TEMP_VALIDATION_ROOT>\\rehearsal\\evidence\\package-agent-electron-attempt-12.json","finalRunId":"judged-run-agent-telemetry-1793219853616-17ca1a2d","finalAnalysisId":"telemetry-1793219853616-17ca1a2d","engineeringVerdict":"FAIL","downloadedSha256":"f72efb1b9090da46780986c599724114d753ff1a2e5868cd6a12b6ffd6c70ce8"}

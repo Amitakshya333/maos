@@ -1,0 +1,18 @@
+[
+  {
+    "runtime": "PowerShell7",
+    "version": "PowerShell 7.6.9",
+    "command": "C:\\Program Files\\PowerShell\\7\\pwsh.exe -NoProfile -NonInteractive -File verify-native-npm-helper.ps1",
+    "exitCode": 0,
+    "stdout": "PASS: stderr with exit 0 was accepted.\r\nPASS: stderr with exit 23 failed with exit 23.\r\nPASS: ErrorActionPreference and working directory were restored after both outcomes.\r\n",
+    "stderr": "synthetic npm notice \r\nsynthetic npm notice \r\n"
+  },
+  {
+    "runtime": "WindowsPowerShell51",
+    "version": "5.1.26100.9711",
+    "command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -NonInteractive -File verify-native-npm-helper.ps1",
+    "exitCode": 0,
+    "stdout": "PASS: stderr with exit 0 was accepted.\r\nPASS: stderr with exit 23 failed with exit 23.\r\nPASS: ErrorActionPreference and working directory were restored after both outcomes.\r\n",
+    "stderr": "synthetic npm notice \r\nsynthetic npm notice \r\n"
+  }
+]

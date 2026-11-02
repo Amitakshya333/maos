@@ -1,0 +1,9 @@
+diff --git "a/C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\checkpoint-eof-whitespace-2026-10-29\\doctor-reviewed-before.ts" "b/C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\checkpoint-eof-whitespace-2026-10-29\\doctor-corrected.ts"
+index adb7ce5..69d38b6 100644
+--- "a/C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\checkpoint-eof-whitespace-2026-10-29\\doctor-reviewed-before.ts"
++++ "b/C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\checkpoint-eof-whitespace-2026-10-29\\doctor-corrected.ts"
+@@ -317,4 +317,3 @@ function isCommandAvailable(command: string): boolean {
+     }
+   }
+ }
+-

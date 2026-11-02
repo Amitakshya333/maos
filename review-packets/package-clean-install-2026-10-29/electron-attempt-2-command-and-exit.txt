@@ -1,0 +1,7 @@
+COMMAND: node "<TEMP_VALIDATION_ROOT>\rehearsal\test-tools\desktop-agent-installed-package-rehearsal.cjs" --package-root "<TEMP_VALIDATION_ROOT>\locked-install\node_modules\maosorch" --evidence-path "<TEMP_VALIDATION_ROOT>\rehearsal\evidence\package-agent-electron-restart.json"
+PACKAGE_ROOT: installed copy
+RUST_ENGINE: separately built prerequisite from isolated exact-source checkout
+INFERENCE: loopback mock only
+EXIT_CODE: 1`r`nCLASSIFICATION: temporary harness assumed the saved Cockpit panel survives a new loopback origin; authoritative approval remained visible in the queue
+
+

@@ -1,0 +1,1 @@
+powershell.exe -File "C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\event-reconstruct\scripts\apply-event-patches.ps1" -CorePath "C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core-reconstruct"

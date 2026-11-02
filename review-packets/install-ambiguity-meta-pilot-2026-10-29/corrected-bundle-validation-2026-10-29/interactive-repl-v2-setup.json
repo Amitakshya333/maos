@@ -1,0 +1,20 @@
+{
+  "alternateProjectRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal v2 with spaces\\alternate project with spaces",
+  "rows": 3,
+  "v1MockPidStopped": true,
+  "eventsFile": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal v2 with spaces\\mock-events.jsonl",
+  "loopbackOnly": true,
+  "v2Port": 59352,
+  "projectRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal v2 with spaces\\selected synthetic project with spaces",
+  "thresholds": {
+    "vibrationCritical": 8,
+    "temperatureCritical": 95
+  },
+  "v2MockPid": 36188,
+  "synthetic": true,
+  "initialWorkingDirectory": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\interactive REPL rehearsal v2 with spaces\\operator terminal cwd with spaces",
+  "csvValues": {
+    "peakTemperature": 99,
+    "peakVibration": 8.6
+  }
+}

@@ -1,0 +1,959 @@
+diff --git a/src/api/middleware.ts b/src/api/middleware.ts
+index 4a8eb6d..2261ce0 100644
+--- a/src/api/middleware.ts
++++ b/src/api/middleware.ts
+@@ -15,6 +15,7 @@ import * as path from 'path';
+ import * as crypto from 'crypto';
+ import type { ApiErrorEnvelope } from './types';
+ import { DurableIdempotencyStore } from '../core/idempotency-store';
++import type { IdempotencyRecord as DurableIdempotencyRecord } from '../domain/schemas';
+ import { SECURITY_HEADERS, CONTENT_SECURITY_POLICY, applySecurityHeaders } from './security-headers';
+ import { redactSensitive } from '../core/redaction';
+ 
+@@ -196,6 +197,7 @@ export function checkIdempotency(
+   durableStore?: DurableIdempotencyStore,
+   operation?: string,
+   projectId?: string,
++  onDurableReplay?: (record: DurableIdempotencyRecord) => boolean,
+ ): { isReplay: boolean; idempotencyKey?: string; bodyHash?: string } {
+   const idempotencyKey = req.headers['idempotency-key'];
+   if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
+@@ -250,6 +252,9 @@ export function checkIdempotency(
+     }
+ 
+     if (claim.outcome === 'replay') {
++      if (onDurableReplay?.(claim.record)) {
++        return { isReplay: true, idempotencyKey: key, bodyHash };
++      }
+       sendJson(res, claim.record.responseStatus || 200, claim.record.responsePayload, correlationId, {
+         'Idempotent-Replay': 'true',
+       });
+diff --git a/src/api/router.ts b/src/api/router.ts
+index b473088..4bc9a9c 100644
+--- a/src/api/router.ts
++++ b/src/api/router.ts
+@@ -98,8 +98,53 @@ import {
+   prepareAgentJudgedRun,
+   readJudgedRunManifest,
+ } from '../industrial/judged-run';
++import { withJudgedRunLock, withJudgedRunOutputLock } from '../industrial/judged-run-lock';
++import type { IdempotencyRecord as DurableIdempotencyRecord } from '../domain/schemas';
+ import { storeTelemetryAnalysis } from '../industrial/telemetry-analysis';
+ 
++function replayCurrentJudgedRunCompletion(
++  projectRoot: string,
++  services: ServiceContainer,
++  response: http.ServerResponse,
++  correlationId: string,
++  record: DurableIdempotencyRecord,
++): boolean {
++  const payload = record.responsePayload as any;
++  const completedRun = payload?.data?.success === true && payload.data.status === 'completed'
++    ? payload.data
++    : payload?.judgedRun?.status === 'completed' ? payload.judgedRun : undefined;
++  if (!completedRun) return false;
++
++  const runId = typeof completedRun.runId === 'string' ? completedRun.runId : undefined;
++  if (!runId) {
++    sendError(response, 409, 'JUDGED_RUN_NOT_ACCEPTED', 'The historical completion response has no run ID to verify; no work was repeated.', correlationId);
++    return true;
++  }
++
++  try {
++    return withJudgedRunOutputLock(projectRoot, () => withJudgedRunLock(projectRoot, runId, () => {
++      const manifest = readJudgedRunManifest(projectRoot, runId);
++      if (!manifest || !isAcceptedJudgedRun(projectRoot, services, manifest)) {
++        sendError(response, 409, 'JUDGED_RUN_NOT_ACCEPTED', 'This request previously completed, but the run is no longer currently accepted or its output is unavailable. No work was repeated.', correlationId);
++      } else {
++        sendJson(response, record.responseStatus || 200, record.responsePayload, correlationId, {
++          'Idempotent-Replay': 'true',
++        });
++      }
++      return true;
++    }));
++  } catch (error: any) {
++    if (error?.code === 'JUDGED_RUN_BUSY') {
++      sendError(response, 409, 'JUDGED_RUN_BUSY', 'Current run acceptance is being changed; retry this replay after the active operation finishes.', correlationId);
++    } else if (error?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
++      sendError(response, 503, 'JUDGED_RUN_LOCK_UNAVAILABLE', 'Current run acceptance could not be checked because its coordination lock is unavailable.', correlationId);
++    } else {
++      sendError(response, 503, 'JUDGED_RUN_REPLAY_CHECK_FAILED', 'Current run acceptance could not be checked. The historical operation was not repeated.', correlationId);
++    }
++    return true;
++  }
++}
++
+ export class RestApiRouter {
+   constructor(
+     private readonly services: ServiceContainer,
+@@ -400,6 +445,7 @@ export class RestApiRouter {
+         this.services.idempotency,
+         'start_industrial_judged_run',
+         'default',
++        (record) => replayCurrentJudgedRunCompletion(this.projectRoot, this.services, res, correlationId, record),
+       );
+       if (idempotency.isReplay) return true;
+       try {
+@@ -755,6 +801,14 @@ export class RestApiRouter {
+         }
+         sendJson(res, 200, responsePayload, correlationId);
+       } catch (err: any) {
++        if (err?.code === 'JUDGED_RUN_BUSY') {
++          sendError(res, 409, 'JUDGED_RUN_BUSY', 'Artifact preview purge is deferred while a judged-run output is being finalized.', correlationId);
++          return true;
++        }
++        if (err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') {
++          sendError(res, 503, 'JUDGED_RUN_LOCK_UNAVAILABLE', 'Artifact preview purge could not acquire the project output lock.', correlationId);
++          return true;
++        }
+         const code = err.message?.includes('IMMUTABLE_AUDIT_PURGE_FORBIDDEN')
+           ? 'IMMUTABLE_AUDIT_PURGE_FORBIDDEN'
+           : err.message?.includes('FINALIZED_DELIVERABLE_PURGE_FORBIDDEN')
+@@ -1833,6 +1887,9 @@ export class RestApiRouter {
+         this.services.idempotency,
+         'review_approval',
+         'default',
++        currentApproval?.metadata?.kind === 'maos-industrial-judged-run'
++          ? (record) => replayCurrentJudgedRunCompletion(this.projectRoot, this.services, res, correlationId, record)
++          : undefined,
+       );
+       if (idempotency.isReplay) return true;
+ 
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index 776bbf3..d514e46 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -135,8 +135,8 @@ export interface RequestOptions {
+ 
+ export interface JudgedRunResponse {
+   runId: string;
+-  status: 'pending_approval' | 'finalizing' | 'rejected' | 'completed' | 'failed';
+-  verdict: 'PASS' | 'WARNING' | 'FAIL';
++  status: 'pending_approval' | 'finalizing' | 'rejected' | 'completed' | 'failed' | 'in_progress';
++  verdict: 'PASS' | 'WARNING' | 'FAIL' | 'UNAVAILABLE';
+   message?: string;
+   approvalId?: string;
+   deliverablePath?: string;
+diff --git a/src/industrial/deterministic-reset.ts b/src/industrial/deterministic-reset.ts
+index 51905cd..e3570b1 100644
+--- a/src/industrial/deterministic-reset.ts
++++ b/src/industrial/deterministic-reset.ts
+@@ -22,6 +22,7 @@
+ import * as fs from 'fs';
+ import * as path from 'path';
+ import type { AuditService } from '../service/audit-service';
++import { withJudgedRunOutputLock } from './judged-run-lock';
+ 
+ export const RESET_CATEGORIES = [
+   'queue',
+@@ -296,11 +297,10 @@ export async function executeDeterministicReset(
+     };
+   }
+ 
+-  const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
+-  const totalBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
+-
+   // Dry run mode
+   if (dryRun) {
++    const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
++    const totalBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
+     return {
+       success: true,
+       dryRun: true,
+@@ -316,6 +316,8 @@ export async function executeDeterministicReset(
+ 
+   // Live execution mandates explicit confirmation
+   if (!options.confirmed) {
++    const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
++    const totalBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
+     return {
+       success: false,
+       dryRun: false,
+@@ -330,59 +332,63 @@ export async function executeDeterministicReset(
+     };
+   }
+ 
+-  // Execute deletion
+-  const removed: ResetCandidateFile[] = [];
+-  const errors: string[] = [];
++  return withJudgedRunOutputLock(projectRoot, () => {
++    // Scan under the same project lock as deletion so a publisher cannot appear between them.
++    const candidates = discoverResetCandidates(projectRoot, categories, options.runId);
++    const totalBytes = candidates.reduce((sum, c) => sum + c.byteSize, 0);
++    const removed: ResetCandidateFile[] = [];
++    const errors: string[] = [];
++
++    for (const file of candidates) {
++      // Double-check forbidden guard before physical deletion
++      if (isForbiddenPath(file.absolutePath, projectRoot)) {
++        errors.push(`Attempted deletion of protected path skipped: ${file.relativePath}`);
++        continue;
++      }
+ 
+-  for (const file of candidates) {
+-    // Double-check forbidden guard before physical deletion
+-    if (isForbiddenPath(file.absolutePath, projectRoot)) {
+-      errors.push(`Attempted deletion of protected path skipped: ${file.relativePath}`);
+-      continue;
++      try {
++        if (fs.existsSync(file.absolutePath)) {
++          fs.unlinkSync(file.absolutePath);
++          removed.push(file);
++        }
++      } catch (err: any) {
++        errors.push(`Failed to delete ${file.relativePath}: ${err.message}`);
++      }
+     }
+ 
+-    try {
+-      if (fs.existsSync(file.absolutePath)) {
+-        fs.unlinkSync(file.absolutePath);
+-        removed.push(file);
++    // Record the reset without changing a judged run's historical terminal state.
++    if (options.auditService) {
++      try {
++        options.auditService.recordAuditEvent({
++          category: 'interruption',
++          source: 'deterministic-reset',
++          data: {
++            event: 'DETERMINISTIC_RESET_EXECUTED',
++            categories,
++            runId: options.runId,
++            filesRemovedCount: removed.length,
++            totalBytesRemoved: totalBytes,
++            timestamp: new Date().toISOString(),
++          },
++        });
++      } catch (err: any) {
++        errors.push(`Failed to record reset audit event after removing ${removed.length} files: ${err.message}`);
+       }
+-    } catch (err: any) {
+-      errors.push(`Failed to delete ${file.relativePath}: ${err.message}`);
+     }
+-  }
+ 
+-  // Record audit log if audit service is available
+-  if (options.auditService) {
+-    try {
+-      options.auditService.recordAuditEvent({
+-        category: 'interruption',
+-        source: 'deterministic-reset',
+-        data: {
+-          event: 'DETERMINISTIC_RESET_EXECUTED',
+-          categories,
+-          runId: options.runId,
+-          filesRemovedCount: removed.length,
+-          totalBytesRemoved: totalBytes,
+-          timestamp: new Date().toISOString(),
+-        },
+-      });
+-    } catch {
+-      // Non-fatal audit recording
+-    }
+-  }
++    const msg = `Deterministic reset removed ${removed.length} generated files (${totalBytes} bytes) across categories [${categories.join(', ')}].`;
+ 
+-  const msg = `Deterministic reset removed ${removed.length} generated files (${totalBytes} bytes) across categories [${categories.join(', ')}].`;
+-
+-  return {
+-    success: errors.length === 0,
+-    dryRun: false,
+-    projectRoot,
+-    categories,
+-    runId: options.runId,
+-    candidateFiles: candidates,
+-    removedFiles: removed,
+-    totalBytes,
+-    message: msg,
+-    error: errors.length > 0 ? errors.join('; ') : undefined,
+-  };
++    return {
++      success: errors.length === 0,
++      dryRun: false,
++      projectRoot,
++      categories,
++      runId: options.runId,
++      candidateFiles: candidates,
++      removedFiles: removed,
++      totalBytes,
++      message: msg,
++      error: errors.length > 0 ? errors.join('; ') : undefined,
++    };
++  });
+ }
+diff --git a/src/industrial/industrial-cli.ts b/src/industrial/industrial-cli.ts
+index bab6344..5872dd3 100644
+--- a/src/industrial/industrial-cli.ts
++++ b/src/industrial/industrial-cli.ts
+@@ -887,6 +887,8 @@ export async function runIndustrialReset(
+     });
+ 
+     const data: Record<string, unknown> = {
++      success: result.success,
++      error: result.error,
+       dryRun: result.dryRun,
+       projectRoot: result.projectRoot,
+       categories: result.categories,
+@@ -912,20 +914,25 @@ export async function runIndustrialReset(
+         }
+         console.log(chalk.yellow('\nNo files were deleted. To perform live reset, run with --yes.'));
+       } else {
+-        console.log(chalk.bold.green('\n🧹 MAOS Industrial — Deterministic Reset (COMPLETED)\n'));
++        console.log(chalk.bold[result.success ? 'green' : 'yellow'](`\n🧹 MAOS Industrial — Deterministic Reset (${result.success ? 'COMPLETED' : 'COMPLETED WITH ERRORS'})\n`));
+         console.log(chalk.gray(`Project Root: ${projectRoot}`));
+         console.log(chalk.gray(`Categories:   ${categories.join(', ')}`));
+         console.log(`Removed ${result.removedFiles.length} generated files (${result.totalBytes} bytes).\n`);
++        if (result.error) console.error(chalk.red(result.error));
+       }
+     }
+ 
+     return {
+-      exitCode: INDUSTRIAL_CLI_EXIT.SUCCESS,
++      exitCode: result.success ? INDUSTRIAL_CLI_EXIT.SUCCESS : INDUSTRIAL_CLI_EXIT.RESET_FAILED,
+       message: result.message,
+       data,
+     };
+   } catch (err: any) {
+-    const msg = `Reset failed: ${err.message}`;
++    const msg = err?.code === 'JUDGED_RUN_BUSY'
++      ? `Reset busy: ${err.message}`
++      : err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE'
++        ? `Reset unavailable: ${err.message}`
++        : `Reset failed: ${err.message}`;
+     if (!options.json) console.error(chalk.red(msg));
+     return { exitCode: INDUSTRIAL_CLI_EXIT.RESET_FAILED, message: msg };
+   }
+diff --git a/src/industrial/judged-run.ts b/src/industrial/judged-run.ts
+index c566c6b..3b56794 100644
+--- a/src/industrial/judged-run.ts
++++ b/src/industrial/judged-run.ts
+@@ -23,7 +23,7 @@ import chalk from 'chalk';
+ import { createServiceContainer, ServiceContainer } from '../service';
+ import { INDUSTRIAL_CLI_EXIT, IndustrialCliExitCode } from './industrial-cli';
+ import type { ApprovalRecord, ReviewApprovalInput } from '../domain/approval';
+-import { withJudgedRunLock } from './judged-run-lock';
++import { withJudgedRunLock, withJudgedRunOutputLock } from './judged-run-lock';
+ import {
+   OfficeDocxInput,
+   computeOfficeInputHash,
+@@ -50,7 +50,7 @@ export interface JudgedRunResult {
+   readonly stagesCompleted: readonly string[];
+   readonly boundaryVerified: boolean;
+   readonly policyVerified: boolean;
+-  readonly overallVerdict: 'PASS' | 'WARNING' | 'FAIL';
++  readonly overallVerdict: 'PASS' | 'WARNING' | 'FAIL' | 'UNAVAILABLE';
+   readonly approvalStatus: 'approved' | 'rejected' | 'pending';
+   readonly deliverablePath?: string;
+   readonly deliverableSha256?: string;
+@@ -415,7 +415,8 @@ export function prepareAgentJudgedRun(
+ ): JudgedRunManifest {
+   if (!/^telemetry-\d{10,}-[a-f0-9]{8}$/.test(analysisId)) throw new Error('Invalid telemetry analysis ID.');
+   const runId = `judged-run-agent-${analysisId}`;
+-  return withJudgedRunLock(projectRoot, runId, () => prepareAgentJudgedRunLocked(projectRoot, services, analysisId, runId));
++  return withJudgedRunOutputLock(projectRoot, () =>
++    withJudgedRunLock(projectRoot, runId, () => prepareAgentJudgedRunLocked(projectRoot, services, analysisId, runId)));
+ }
+ 
+ function prepareAgentJudgedRunLocked(
+@@ -757,8 +758,9 @@ export async function executeJudgedRun(
+   const runId = `judged-run-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+   const runUnderLock = async () => {
+     try {
+-      return await withJudgedRunLock(projectRoot, 'judged-run-t07-output', () =>
+-        withJudgedRunLock(projectRoot, runId, () => executeJudgedRunInner(options, services, runId)));
++      return await withJudgedRunOutputLock(projectRoot, () =>
++        withJudgedRunLock(projectRoot, 'judged-run-t07-output', () =>
++          withJudgedRunLock(projectRoot, runId, () => executeJudgedRunInner(options, services, runId))));
+     } catch (error) {
+       if (!['JUDGED_RUN_BUSY', 'JUDGED_RUN_LOCK_UNAVAILABLE'].includes(String((error as any)?.code))) throw error;
+       const code = String((error as any).code);
+@@ -771,7 +773,7 @@ export async function executeJudgedRun(
+         stagesCompleted: [],
+         boundaryVerified: true,
+         policyVerified: true,
+-        overallVerdict: 'FAIL' as const,
++        overallVerdict: 'UNAVAILABLE' as const,
+         approvalStatus: 'pending' as const,
+         auditVerified: false,
+         details: { executionErrorCode: code },
+@@ -1494,7 +1496,8 @@ export async function resumeJudgedRunAfterApproval(
+     throw new Error(`Approval '${approvalId}' is not bound to a MAOS Industrial judged run.`);
+   }
+   const runId = String(approval.metadata.runId || approval.runId || '');
+-  return withJudgedRunLock(projectRoot, runId, () => resumeJudgedRunAfterApprovalLocked(projectRoot, services, approvalId));
++  return withJudgedRunOutputLock(projectRoot, () =>
++    withJudgedRunLock(projectRoot, runId, () => resumeJudgedRunAfterApprovalLocked(projectRoot, services, approvalId)));
+ }
+ 
+ export async function decideAndResumeJudgedRunAfterApproval(
+@@ -1508,7 +1511,8 @@ export async function decideAndResumeJudgedRunAfterApproval(
+     throw new Error(`Approval '${approvalId}' is not bound to a MAOS Industrial judged run.`);
+   }
+   const runId = String(approval.metadata.runId || approval.runId || '');
+-  return withJudgedRunLock(projectRoot, runId, async (): Promise<{ approval: ApprovalRecord; judgedRun: JudgedRunManifest }> => {
++  return withJudgedRunOutputLock(projectRoot, () =>
++    withJudgedRunLock(projectRoot, runId, async (): Promise<{ approval: ApprovalRecord; judgedRun: JudgedRunManifest }> => {
+     const current = services.approval.getApproval(approvalId);
+     const sameDecision = current?.status === review.decision && current.reviewedBy === review.actorId &&
+       current.reviewRole === review.actorRole && (current.reviewNotes || undefined) === (review.notes || undefined) &&
+@@ -1518,7 +1522,7 @@ export async function decideAndResumeJudgedRunAfterApproval(
+       : services.approval.decideApproval(approvalId, review);
+     const judgedRun = await resumeJudgedRunAfterApprovalLocked(projectRoot, services, approvalId);
+     return { approval: updatedApproval, judgedRun };
+-  });
++    }));
+ }
+ 
+ async function resumeJudgedRunAfterApprovalLocked(
+diff --git a/src/industrial/atomic-cleanup-coordinator.ts b/src/industrial/atomic-cleanup-coordinator.ts
+index 733cc7b..3308b42 100644
+--- a/src/industrial/atomic-cleanup-coordinator.ts
++++ b/src/industrial/atomic-cleanup-coordinator.ts
+@@ -326,7 +326,6 @@ export class AtomicCleanupCoordinator {
+       }
+     }
+     const artifactDirs = [
+-      path.join(this.projectRoot, 'artifacts', '.tmp'),
+       path.join(this.projectRoot, '.maos', 'artifacts', 'tmp'),
+     ];
+     for (const dir of artifactDirs) {
+diff --git a/src/service/artifact-service.ts b/src/service/artifact-service.ts
+index 8192325..458f514 100644
+--- a/src/service/artifact-service.ts
++++ b/src/service/artifact-service.ts
+@@ -20,6 +20,7 @@ import * as fs from 'fs';
+ import * as path from 'path';
+ import * as crypto from 'crypto';
+ import type { Artifact, ArtifactType } from '../domain/schemas';
++import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
+ import { EventService } from './event-service';
+ import { ApprovalService } from './approval-service';
+ import { getDefaultEnginePath, verifyExecutable, engineHash } from '../industrial/rust-engine-bridge';
+@@ -658,31 +659,39 @@ export class ArtifactService {
+    * Purge orphaned temporary files left behind by crashes or interrupted writes.
+    */
+   cleanupOrphanTempFiles(maxAgeMs = 0): number {
+-    let purged = 0;
+-    if (!fs.existsSync(this.tmpDir)) return 0;
+-
+     try {
+-      const entries = fs.readdirSync(this.tmpDir);
+-      const now = Date.now();
+-
+-      for (const entry of entries) {
+-        if (entry.startsWith('.tmp_')) {
+-          const full = path.join(this.tmpDir, entry);
+-          try {
+-            const stat = fs.statSync(full);
+-            // A zero age is an explicit recovery sweep and must remove every
+-            // matching temp file, even when filesystem timestamp resolution
+-            // reports a freshly-created file a few milliseconds in the future.
+-            const ageMs = Math.max(0, now - stat.mtimeMs);
+-            if (maxAgeMs <= 0 || ageMs >= maxAgeMs) {
+-              fs.unlinkSync(full);
+-              purged++;
++      return withJudgedRunOutputLock(this.projectRoot, () => {
++        let purged = 0;
++        if (!fs.existsSync(this.tmpDir)) return 0;
++
++        try {
++          const entries = fs.readdirSync(this.tmpDir);
++          const now = Date.now();
++
++          for (const entry of entries) {
++            if (entry.startsWith('.tmp_')) {
++              const full = path.join(this.tmpDir, entry);
++              try {
++                const stat = fs.statSync(full);
++                // A zero age is an explicit recovery sweep and must remove every
++                // matching temp file, even when filesystem timestamp resolution
++                // reports a freshly-created file a few milliseconds in the future.
++                const ageMs = Math.max(0, now - stat.mtimeMs);
++                if (maxAgeMs <= 0 || ageMs >= maxAgeMs) {
++                  fs.unlinkSync(full);
++                  purged++;
++                }
++              } catch {}
+             }
+-          } catch {}
+-        }
+-      }
+-    } catch {}
++          }
++        } catch {}
+ 
+-    return purged;
++        return purged;
++      });
++    } catch (error: any) {
++      // Startup/housekeeping cleanup can be retried after active publication releases the lock.
++      if (error?.code === 'JUDGED_RUN_BUSY' || error?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE') return 0;
++      throw error;
++    }
+   }
+ }
+diff --git a/src/service/retention-service.ts b/src/service/retention-service.ts
+index 113db32..7e26db9 100644
+--- a/src/service/retention-service.ts
++++ b/src/service/retention-service.ts
+@@ -30,6 +30,7 @@ import { DEFAULT_RETENTION_SETTINGS } from '../domain/settings';
+ import type { AuditService } from './audit-service';
+ import type { BasicSettingsStore } from './project-service/settings-store';
+ import type { Conversation } from '../domain/schemas';
++import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+ 
+@@ -238,6 +239,14 @@ export class RetentionService {
+       throw new Error(`VALIDATION_FAILED: ${val.errors.join('; ')}`);
+     }
+ 
++    const purgesArtifactPreviews = options.target === 'artifact_previews' || options.target === 'all_expired';
++    return !options.dryRun && purgesArtifactPreviews
++      ? withJudgedRunOutputLock(this.projectRoot, () => this.executeValidatedPurge(options))
++      : this.executeValidatedPurge(options);
++  }
++
++  private executeValidatedPurge(options: PurgeOptions): PurgeResult {
++
+     const retention = this.getRetentionSettings();
+     const conversationDays = options.conversationDays ?? retention.conversationDays;
+     const artifactPreviewDays = options.artifactPreviewDays ?? retention.artifactPreviewDays;
+diff --git a/tests/f3-05-artifact-store.test.ts b/tests/f3-05-artifact-store.test.ts
+index 6249aa3..b3601df 100644
+--- a/tests/f3-05-artifact-store.test.ts
++++ b/tests/f3-05-artifact-store.test.ts
+@@ -30,6 +30,7 @@ import { createRestApiServer, RestApiServer } from '../src/api/server';
+ import { ArtifactService } from '../src/service/artifact-service';
+ import { ApprovalService } from '../src/service/approval-service';
+ import { EventService } from '../src/service/event-service';
++import { withJudgedRunOutputLock } from '../src/industrial/judged-run-lock';
+ 
+ describe('F3-05 Safe Artifact Store', () => {
+   let testDir: string;
+@@ -457,6 +458,20 @@ describe('F3-05 Safe Artifact Store', () => {
+       const remaining = fs.readdirSync(tmpDir).filter((f) => f.includes('art_crash_test'));
+       expect(remaining.length).toBe(0);
+     });
++
++    it('defers orphan cleanup while a judged-run output lock is held', () => {
++      const tmpDir = path.join(testDir, 'artifacts', '.tmp');
++      fs.mkdirSync(tmpDir, { recursive: true });
++      const tmpPath = path.join(tmpDir, '.tmp_inflight-docx');
++      fs.writeFileSync(tmpPath, 'in-flight output');
++
++      const purged = withJudgedRunOutputLock(testDir, () => artifactService.cleanupOrphanTempFiles(0));
++      expect(purged).toBe(0);
++      expect(fs.existsSync(tmpPath)).toBe(true);
++
++      expect(artifactService.cleanupOrphanTempFiles(0)).toBe(1);
++      expect(fs.existsSync(tmpPath)).toBe(false);
++    });
+   });
+ 
+   // ── 5. Content Retrieval & Confinement ──────────────────────────
+diff --git a/tests/gui/ui1-10-evidence-retention.test.ts b/tests/gui/ui1-10-evidence-retention.test.ts
+index 03c8616..cf6fa14 100644
+--- a/tests/gui/ui1-10-evidence-retention.test.ts
++++ b/tests/gui/ui1-10-evidence-retention.test.ts
+@@ -74,6 +74,7 @@ import { ProjectServiceHost, createProjectServiceHost } from '../../src/service/
+ import { BrowserRestClient } from '../../src/gui/src/api/rest-client';
+ import { GuiApiAdapter } from '../../src/gui/src/api/adapter';
+ import { Conversation, Message } from '../../src/domain/schemas';
++import { withJudgedRunOutputLock } from '../../src/industrial/judged-run-lock';
+ 
+ const CANARY_PATH = path.resolve(__dirname, '../../rust/test.txt');
+ const EXPECTED_CANARY_SHA256 = '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
+@@ -137,6 +138,7 @@ describe('UI1-10: Evidence / Brainstorm Modes and Retention', () => {
+     testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-10-'));
+     auditDir = path.join(testRoot, '.maos', 'audit');
+     fs.mkdirSync(auditDir, { recursive: true });
++    fs.writeFileSync(path.join(testRoot, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ui1-10-retention-test' }));
+ 
+     // Initialize HTTP host
+     projectHost = createProjectServiceHost(testRoot, { port: 0 });
+@@ -490,6 +492,32 @@ describe('UI1-10: Evidence / Brainstorm Modes and Retention', () => {
+       expect(fs.existsSync(pptxPath)).toBe(true);
+     });
+ 
++    it('refuses artifact-preview purge while a judged-run output lock is held', () => {
++      const previewDir = path.join(testRoot, 'artifacts', '.tmp');
++      fs.mkdirSync(previewDir, { recursive: true });
++      const previewPath = path.join(previewDir, 'preview-during-finalization.png');
++      fs.writeFileSync(previewPath, 'in-flight preview');
++      const oldTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
++      fs.utimesSync(previewPath, oldTime, oldTime);
++
++      let error: any;
++      try {
++        withJudgedRunOutputLock(testRoot, () => retentionService.purge({
++          target: 'artifact_previews',
++          artifactPreviewDays: 1,
++          dryRun: false,
++        }));
++      } catch (caught) {
++        error = caught;
++      }
++      expect(error?.code).toBe('JUDGED_RUN_BUSY');
++      expect(fs.existsSync(previewPath)).toBe(true);
++
++      const result = retentionService.purge({ target: 'artifact_previews', artifactPreviewDays: 1, dryRun: false });
++      expect(result.purgedArtifactPreviews).toBe(1);
++      expect(fs.existsSync(previewPath)).toBe(false);
++    });
++
+     it('SAFETY INVARIANT: directory traversal paths are strictly rejected', async () => {
+       expect(() => {
+         retentionService.assertSafePath(path.join(testRoot, '..', 'escape.txt'));
+diff --git a/tests/industrial/f10-05-deterministic-reset.test.ts b/tests/industrial/f10-05-deterministic-reset.test.ts
+index 4784699..1ff3180 100644
+--- a/tests/industrial/f10-05-deterministic-reset.test.ts
++++ b/tests/industrial/f10-05-deterministic-reset.test.ts
+@@ -1,5 +1,6 @@
+ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+ import * as fs from 'fs';
++import * as os from 'os';
+ import * as path from 'path';
+ import * as crypto from 'crypto';
+ import {
+@@ -19,9 +20,10 @@ const CANARY_PATH = path.resolve(PROJECT_ROOT, 'rust', 'test.txt');
+ const CANARY_EXPECTED_HASH = '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
+ 
+ describe('F10-05: Deterministic Reset for Industrial Generated Test State', () => {
+-  const testRoot = path.resolve(__dirname, '../../.maos/test-temp-f10-05-' + Date.now());
++  let testRoot: string;
+ 
+   beforeEach(() => {
++    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-temp-f10-05-'));
+     // Scaffold isolated test project environment
+     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'tasks'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'objectives'), { recursive: true });
+@@ -37,6 +39,7 @@ describe('F10-05: Deterministic Reset for Industrial Generated Test State', () =
+     fs.mkdirSync(path.join(testRoot, '.maos', 'sessions'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'audit'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, 'fixtures'), { recursive: true });
++    fs.writeFileSync(path.join(testRoot, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f10-05-reset-test' }));
+ 
+     // Populate generated state files
+     fs.writeFileSync(path.join(testRoot, '.maos', 'queue', 'tasks', 'task-runA-01.json'), '{"taskId":"task-runA-01","runId":"run-A"}');
+diff --git a/src/industrial/judged-run-lock.ts b/src/industrial/judged-run-lock.ts
+index e01a0cd..d44eac4 100644
+--- a/src/industrial/judged-run-lock.ts
++++ b/src/industrial/judged-run-lock.ts
+@@ -14,7 +14,7 @@ export class JudgedRunBusyError extends Error {
+   readonly code = 'JUDGED_RUN_BUSY';
+ 
+   constructor(runId: string) {
+-    super(`Judged run '${runId}' is already being changed; retry after the active operation finishes.`);
++    super(`Judged-run resource '${runId}' is already being changed; retry after the active operation finishes.`);
+     this.name = 'JudgedRunBusyError';
+   }
+ }
+@@ -161,3 +161,8 @@ export function withJudgedRunLock<T>(projectRoot: string, runId: string, operati
+   releaseLock(held.path, held.owner);
+   return result;
+ }
++
++/** Acquire this before shared-output or per-run locks whenever generated output may change. */
++export function withJudgedRunOutputLock<T>(projectRoot: string, operation: () => T): T {
++  return withJudgedRunLock(projectRoot, 'judged-run-project-output', operation);
++}
+diff --git a/tests/industrial/analysis-agent-auth-http.test.ts b/tests/industrial/analysis-agent-auth-http.test.ts
+index 09bdd47..bcb8200 100644
+--- a/tests/industrial/analysis-agent-auth-http.test.ts
++++ b/tests/industrial/analysis-agent-auth-http.test.ts
+@@ -4,15 +4,19 @@ import * as http from 'node:http';
+ import * as net from 'node:net';
+ import * as os from 'node:os';
+ import * as path from 'node:path';
++import { spawn, spawnSync } from 'node:child_process';
+ import { createHash } from 'node:crypto';
+ import type { AddressInfo } from 'node:net';
+ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import type { AuditEventParams, AuditRecord } from '../../src/domain';
+ import { ProjectServiceHost } from '../../src/service/project-service/host';
+ import { EndpointAllowlistService } from '../../src/service/endpoint-allowlist-service';
++import { INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
+ import { RestApiServer } from '../../src/api/server';
+ import { parseZipArchive } from '../../src/industrial/office/ooxml-packager';
+ import { isAcceptedJudgedRun, readJudgedRunManifest, resumeJudgedRunAfterApproval } from '../../src/industrial/judged-run';
++import { executeDeterministicReset } from '../../src/industrial/deterministic-reset';
++import { withJudgedRunOutputLock } from '../../src/industrial/judged-run-lock';
+ 
+ const REPO_ROOT = path.resolve(__dirname, '../..');
+ const ALLOWED_ORIGIN = 'http://127.0.0.1:41731';
+@@ -52,6 +56,7 @@ function mockAudit(system: AgentSystem) {
+   const events: AuditEventParams[] = [];
+   let nextFailure: { event: string; afterPersist: boolean } | null = null;
+   let failNextExport = false;
++  let afterRecord: ((params: AuditEventParams) => void) | undefined;
+   const audit = system.host.getServer()!.getServices().audit;
+   const spy = vi.spyOn(audit, 'recordAuditEvent').mockImplementation((params) => {
+     if (nextFailure && nextFailure.event === params.data.event && !nextFailure.afterPersist) {
+@@ -60,6 +65,7 @@ function mockAudit(system: AgentSystem) {
+     }
+     events.push(params);
+     const record = makeAuditRecord(params, events.length - 1);
++    afterRecord?.(params);
+     if (nextFailure && nextFailure.event === params.data.event && nextFailure.afterPersist) {
+       nextFailure = null;
+       throw new Error(`simulated post-persist ${String(params.data.event)} failure`);
+@@ -84,6 +90,73 @@ function mockAudit(system: AgentSystem) {
+     spy,
+     failNextEvent(event: string, afterPersist = false) { nextFailure = { event, afterPersist }; },
+     failNextExport() { failNextExport = true; },
++    onRecord(callback: (params: AuditEventParams) => void) { afterRecord = callback; },
++  };
++}
++
++function resetCliFromChild(projectRoot: string, runId: string) {
++  const cliModule = path.join(REPO_ROOT, 'src', 'industrial', 'industrial-cli.ts');
++  const script = [
++    "const fs = require('node:fs');",
++    "const ts = require('typescript');",
++    "require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);",
++    "console.log = () => {};",
++    "const { runIndustrialReset } = require(process.argv[1]);",
++    "runIndustrialReset({ projectRoot: process.argv[2], allowlist: 'output', runId: process.argv[3], yes: true, json: true }).then(result => { process.stdout.write(JSON.stringify(result)); process.exit(result.exitCode); }, error => { process.stderr.write(String(error)); process.exit(1); });",
++  ].join('\n');
++  const result = spawnSync(process.execPath, ['-e', script, cliModule, projectRoot, runId], {
++    cwd: REPO_ROOT,
++    encoding: 'utf8',
++    timeout: 15_000,
++  });
++  if (result.error) throw result.error;
++  if (result.status === null) throw new Error(`Reset CLI child did not exit: ${result.stderr}`);
++  return { exitCode: result.status, output: `${result.stdout}${result.stderr}`, result: JSON.parse(result.stdout) };
++}
++
++function startPausedResetCli(projectRoot: string, runId: string) {
++  const cliModule = path.join(REPO_ROOT, 'src', 'industrial', 'industrial-cli.ts');
++  const script = [
++    "const fs = require('node:fs');",
++    "const originalUnlink = fs.unlinkSync.bind(fs);",
++    "let paused = false;",
++    "fs.unlinkSync = (target, ...args) => { if (!paused && String(target).includes(process.argv[3])) { paused = true; process.stdout.write('reset-lock-held\\n'); const signal = Buffer.alloc(1); if (fs.readSync(0, signal, 0, 1, null) !== 1) throw new Error('reset barrier closed before release'); } return originalUnlink(target, ...args); };",
++    "const ts = require('typescript');",
++    "require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);",
++    "console.log = () => {};",
++    "const { runIndustrialReset } = require(process.argv[1]);",
++    "runIndustrialReset({ projectRoot: process.argv[2], allowlist: 'output', runId: process.argv[3], yes: true, json: true }).then(result => { process.stdout.write(JSON.stringify(result) + '\\n'); process.exit(result.exitCode); }, error => { process.stderr.write(String(error)); process.exit(1); });",
++  ].join('\n');
++  const child = spawn(process.execPath, ['-e', script, cliModule, projectRoot, runId], { cwd: REPO_ROOT, stdio: 'pipe' });
++  let output = '';
++  child.stdout.on('data', (chunk) => { output += chunk.toString(); });
++  child.stderr.on('data', (chunk) => { output += chunk.toString(); });
++  return {
++    child,
++    output: () => output,
++    waitForMarker(marker: string) {
++      if (output.includes(marker)) return Promise.resolve();
++      return new Promise<void>((resolve, reject) => {
++        const timer = setTimeout(() => reject(new Error(`Reset CLI did not reach '${marker}'. Output: ${output}`)), 15_000);
++        const check = () => {
++          if (output.includes(marker)) {
++            clearTimeout(timer);
++            child.stdout.off('data', check);
++            child.once('exit', (code) => reject(new Error(`Reset CLI exited with ${code} before the barrier was released.`)));
++            resolve();
++          }
++        };
++        child.stdout.on('data', check);
++      });
++    },
++    release() { child.stdin.write('x'); },
++    waitForExit() {
++      return new Promise<number>((resolve, reject) => {
++        if (child.exitCode !== null) return resolve(child.exitCode);
++        child.once('error', reject);
++        child.once('exit', (code) => code === null ? reject(new Error('Reset CLI exited without a status.')) : resolve(code));
++      });
++    },
+   };
+ }
+ 
+@@ -1028,6 +1101,184 @@ describe('authenticated Industrial analysis agent HTTP integration', () => {
+     expect(fs.existsSync(path.join(system.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports'))).toBe(false);
+   });
+ 
++  it('refuses destructive reset while DOCX finalization is active', async () => {
++    const system = await createSystem();
++    mockAudit(system);
++    const { prepared } = await prepareReview(system);
++    const services = system.host.getServer()!.getServices();
++    const entered = deferred<void>();
++    const release = deferred<void>();
++    const generate = services.docxGenerator.generateDocxAsync.bind(services.docxGenerator);
++    vi.spyOn(services.docxGenerator, 'generateDocxAsync').mockImplementation(async (params: any) => {
++      entered.resolve();
++      await release.promise;
++      return generate(params);
++    });
++
++    const finalization = approveReview(system, prepared.payload.data.approvalId);
++    await entered.promise;
++    await expect(executeDeterministicReset({
++      projectRoot: system.root,
++      categories: ['output'],
++      runId: prepared.payload.data.runId,
++      dryRun: false,
++      confirmed: true,
++      auditService: services.audit,
++    })).rejects.toMatchObject({ code: 'JUDGED_RUN_BUSY' });
++    expect(readJudgedRunManifest(system.root, prepared.payload.data.runId)?.status).toBe('finalizing');
++    expect(services.artifact.listArtifacts(prepared.payload.data.runId)).toHaveLength(0);
++
++    release.resolve();
++    expect((await finalization).status).toBe(200);
++    const manifest = readJudgedRunManifest(system.root, prepared.payload.data.runId)!;
++    expect(manifest.status).toBe('completed');
++    expect(isAcceptedJudgedRun(system.root, services, manifest)).toBe(true);
++    expect(services.artifact.listArtifacts(prepared.payload.data.runId)).toHaveLength(1);
++  });
++
++  it('blocks a separate CLI reset process between terminal audit append and acceptance', async () => {
++    const system = await createSystem();
++    const audit = mockAudit(system);
++    const { prepared } = await prepareReview(system);
++    let childResult: ReturnType<typeof resetCliFromChild> | undefined;
++    audit.onRecord((event) => {
++      if (event.data.event === 'JUDGED_RUN_COMPLETED' && event.data.runId === prepared.payload.data.runId) {
++        expect(readJudgedRunManifest(system.root, prepared.payload.data.runId)?.status).toBe('completed');
++        childResult = resetCliFromChild(system.root, prepared.payload.data.runId);
++      }
++    });
++
++    const approved = await approveReview(system, prepared.payload.data.approvalId);
++    expect(approved.status).toBe(200);
++    expect(childResult?.exitCode).toBe(INDUSTRIAL_CLI_EXIT.RESET_FAILED);
++    expect(childResult?.result.message).toContain('Reset busy:');
++    const services = system.host.getServer()!.getServices();
++    const manifest = readJudgedRunManifest(system.root, prepared.payload.data.runId)!;
++    expect(manifest.status).toBe('completed');
++    expect(isAcceptedJudgedRun(system.root, services, manifest)).toBe(true);
++    expect(services.artifact.listArtifacts(manifest.runId)).toHaveLength(1);
++    expect(audit.events.filter((event) => event.data.event === 'JUDGED_RUN_COMPLETED' && event.data.runId === manifest.runId)).toHaveLength(1);
++  });
++
++  it.each(['selected source mutation', 'output corruption'] as const)('invalidates a successful start replay after %s without rerunning work', async (mutation) => {
++    const system = await createSystem();
++    const audit = mockAudit(system);
++    const { analysis, prepared } = await prepareReview(system);
++    expect((await approveReview(system, prepared.payload.data.approvalId)).status).toBe(200);
++    const startBody = { analysisId: analysis.payload.data.evidence.analysisId };
++    const key = `completed-start-${mutation.replaceAll(' ', '-')}`;
++    const start = await post(system, '/api/v1/industrial/judged-runs', startBody, { 'Idempotency-Key': key });
++    expect(start.status).toBe(200);
++    expect(start.payload.data).toMatchObject({ success: true, status: 'completed' });
++    expect((await post(system, '/api/v1/industrial/judged-runs', startBody, { 'Idempotency-Key': key })).status).toBe(200);
++
++    const services = system.host.getServer()!.getServices();
++    const manifest = readJudgedRunManifest(system.root, prepared.payload.data.runId)!;
++    if (mutation === 'selected source mutation') {
++      fs.writeFileSync(path.join(system.root, 'selected.csv'), CSV.replace(',7.4,96', ',1.1,66'));
++    } else {
++      fs.writeFileSync(path.join(system.root, manifest.deliverablePath!), 'corrupted after acceptance');
++    }
++
++    const replay = await post(system, '/api/v1/industrial/judged-runs', startBody, { 'Idempotency-Key': key });
++    expect(replay.status).toBe(409);
++    expect(replay.payload.error.code).toBe('JUDGED_RUN_NOT_ACCEPTED');
++    expect(services.idempotency.getRecord(key)?.status).toBe('completed');
++    expect(isAcceptedJudgedRun(system.root, services, manifest)).toBe(false);
++    expect(services.artifact.listArtifacts(manifest.runId)).toHaveLength(1);
++    expect(audit.events.filter((event) => event.data.event === 'JUDGED_RUN_COMPLETED' && event.data.runId === manifest.runId)).toHaveLength(1);
++    expect(system.model.requests).toHaveLength(2);
++  });
++
++  it('marks completed output unavailable after authorized reset and preserves the historical replay record', async () => {
++    const system = await createSystem();
++    const audit = mockAudit(system);
++    const { prepared } = await prepareReview(system);
++    const key = 'accepted-approval-reset-replay';
++    expect((await approveReview(system, prepared.payload.data.approvalId, undefined, { 'Idempotency-Key': key })).status).toBe(200);
++    expect((await approveReview(system, prepared.payload.data.approvalId, undefined, { 'Idempotency-Key': key })).status).toBe(200);
++
++    const services = system.host.getServer()!.getServices();
++    const manifest = readJudgedRunManifest(system.root, prepared.payload.data.runId)!;
++    const artifact = services.artifact.listArtifacts(manifest.runId)[0];
++    expect(artifact).toBeDefined();
++    const reset = await executeDeterministicReset({
++      projectRoot: system.root,
++      categories: ['output'],
++      runId: manifest.runId,
++      dryRun: false,
++      confirmed: true,
++      auditService: services.audit,
++    });
++    expect(reset.success).toBe(true);
++    expect(reset.removedFiles.map((file) => file.relativePath)).toContain(manifest.deliverablePath);
++    expect(readJudgedRunManifest(system.root, manifest.runId)?.status).toBe('completed');
++    expect(isAcceptedJudgedRun(system.root, services, manifest)).toBe(false);
++
++    const listing = await fetch(`${system.baseURL}/api/v1/artifacts?runId=${encodeURIComponent(manifest.runId)}`, { headers: requestHeaders(system) });
++    expect(listing.status).toBe(200);
++    expect((await listing.json()).data).toHaveLength(0);
++    const generatorListing = await fetch(`${system.baseURL}/api/v1/generator/artifacts`, { headers: requestHeaders(system) });
++    expect(generatorListing.status).toBe(200);
++    expect((await generatorListing.json()).data).not.toContainEqual(expect.objectContaining({ id: artifact.id }));
++    expect((await fetch(`${system.baseURL}/api/v1/artifacts/${encodeURIComponent(artifact.id)}`, { headers: requestHeaders(system) })).status).toBe(404);
++    expect((await fetch(`${system.baseURL}/api/v1/artifacts/${encodeURIComponent(artifact.id)}/content`, { headers: requestHeaders(system) })).status).toBe(404);
++    expect((await fetch(`${system.baseURL}/api/v1/industrial/judged-runs/${encodeURIComponent(manifest.runId)}`, { headers: requestHeaders(system) })).status).toBe(409);
++
++    const staleReplay = await approveReview(system, prepared.payload.data.approvalId, undefined, { 'Idempotency-Key': key });
++    expect(staleReplay.status).toBe(409);
++    expect(staleReplay.payload.error.code).toBe('JUDGED_RUN_NOT_ACCEPTED');
++    expect(services.idempotency.getRecord(key)?.status).toBe('completed');
++    expect(audit.events.filter((event) => event.data.event === 'JUDGED_RUN_COMPLETED' && event.data.runId === manifest.runId)).toHaveLength(1);
++    expect(audit.events.some((event) => event.data.event === 'JUDGED_RUN_FAILED' && event.data.runId === manifest.runId)).toBe(false);
++    expect(audit.events.some((event) => event.data.event === 'DETERMINISTIC_RESET_EXECUTED' && event.data.runId === manifest.runId)).toBe(true);
++  });
++
++  it('keeps a successful replay record intact while reset and replay contend across service and CLI processes', async () => {
++    const system = await createSystem();
++    mockAudit(system);
++    const { prepared } = await prepareReview(system);
++    const key = 'accepted-approval-reset-race';
++    expect((await approveReview(system, prepared.payload.data.approvalId, undefined, { 'Idempotency-Key': key })).status).toBe(200);
++
++    const resetChild = startPausedResetCli(system.root, prepared.payload.data.runId);
++    try {
++      await resetChild.waitForMarker('reset-lock-held');
++      const busyReplay = await approveReview(system, prepared.payload.data.approvalId, undefined, { 'Idempotency-Key': key });
++      expect(busyReplay.status).toBe(409);
++      expect(busyReplay.payload.error.code).toBe('JUDGED_RUN_BUSY');
++      expect(system.host.getServer()!.getServices().idempotency.getRecord(key)?.status).toBe('completed');
++      resetChild.release();
++      expect(await resetChild.waitForExit()).toBe(INDUSTRIAL_CLI_EXIT.SUCCESS);
++      const resetResultLine = resetChild.output().split(/\r?\n/).find((line) => line.startsWith('{'));
++      expect(resetResultLine).toBeDefined();
++      const resetResult = JSON.parse(resetResultLine!);
++      expect(resetResult.data.success).toBe(true);
++      const staleReplay = await approveReview(system, prepared.payload.data.approvalId, undefined, { 'Idempotency-Key': key });
++      expect(staleReplay.status).toBe(409);
++      expect(staleReplay.payload.error.code).toBe('JUDGED_RUN_NOT_ACCEPTED');
++      expect(system.host.getServer()!.getServices().idempotency.getRecord(key)?.status).toBe('completed');
++    } finally {
++      resetChild.release();
++      if (resetChild.child.exitCode === null) await resetChild.waitForExit();
++    }
++  });
++
++  it('serializes a T-07 API attempt behind output work and reports an unavailable verdict', async () => {
++    const system = await createSystem();
++    mockAudit(system);
++    const response = await withJudgedRunOutputLock(system.root, () =>
++      post(system, '/api/v1/industrial/judged-runs', {}));
++    expect(response.status).toBe(409);
++    expect(response.payload.data).toMatchObject({
++      success: false,
++      status: 'in_progress',
++      verdict: 'UNAVAILABLE',
++      details: { executionErrorCode: 'JUDGED_RUN_BUSY' },
++    });
++    expect(response.payload.data.verdict).not.toBe('FAIL');
++  });
++
+   it('disables the route on the legacy authentication-optional REST server', async () => {
+     const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-agent-legacy-rest-'));
+     extraDirectories.push(legacyRoot);

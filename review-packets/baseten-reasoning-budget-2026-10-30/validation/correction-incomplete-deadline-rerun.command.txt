@@ -1,0 +1,1 @@
+node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/industrial/meta-model-api-contract.test.ts -t does not accept a Baseten|applies the sixty-second Industrial deadline

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-fix16-candidate
+
+
+ Test Files  1 passed (1)
+      Tests  33 passed (33)
+   Start at  20:20:09
+   Duration  3.22s (transform 1.94s, setup 0ms, import 2.61s, tests 418ms, environment 0ms)
+

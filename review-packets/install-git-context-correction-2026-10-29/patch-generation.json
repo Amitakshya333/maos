@@ -1,0 +1,21 @@
+{
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "sourceFileCount": 17,
+  "correctionFileCount": 8,
+  "correctionPaths": [
+    "docs/INSTALLATION.md",
+    "scripts/Install-MaosIndustrial.ps1",
+    "src/cli/doctor.ts",
+    "src/cli/index.ts",
+    "src/cli/repl.ts",
+    "src/utils/project-git-context.ts",
+    "tests/cli/project-git-context.test.ts",
+    "tests/industrial/package-runtime-assets.test.ts"
+  ],
+  "completePatchSha256": "ea2ffa2c90cb571add1cab5d3b9f5b26ec2d44b30b0cadbfd621a852304903bb",
+  "completeManifestSha256": "1d32ed58087d030a85d9e637c43bbb569f72ea4d102b02091c868aedb0a8edfd",
+  "correctionPatchSha256": "0cf67fa1e66338e0f1116ba392c3485f115031fb02894bb2aee84104030695f4",
+  "correctionManifestSha256": "632deb5cf1ea909cb28c0c3d3cf219a70e9b8eb42bddb02fc1f99002481bce7b",
+  "fullPatchDiffExitCode": 1,
+  "correctionPatchDiffExitCode": 1
+}

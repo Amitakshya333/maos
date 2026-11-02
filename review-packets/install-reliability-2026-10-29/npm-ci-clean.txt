@@ -1,0 +1,8 @@
+COMMAND: npm ci --no-audit --no-fund --include=dev (scoped source delta over HEAD; .maos excluded before extraction)
+EXIT_CODE: 0
+
+> maosorch@0.3.0 prepare
+> node scripts/prepare-hooks.js
+
+
+added 252 packages in 11s

@@ -1,0 +1,67 @@
+COMMAND=node review-packets/reset-replay-review/validation-shared-boundaries-2026-10-28/capture-final-status.cjs
+{
+  "outputPath": "C:\\maos\\review-packets\\reset-replay-review\\validation-shared-boundaries-2026-10-28\\FINAL_STATUS.json",
+  "capturedAt": "2026-10-28T07:53:59.183Z",
+  "repositoryRoot": "C:/maos",
+  "branch": "main",
+  "head": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "declaredBase": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "indexEmpty": true,
+  "workingTreeHasOtherChanges": true,
+  "patch": {
+    "path": "review-packets/reset-replay-review/shared-boundaries-canonical.patch",
+    "sha256": "96fdbeb470c3862248021602707b6f657ec77893e9d76f7d948d4f2d77501e01"
+  },
+  "sourceManifest": {
+    "path": "review-packets/reset-replay-review/shared-boundaries-source-hashes.json",
+    "sha256": "f15af24c01a5c3cdff3ff911c6bb0381df553c15e43617174ac4e6ecdddb3fc2",
+    "scopeCount": 94,
+    "trackedCount": 72,
+    "addedCount": 22
+  },
+  "sourceHashCheck": {
+    "status": "PASS",
+    "rawEqual": 94,
+    "lfEqual": 94,
+    "mismatches": 0
+  },
+  "isolatedReproduction": {
+    "status": "PASS",
+    "applyCheck": "PASS",
+    "apply": "PASS",
+    "reverseCheck": "PASS",
+    "rawEqual": 37,
+    "lfEqual": 94,
+    "contentMismatches": 0
+  },
+  "tests": {
+    "broad": {
+      "files": 19,
+      "tests": 378,
+      "skipped": 0,
+      "exitCode": 0
+    },
+    "providerIdentity": {
+      "files": 1,
+      "tests": 3,
+      "skipped": 0,
+      "exitCode": 0
+    },
+    "distinctFiles": 20,
+    "distinctTests": 381
+  },
+  "protectedEvidence": {
+    "status": "PASS",
+    "checked": 34,
+    "passed": 34,
+    "failed": 0,
+    "snapshotAt": "2026-10-28T13:03:26.307+05:30"
+  },
+  "frozenRc": {
+    "path": "artifacts/verification/preserved-rc-2026-10-27/maosorch-0.3.0-70a476151e72dabd8f8a8e11faea6fa3bb9337abbbb2f652336c08a990fed360.tgz",
+    "sha256": "70a476151e72dabd8f8a8e11faea6fa3bb9337abbbb2f652336c08a990fed360",
+    "bytes": 4459118
+  }
+}
+
+EXIT_CODE=0

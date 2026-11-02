@@ -1,0 +1,6 @@
+COMMAND=npm run typecheck:gui
+
+> maosorch@0.3.0 typecheck:gui
+> tsc -p tsconfig.gui.json --noEmit
+
+EXIT_CODE=0

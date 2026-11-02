@@ -1,7 +1,5 @@
 {
   "ARCHITECT": true,
-  "CODER_1": true,
-  "CODER_2": true,
-  "CODER_3": true,
-  "REVIEWER": true
+  "BACKEND_DEV": true,
+  "FRONTEND_DEV": true
 }

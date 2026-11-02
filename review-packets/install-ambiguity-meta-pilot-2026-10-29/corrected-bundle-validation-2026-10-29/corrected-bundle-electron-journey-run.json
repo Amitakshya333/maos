@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-10-29T15:50:25.3324011+05:30",
+  "command": "node <retained test-only harness> --package-root <installed app> --evidence-path <new evidence>",
+  "exitCode": 0,
+  "durationSeconds": 8.2,
+  "sourceCommit": "d526bfe95d334ad8a0c73a25db7611c1d0fc7417",
+  "bundle": "maos-industrial-bootstrap-windows-x64-commit-d526bfe-2026-10-29.zip",
+  "bundleSha256": "a1bdd2bc00978b80cc4578a68de06bf426bf1cb5e6a9dbbd17b67125941b99fc",
+  "installedElectronPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces\\app\\desktop\\node_modules\\electron\\dist\\electron.exe",
+  "installedElectronVersion": "45.0.0",
+  "playwrightVersion": "1.64.1",
+  "externalEngineSha256": "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+  "externalEngineApproved": false,
+  "secretLikeEnvironmentNamesRemoved": 4,
+  "explicitUserDataAndProjectTemp": true,
+  "stdoutPath": "corrected-bundle-electron-journey.stdout.log",
+  "stderrPath": "corrected-bundle-electron-journey.stderr.log",
+  "journeyPath": "corrected-bundle-electron-journey.json"
+}

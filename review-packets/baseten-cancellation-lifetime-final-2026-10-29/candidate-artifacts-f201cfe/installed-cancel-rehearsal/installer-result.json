@@ -1,0 +1,13 @@
+{
+  "exitCode": 1,
+  "processId": 28428,
+  "stdout": "C:\\maos\\review-packets\\baseten-cancellation-lifetime-final-2026-10-29\\candidate-artifacts-f201cfe\\installed-cancel-rehearsal\\installer.stdout.log",
+  "stderr": "C:\\maos\\review-packets\\baseten-cancellation-lifetime-final-2026-10-29\\candidate-artifacts-f201cfe\\installed-cancel-rehearsal\\installer.stderr.log",
+  "installRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\MAOS f201cfe installed ctrl-c rehearsal 468a1be1e4c749a3b4e0a77a2cb7a8a5\\installed application",
+  "node": "v24.11.0",
+  "npm": "11.6.1",
+  "powershell": "7.6.9",
+  "tempRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\MAOS f201cfe installed ctrl-c rehearsal 468a1be1e4c749a3b4e0a77a2cb7a8a5\\temp",
+  "npmCache": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\MAOS f201cfe installed ctrl-c rehearsal 468a1be1e4c749a3b4e0a77a2cb7a8a5\\npm cache",
+  "electronCache": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\MAOS f201cfe installed ctrl-c rehearsal 468a1be1e4c749a3b4e0a77a2cb7a8a5\\electron cache"
+}

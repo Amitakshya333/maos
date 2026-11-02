@@ -1,0 +1,12 @@
+npm warn "marks completed output unavailable after authorized reset" is being parsed as a normal command line argument.
+npm warn Unknown cli config "--t". This will stop working in the next major version of npm.
+
+ RUN  v4.1.11 C:/maos
+
+
+ Test Files  1 passed (1)
+      Tests  35 passed (35)
+   Start at  10:31:18
+   Duration  21.63s (transform 1.97s, setup 0ms, import 2.68s, tests 18.79s, environment 0ms)
+
+EXIT_CODE=0

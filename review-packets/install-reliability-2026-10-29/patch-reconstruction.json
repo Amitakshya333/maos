@@ -1,0 +1,127 @@
+{
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "applyCheckExitCode": 0,
+  "applyExitCode": 0,
+  "patchPathCount": 15,
+  "manifestPathCount": 15,
+  "pathSetMatches": true,
+  "rawExactCount": 2,
+  "lfNormalizedExactCount": 15,
+  "stagedPathCount": 0,
+  "status": [
+    "?? README.md",
+    "?? desktop/",
+    "?? docs/",
+    "?? package.json",
+    "?? scripts/",
+    "?? src/",
+    "?? tests/"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "rawMatchesWorkingTree": true,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "f00131b7f8551efb081675038445400ff256e75c0cd282d21ba7470e8615e74c",
+      "reconstructedLfSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887"
+    },
+    {
+      "path": "package.json",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "63891c39881fc049192dd2886d04c7049dbcb85dce28f8c27c052dca65d24d65",
+      "reconstructedLfSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98"
+    },
+    {
+      "path": "desktop/package.json",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "826847fcde2d14c56b3200f052077eb8ce0313491e8dd9a6e51fe22adfc21891",
+      "reconstructedLfSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b"
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "5ee40a862e91abbbf22209ac119b433fa73d7387dc4a5bc23d14c48866f8d9d5",
+      "reconstructedLfSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43"
+    },
+    {
+      "path": "desktop/README.md",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "94477752e69c53fb0a0046c48fc7b85a88a2f8fa8b53e2729241414ddf1d31aa",
+      "reconstructedLfSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e"
+    },
+    {
+      "path": "src/cli/doctor.ts",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "efc6df018221393e1b17d8f0b1bbc3a46647259ae80ac23dc930a7dea4f8f148",
+      "reconstructedLfSha256": "7c309e047d677db7a4cf43c35980bdab8b3db454085e355ad23afca662374566"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "rawMatchesWorkingTree": true,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "155eeeed95144e211e12c05bd5bd1d051d5c9cac4479b4cb950c700e6512422d",
+      "reconstructedLfSha256": "2e6c9c8c5dacdcd740f6d25af9798f40946601f2152e491963e6e39f04ee72ab"
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "b1414fae18de141d4acb084cc1ae7732218b02bd9f672c8e4227def1db717d42",
+      "reconstructedLfSha256": "c0ff1dcc9fd6a4a858e342273fdf99619af8699813887be0f4854f29c69117f0"
+    },
+    {
+      "path": "tests/cli/meta-provider-entrypoints.test.ts",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "a76bca137c948163b1c095e6658c72794cdf6db14ad55f8d2c925d73869c2eab",
+      "reconstructedLfSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15"
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "111a65f75a15a1ce0fa166008575d198c864b42ece8f06b74dad7693caed9736",
+      "reconstructedLfSha256": "578cdb5a23e5c8c284ad0a95a7517694485f55d1e8b76bf89427c9bab12cd5c2"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "21bb747d74d859bdcad38004f67c90e98e219f9b7fb684061f06074e5bd92e8d",
+      "reconstructedLfSha256": "ac67c16dce5f16cbef4d6aff515ac1e642c810e0f7773f3f66986b6cd10b6fd9"
+    },
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "76a14948b6a8578a0750dee54c84f583d2c009cfa5aaa7124da500299ad313ed",
+      "reconstructedLfSha256": "a046372547edc1dfa9e130256b962cf70166db467e15b03f5942711c2fcfb4f4"
+    },
+    {
+      "path": "scripts/New-MaosIndustrialInstallBundle.ps1",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "8f984ba2178d88dfa1aab69ac763292b94bcf13f8c49260dac21aa3de57f33a7",
+      "reconstructedLfSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb"
+    },
+    {
+      "path": "scripts/prepare-hooks.js",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "b870ce91e145579262cce549889d810b7c6a960f05f72de301471158260fc539",
+      "reconstructedLfSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc"
+    },
+    {
+      "path": "tests/cli/doctor.test.ts",
+      "rawMatchesWorkingTree": false,
+      "lfNormalizedMatchesWorkingTree": true,
+      "reconstructedRawSha256": "5cf59a34b6ea6b2051656a69e53e85a6fea3c6a8a1c1fedc279885e4cae2d35a",
+      "reconstructedLfSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548"
+    }
+  ]
+}

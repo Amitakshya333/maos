@@ -1,0 +1,1 @@
+COMMANDS: C:\Program Files\PowerShell\7\pwsh.exe -NoLogo -NoProfile -NonInteractive -Command $PSVersionTable.PSVersion.ToString(); C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoProfile -NonInteractive -Command $PSVersionTable.PSVersion.ToString() PS7=7.6.9 PS51=5.1.26100.9711 

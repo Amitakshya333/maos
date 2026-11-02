@@ -1,0 +1,6 @@
+--- apply --check ---
+apply-check exit=0
+--- reconstructed blob hashes ---
+597c25762db1a6e7ef295ec9ba6edab255c0ad01
+c838826e638533cf8f937f97b0458b8669278879
+a9b0264bf98423b30deeff6c1070b1592c14d378

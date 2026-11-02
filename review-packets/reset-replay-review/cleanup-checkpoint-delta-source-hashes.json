@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-28T08:58:35.830Z",
+  "repositoryRoot": "C:/maos",
+  "baseRevision": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "baseSnapshot": {
+    "patch": "shared-boundaries-canonical.patch",
+    "patchSha256": "96fdbeb470c3862248021602707b6f657ec77893e9d76f7d948d4f2d77501e01",
+    "manifest": "shared-boundaries-source-hashes.json",
+    "manifestSha256": "f15af24c01a5c3cdff3ff911c6bb0381df553c15e43617174ac4e6ecdddb3fc2"
+  },
+  "patch": "cleanup-checkpoint-delta.patch",
+  "patchFormat": "canonical UTF-8 with LF line endings; applies after baseSnapshot patch",
+  "patchBytes": 42562,
+  "patchSha256": "2e0a8d36449687b5e4c99232d681155d7c1f55d8f15d2c99f8b4dce546c7e98d",
+  "scopeCount": 13,
+  "files": [
+    {
+      "path": "src/cli/dashboard-template.ts",
+      "kind": "modified",
+      "rawBytes": 45998,
+      "rawSha256": "5329d6c8d85f62821a082d72b248de350853a0cde3be3e8802b83ddf19aeaee7",
+      "lfBytes": 44632,
+      "lfSha256": "2760414772bb6015643f2e37277db34abde5dc270674041d21e7c3a2bd51969d",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/cli/dashboard.ts",
+      "kind": "modified",
+      "rawBytes": 13607,
+      "rawSha256": "0a306e7f84c7f027589df99438e02011dc2cfd3d634717cc7420f43c4f9e855b",
+      "lfBytes": 13202,
+      "lfSha256": "85715e1e3efa5bf659695bab104c8133ce57f4d991b74f764eaa27ab4b257825",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/cli/index.ts",
+      "kind": "modified",
+      "rawBytes": 37549,
+      "rawSha256": "bbb978e05bb21997c072ee8dff87bbbea7caad02d1a2804476babc53086334e5",
+      "lfBytes": 36633,
+      "lfSha256": "eace1797da1b30ada0ebd6ae8e12be8ce549f3d15337fc4c13a74dee6f615e20",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/core/checkpoint.ts",
+      "kind": "modified",
+      "rawBytes": 11149,
+      "rawSha256": "fabff29dce7558c2beabb519961c474b44513cfecb2ef2d3c3c925430025b0aa",
+      "lfBytes": 11149,
+      "lfSha256": "fabff29dce7558c2beabb519961c474b44513cfecb2ef2d3c3c925430025b0aa",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/industrial/atomic-cleanup-coordinator.ts",
+      "kind": "modified",
+      "rawBytes": 22682,
+      "rawSha256": "67b148d8f63c6343470b747c3058bfae17ea1e473dd2be1d3ee44af6deb739ce",
+      "lfBytes": 22055,
+      "lfSha256": "ea9e5865ea1ea7c2f977c0b6682656c27919aba865872f07acb52b840ccff6b4",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/deterministic-reset.ts",
+      "kind": "modified",
+      "rawBytes": 16618,
+      "rawSha256": "95a6e7d28073e5512fd00e8e786ec29edd78a3a6cb47f678700297e17a2f2342",
+      "lfBytes": 16133,
+      "lfSha256": "4e8bd17f8798145b35ae28db5df5183dd20685d46ee11b8afe0b166a9b2142ff",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/lifecycle.ts",
+      "kind": "modified",
+      "rawBytes": 29708,
+      "rawSha256": "8d0a2b97578815d66753343ae3b3cc12d809c25a469187f7269c193da5d7196c",
+      "lfBytes": 28802,
+      "lfSha256": "71cb3636e6d695a0ea184da7d5aa3eff90794848eb0702902f9c8069f20e8115",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/service-startup.ts",
+      "kind": "modified",
+      "rawBytes": 26687,
+      "rawSha256": "e4f3c1eb9982fad29d691d2cc068c3871ad25bf237a6dd9fb09c57dd22b29e7a",
+      "lfBytes": 25887,
+      "lfSha256": "bfc1fd024733245e2d6aa3a14082b9dd1edf2d4e76b56aeaa8d8f0ea3ac423b1",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/service/task-service.ts",
+      "kind": "modified",
+      "rawBytes": 8120,
+      "rawSha256": "cf267d8a1c30de2290f0e74005c7131532b4d7db5c6c213a612e3912cced3c8e",
+      "lfBytes": 7868,
+      "lfSha256": "b801b13c954b4ca8599c5f0baaacae4e320dff46bed4ebe2fa06bda96bb7042a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f2-08-lifecycle.test.ts",
+      "kind": "modified",
+      "rawBytes": 27900,
+      "rawSha256": "a3da7bd69571e10e9e08f4db3ff669182be45bcb25825ce5ea0bf13fcfc6598e",
+      "lfBytes": 27204,
+      "lfSha256": "2dc9d394713c3fa6ac49b03b2e190925bb22b15d1eba4b7bd74d7abea137b679",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f10-02-dashboard-trigger.test.ts",
+      "kind": "modified",
+      "rawBytes": 9923,
+      "rawSha256": "32ecec86e203cd919ab637bf3c8873d2682aae629c7bf42dccb089d1e3224a52",
+      "lfBytes": 9703,
+      "lfSha256": "5b16ca651e9e7b3e81745935b70a0b9479f7310fd44af1b098963d9a6d91b8b7",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f10-05-deterministic-reset.test.ts",
+      "kind": "modified",
+      "rawBytes": 32620,
+      "rawSha256": "3369a38eef093b732464179d26d44453e70a3e89fc34b34098f06050ac997409",
+      "lfBytes": 32029,
+      "lfSha256": "d7a6f541b88415dba9a57d34e38ecc44870b6946ecc276c1279ec1ac32e7679a",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/f9-08-interruption-atomic-cleanup.test.ts",
+      "kind": "modified",
+      "rawBytes": 40988,
+      "rawSha256": "264b2d3a0bc84c34e67d655e42df88bbe7fc818f84b9bedea6eeb7390e17a179",
+      "lfBytes": 40064,
+      "lfSha256": "0aa217fa9111b7711d56664af12a42370a12814300241768e9f65315085db99a",
+      "rawEqualsLfNormalized": false
+    }
+  ],
+  "scopeNotes": [
+    "This delta is based on the exact 94-file shared-boundaries candidate identified by baseSnapshot hashes.",
+    "It contains only lifecycle cleanup, queue checkpoint/reset, and legacy dashboard contention corrections.",
+    "The delta does not include checklist or evidence files; those are retained beside this packet."
+  ]
+}

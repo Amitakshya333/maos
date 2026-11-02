@@ -1,0 +1,14 @@
+COMMAND: node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/industrial/meta-model-api-contract.test.ts
+ENGINE_PATH: C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\baseten-gate-validation-2026-10-29\rust\target\release\maos-engine.exe
+ENGINE_BYTES: 472064
+ENGINE_SHA256: 3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-bb871cb191184b5de1-correction-20261029/repo
+
+
+ Test Files  1 passed (1)
+      Tests  30 passed (30)
+   Start at  23:18:21
+   Duration  4.94s (transform 2.27s, setup 0ms, import 3.14s, tests 1.54s, environment 0ms)
+
+PROCESS_EXIT_CODE=0

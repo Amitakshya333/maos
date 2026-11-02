@@ -1,0 +1,5 @@
+COMMAND: git diff --check bb871cb191184b5de1b790d42fc452a29f8f072e -- scripts/Start-BasetenSyntheticPilot.ps1 scripts/Windows-ProcessTree.ps1 tests/industrial/baseten-pilot-process-tree.test.ts tests/industrial/meta-model-api-contract.test.ts
+warning: in the working copy of 'scripts/Start-BasetenSyntheticPilot.ps1', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/industrial/baseten-pilot-process-tree.test.ts', CRLF will be replaced by LF the next time Git touches it
+
+EXIT_CODE=0

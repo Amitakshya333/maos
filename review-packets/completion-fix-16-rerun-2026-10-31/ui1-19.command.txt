@@ -1,0 +1,1 @@
+cmd: node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/gui/ui1-19-service-lifecycle.test.ts

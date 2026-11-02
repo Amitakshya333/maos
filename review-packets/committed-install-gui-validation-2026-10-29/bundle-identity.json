@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "sourceDeltaSha256": "d3b267f3e1032eb26b1e814876d4ab17ccd74df63bee62bab4ab27f6e7180622",
+  "packagePath": "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\candidate-artifacts\\maosorch-0.3.0.tgz",
+  "packageBytes": 1223971,
+  "packageSha256": "b4fb03a58b6f13fdbac1f97fa7c48bdb94cb9ee37709fef6cede40bec5f9a778",
+  "bundlePath": "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\candidate-artifacts\\maos-industrial-bootstrap-windows-x64-commit-27dd1711-2026-10-29.zip",
+  "bundleBytes": 1256137,
+  "bundleSha256": "1f333348e92ea988e8fa9ef3be37dd362e69e6d1ab380d3e653f731240b8b61b",
+  "bundleManifestIdentityVerified": true,
+  "packageArchiveIdentityVerified": true,
+  "bundleBuildExitCode": 0
+}

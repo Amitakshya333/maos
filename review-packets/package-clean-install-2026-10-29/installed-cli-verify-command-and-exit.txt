@@ -1,0 +1,2 @@
+COMMAND: <installed-package>/.bin/maos-industrial verify audit --run-id judged-run-1793215649111-7ad1d4 --json (cwd=<temporary-project>)
+EXIT_CODE: 0

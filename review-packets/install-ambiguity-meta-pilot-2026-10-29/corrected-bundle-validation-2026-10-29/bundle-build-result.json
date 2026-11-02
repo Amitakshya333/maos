@@ -1,0 +1,13 @@
+{
+  "command": "pwsh -NoProfile -NonInteractive -File scripts/New-MaosIndustrialInstallBundle.ps1",
+  "exitCode": 0,
+  "sourceCommit": "d526bfe95d334ad8a0c73a25db7611c1d0fc7417",
+  "sourceDeltaSha256": "ba002a437f6cfcde26fa30bc41947193754a88dab31aa2a65a10c8904d44da10",
+  "bundlePath": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\candidate-artifacts\\maos-industrial-bootstrap-windows-x64-commit-d526bfe-2026-10-29.zip",
+  "bundleExists": true,
+  "bundleBytes": 1256200,
+  "bundleSha256": "a1bdd2bc00978b80cc4578a68de06bf426bf1cb5e6a9dbbd17b67125941b99fc",
+  "stdoutLog": "bundle-build.stdout.log",
+  "stderrLog": "bundle-build.stderr.log",
+  "stageTempRemaining": []
+}

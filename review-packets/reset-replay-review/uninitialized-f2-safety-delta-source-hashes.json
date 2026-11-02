@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-28T09:37:45.878Z",
+  "repositoryRoot": "C:/maos",
+  "baseRevision": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "baseSnapshot": {
+    "patch": "cleanup-checkpoint-canonical.patch",
+    "patchSha256": "a1e32ed71ea29540d29159e4e8afc8d6ae3eeaac3ffbde9d6dede6302e8e6ace",
+    "manifest": "cleanup-checkpoint-canonical-source-hashes.json",
+    "manifestSha256": "c1d8eb2182218f4c80a45cbc772404ac3cf293af47ebaaa47dbca63ceaedaa8e"
+  },
+  "patch": "uninitialized-f2-safety-delta.patch",
+  "patchFormat": "canonical UTF-8 with LF line endings; applies after baseSnapshot patch",
+  "patchBytes": 16407,
+  "patchSha256": "330120f2f6c12e88aefe90012d3b086228cf2b4243fc4ae7b19e7763af18eb86",
+  "scopeCount": 7,
+  "files": [
+    {
+      "path": "src/api/openapi-spec.ts",
+      "kind": "modified",
+      "rawBytes": 42637,
+      "rawSha256": "e7c901f8558d522e88845aca8a200da3b291a3db0482a66f7043b21d54abbcd8",
+      "lfBytes": 41553,
+      "lfSha256": "b6f900edac3825b29e2d94ef77d5bf2285e9311aaa3bd860434894cbe93dc5d5",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/api/router.ts",
+      "kind": "modified",
+      "rawBytes": 154120,
+      "rawSha256": "03971a880c860515a438ec4a78e29417ebd7c0cc1461552892cc94a84f8f6e2d",
+      "lfBytes": 150412,
+      "lfSha256": "cacad5bdae79c632ec59203d79ed8a395849ee68588eeee7185bc7ae5f2be28d",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "src/industrial/analysis-agent-service.ts",
+      "kind": "modified",
+      "rawBytes": 14694,
+      "rawSha256": "23dc8dc02602f492a086de1cfef2a17b87338f7ebdd151f87c3ca76f2207e6cb",
+      "lfBytes": 14694,
+      "lfSha256": "23dc8dc02602f492a086de1cfef2a17b87338f7ebdd151f87c3ca76f2207e6cb",
+      "rawEqualsLfNormalized": true
+    },
+    {
+      "path": "src/service/index.ts",
+      "kind": "modified",
+      "rawBytes": 23108,
+      "rawSha256": "fd444c36fb258d06ad707ed83be49f21b9125b399f8da5b4f5eaed45ee042612",
+      "lfBytes": 22459,
+      "lfSha256": "79d8ea4d01172b8619649898854595f49a214ac504e24b7ee2f514217dd65a18",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f2-08-lifecycle.test.ts",
+      "kind": "modified",
+      "rawBytes": 27704,
+      "rawSha256": "8b6acb9e2286e529e02ffff98d28b2fb4facf967fb7aa9ab37d2b19579b25168",
+      "lfBytes": 27011,
+      "lfSha256": "0d9664e836912febec76b084ba59d5622e342d462c81c96db57caaa2fc303e1c",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/f3-01-services.test.ts",
+      "kind": "modified",
+      "rawBytes": 11859,
+      "rawSha256": "16ff366988d7657e7f8749adf216b530e5f2ac18158f7ae5c704be6e946c426d",
+      "lfBytes": 11522,
+      "lfSha256": "432f5a7568befc2b661033d77c15c38ab67bdb847ea7fadfacdad28bce86ec77",
+      "rawEqualsLfNormalized": false
+    },
+    {
+      "path": "tests/industrial/analysis-agent-auth-http.test.ts",
+      "kind": "modified",
+      "rawBytes": 76714,
+      "rawSha256": "4d28db32694c0923350cfac907c9083a36acd0c56ea810ecc640acb19dfdd060",
+      "lfBytes": 76714,
+      "lfSha256": "4d28db32694c0923350cfac907c9083a36acd0c56ea810ecc640acb19dfdd060",
+      "rawEqualsLfNormalized": true
+    }
+  ],
+  "scopeNotes": [
+    "This delta is based on the exact 99-file cleanup-checkpoint candidate identified by baseSnapshot hashes.",
+    "It contains only lazy analysis configuration resolution, configuration error handling/tests, and isolated F2-08 lifecycle test fixtures.",
+    "The delta does not include checklist or evidence files; those are retained beside this packet."
+  ]
+}

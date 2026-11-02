@@ -1,0 +1,12 @@
+--- correction-delta apply-check onto fresh FIX-04 snapshot ---
+correction apply-check exit=0
+--- complete-correction apply-check onto clean base ---
+complete apply-check exit=0
+--- reconstructed blob hashes (7 paths) ---
+f8e876f9f9e95b491cd7aa1f0daa434a9657c365
+2ef18ee83c43a366cf29caf9e4233baab14b8a73
+528c4e1e2ed597556b95a2918cf1fd1549c9e7c5
+e6627955a685eaf04ccbe4d9297e3a9ab3532c1d
+a6fd5daf4de03106541734b7a3bc969139bd80be
+f40dacd0ef1d9b37ed7fa2654a5b1579635432f6
+c3f1a3a18d33ae6b91ff1d834fcfc33fec5073c1

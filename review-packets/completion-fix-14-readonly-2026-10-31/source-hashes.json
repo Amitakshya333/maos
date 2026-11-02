@@ -1,0 +1,122 @@
+{
+  "baseCommit": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "candidate": "C:\\Users\\AMITAKSHYA SUTAR\\.local\\share\\opencode\\worktree\\327f80\\opencode-tree-1",
+  "generatedAtUtc": "2026-10-31",
+  "indexState": "empty (git diff --cached --quiet exits 0)",
+  "normalization": {
+    "gitattributes": "* text=auto eol=lf",
+    "note": "Working-tree files are LF-native: raw SHA-256 equals LF-normalized SHA-256 for every path; no CRLF conversion applies.",
+    "rawEqualsLf": true
+  },
+  "parentIdentity": {
+    "packet": "review-packets/completion-fix-12-readonly-2026-10-31/",
+    "completePatch": "review-packets/completion-fix-12-readonly-2026-10-31/complete-correction.patch",
+    "completePatchSha256": "B2767D261969DBFEEC77DD1581CDD7579694205FB76DA54592A15D58DAB5A041",
+    "sourceManifest": "source-hashes.json",
+    "sourceManifestSha256": "0102EF6DE3461C7944556378091A4FDBF1F9E5ED9D49DFC7A83AAE59DA251E2D",
+    "blobIds": [
+      "f8e876f9f9e95b491cd7aa1f0daa434a9657c365",
+      "7d12a3b00cc8815bd36caab012641f4bc04f2d35",
+      "861c065a02e90218d98648aa6e0a5540b57c0201",
+      "528c4e1e2ed597556b95a2918cf1fd1549c9e7c5",
+      "5b4fe23b84250fbd6d9c171d568c935b98dc4227",
+      "1ccaf38c52b58a3cb142d65fb2e766690c682112",
+      "d963016d831b435d742a1ad415fe39c1d603eba9",
+      "54d389cfec36564648fc3384b66d2105507f2dca",
+      "769a5ab55cef9b11ca54cf6c7d8cabc7c9e7ecb1"
+    ],
+    "note": "FIX-12 is preserved as rejected history; it was never committed, so no commit SHA describes it. Identity = FIX-12 complete patch + FIX-12 source manifest (both byte-verified) + the 9 blob IDs. Reproduce: clean 2cfdf9b checkout, apply the FIX-12 complete patch, compare git blob hashes (this packet did exactly that)."
+  },
+  "patch": {
+    "path": "complete-correction.patch",
+    "sha256": "091381F8B60AACC0C3F02EB558527931378F80AF6435A1716139592202057A37",
+    "stat": "9 files changed, 1890 insertions(+), 97 deletions(-)"
+  },
+  "correctionDelta": {
+    "path": "correction-delta.patch",
+    "sha256": "5EAC8E8A71AFFFB7AB9AF000F83BD8BAFB702341B74350F830644F0CC8B015D5",
+    "stat": "5 files changed, 215 insertions(+), 63 deletions(-)",
+    "note": "Rejected FIX-12 snapshot to current candidate; appliable."
+  },
+  "paths": [
+    {
+      "path": "src/core/agent-runner.ts",
+      "blob": "f8e876f9f9e95b491cd7aa1f0daa434a9657c365",
+      "sha256": "cf9b4dd9f6c627e8133c16622ef8e93ed7010a7c8d033836c2101373f08d758e",
+      "sha256LfNormalized": "cf9b4dd9f6c627e8133c16622ef8e93ed7010a7c8d033836c2101373f08d758e",
+      "status": "unchanged-since-FIX-12"
+    },
+    {
+      "path": "src/gui/src/api/rest-client.ts",
+      "blob": "da8d185b5a81994e2f5f0dfbe17999650142a41e",
+      "sha256": "61b8e7f1d91581fd2e6bd6555d4d3a375786ce459beb3e6063dd32de4c46afe3",
+      "sha256LfNormalized": "61b8e7f1d91581fd2e6bd6555d4d3a375786ce459beb3e6063dd32de4c46afe3",
+      "status": "modified"
+    },
+    {
+      "path": "src/gui/src/components/TelemetryReviewPanel.tsx",
+      "blob": "81c60338f3b8bb8baed9865e38fe8bcc53b6ee2b",
+      "sha256": "65c28a21938fd190b81f5365bc13d22db316130b892086a582aa409bcc10d05b",
+      "sha256LfNormalized": "65c28a21938fd190b81f5365bc13d22db316130b892086a582aa409bcc10d05b",
+      "status": "modified"
+    },
+    {
+      "path": "tests/industrial/read-only-completion.test.ts",
+      "blob": "528c4e1e2ed597556b95a2918cf1fd1549c9e7c5",
+      "sha256": "0dc943a52114b9d9d65b617104656e93a809af02c50a9534879897410f73d258",
+      "sha256LfNormalized": "0dc943a52114b9d9d65b617104656e93a809af02c50a9534879897410f73d258",
+      "status": "unchanged-since-FIX-12"
+    },
+    {
+      "path": "src/gui/src/components/telemetryReviewState.ts",
+      "blob": "5b4fe23b84250fbd6d9c171d568c935b98dc4227",
+      "sha256": "514c9addb756dde081c3a1eafb7ca8bf5471d2a088621fae7e00164ea6a639f5",
+      "sha256LfNormalized": "514c9addb756dde081c3a1eafb7ca8bf5471d2a088621fae7e00164ea6a639f5",
+      "status": "unchanged-since-FIX-12"
+    },
+    {
+      "path": "tests/gui/telemetry-review-state.test.ts",
+      "blob": "1ccaf38c52b58a3cb142d65fb2e766690c682112",
+      "sha256": "42e8911331dc0f3541bdf58a6f55e4a5f654e5905035cfc6aaee48060debd77b",
+      "sha256LfNormalized": "42e8911331dc0f3541bdf58a6f55e4a5f654e5905035cfc6aaee48060debd77b",
+      "status": "unchanged-since-FIX-12"
+    },
+    {
+      "path": "src/gui/src/components/telemetryReviewCoordinator.ts",
+      "blob": "da4b7afb51a9c714e648b2084cea873fea6c88a4",
+      "sha256": "b4e6071572adf3d741639badf4bc15595b42f07a02f0b10698ebe794d6e20431",
+      "sha256LfNormalized": "b4e6071572adf3d741639badf4bc15595b42f07a02f0b10698ebe794d6e20431",
+      "status": "modified"
+    },
+    {
+      "path": "tests/gui/telemetry-review-coordinator.test.ts",
+      "blob": "20523d08a522c5a83f347ef0ecbfbeb8d6e750b3",
+      "sha256": "b1bf50e9d4da39f23455ae30dcd98d3d45a3520287d2c8ab65479227383ef253",
+      "sha256LfNormalized": "b1bf50e9d4da39f23455ae30dcd98d3d45a3520287d2c8ab65479227383ef253",
+      "status": "modified"
+    },
+    {
+      "path": "tests/gui/rest-client-abort.test.ts",
+      "blob": "4762d3750f2e65b3cfb6505fba20a3ea77866a4e",
+      "sha256": "b320fae4472dc3c66d322e53cbc5de535ae1e85765299e80998bd7071c74be2f",
+      "sha256LfNormalized": "b320fae4472dc3c66d322e53cbc5de535ae1e85765299e80998bd7071c74be2f",
+      "status": "modified"
+    }
+  ],
+  "reconstruction": {
+    "applyCheckCorrectionExit": 0,
+    "applyCheckCompleteExit": 0,
+    "reconstructedBlobHashes": [
+      "f8e876f9f9e95b491cd7aa1f0daa434a9657c365",
+      "da8d185b5a81994e2f5f0dfbe17999650142a41e",
+      "81c60338f3b8bb8baed9865e38fe8bcc53b6ee2b",
+      "528c4e1e2ed597556b95a2918cf1fd1549c9e7c5",
+      "5b4fe23b84250fbd6d9c171d568c935b98dc4227",
+      "1ccaf38c52b58a3cb142d65fb2e766690c682112",
+      "da4b7afb51a9c714e648b2084cea873fea6c88a4",
+      "20523d08a522c5a83f347ef0ecbfbeb8d6e750b3",
+      "4762d3750f2e65b3cfb6505fba20a3ea77866a4e"
+    ],
+    "result": "Correction delta verified appliable onto fresh FIX-12 snapshot; complete patch verified appliable onto clean base (exits recorded in validation/reconstruction.txt). All nine reconstructed blob hashes equal the candidate blob hashes; this manifest was generated from the same measured values and cross-checked against them."
+  }
+}

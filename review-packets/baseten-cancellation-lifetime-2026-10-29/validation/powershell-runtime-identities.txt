@@ -1,0 +1,10 @@
+COMMAND: pwsh.exe -NoLogo -NoProfile -NonInteractive -Command $PSVersionTable.PSVersion.ToString()
+EXE: C:\Program Files\PowerShell\7\pwsh.exe
+VERSION: 7.6.9
+EXIT_CODE: 0
+
+COMMAND: powershell.exe -NoLogo -NoProfile -NonInteractive -Command $PSVersionTable.PSVersion.ToString()
+EXE: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+VERSION: 5.1.26100.9711
+EXIT_CODE: 0
+

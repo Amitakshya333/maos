@@ -1,0 +1,1 @@
+git clone https://github.com/Amitakshya333/maos.git C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core; git -C C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core checkout f54dd7e; git -C C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core rev-parse HEAD

@@ -1,0 +1,694 @@
+diff --git a/src/core/agent-runner.ts b/src/core/agent-runner.ts
+index d1579ea..f8e876f 100644
+--- a/src/core/agent-runner.ts
++++ b/src/core/agent-runner.ts
+@@ -339,7 +339,7 @@ export async function runAgent(
+           messages.push({
+             role: 'user',
+             content: readOnlyAgent
+-              ? 'You stopped without calling task_complete. This task requires no file changes: call task_complete now with a summary of what you accomplished and files_changed: [] (an empty list is valid for read-only work; the field may also be omitted). Do not start new work.'
++              ? 'You stopped without calling task_complete. This task requires no repository/project deliverable changes: call task_complete now with a summary of what you accomplished and files_changed: [] (an empty list is valid for read-only work; the field may also be omitted). Do not start new work.'
+               : 'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
+           });
+ 
+diff --git a/src/gui/src/components/TelemetryReviewPanel.tsx b/src/gui/src/components/TelemetryReviewPanel.tsx
+index c95badf..2ef18ee 100644
+--- a/src/gui/src/components/TelemetryReviewPanel.tsx
++++ b/src/gui/src/components/TelemetryReviewPanel.tsx
+@@ -1,7 +1,7 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import { apiAdapter } from '../api';
+ import type { IndustrialAnalysisAgentResponse, IndustrialTelemetryAnalysisResponse, JudgedRunResponse } from '../api/rest-client';
+-import { buildSourceKey, clearedOnSourceChange, isCurrentResponse, shouldApplyReconnect } from './telemetryReviewState';
++import { TelemetryReviewCoordinator, type TelemetryReviewViewState } from './telemetryReviewCoordinator';
+ 
+ function fileAsBase64(file: File): Promise<string> {
+   return new Promise((resolve, reject) => {
+@@ -31,106 +31,89 @@ export const TelemetryReviewPanel: React.FC = () => {
+   const [reviewBusy, setReviewBusy] = useState(false);
+   const [reviewError, setReviewError] = useState<string | null>(null);
+   const agentController = useRef<AbortController | null>(null);
+-  // Source binding (COMPLETION-FIX-04 finding 2): every source change bumps
+-  // the sequence and detaches all review state, so a late async response for
+-  // a previous source can never restore stale results. Refs (not state) hold
+-  // the binding because guards must see the latest value inside async
+-  // continuations.
+-  const sourceKeyRef = useRef<string | null>(null);
+-  const sourceSeq = useRef(0);
+-  const bindSource = (key: string) => {
+-    sourceSeq.current += 1;
+-    sourceKeyRef.current = key;
+-    const cleared = clearedOnSourceChange();
+-    setAnalysis(cleared.analysis);
+-    setAgentResult(cleared.agentResult);
+-    setAgentPhase(cleared.agentPhase);
+-    setAgentError(cleared.agentError);
+-    setError(cleared.error);
+-    setReviewRun(cleared.reviewRun);
+-    setReviewError(cleared.reviewError);
+-  };
++  const [fileInputKey, setFileInputKey] = useState(0);
++  // All review side effects are delegated to the coordinator, which owns the
++  // source binding and staleness guards (COMPLETION-FIX-06). This component
++  // only mirrors the view snapshot into React state and performs DOM-only
++  // file handling.
++  const coordinatorRef = useRef<TelemetryReviewCoordinator | null>(null);
++  if (!coordinatorRef.current) {
++    const apply = (patch: Partial<TelemetryReviewViewState>) => {
++      if ('analysis' in patch) setAnalysis(patch.analysis ?? null);
++      if ('agentResult' in patch) setAgentResult(patch.agentResult ?? null);
++      if ('agentPhase' in patch) setAgentPhase(patch.agentPhase ?? 'idle');
++      if ('agentError' in patch) setAgentError(patch.agentError ?? null);
++      if ('error' in patch) setError(patch.error ?? null);
++      if ('reviewRun' in patch) setReviewRun(patch.reviewRun ?? null);
++      if ('reviewError' in patch) setReviewError(patch.reviewError ?? null);
++      if ('busy' in patch) setBusy(patch.busy ?? false);
++      if ('busySource' in patch) setBusySource(patch.busySource ?? null);
++      if ('reviewBusy' in patch) setReviewBusy(patch.reviewBusy ?? false);
++    };
++    coordinatorRef.current = new TelemetryReviewCoordinator(
++      {
++        analyzeTelemetry: (input, options) => apiAdapter.analyzeIndustrialTelemetry(input, options),
++        analyzeCsv: (input, options) => apiAdapter.analyzeIndustrialCsv(input, options),
++        prepareReview: (analysisId) => apiAdapter.prepareIndustrialAgentReview(analysisId),
++        getJudgedRun: (runId) => apiAdapter.getIndustrialJudgedRun(runId),
++      },
++      {
++        apply,
++        readSavedRunId: () => window.localStorage.getItem('maos:last-industrial-judged-run'),
++        writeSavedRunId: (runId) => window.localStorage.setItem('maos:last-industrial-judged-run', runId),
++        navigateToApprovals: () => { window.location.hash = '#/approvals'; },
++      },
++    );
++  }
++  // Source binding and staleness guards live in the coordinator (COMPLETION-FIX-06);
++  // cancellation supplements those guards but never replaces them.
+ 
+   useEffect(() => {
+-    const runId = window.localStorage.getItem('maos:last-industrial-judged-run');
+-    if (!runId?.startsWith('judged-run-agent-')) return;
+-    let active = true;
+-    void apiAdapter.getIndustrialJudgedRun(runId).then((run) => {
+-      if (!active || !shouldApplyReconnect(sourceKeyRef.current)) return;
+-      setReviewRun(run);
+-    }).catch(() => {
+-      if (!active || !shouldApplyReconnect(sourceKeyRef.current)) return;
+-      setReviewError('Could not reconnect to the saved review run. Check the authenticated service and approvals queue.');
+-    });
+-    return () => { active = false; };
++    void coordinatorRef.current?.reconnect();
++    return () => {};
+   }, []);
+ 
+   const runAnalysis = async (useSample: boolean) => {
++    const coordinator = coordinatorRef.current;
++    if (!coordinator || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
++    if (useSample) {
++      // The bundled sample becomes the single active source: the previously
++      // uploaded file is detached so it can never be mistaken for the sample.
++      setSelectedFile(null);
++      setFileInputKey((key) => key + 1);
++      await coordinator.runSampleAnalysis();
++      return;
++    }
++    if (!selectedFile) {
++      setError('Choose a CSV file first, or use the bundled synthetic sample.');
++      return;
++    }
++    const file = selectedFile;
+     setBusy(true);
+-    setBusySource(useSample ? 'sample' : 'file');
+-    if (useSample) bindSource(buildSourceKey({ kind: 'sample' }));
+-    else if (selectedFile) bindSource(buildSourceKey({ kind: 'file', name: selectedFile.name, size: selectedFile.size, lastModified: selectedFile.lastModified }));
+-    else { setBusy(false); setBusySource(null); return; }
+-    const seq = sourceSeq.current;
++    setBusySource('file');
+     try {
+-      const response = useSample
+-        ? await apiAdapter.analyzeIndustrialTelemetry({ useBundledSample: true })
+-        : selectedFile
+-          ? await apiAdapter.analyzeIndustrialTelemetry({
+-              name: selectedFile.name,
+-              contentBase64: await fileAsBase64(selectedFile),
+-            })
+-          : null;
+-      if (!response) throw new Error('Choose a CSV file first, or use the bundled synthetic sample.');
+-      if (!isCurrentResponse(seq, sourceSeq.current)) return;
+-      setAnalysis(response);
++      const contentBase64 = await fileAsBase64(file);
++      await coordinator.runFileAnalysis({ name: file.name, size: file.size, lastModified: file.lastModified, contentBase64 });
+     } catch (err: unknown) {
+-      if (!isCurrentResponse(seq, sourceSeq.current)) return;
+-      setError((err as Error).message || 'Telemetry analysis failed.');
+-    } finally {
+       setBusy(false);
+       setBusySource(null);
++      setError((err as Error).message || 'Telemetry analysis failed.');
+     }
+   };
+ 
+   const askAboutSelectedCsv = async () => {
+-    if (!selectedFile || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
++    const coordinator = coordinatorRef.current;
++    if (!coordinator || !selectedFile || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
+     const controller = new AbortController();
+     agentController.current = controller;
+-    setAgentResult(null);
+-    setReviewRun(null);
+-    setReviewError(null);
+-    setAnalysis(null);
+-    setAgentError(null);
+-    setAgentPhase('uploading');
+-    const seq = sourceSeq.current;
+-    const key = sourceKeyRef.current;
++    const file = selectedFile;
+     try {
+-      const selectedReceipt = await apiAdapter.analyzeIndustrialTelemetry({
+-        name: selectedFile.name,
+-        contentBase64: await fileAsBase64(selectedFile),
+-      }, { signal: controller.signal, timeoutMs: 30_000 });
+-      if (controller.signal.aborted || !isCurrentResponse(seq, sourceSeq.current) || key !== sourceKeyRef.current) return;
+-      setAnalysis(selectedReceipt);
+-      setAgentPhase('requesting');
+-      const result = await apiAdapter.analyzeIndustrialCsv({
+-        request: agentRequest,
+-        sourcePath: selectedReceipt.source.relativePath,
+-      }, { signal: controller.signal, timeoutMs: 65_000 });
+-      if (controller.signal.aborted || !isCurrentResponse(seq, sourceSeq.current) || key !== sourceKeyRef.current) return;
+-      setAgentResult(result);
+-      setAgentPhase('completed');
+-    } catch (err: unknown) {
+-      if (!isCurrentResponse(seq, sourceSeq.current) || key !== sourceKeyRef.current) return;
+-      if (controller.signal.aborted) {
+-        setAgentPhase('cancelled');
+-        setAgentError('Cancelled. No successful model result was returned; retry to start a new run.');
+-      } else {
+-        const message = (err as Error).message || 'The analysis request failed.';
+-        const timedOut = /timed out|timeout/i.test(message);
+-        setAgentPhase('failed');
+-        setAgentError(`${timedOut ? 'Timed out' : 'Failed'}: ${message} Retry is available.`);
+-      }
++      const contentBase64 = await fileAsBase64(file);
++      if (controller.signal.aborted) return;
++      await coordinator.askAboutCsv(agentRequest, { name: file.name, size: file.size, lastModified: file.lastModified, contentBase64 }, { signal: controller.signal });
++    } catch {
++      // DOM-only file encoding failed before any request was issued.
++      setAgentError('Could not read the selected file.');
+     } finally {
+       if (agentController.current === controller) agentController.current = null;
+     }
+@@ -144,18 +127,7 @@ export const TelemetryReviewPanel: React.FC = () => {
+       window.location.hash = '#/approvals';
+       return;
+     }
+-    setReviewBusy(true);
+-    setReviewError(null);
+-    try {
+-      const run = await apiAdapter.prepareIndustrialAgentReview(agentResult.evidence.analysisId);
+-      setReviewRun(run);
+-      window.localStorage.setItem('maos:last-industrial-judged-run', run.runId);
+-      if (run.status === 'pending_approval') window.location.hash = '#/approvals';
+-    } catch (err: unknown) {
+-      setReviewError((err as Error).message || 'Could not prepare the persisted review package.');
+-    } finally {
+-      setReviewBusy(false);
+-    }
++    await coordinatorRef.current?.prepareReview(agentResult.evidence.analysisId);
+   };
+ 
+   const verdictColor = analysis?.result.verdict === 'CRITICAL'
+@@ -190,24 +162,15 @@ export const TelemetryReviewPanel: React.FC = () => {
+           <span style={{ fontWeight: 600 }}>Choose CSV from this device</span>
+           <input
+             aria-label="Choose telemetry CSV from this device"
++            key={fileInputKey}
+             type="file"
+             accept=".csv,text/csv"
+             onChange={(event) => {
+               const file = event.target.files?.[0] || null;
+               setSelectedFile(file);
+-              if (file) bindSource(buildSourceKey({ kind: 'file', name: file.name, size: file.size, lastModified: file.lastModified }));
+-              else {
+-                sourceSeq.current += 1;
+-                sourceKeyRef.current = null;
+-                const cleared = clearedOnSourceChange();
+-                setAnalysis(cleared.analysis);
+-                setAgentResult(cleared.agentResult);
+-                setAgentPhase(cleared.agentPhase);
+-                setAgentError(cleared.agentError);
+-                setError(cleared.error);
+-                setReviewRun(cleared.reviewRun);
+-                setReviewError(cleared.reviewError);
+-              }
++              coordinatorRef.current?.selectFile(
++                file === null ? null : { name: file.name, size: file.size, lastModified: file.lastModified },
++              );
+             }}
+             disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
+             style={{ maxWidth: 230, fontSize: 11 }}
+diff --git a/src/gui/src/components/telemetryReviewCoordinator.ts b/src/gui/src/components/telemetryReviewCoordinator.ts
+new file mode 100644
+index 0000000..f40dacd
+--- /dev/null
++++ b/src/gui/src/components/telemetryReviewCoordinator.ts
+@@ -0,0 +1,224 @@
++/**
++ * Async/state coordination for the CSV telemetry panel (COMPLETION-FIX-06).
++ *
++ * TelemetryReviewPanel delegates every review side effect to this coordinator:
++ * source binding, guarded result application, busy ownership, persisted-run
++ * storage, and Approvals navigation. Deferred-promise tests drive this exact
++ * implementation with fake adapters — not a parallel simulation.
++ *
++ * No DOM dependency here; React state stays in the panel behind `apply`.
++ */
++import type {
++  IndustrialAnalysisAgentResponse,
++  IndustrialTelemetryAnalysisResponse,
++  JudgedRunResponse,
++} from '../api/rest-client';
++import {
++  buildSourceKey,
++  clearedOnSourceChange,
++  isCurrentResponse,
++  shouldApplyReconnect,
++  type TelemetrySourceDescriptor,
++} from './telemetryReviewState';
++
++export type TelemetryAgentPhase = 'idle' | 'uploading' | 'requesting' | 'completed' | 'failed' | 'cancelled';
++
++export interface TelemetryReviewViewState {
++  analysis: IndustrialTelemetryAnalysisResponse | null;
++  agentResult: IndustrialAnalysisAgentResponse | null;
++  agentPhase: TelemetryAgentPhase;
++  agentError: string | null;
++  error: string | null;
++  reviewRun: JudgedRunResponse | null;
++  reviewError: string | null;
++  busy: boolean;
++  busySource: 'sample' | 'file' | null;
++  reviewBusy: boolean;
++}
++
++export interface TelemetryFileSubmit {
++  name: string;
++  size: number;
++  lastModified: number;
++  contentBase64: string;
++}
++
++export interface TelemetryReviewAdapter {
++  analyzeTelemetry(
++    input: { name?: string; contentBase64?: string; useBundledSample?: boolean },
++    options?: { signal?: AbortSignal; timeoutMs?: number },
++  ): Promise<IndustrialTelemetryAnalysisResponse>;
++  analyzeCsv(
++    input: { request: string; sourcePath: string },
++    options?: { signal?: AbortSignal; timeoutMs?: number },
++  ): Promise<IndustrialAnalysisAgentResponse>;
++  prepareReview(analysisId: string): Promise<JudgedRunResponse>;
++  getJudgedRun(runId: string): Promise<JudgedRunResponse>;
++}
++
++export interface TelemetryReviewEffects {
++  apply(patch: Partial<TelemetryReviewViewState>): void;
++  readSavedRunId(): string | null;
++  writeSavedRunId(runId: string): void;
++  navigateToApprovals(): void;
++}
++
++interface CapturedLifetime {
++  key: string | null;
++  seq: number;
++}
++
++const SAVED_RUN_PREFIX = 'judged-run-agent-';
++const ANALYSIS_TIMEOUT_MS = 30_000;
++const AGENT_TIMEOUT_MS = 65_000;
++
++export class TelemetryReviewCoordinator {
++  private sourceKey: string | null = null;
++  private sourceSeq = 0;
++  private reviewRequestId = 0;
++
++  constructor(
++    private readonly adapter: TelemetryReviewAdapter,
++    private readonly effects: TelemetryReviewEffects,
++  ) {}
++
++  /** Currently bound source identity, if any. */
++  getActiveSourceKey(): string | null {
++    return this.sourceKey;
++  }
++
++  /** Bind an uploaded file (or detach with null) and clear all review state. */
++  selectFile(descriptor: Omit<TelemetrySourceDescriptor & { kind: 'file' }, 'kind'> | null): void {
++    this.sourceSeq += 1;
++    this.sourceKey = descriptor === null ? null : buildSourceKey({ kind: 'file', ...descriptor });
++    // A source change also releases preparation busy state: any pending
++    // prepare belongs to the detached source and its finish is guarded, so
++    // the new source is never blocked by stale busy state.
++    this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false });
++  }
++
++  /** Bind the bundled synthetic sample as the single active source. */
++  selectSample(): void {
++    this.sourceSeq += 1;
++    this.sourceKey = buildSourceKey({ kind: 'sample' });
++    this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false });
++  }
++
++  private capture(): CapturedLifetime {
++    return { key: this.sourceKey, seq: this.sourceSeq };
++  }
++
++  private isCurrent(lifetime: CapturedLifetime): boolean {
++    return lifetime.key === this.sourceKey && isCurrentResponse(lifetime.seq, this.sourceSeq);
++  }
++
++  /** Deterministic analysis of the bundled sample. */
++  async runSampleAnalysis(): Promise<void> {
++    const lifetime = this.capture();
++    this.effects.apply({ busy: true, busySource: 'sample' });
++    try {
++      const response = await this.adapter.analyzeTelemetry({ useBundledSample: true }, { timeoutMs: ANALYSIS_TIMEOUT_MS });
++      if (!this.isCurrent(lifetime)) return;
++      this.effects.apply({ analysis: response });
++    } catch (err: unknown) {
++      if (!this.isCurrent(lifetime)) return;
++      this.effects.apply({ error: (err as Error).message || 'Telemetry analysis failed.' });
++    } finally {
++      this.effects.apply({ busy: false, busySource: null });
++    }
++  }
++
++  /** Deterministic analysis of the actively bound uploaded file. */
++  async runFileAnalysis(file: TelemetryFileSubmit): Promise<void> {
++    const lifetime = this.capture();
++    if (this.sourceKey !== buildSourceKey({ kind: 'file', name: file.name, size: file.size, lastModified: file.lastModified })) return;
++    this.effects.apply({ busy: true, busySource: 'file' });
++    try {
++      const response = await this.adapter.analyzeTelemetry(
++        { name: file.name, contentBase64: file.contentBase64 },
++        { timeoutMs: ANALYSIS_TIMEOUT_MS },
++      );
++      if (!this.isCurrent(lifetime)) return;
++      this.effects.apply({ analysis: response });
++    } catch (err: unknown) {
++      if (!this.isCurrent(lifetime)) return;
++      this.effects.apply({ error: (err as Error).message || 'Telemetry analysis failed.' });
++    } finally {
++      this.effects.apply({ busy: false, busySource: null });
++    }
++  }
++
++  /**
++   * Agent analysis of the actively bound file. Refuses when the active source
++   * is not that exact file (e.g. the bundled sample was selected instead), so
++   * no request for a detached file can run under a sample identity.
++   */
++  async askAboutCsv(request: string, file: TelemetryFileSubmit, options: { signal?: AbortSignal } = {}): Promise<void> {
++    const lifetime = this.capture();
++    if (this.sourceKey !== buildSourceKey({ kind: 'file', name: file.name, size: file.size, lastModified: file.lastModified })) return;
++    this.effects.apply({
++      agentResult: null, reviewRun: null, reviewError: null,
++      analysis: null, agentError: null, agentPhase: 'uploading',
++    });
++    try {
++      const selectedReceipt = await this.adapter.analyzeTelemetry(
++        { name: file.name, contentBase64: file.contentBase64 },
++        { signal: options.signal, timeoutMs: ANALYSIS_TIMEOUT_MS },
++      );
++      if (options.signal?.aborted || !this.isCurrent(lifetime)) return;
++      this.effects.apply({ analysis: selectedReceipt, agentPhase: 'requesting' });
++      const result = await this.adapter.analyzeCsv(
++        { request, sourcePath: selectedReceipt.source.relativePath },
++        { signal: options.signal, timeoutMs: AGENT_TIMEOUT_MS },
++      );
++      if (options.signal?.aborted || !this.isCurrent(lifetime)) return;
++      this.effects.apply({ agentResult: result, agentPhase: 'completed' });
++    } catch (err: unknown) {
++      if (!this.isCurrent(lifetime)) return;
++      if (options.signal?.aborted) {
++        this.effects.apply({ agentPhase: 'cancelled', agentError: 'Cancelled. No successful model result was returned; retry to start a new run.' });
++      } else {
++        const message = (err as Error).message || 'The analysis request failed.';
++        const timedOut = /timed out|timeout/i.test(message);
++        this.effects.apply({ agentPhase: 'failed', agentError: `${timedOut ? 'Timed out' : 'Failed'}: ${message} Retry is available.` });
++      }
++    }
++  }
++
++  /** Prepare a persisted human-review package for an accepted agent result. */
++  async prepareReview(analysisId: string): Promise<void> {
++    const lifetime = this.capture();
++    const requestId = ++this.reviewRequestId;
++    this.effects.apply({ reviewBusy: true, reviewError: null });
++    try {
++      const run = await this.adapter.prepareReview(analysisId);
++      if (!this.isCurrent(lifetime)) return;
++      this.effects.apply({ reviewRun: run });
++      this.effects.writeSavedRunId(run.runId);
++      if (run.status === 'pending_approval') this.effects.navigateToApprovals();
++    } catch (err: unknown) {
++      if (!this.isCurrent(lifetime)) return;
++      this.effects.apply({ reviewError: (err as Error).message || 'Could not prepare the persisted review package.' });
++    } finally {
++      // A stale finish must never clear a newer request's busy state.
++      if (requestId === this.reviewRequestId && this.isCurrent(lifetime)) {
++        this.effects.apply({ reviewBusy: false });
++      }
++    }
++  }
++
++  /** Reconnect a previously saved review on load; never rebind it to a new source. */
++  async reconnect(): Promise<void> {
++    const lifetime = this.capture();
++    const runId = this.effects.readSavedRunId();
++    if (!runId?.startsWith(SAVED_RUN_PREFIX)) return;
++    try {
++      const run = await this.adapter.getJudgedRun(runId);
++      if (!this.isCurrent(lifetime) || !shouldApplyReconnect(this.sourceKey)) return;
++      this.effects.apply({ reviewRun: run });
++    } catch {
++      if (!this.isCurrent(lifetime) || !shouldApplyReconnect(this.sourceKey)) return;
++      this.effects.apply({ reviewError: 'Could not reconnect to the saved review run. Check the authenticated service and approvals queue.' });
++    }
++  }
++}
+diff --git a/tests/gui/telemetry-review-coordinator.test.ts b/tests/gui/telemetry-review-coordinator.test.ts
+new file mode 100644
+index 0000000..c3f1a3a
+--- /dev/null
++++ b/tests/gui/telemetry-review-coordinator.test.ts
+@@ -0,0 +1,210 @@
++/**
++ * Behavioral coverage for the panel's delegated async/state coordination
++ * (COMPLETION-FIX-06). These tests drive TelemetryReviewCoordinator — the
++ * exact implementation TelemetryReviewPanel delegates every review side
++ * effect to — with deferred promises and fake adapters/storage/navigation.
++ * No new test dependencies; node vitest only, matching the GUI test approach.
++ */
++import { describe, expect, it, vi } from 'vitest';
++import {
++  TelemetryReviewCoordinator,
++  type TelemetryReviewAdapter,
++  type TelemetryReviewViewState,
++} from '../../src/gui/src/components/telemetryReviewCoordinator';
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  let reject!: (reason?: unknown) => void;
++  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
++  return { promise, resolve, reject };
++}
++
++interface FakeAdapter extends TelemetryReviewAdapter {
++  telemetryCalls: Array<{ input: unknown; options: unknown }>;
++  csvCalls: Array<{ input: unknown; options: unknown }>;
++  prepareCalls: string[];
++  judgedCalls: string[];
++  telemetryQueue: Array<ReturnType<typeof deferred<any>>>;
++  csvQueue: Array<ReturnType<typeof deferred<any>>>;
++  prepareQueue: Array<ReturnType<typeof deferred<any>>>;
++  judgedQueue: Array<ReturnType<typeof deferred<any>>>;
++}
++
++function makeAdapter(): FakeAdapter {
++  const fake: FakeAdapter = {
++    telemetryCalls: [],
++    csvCalls: [],
++    prepareCalls: [],
++    judgedCalls: [],
++    telemetryQueue: [],
++    csvQueue: [],
++    prepareQueue: [],
++    judgedQueue: [],
++    analyzeTelemetry: vi.fn(async (input: unknown, options: unknown) => {
++      fake.telemetryCalls.push({ input, options });
++      const next = fake.telemetryQueue.shift();
++      if (!next) throw new Error('No queued telemetry response.');
++      return next.promise;
++    }),
++    analyzeCsv: vi.fn(async (input: unknown, options: unknown) => {
++      fake.csvCalls.push({ input, options });
++      const next = fake.csvQueue.shift();
++      if (!next) throw new Error('No queued agent response.');
++      return next.promise;
++    }),
++    prepareReview: vi.fn(async (analysisId: string) => {
++      fake.prepareCalls.push(analysisId);
++      const next = fake.prepareQueue.shift();
++      if (!next) throw new Error('No queued review response.');
++      return next.promise;
++    }),
++    getJudgedRun: vi.fn(async (runId: string) => {
++      fake.judgedCalls.push(runId);
++      const next = fake.judgedQueue.shift();
++      if (!next) throw new Error('No queued judged response.');
++      return next.promise;
++    }),
++  };
++  return fake;
++}
++
++interface Harness {
++  coordinator: TelemetryReviewCoordinator;
++  adapter: FakeAdapter;
++  patches: Array<Partial<TelemetryReviewViewState>>;
++  writes: string[];
++  navigations: number;
++  savedRunId: string | null;
++}
++
++function makeHarness(savedRunId: string | null = null): Harness {
++  const patches: Array<Partial<TelemetryReviewViewState>> = [];
++  const writes: string[] = [];
++  let navigations = 0;
++  const adapter = makeAdapter();
++  const harness: Harness = {
++    coordinator: new TelemetryReviewCoordinator(adapter, {
++      apply: (patch) => { patches.push(patch); },
++      readSavedRunId: () => harness.savedRunId,
++      writeSavedRunId: (runId) => { writes.push(runId); },
++      navigateToApprovals: () => { navigations += 1; },
++    }),
++    adapter,
++    patches,
++    writes,
++    get navigations() { return navigations; },
++    savedRunId,
++  };
++  return harness;
++}
++
++const fileA = { name: 'a.csv', size: 136, lastModified: 1793433790000 };
++const fileB = { name: 'b.csv', size: 140, lastModified: 1793433799999 };
++
++function uploadReceipt(analysisId: string, relativePath: string) {
++  return { analysisId, source: { relativePath }, result: { rowsAnalyzed: 3 } };
++}
++
++function agentResult() {
++  return { evidence: { analysisId: 'telemetry-1' } };
++}
++
++function judgedRun(runId: string, status = 'pending_approval') {
++  return { runId, status };
++}
++
++describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06)', () => {
++  it('prepare A, select B, resolve A: no stale review, storage, navigation or error', async () => {
++    const h = makeHarness();
++    h.coordinator.selectFile(fileA);
++    const prepA = deferred();
++    h.adapter.prepareQueue.push(prepA);
++    const pending = h.coordinator.prepareReview('analysis-a');
++    h.coordinator.selectSample();
++    prepA.resolve(judgedRun('judged-run-agent-a'));
++    await pending;
++
++    expect(h.adapter.prepareCalls).toEqual(['analysis-a']);
++    expect(h.patches.some((patch) => patch.reviewRun != null)).toBe(false);
++    expect(h.patches.some((patch) => patch.reviewError != null)).toBe(false);
++    expect(h.writes).toEqual([]);
++    expect(h.navigations).toBe(0);
++  });
++
++  it('prepare A, select B, start B, finish A: B stays busy until B finishes', async () => {
++    const h = makeHarness();
++    h.coordinator.selectFile(fileA);
++    const prepA = deferred();
++    h.adapter.prepareQueue.push(prepA);
++    const pendingA = h.coordinator.prepareReview('analysis-a');
++    h.coordinator.selectSample();
++    const prepB = deferred();
++    h.adapter.prepareQueue.push(prepB);
++    const pendingB = h.coordinator.prepareReview('analysis-b');
++    prepA.resolve(judgedRun('judged-run-agent-a'));
++    await pendingA;
++
++    const busyAfterA = h.patches.filter((patch) => patch.reviewBusy !== undefined).map((patch) => patch.reviewBusy);
++    expect(busyAfterA[busyAfterA.length - 1]).toBe(true);
++
++    prepB.resolve(judgedRun('judged-run-agent-b'));
++    await pendingB;
++    const busyAfterB = h.patches.filter((patch) => patch.reviewBusy !== undefined).map((patch) => patch.reviewBusy);
++    expect(busyAfterB[busyAfterB.length - 1]).toBe(false);
++    expect(h.writes).toEqual(['judged-run-agent-b']);
++    expect(h.navigations).toBe(1);
++  });
++
++  it('file A then sample: no request for A runs under the sample identity', async () => {
++    const h = makeHarness();
++    h.coordinator.selectFile(fileA);
++    h.coordinator.selectSample();
++
++    expect(h.coordinator.getActiveSourceKey()).toBe('sample');
++    await h.coordinator.askAboutCsv('Summarize.', { ...fileA, contentBase64: 'e30=' });
++
++    expect(h.adapter.telemetryCalls).toHaveLength(0);
++    expect(h.adapter.csvCalls).toHaveLength(0);
++    expect(h.patches.some((patch) => patch.agentPhase === 'uploading' || patch.agentPhase === 'requesting')).toBe(false);
++  });
++
++  it('sample then a new file: requests and results bind to that file', async () => {
++    const h = makeHarness();
++    h.coordinator.selectSample();
++    h.coordinator.selectFile(fileB);
++    const upload = deferred();
++    h.adapter.telemetryQueue.push(upload);
++    const pending = h.coordinator.askAboutCsv('Summarize.', { ...fileB, contentBase64: 'e30=' });
++    expect(h.adapter.telemetryCalls).toHaveLength(1);
++    expect((h.adapter.telemetryCalls[0]?.input as { name?: string }).name).toBe('b.csv');
++    upload.resolve(uploadReceipt('telemetry-b', '.maos/industrial/evidence/b.csv'));
++    const agentCall = deferred();
++    h.adapter.csvQueue.push(agentCall);
++    await vi.waitFor(() => expect(h.adapter.csvCalls).toHaveLength(1));
++    agentCall.resolve(agentResult());
++    await pending;
++
++    const lastResult = [...h.patches].reverse().find((patch) => patch.agentResult !== undefined);
++    expect(lastResult?.agentResult).not.toBeNull();
++    expect(h.patches.some((patch) => patch.agentPhase === 'completed')).toBe(true);
++  });
++
++  it('stale reconnect and stale analysis results stay ignored', async () => {
++    const h = makeHarness('judged-run-agent-old');
++    const judged = deferred();
++    h.adapter.judgedQueue.push(judged);
++    const reconnecting = h.coordinator.reconnect();
++    h.coordinator.selectFile(fileA);
++    judged.resolve(judgedRun('judged-run-agent-old', 'completed'));
++    await reconnecting;
++    expect(h.patches.some((patch) => patch.reviewRun != null)).toBe(false);
++
++    const analysis = deferred();
++    h.adapter.telemetryQueue.push(analysis);
++    const analyzing = h.coordinator.runSampleAnalysis();
++    h.coordinator.selectFile(fileB);
++    analysis.resolve(uploadReceipt('telemetry-stale', 'synthetic/pilot.csv'));
++    await analyzing;
++    expect(h.patches.some((patch) => patch.analysis != null)).toBe(false);
++  });
++});

@@ -1,0 +1,111 @@
+{
+  "status": "PASS",
+  "sourceCommit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "inference": "MOCK ONLY: loopback HTTP; no hosted or live Meta request.",
+  "model": {
+    "requested": "mock-configured-model-v1",
+    "providerReported": "mock-returned-model-v1",
+    "requests": 8
+  },
+  "verifiedFinding": {
+    "rowsAnalyzed": 3,
+    "peakVibration": 8.7,
+    "peakTemperature": 101,
+    "verdict": "CRITICAL"
+  },
+  "steps": [
+    {
+      "step": "mock 502 failure",
+      "result": "failure shown, no accepted success",
+      "acceptedDeliverable": false
+    },
+    {
+      "step": "client cancellation while inference pending",
+      "result": "cancelled before completion",
+      "acceptedDeliverable": false
+    },
+    {
+      "step": "successful retry and evidence",
+      "result": "held-out CSV analyzed; numeric oracle matched; requested/reported models shown; replay confidence separate from unverified prose",
+      "acceptedDeliverable": false
+    },
+    {
+      "step": "review rejection",
+      "artifactCreated": false,
+      "runId": "judged-run-agent-telemetry-1793266338761-b0b741ba"
+    },
+    {
+      "step": "reload/resume",
+      "result": "pending review resumed after page reload",
+      "runId": "judged-run-agent-telemetry-1793266339414-10551b2e"
+    },
+    {
+      "step": "process restart/resume",
+      "result": "old service and UI stopped; new launcher session issued; old token rejected; pending approval visible and resumable in authoritative Approval Queue",
+      "runId": "judged-run-agent-telemetry-1793266339414-10551b2e"
+    },
+    {
+      "step": "changed-source stale approval",
+      "result": "approval refused with STALE_APPROVAL",
+      "artifactCreated": false,
+      "runId": "judged-run-agent-telemetry-1793266339414-10551b2e"
+    },
+    {
+      "executionStatus": "completed",
+      "artifactAndDownloadHashesMatch": true,
+      "artifactCreated": true,
+      "step": "approve and download",
+      "engineeringVerdict": "CRITICAL",
+      "runId": "judged-run-agent-telemetry-1793266342354-62d8b6e2",
+      "analysisId": "telemetry-1793266342354-62d8b6e2",
+      "artifactSha256": "563f580c92e3b093a976e5a3519008e6887561e16d88642bdf07b7d63600f58e",
+      "runVerdict": "FAIL",
+      "downloadSha256": "563f580c92e3b093a976e5a3519008e6887561e16d88642bdf07b7d63600f58e"
+    }
+  ],
+  "sameRunAudit": {
+    "event": "JUDGED_RUN_COMPLETED",
+    "runId": "judged-run-agent-telemetry-1793266342354-62d8b6e2",
+    "analysisId": "telemetry-1793266342354-62d8b6e2",
+    "agentRunId": "57a5cb0b-349f-4656-8dcc-ed2e864d8a6e",
+    "receiptSha256": "91bebec06fe9881979afb8bebb02bddfd44a38afb1f3e47174aea33a2ffa1300",
+    "deliverableSha256": "563f580c92e3b093a976e5a3519008e6887561e16d88642bdf07b7d63600f58e",
+    "chainVerified": true
+  },
+  "auth": {
+    "missingSession": 401,
+    "invalidSession": 401,
+    "wrongProject": 400,
+    "wrongOrigin": 403,
+    "unauthenticatedDownload": 401
+  },
+  "privacy": {
+    "tokenInUrl": false,
+    "tokenInPersistentStorage": false,
+    "tokenInCookies": false,
+    "tokenInCapturedElectronLogs": false
+  },
+  "processCleanup": {
+    "electronClosed": true,
+    "projectServiceStopped": true,
+    "uiServerStopped": true,
+    "mockStopped": true
+  },
+  "electronProcessRestart": {
+    "processRestarted": true,
+    "oldServiceStopped": true,
+    "oldUiStopped": true,
+    "newSessionIssued": true,
+    "oldSessionRejected": true,
+    "pendingRunResumed": true,
+    "pendingRunId": "judged-run-agent-telemetry-1793266339414-10551b2e",
+    "oldServiceInstanceId": "inst_1793266337874_9f98498c44c0",
+    "newServiceInstanceId": "inst_1793266341368_28d8313a9c35",
+    "oldServicePort": 51432,
+    "newServicePort": 49360,
+    "userDataPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\electron temp with spaces\\maos-electron-agent-aeKjFF\\electron-user-data"
+  },
+  "reportingNote": "The raw test report has a legacy field named engineeringVerdict populated from manifest.verdict. This normalized summary uses the assertions that separately checked manifest.status=completed, manifest.verdict=FAIL, and manifest.details.engineeringVerdict=CRITICAL.",
+  "restartUiNote": "The reload path restored the saved cockpit review marker. After full process restart, the authoritative pending approval appeared in the Approval Queue and was resumed there; the cockpit-specific saved-review marker did not reappear automatically.",
+  "evidence": "electron-installed-journey-attempt-3.json"
+}

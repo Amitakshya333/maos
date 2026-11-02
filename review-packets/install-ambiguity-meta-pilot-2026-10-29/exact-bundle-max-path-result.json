@@ -1,0 +1,12 @@
+{
+  "bundleRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\bundle extracted committed with spaces",
+  "targetRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\max-path-check\\aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "targetRootLength": 190,
+  "longestEnginePathLength": 242,
+  "expectedBundleSha256": "1f333348e92ea988e8fa9ef3be37dd362e69e6d1ab380d3e653f731240b8b61b",
+  "targetExistedAfter": false,
+  "exitCode": 1,
+  "output": [
+    "InstallRoot path is too long for this Windows bootstrap (projected file path is 283 characters; limit is 239). Choose a shorter destination. No install files were written."
+  ]
+}

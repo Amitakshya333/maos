@@ -1,0 +1,11 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "C:\\Program Files\\nodejs\\node.exe",
+  "args": [
+    "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+    "run",
+    "typecheck:gui"
+  ],
+  "startedAt": "2026-10-31T15:59:37.628Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

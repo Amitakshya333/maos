@@ -1,0 +1,30 @@
+
+ RUN  v4.1.11 C:/maos
+
+ ❯ tests/gui/ui1-10-evidence-retention.test.ts (27 tests | 27 skipped) 102ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/gui/ui1-10-evidence-retention.test.ts > UI1-10: Evidence / Brainstorm Modes and Retention
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-ui1-10-x1eADf\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ new RestApiServer src/api/server.ts:35:21
+ ❯ ProjectServiceHost.start src/service/project-service/host.ts:113:19
+ ❯ tests/gui/ui1-10-evidence-retention.test.ts:144:39
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 passed | 53 skipped (54)
+   Start at  10:42:29
+   Duration  3.70s (transform 1.95s, setup 0ms, import 3.20s, tests 167ms, environment 0ms)
+
+EXIT_CODE=1

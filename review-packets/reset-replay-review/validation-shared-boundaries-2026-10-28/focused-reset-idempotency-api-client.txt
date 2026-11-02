@@ -1,0 +1,107 @@
+COMMAND: npm exec -- vitest run tests/industrial/f10-05-deterministic-reset.test.ts tests/f3-07-verifier-idempotency.test.ts tests/f3-03-rest-contract.test.ts tests/gui/ui1-02-api-clients.test.ts
+
+ RUN  v4.1.11 C:/maos
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts (25 tests | 6 failed) 11522ms
+       × reports candidates without removing any files during dry-run 148ms
+       × deletes allowlisted files when live reset is explicitly confirmed 198ms
+       × keeps an active generic publisher temp file out of cleanup and serializes CLI reset across processes 8013ms
+       × rejects a cross-process retry-queue writer while the project reset lock is held 141ms
+       × reports scanned and actually removed bytes separately when candidates disappear 125ms
+       × counts only successful unlinks when one candidate cannot be removed 125ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Dry-Run Safety Guarantee > reports candidates without removing any files during dry-run
+AssertionError: expected 7 to be greater than or equal to 10
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:187:44
+    185|       expect(result.success).toBe(true);
+    186|       expect(result.dryRun).toBe(true);
+    187|       expect(result.candidateFiles.length).toBeGreaterThanOrEqual(10);
+       |                                            ^
+    188|       expect(result.removedFiles).toHaveLength(0);
+    189|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Confirmation & Live Execution > deletes allowlisted files when live reset is explicitly confirmed
+AssertionError: expected 7 to be greater than or equal to 10
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:256:42
+    254|       expect(result.success).toBe(true);
+    255|       expect(result.dryRun).toBe(false);
+    256|       expect(result.removedFiles.length).toBeGreaterThanOrEqual(10);
+       |                                          ^
+    257|
+    258|       // Verify targeted generated files were removed
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > keeps an active generic publisher temp file out of cleanup and serializes CLI reset across processes
+AssertionError: expected 'Reset busy: Judged-run resource \'jud…' to contain 'JUDGED_RUN_BUSY'
+
+Expected: "JUDGED_RUN_BUSY"
+Received: "Reset busy: Judged-run resource 'judged-run-project-output' is already being changed; retry after the active operation finishes."
+
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:292:35
+    290|         consoleLog.mockRestore();
+    291|         expect(busyReset.exitCode).toBe(INDUSTRIAL_CLI_EXIT.RESET_FAIL…
+    292|         expect(busyReset.message).toContain('JUDGED_RUN_BUSY');
+       |                                   ^
+    293|
+    294|         publisher.stdin.end('continue');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > rejects a cross-process retry-queue writer while the project reset lock is held
+ReferenceError: spawnSync is not defined
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:326:62
+    324|         "catch (error) { process.stdout.write(error.code || String(err…
+    325|       ].join('\n');
+    326|       const result = withJudgedRunOutputLock(testRoot, () => spawnSync(
+       |                                                              ^
+    327|         process.execPath,
+    328|         ['-e', script, retryModule, testRoot],
+ ❯ src/industrial/judged-run-lock.ts:183:26
+ ❯ withJudgedRunLock src/industrial/judged-run-lock.ts:155:14
+ ❯ withJudgedRunOutputLock src/industrial/judged-run-lock.ts:182:10
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:326:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > reports scanned and actually removed bytes separately when candidates disappear
+TypeError: Cannot spy on export "unlinkSync". Module namespace is not configurable in ESM. See: https://vitest.dev/guide/browser/#limitations
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:360:25
+    358|       fs.writeFileSync(second, 'second');
+    359|       const originalUnlink = fs.unlinkSync.bind(fs);
+    360|       const unlink = vi.spyOn(fs, 'unlinkSync').mockImplementation((ta…
+       |                         ^
+    361|         if (String(target) === first) originalUnlink(second);
+    362|         return originalUnlink(target);
+
+Caused by: TypeError: Cannot redefine property: unlinkSync
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:360:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > counts only successful unlinks when one candidate cannot be removed
+TypeError: Cannot spy on export "unlinkSync". Module namespace is not configurable in ESM. See: https://vitest.dev/guide/browser/#limitations
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:381:25
+    379|       fs.writeFileSync(second, 'second');
+    380|       const originalUnlink = fs.unlinkSync.bind(fs);
+    381|       const unlink = vi.spyOn(fs, 'unlinkSync').mockImplementation((ta…
+       |                         ^
+    382|         if (String(target) === first) throw new Error('injected unlink…
+    383|         return originalUnlink(target);
+
+Caused by: TypeError: Cannot redefine property: unlinkSync
+ ❯ tests/industrial/f10-05-deterministic-reset.test.ts:381:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  6 failed | 103 passed (109)
+   Start at  13:03:49
+   Duration  22.27s (transform 3.36s, setup 0ms, import 6.78s, tests 13.99s, environment 0ms)
+
+EXIT_CODE=1

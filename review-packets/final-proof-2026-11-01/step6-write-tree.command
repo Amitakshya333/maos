@@ -1,0 +1,1 @@
+git -C C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core-reconstruct add -A --; git -C C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core-reconstruct write-tree

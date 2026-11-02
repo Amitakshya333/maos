@@ -1,0 +1,7 @@
+{
+  "projectedPathCharacters": 240,
+  "installerRejected": true,
+  "message": "The provided JSON includes a property whose name is an empty string, this is only supported using the -AsHashTable switch.",
+  "installRootCreated": false,
+  "expectedActionableMessage": false
+}

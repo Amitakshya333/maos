@@ -1,0 +1,9 @@
+ConvertFrom-Json : Cannot process argument because the value of argument "name" is not valid. Change the value of the 
+"name" argument and run the operation again.
+At C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-reliability-1ca70dbb9f03455cbb4af596caa7a149\source\script
+s\New-MaosIndustrialInstallBundle.ps1:15 char:85
++ ... h (Join-Path $sourceRoot 'package-lock.json') -Raw | ConvertFrom-Json
++                                                          ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [ConvertFrom-Json], PSArgumentException
+    + FullyQualifiedErrorId : Argument,Microsoft.PowerShell.Commands.ConvertFromJsonCommand
+ 

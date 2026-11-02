@@ -1,0 +1,76 @@
+{
+  "mode": "cancel",
+  "launcherPid": 39380,
+  "launcherNativeExitCode": 130,
+  "exitCodeCapturedFromProcessHandle": true,
+  "capturedAt": "2026-10-29T19:00:32.5689123Z",
+  "ctrlCEventSent": true,
+  "ctrlCWin32Error": 0,
+  "requestActiveBeforeCtrlC": true,
+  "mockRequest": {
+    "requestCount": 1,
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "model": "meta-models/muse-spark-open-1026",
+    "toolNames": [
+      "analyze_telemetry_csv",
+      "task_complete"
+    ],
+    "authorizationHeaderPresentAtLoopback": false,
+    "authorizationWasConfiguredAtClient": true,
+    "contentLength": 1915,
+    "receivedAt": "2026-10-29T19:00:31.079Z",
+    "connectionClosed": true,
+    "requestAborted": false,
+    "closedAt": "2026-10-29T19:00:31.515Z"
+  },
+  "authorizationValuePersisted": false,
+  "syntheticCredentialAppearedInCapturedOutput": false,
+  "electronHookLoaded": true,
+  "nodeServiceHookLoaded": true,
+  "unexpectedNonloopbackFetchCount": 0,
+  "ownedProcessesBeforeCtrlC": [
+    {
+      "pid": 23696,
+      "parentPid": 39380,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:37"
+    },
+    {
+      "pid": 8920,
+      "parentPid": 23696,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 17824,
+      "parentPid": 23696,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 39568,
+      "parentPid": 23696,
+      "name": "node.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 29200,
+      "parentPid": 39568,
+      "name": "conhost.exe",
+      "creationDate": "10/30/2026 00:29:38"
+    },
+    {
+      "pid": 28232,
+      "parentPid": 23696,
+      "name": "electron.exe",
+      "creationDate": "10/30/2026 00:29:39"
+    }
+  ],
+  "ownedProcessPidsStillPresentAfterExit": [],
+  "noOwnedProcessesRemain": true,
+  "mutexReacquirable": true,
+  "forcedCleanup": false,
+  "mockServerPid": 36660,
+  "mockServerPort": 65016
+}

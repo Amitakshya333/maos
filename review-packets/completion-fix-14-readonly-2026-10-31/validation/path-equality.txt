@@ -1,0 +1,4 @@
+path-equality check (2026-10-31T14:30:42.947Z)
+correction-delta.patch: files=5 missing=["src/core/agent-runner.ts","tests/industrial/read-only-completion.test.ts","src/gui/src/components/telemetryReviewState.ts","tests/gui/telemetry-review-state.test.ts"] extra=[]
+complete-correction.patch: files=9 missing=[] extra=[]
+manifest paths: 9 (complete patch accounts for all 9; correction delta covers the 5 changed files)

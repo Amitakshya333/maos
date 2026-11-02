@@ -1,0 +1,46 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-install-reliability-1ca70dbb9f03455cbb4af596caa7a149/source
+
+ ❯ tests/cli/doctor.test.ts (6 tests | 2 failed) 549ms
+     × returns a required nonzero readiness result for missing credentials without exposing a configured secret 110ms
+     × handles malformed configuration as a readiness failure without throwing 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/cli/doctor.test.ts > maos doctor readiness > returns a required nonzero readiness result for missing credentials without exposing a configured secret
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/cli/doctor.test.ts:87:29
+     85|     const output = result.checks.map((check) => check.detail).join('\n…
+     86|
+     87|     expect(result.exitCode).toBe(1);
+       |                             ^
+     88|     expect(result.checks.find((check) => check.label === 'freemodel'))…
+     89|     expect(output).not.toContain('test-key-do-not-show-1234');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/cli/doctor.test.ts > maos doctor readiness > handles malformed configuration as a readiness failure without throwing
+Error: ENOENT: no such file or directory, open 'C:\Users\AMITAK~1\AppData\Local\Temp\maos-doctor-q4qJjU\.maos\maos.config.json'
+ ❯ tests/cli/doctor.test.ts:127:8
+    125|   it('handles malformed configuration as a readiness failure without t…
+    126|     const root = createProject();
+    127|     fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), '{'…
+       |        ^
+    128|     vi.spyOn(console, 'log').mockImplementation(() => {});
+    129|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  2 failed | 14 passed (16)
+   Start at  02:27:25
+   Duration  11.23s (transform 2.32s, setup 0ms, import 4.86s, tests 5.60s, environment 0ms)
+

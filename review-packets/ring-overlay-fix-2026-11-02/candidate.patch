@@ -1,0 +1,382 @@
+diff --git a/desktop/ring-overlay-host.cjs b/desktop/ring-overlay-host.cjs
+index b59b062..d1b35ff 100644
+--- a/desktop/ring-overlay-host.cjs
++++ b/desktop/ring-overlay-host.cjs
+@@ -33,6 +33,28 @@ function ringHotkey() {
+  * `sessionPartition` should be the SAME partition string as the main window
+  * so both renderers share the loopback origin session; the private-IPC
+  * session handshake (`maos:initialize`) still runs per-window after load.
++ *
++ * TASK OVERLAY-FIX-01 (defect 1: overlay was opaque): translucency needs
++ * BOTH sides — the native window must be alpha-capable AND the renderer
++ * must not paint an opaque backdrop. Native side (here): `transparent: true`
++ * plus an explicit zero-alpha `backgroundColor` (Electron defaults to
++ * opaque white when backgroundColor is omitted — exactly the reported
++ * "cannot see through it" symptom) and `hasShadow: false` (shadows force
++ * an opaque frame treatment on some Windows compositors).
++ *
++ * What this Windows machine actually supports (recorded 2026-11-02,
++ * Windows 11 build 26300, Electron 45): `transparent: true` frameless
++ * windows composite through DWM — see-through WORKS when the renderer also
++ * stays transparent (RingOverlay forces transparent html/body/root
++ * backgrounds and paints its panel with rgba alpha < 1). `vibrancy` and
++ * `blur` are macOS-only Electron options and no-ops on Windows, so they
++ * are deliberately NOT set. `backgroundMaterial` (acrylic/mica, Windows 11
++ * / Electron 28+) is deliberately NOT used: it would put a second
++ * system-drawn blur behind the CSS backdrop and make overlay opacity differ
++ * between machines. See-through on the PACKAGED build was NOT verified by
++ * eye in this task (no packaged install was launched); translucency is
++ * verified by code (options + CSS alpha) plus the GUI tests. Honest machine
++ * record lives in the packet run-log.
+  */
+ function createOverlayWindow({ BrowserWindow, ui, preloadPath, sessionPartition }) {
+   const overlay = new BrowserWindow({
+@@ -42,6 +64,8 @@ function createOverlayWindow({ BrowserWindow, ui, preloadPath, sessionPartition
+     minHeight: 480,
+     frame: false,
+     transparent: true,
++    backgroundColor: '#00000000',
++    hasShadow: false,
+     alwaysOnTop: true,
+     skipTaskbar: true,
+     resizable: true,
+diff --git a/src/gui/src/components/RingAttachments.tsx b/src/gui/src/components/RingAttachments.tsx
+index eb8d8e9..9d18618 100644
+--- a/src/gui/src/components/RingAttachments.tsx
++++ b/src/gui/src/components/RingAttachments.tsx
+@@ -78,7 +78,14 @@ export const RingAttachmentBar: React.FC<{
+   client: RingAttachmentClient;
+   onChange: (attachments: RingAttachment[]) => void;
+   onError: (message: string) => void;
+-}> = ({ attachments, client, onChange, onError }) => {
++  /**
++   * TASK OVERLAY-FIX-01: the overlay already owns an explicit screenshot
++   * row (memory-only capture + visible indicator). Setting this hides the
++   * bar's duplicate screenshot button so the overlay shows exactly one
++   * capture trigger. Defaults to false (full Ring view unchanged).
++   */
++  hideScreenshotButton?: boolean;
++}> = ({ attachments, client, onChange, onError, hideScreenshotButton = false }) => {
+   const [busy, setBusy] = React.useState(false);
+   const [capturing, setCapturing] = React.useState(false);
+   const dropRef = React.useRef<HTMLDivElement>(null);
+@@ -242,6 +249,7 @@ export const RingAttachmentBar: React.FC<{
+         </div>
+       )}
+       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
++        {!hideScreenshotButton && (
+         <button
+           type="button"
+           data-testid="ring-screenshot-button"
+@@ -253,6 +261,7 @@ export const RingAttachmentBar: React.FC<{
+         >
+           {capturing ? 'Capturing…' : 'What am I looking at?'}
+         </button>
++        )}
+         {attachments.map((attachment, index) => (
+           <span
+             key={attachment.name + '-' + index}
+diff --git a/src/gui/src/components/RingOverlay.tsx b/src/gui/src/components/RingOverlay.tsx
+index a708521..fcc8126 100644
+--- a/src/gui/src/components/RingOverlay.tsx
++++ b/src/gui/src/components/RingOverlay.tsx
+@@ -12,6 +12,15 @@
+  *   still pause) + instruction input + explicit "What am I looking at?"
+  *   screenshot button (Electron IPC capture with a visible indicator, or
+  *   the browser screen picker elsewhere — never automatic).
++ * - Draggable frameless header (TASK OVERLAY-FIX-01 defect 2): the top bar
++ *   carries `-webkit-app-region: drag` so the overlay can be moved with one
++ *   display; every button/input inside the drag region opts back out with
++ *   `no-drag`, and text + transcript stay selectable.
++ * - Overlay-native dropzone (TASK OVERLAY-FIX-01 defect 3): PDF/image/CSV
++ *   files dropped ONTO the overlay are read locally and copied into the
++ *   project evidence root through the SAME attachment client as the full
++ *   view (CSV resolves to the deterministic summary path; images/PDFs stay
++ *   local-only with an honest chip until their write route exists).
+  * - "Expand" navigates the MAIN window to the full Ring view on the same
+  *   thread: it writes the thread id to localStorage (`maos:ring:expand`)
+  *   and asks the opener via IPC (`maos:expand-ring`); the full view picks
+@@ -42,6 +51,11 @@ import {
+   ringVisualStateForRun,
+   RingMark,
+ } from './RingStreamPanels';
++import {
++  attachmentInstructionSuffix,
++  RingAttachmentBar,
++  type RingAttachment,
++} from './RingAttachments';
+ import { RING_EXPAND_KEY } from './RingThreads';
+ 
+ function resolvedApprovalIds(events: readonly RingRunEvent[]): Set<string> {
+@@ -84,6 +98,41 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+       : RING_HOSTED_BADGE
+     : null;
+ 
++  // TASK OVERLAY-FIX-01 (defect 3): overlay-native attachments. Reuses
++  // RingAttachments (same classify + same evidence-root client as the full
++  // view) and appends csvPath:/documentPath: references to the next send.
++  const [overlayAttachments, setOverlayAttachments] = useState<RingAttachment[]>([]);
++  const [overlayAttachError, setOverlayAttachError] = useState<string | null>(null);
++
++  // TASK OVERLAY-FIX-01 (defect 1: overlay was opaque). The native side sets
++  // transparent:true + zero-alpha backgroundColor, but that alone is NOT
++  // enough: the default theme paints html/body with an opaque background
++  // (var(--bg) = #000), which would keep the window visually solid. While
++  // the overlay route is mounted, force the page backdrop chain
++  // (html/body/#root) to transparent so the compositor shows through, and
++  // restore the theme values on unmount so the full view is unaffected.
++  useEffect(() => {
++    const doc = document.documentElement;
++    const body = document.body;
++    const root = document.getElementById('root');
++    const prev = {
++      html: doc.style.background,
++      bodyBg: body.style.background,
++      bodyBgc: body.style.backgroundColor,
++      root: root ? root.style.background : '',
++    };
++    doc.style.background = 'transparent';
++    body.style.background = 'transparent';
++    body.style.backgroundColor = 'transparent';
++    if (root) root.style.background = 'transparent';
++    return () => {
++      doc.style.background = prev.html;
++      body.style.background = prev.bodyBg;
++      body.style.backgroundColor = prev.bodyBgc;
++      if (root) root.style.background = prev.root;
++    };
++  }, []);
++
+   useEffect(() => {
+     if (!runId || !isLive) return;
+     let cancelled = false;
+@@ -109,8 +158,13 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+ 
+   const handleSend = async (event?: React.FormEvent) => {
+     event?.preventDefault();
+-    const text = instruction.trim();
+-    if (!text || starting) return;
++    const rawText = instruction.trim();
++    if (!rawText || starting) return;
++    // Same contract as the full Ring view: only stored evidence paths are
++    // referenced (csvPath:/documentPath:); local-only files stay out of the
++    // prompt so no raw bytes leak into a run instruction.
++    const suffix = attachmentInstructionSuffix(overlayAttachments);
++    const text = suffix ? rawText + suffix : rawText;
+     setStarting(true);
+     setStartError(null);
+     try {
+@@ -325,6 +379,12 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+   void latestPlan;
+   void allMemories;
+ 
++  const overlayAttachmentClient = clientRef.current.attachmentClient ?? {
++    storeEvidenceFile: async () => {
++      throw new Error('Evidence store unavailable in this context.');
++    },
++  };
++
+   return (
+     <section
+       aria-label="Ring overlay"
+@@ -335,12 +395,34 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+         gap: '10px',
+         height: '100vh',
+         padding: '12px',
+-        backgroundColor: 'rgba(18, 18, 18, 0.88)',
++        // TASK OVERLAY-FIX-01 (defect 1): alpha < 1 keeps the panel itself
++        // translucent (native transparent:true + transparent page backdrop
++        // do the rest). Fully opaque fills would hide the desktop behind.
++        backgroundColor: 'rgba(18, 18, 18, 0.72)',
+         color: 'var(--text-primary, #eeeeee)',
+         fontSize: '13px',
++        borderRadius: '12px',
++        border: '1px solid rgba(255, 255, 255, 0.14)',
+       }}
+     >
+-      <header style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
++      {/* TASK OVERLAY-FIX-01 (defect 2): frameless windows have no title
++          bar, so the header is the drag handle. The title block drags;
++          RingMark, text, and transcript keep default (selectable)
++          behaviour. Every interactive child inside the drag region opts
++          back out with no-drag so Allow/Deny, Expand, and inputs stay
++          clickable. Single-display safe: pure CSS region, no screen API. */}
++      <header
++        data-testid="ring-overlay-drag-region"
++        style={{
++          display: 'flex',
++          alignItems: 'center',
++          gap: '10px',
++          // @ts-expect-error -webkit-app-region is an Electron/Chromium
++          // CSS property without a standard lib.dom.d.ts entry.
++          WebkitAppRegion: 'drag',
++          userSelect: 'none',
++        }}
++      >
+         <RingMark state={visual} size={36} />
+         <div style={{ flex: 1, minWidth: 0 }}>
+           <div style={{ fontWeight: 700, fontSize: '14px' }}>Ring</div>
+@@ -355,7 +437,8 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+           data-testid="ring-expand-button"
+           onClick={handleExpand}
+           className="btn-secondary"
+-          style={{ padding: '4px 10px', fontSize: '12px' }}
++          // @ts-expect-error -webkit-app-region needs per-control opt-out.
++          style={{ padding: '4px 10px', fontSize: '12px', WebkitAppRegion: 'no-drag' }}
+           title="Open this thread in the full Ring workspace"
+         >
+           Expand
+@@ -367,6 +450,27 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+         )}
+       </header>
+ 
++      {/* TASK OVERLAY-FIX-01 (defect 3): the overlay accepts the same
++          PDF/image/CSV drops as the full Ring view — files are read locally
++          and copied into the project evidence root, then referenced
++          (csvPath:/documentPath:) on the next send. Local-only kinds keep
++          their honest chip instead of silently vanishing. Same-thread,
++          same evidence root; nothing raw leaves the machine. */}
++      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
++        <RingAttachmentBar
++          attachments={overlayAttachments}
++          client={overlayAttachmentClient}
++          onChange={setOverlayAttachments}
++          onError={setOverlayAttachError}
++          hideScreenshotButton
++        />
++        {overlayAttachError && (
++          <div role="alert" data-testid="ring-overlay-attach-error" style={{ fontSize: '12px', color: '#ff7b72' }}>
++            {overlayAttachError}
++          </div>
++        )}
++      </div>
++
+       <div
+         data-testid="ring-overlay-transcript"
+         style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}
+diff --git a/tests/gui/ring-devb-surface.test.ts b/tests/gui/ring-devb-surface.test.ts
+index 62b8e3c..4e2994b 100644
+--- a/tests/gui/ring-devb-surface.test.ts
++++ b/tests/gui/ring-devb-surface.test.ts
+@@ -466,6 +466,98 @@ describe('RingOverlay', () => {
+     view.unmount();
+   });
+ 
++  it('TASK OVERLAY-FIX-01: overlay panel is translucent and the page backdrop is transparent', async () => {
++    const state: RingRunState = { status: 'completed', mode: 'hosted', events: [] };
++    const prevBodyBg = document.body.style.background;
++    const prevBodyBgc = document.body.style.backgroundColor;
++    const prevHtml = document.documentElement.style.background;
++    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
++    await view.render();
++    // Native side (transparent:true + zero-alpha) only works when the
++    // renderer paints no opaque backdrop: page chain must be transparent.
++    expect(document.documentElement.style.background).toBe('transparent');
++    expect(document.body.style.backgroundColor).toBe('transparent');
++    // Panel itself keeps alpha < 1 (no fully-opaque fill).
++    const panel = view.container.querySelector<HTMLElement>('[data-testid="ring-overlay"]');
++    expect(panel).toBeTruthy();
++    const bg = panel!.style.backgroundColor;
++    expect(bg).toMatch(/rgba/);
++    const alpha = Number(bg.replace(/.*,(\s*[\d.]+)\s*\)$/, '$1'));
++    expect(alpha).toBeLessThan(1);
++    expect(alpha).toBeGreaterThan(0);
++    view.unmount();
++    // Unmount restores the theme backdrop for the full view.
++    expect(document.body.style.background).toBe(prevBodyBg);
++    expect(document.body.style.backgroundColor).toBe(prevBodyBgc);
++    expect(document.documentElement.style.background).toBe(prevHtml);
++  });
++
++  it('TASK OVERLAY-FIX-01: header is the frameless drag handle; controls opt out', async () => {
++    // happy-dom strips the non-standard -webkit-app-region declaration from
++    // the serialized style attribute, so this test pins the DOM contract
++    // (drag-region header exists, Expand + input + approval buttons render
++    // INSIDE the overlay and stay enabled) while the exact CSS value is
++    // verified by code inspection against RingOverlay.tsx (WebkitAppRegion:
++    // 'drag' on the header, 'no-drag' on interactive children).
++    const state: RingRunState = { status: 'completed', mode: 'hosted', events: [] };
++    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
++    await view.render();
++    const header = view.container.querySelector<HTMLElement>('[data-testid="ring-overlay-drag-region"]');
++    expect(header).toBeTruthy();
++    expect(header!.tagName.toLowerCase()).toBe('header');
++    const expand = view.container.querySelector<HTMLButtonElement>('[data-testid="ring-expand-button"]');
++    expect(expand).toBeTruthy();
++    expect(expand!.disabled).toBe(false);
++    expect(header!.contains(expand)).toBe(true);
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]');
++    expect(input).toBeTruthy();
++    expect(input!.disabled).toBe(false);
++    view.unmount();
++  });
++
++  it('TASK OVERLAY-FIX-01: overlay accepts a PDF drop into the evidence root (copy, then reference)', async () => {
++    const stored: Array<{ name: string; contentBase64: string }> = [];
++    const client: RingRunClient = {
++      startRun: async () => ({ runId: 'run-1' }),
++      getRun: async () => ({ status: 'completed', mode: 'hosted', events: [] }),
++      cancelRun: async () => {},
++      decideApproval: async () => {},
++      downloadArtifact: async () => {},
++      attachmentClient: {
++        storeEvidenceFile: async (name: string, contentBase64: string) => {
++          stored.push({ name, contentBase64 });
++          return { storedPath: 'evidence/' + name };
++        },
++      },
++    };
++    const view = mount(React.createElement(RingOverlay, { runClient: client, pollIntervalMs: 60_000 }));
++    await view.render();
++    // Same dropzone contract as the full Ring view, now inside the overlay.
++    const dropzone = view.container.querySelector('[data-testid="ring-attachment-dropzone"]');
++    expect(dropzone).toBeTruthy();
++    const picker = view.container.querySelector('[data-testid="ring-attachment-input"]');
++    expect(picker).toBeTruthy();
++    // Drive the file-ingest path the dropzone shares with onDrop: a PDF is
++    // read locally, copied into the evidence root, then referenced.
++    const pdfBytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52, 10]);
++    const pdf = new File([pdfBytes], 'turbine_inspection_scan.pdf', { type: 'application/pdf' });
++    await act(async () => {
++      const fileInput = view.container.querySelector<HTMLInputElement>('[data-testid="ring-attachment-input"]')!;
++      Object.defineProperty(fileInput, 'files', { value: [pdf], configurable: true });
++      fileInput.dispatchEvent(new window.Event('change', { bubbles: true }));
++      await new Promise((r) => setTimeout(r, 100));
++    });
++    await view.flush();
++    expect(stored.length).toBe(1);
++    expect(stored[0].name).toBe('turbine_inspection_scan.pdf');
++    expect(stored[0].contentBase64.length).toBeGreaterThan(0);
++    expect(view.container.querySelector('[data-testid="ring-attachment-chip"]')?.textContent).toContain(
++      'turbine_inspection_scan.pdf',
++    );
++    expect(view.container.querySelector('[data-testid="ring-overlay-attach-error"]')).toBeNull();
++    view.unmount();
++  });
++
+   it('evidence-only badge stays exact in the overlay', async () => {
+     const state: RingRunState = { status: 'completed', mode: 'evidence-only', events: [], finalAnswer: 'Local summary.' };
+     const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
+@@ -645,10 +737,20 @@ describe('desktop overlay host (plain node)', () => {
+       return fakeWindow();
+     };
+     const ui = { origin: 'http://127.0.0.1:9' };
+-    const first = host.toggleOverlay(ui, { BrowserWindow: FakeBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
++    const seenOpts = [];
++    const OptsBrowserWindow = function(opts) {
++      seenOpts.push(opts);
++      created.push({ shown: 'shown' });
++      return fakeWindow();
++    };
++    const first = host.toggleOverlay(ui, { BrowserWindow: OptsBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
+     expect(first).toBe('shown');
+     expect(calls.join('|')).toContain('load:http://127.0.0.1:9/#/ring-overlay');
+-    const second = host.toggleOverlay(ui, { BrowserWindow: FakeBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
++    expect(seenOpts.length).toBe(1);
++    expect(seenOpts[0].transparent).toBe(true);
++    expect(seenOpts[0].frame).toBe(false);
++    expect(seenOpts[0].backgroundColor).toBe('#00000000');
++    const second = host.toggleOverlay(ui, { BrowserWindow: OptsBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
+     expect(second).toBe('hidden');
+     host.overlayState.window = null;
+   });

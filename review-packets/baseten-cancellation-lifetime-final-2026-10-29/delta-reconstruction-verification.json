@@ -1,0 +1,57 @@
+{
+  "baseSnapshotRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-bb871-patch-reconstruction-20261029-01",
+  "baseSnapshotBasis": "previous rejected four-file snapshot, copied after LF normalization against its retained manifest",
+  "patchFile": "lifetime-delta-from-rejected-four-file-snapshot.patch",
+  "patchSha256": "c90e4ea595eb7226580f75288041a649759dd4c413220003c6f374d01cfd04cd",
+  "reconstructionRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-rejected-four-file-delta-final-20261029-01",
+  "applyCheckExitCode": 0,
+  "applyExitCode": 0,
+  "reconstructedPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "workingTreeStatusAfterApply": "?? scripts/\n?? tests/\n",
+  "files": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "rawEqual": false,
+      "rawSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "candidateRawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "lfNormalizedEqual": true,
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "candidateLfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a"
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "rawEqual": false,
+      "rawSha256": "ed979b553696f370169fba2609a894ba861da21a10d28d3a9c645bf45ed93e51",
+      "candidateRawSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "lfNormalizedEqual": true,
+      "lfNormalizedSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "candidateLfNormalizedSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74"
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "rawEqual": false,
+      "rawSha256": "7602c112b6815635e2887bb415ec3d6c7da42014ad8623aec828e01795580395",
+      "candidateRawSha256": "5f850a5e6547a78ba4bcf1022915a6d1af87d726bc0c0b301f00dbf16d0c947c",
+      "lfNormalizedEqual": true,
+      "lfNormalizedSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb",
+      "candidateLfNormalizedSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "rawEqual": true,
+      "rawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "candidateRawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedEqual": true,
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "candidateLfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3"
+    }
+  ],
+  "rawByteEquality": false,
+  "lfNormalizedEquality": true,
+  "result": "PASS; exact two-file delta applies to the four-file prior snapshot and reconstructs all four current scoped files after LF normalization."
+}

@@ -1,0 +1,6 @@
+
+🩺 MAOS Doctor — Environment Diagnostics
+────────────────────────────────────────────────────────────
+  ✅ Node.js            v24.11.0 (requires >=18.0.0)
+  ✅ Platform           Windows
+  ❌ Config             maos.config.json not found. Run: maos init

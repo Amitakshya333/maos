@@ -1,0 +1,4 @@
+TRACE: rejected decision locate and open modal for telemetry-1793219624252-cd5f346a
+TRACE: rejected modal opened for telemetry-1793219624252-cd5f346a
+TRACE: confirming rejected for telemetry-1793219624252-cd5f346a
+TRACE: confirmed click rejected for telemetry-1793219624252-cd5f346a

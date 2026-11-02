@@ -1,0 +1,9 @@
+EngineError: Engine executable not found: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS synthetic pilot projects 2cfdf9b retry3\success-RVU78y\rust\target\release\maos-engine.exe. Install the platform-matched release binary at this path. From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, then copy rust/target/release/maos-engine[.exe] to the missing path.
+    at verifyExecutable (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\rust-engine-bridge.js:93:15)
+    at AuditService.getEngineManifest (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\service\audit-service.js:320:58)
+    at AuditService.verifyChain (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\service\audit-service.js:450:31)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:362:56)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async IndustrialAnalysisAgentService.analyze (C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\MAOS installed mock 2cfdf9b retry3\app\dist\industrial\analysis-agent-service.js:101:20)
+    at async runSuccess (C:\maos\review-packets\baseten-reasoning-budget-2026-10-30\fresh-bootstrap-2cfdf9b-2026-10-30\installed-baseten-mock-smoke.cjs:181:20)
+    at async C:\maos\review-packets\baseten-reasoning-budget-2026-10-30\fresh-bootstrap-2cfdf9b-2026-10-30\installed-baseten-mock-smoke.cjs:346:5

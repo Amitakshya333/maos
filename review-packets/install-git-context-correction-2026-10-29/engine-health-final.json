@@ -1,0 +1,18 @@
+{
+  "command": "one newline-delimited protocol 1.0 health request",
+  "exitCode": 0,
+  "stdout": {
+    "request_id": "install-review",
+    "operation": "health",
+    "version": "1.0",
+    "data": {
+      "engine": "maos-industrial-engine",
+      "protocol_version": "1.0",
+      "rust_version": "1.95.0",
+      "status": "ok",
+      "unsafe_code": false,
+      "version": "0.1.0"
+    }
+  },
+  "stderrEmpty": true
+}

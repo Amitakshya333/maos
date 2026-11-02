@@ -1,0 +1,14 @@
+COMMAND: git diff --check bb871cb191184b5de1b790d42fc452a29f8f072e -- <four scoped paths>
+warning: in the working copy of 'scripts/Start-BasetenSyntheticPilot.ps1', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/industrial/baseten-pilot-process-tree.test.ts', CRLF will be replaced by LF the next time Git touches it
+DIFF_CHECK_EXIT_CODE=0
+COMMAND: git diff --name-only bb871cb191184b5de1b790d42fc452a29f8f072e
+warning: in the working copy of 'scripts/Start-BasetenSyntheticPilot.ps1', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/industrial/baseten-pilot-process-tree.test.ts', CRLF will be replaced by LF the next time Git touches it
+scripts/Start-BasetenSyntheticPilot.ps1
+scripts/Windows-ProcessTree.ps1
+tests/industrial/baseten-pilot-process-tree.test.ts
+tests/industrial/meta-model-api-contract.test.ts
+SCOPE_EXIT_CODE=0
+COMMAND: git diff --cached --quiet
+INDEX_EMPTY=True

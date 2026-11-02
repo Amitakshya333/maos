@@ -1,0 +1,475 @@
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index 7d12a3b..da8d185 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -281,35 +281,57 @@ export class BrowserRestClient {
+   }
+ 
+   /**
+-   * Internal HTTP execution helper with timeout, headers, and error handling.
++   * Shared caller-cancellation scope (COMPLETION-FIX-12/14). Every outbound
++   * request creates its own deadline timer and forwards caller aborts, and
++   * always detaches the forwarding listener on settle. A pre-aborted caller
++   * signal throws before any fetch starts. Callers distinguish their own
++   * cancellation (signal.aborted) from the client deadline (TimeoutError).
+    */
+-  async request<T>(
+-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+-    endpoint: string,
+-    body?: unknown,
+-    options: RequestOptions = {},
+-  ): Promise<RestResponse<T>> {
+-    const correlationId =
+-      options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+-    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+-
++  private createAbortScope(options: RequestOptions, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
+     const controller = new AbortController();
+     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+-
+-    // Never start a request for an already-aborted caller: surface the
+-    // caller's abort reason instead of issuing a doomed fetch. Always detach
+-    // the forwarding listener once the request settles.
+     const callerSignal = options.signal;
+     const forwardAbort = () => controller.abort(callerSignal?.reason);
++    const dispose = () => {
++      clearTimeout(timeoutId);
++      callerSignal?.removeEventListener('abort', forwardAbort);
++    };
+     if (callerSignal) {
+       if (callerSignal.aborted) {
+-        clearTimeout(timeoutId);
++        dispose();
+         throw callerSignal.reason instanceof Error
+           ? callerSignal.reason
+           : new DOMException('The operation was aborted before the request started.', 'AbortError');
+       }
+       callerSignal.addEventListener('abort', forwardAbort);
+     }
++    return { signal: controller.signal, dispose };
++  }
++
++  private callerAbortError(signal: AbortSignal | undefined): Error | null {
++    if (!signal?.aborted) return null;
++    const reason = signal.reason;
++    return reason instanceof Error
++      ? reason
++      : new DOMException('The operation was aborted by the caller.', 'AbortError');
++  }
++  /**
++   * Internal HTTP execution helper with timeout, headers, and error handling.
++   * Caller cancellation stays an abort outcome (the caller's reason);
++   * only the client's own deadline maps to TimeoutError.
++   */
++  async request<T>(
++    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
++    endpoint: string,
++    body?: unknown,
++    options: RequestOptions = {},
++  ): Promise<RestResponse<T>> {
++    const correlationId =
++      options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
++    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
++
++    const callerSignal = options.signal;
++    const abortScope = this.createAbortScope(options, timeoutMs);
+ 
+     const headers: Record<string, string> = {
+       Accept: 'application/json',
+@@ -342,7 +364,7 @@ export class BrowserRestClient {
+         method,
+         headers,
+         body: body !== undefined ? JSON.stringify(body) : undefined,
+-        signal: controller.signal,
++        signal: abortScope.signal,
+       });
+ 
+       const isReplay = response.headers.get('Idempotent-Replay') === 'true';
+@@ -373,14 +395,9 @@ export class BrowserRestClient {
+       if (err instanceof ApiError) {
+         throw err;
+       }
++      const callerAbort = this.callerAbortError(callerSignal);
++      if (callerAbort) throw callerAbort;
+       if (err instanceof Error && err.name === 'AbortError') {
+-        // Caller cancellation stays an abort/cancel outcome; only the
+-        // client's own deadline maps to TimeoutError. This keeps the
+-        // coordinator's cancellation state truthful.
+-        if (callerSignal?.aborted) {
+-          const reason = callerSignal.reason;
+-          throw reason instanceof Error ? reason : new DOMException('The operation was aborted by the caller.', 'AbortError');
+-        }
+         throw new TimeoutError(`Request timed out after ${timeoutMs}ms for ${endpoint}`);
+       }
+       throw new NetworkError(
+@@ -388,8 +405,7 @@ export class BrowserRestClient {
+         err,
+       );
+     } finally {
+-      clearTimeout(timeoutId);
+-      callerSignal?.removeEventListener('abort', forwardAbort);
++      abortScope.dispose();
+     }
+   }
+ 
+@@ -937,9 +953,8 @@ export class BrowserRestClient {
+   async downloadArtifactContent(id: string, options: RequestOptions = {}): Promise<Blob> {
+     const correlationId = options.correlationId || `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+-    const controller = new AbortController();
+-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+-    if (options.signal) options.signal.addEventListener('abort', () => controller.abort(), { once: true });
++    const callerSignal = options.signal;
++    const abortScope = this.createAbortScope(options, timeoutMs);
+ 
+     const headers: Record<string, string> = {
+       Accept: 'application/octet-stream',
+@@ -953,7 +968,7 @@ export class BrowserRestClient {
+     try {
+       const response = await this.fetch(
+         `${this.baseUrl}/api/v1/artifacts/${encodeURIComponent(id)}/content`,
+-        { method: 'GET', headers, signal: controller.signal },
++        { method: 'GET', headers, signal: abortScope.signal },
+       );
+       if (!response.ok) {
+         const text = await response.text();
+@@ -968,12 +983,14 @@ export class BrowserRestClient {
+       return await response.blob();
+     } catch (err: unknown) {
+       if (err instanceof ApiError) throw err;
++      const callerAbort = this.callerAbortError(callerSignal);
++      if (callerAbort) throw callerAbort;
+       if (err instanceof Error && err.name === 'AbortError') {
+         throw new TimeoutError(`Request timed out after ${timeoutMs}ms for artifact '${id}'`);
+       }
+       throw new NetworkError(`Failed to download artifact '${id}': ${(err as Error)?.message || String(err)}`, err);
+     } finally {
+-      clearTimeout(timeoutId);
++      abortScope.dispose();
+     }
+   }
+ 
+diff --git a/src/gui/src/components/TelemetryReviewPanel.tsx b/src/gui/src/components/TelemetryReviewPanel.tsx
+index 861c065..81c6033 100644
+--- a/src/gui/src/components/TelemetryReviewPanel.tsx
++++ b/src/gui/src/components/TelemetryReviewPanel.tsx
+@@ -33,6 +33,10 @@ export const TelemetryReviewPanel: React.FC = () => {
+   const [reviewError, setReviewError] = useState<string | null>(null);
+   const agentController = useRef<AbortController | null>(null);
+   const [fileInputKey, setFileInputKey] = useState(0);
++  // The bound selection: the exact {file, key} pair created at selection
++  // time. Async callbacks close over this pair — never a separately
++  // re-read file or key — so a stale callback cannot act for a newer source.
++  const selectionRef = useRef<{ file: File; key: string } | null>(null);
+   // All review side effects are delegated to the coordinator, which owns the
+   // source binding and staleness guards (COMPLETION-FIX-06/08). This component
+   // only mirrors the view snapshot into React state (via the tested
+@@ -85,33 +89,40 @@ export const TelemetryReviewPanel: React.FC = () => {
+     if (useSample) {
+       // Single atomic sample action: the coordinator binds the sample,
+       // clears the old file/input, invalidates priors, and analyzes.
++      // The local selection pair is dropped at the same time.
++      selectionRef.current = null;
++      setSelectedFile(null);
++      setFileInputKey((key) => key + 1);
+       await coordinator.runSampleAnalysis();
+       return;
+     }
+-    if (!selectedFile) {
++    const selection = selectionRef.current;
++    if (!selection || selection.file !== selectedFile) {
+       setError('Choose a CSV file first, or use the bundled synthetic sample.');
+       return;
+     }
+-    const file = selectedFile;
+-    const selectionKey = coordinator.getActiveSourceKey();
+-    const descriptor = { name: file.name, size: file.size, lastModified: file.lastModified };
+-    await coordinator.runFileAnalysis(selectionKey, async () => ({
+-      ...descriptor,
++    const { file, key } = selection;
++    await coordinator.runFileAnalysis(key, async () => ({
++      name: file.name,
++      size: file.size,
++      lastModified: file.lastModified,
+       contentBase64: await fileAsBase64(file),
+     }));
+   };
+ 
+   const askAboutSelectedCsv = async () => {
+     const coordinator = coordinatorRef.current;
+-    if (!coordinator || !selectedFile || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
++    if (!coordinator || busy || agentPhase === 'uploading' || agentPhase === 'requesting') return;
++    const selection = selectionRef.current;
++    if (!selection || selection.file !== selectedFile) return;
+     const controller = new AbortController();
+     agentController.current = controller;
+-    const file = selectedFile;
+-    const selectionKey = coordinator.getActiveSourceKey();
+-    const descriptor = { name: file.name, size: file.size, lastModified: file.lastModified };
++    const { file, key } = selection;
+     try {
+-      await coordinator.askAboutCsv(agentRequest, selectionKey, async () => ({
+-        ...descriptor,
++      await coordinator.askAboutCsv(agentRequest, key, async () => ({
++        name: file.name,
++        size: file.size,
++        lastModified: file.lastModified,
+         contentBase64: await fileAsBase64(file),
+       }), { signal: controller.signal });
+     } finally {
+@@ -168,9 +179,10 @@ export const TelemetryReviewPanel: React.FC = () => {
+             onChange={(event) => {
+               const file = event.target.files?.[0] || null;
+               setSelectedFile(file);
+-              coordinatorRef.current?.selectFile(
++              const key = coordinatorRef.current?.selectFile(
+                 file === null ? null : { name: file.name, size: file.size, lastModified: file.lastModified },
+               );
++              selectionRef.current = file === null || key == null ? null : { file, key };
+             }}
+             disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
+             style={{ maxWidth: 230, fontSize: 11 }}
+diff --git a/src/gui/src/components/telemetryReviewCoordinator.ts b/src/gui/src/components/telemetryReviewCoordinator.ts
+index d963016..da4b7af 100644
+--- a/src/gui/src/components/telemetryReviewCoordinator.ts
++++ b/src/gui/src/components/telemetryReviewCoordinator.ts
+@@ -89,7 +89,8 @@ const CANCELLED_MESSAGE = 'Cancelled. No successful model result was returned; r
+ 
+ export class TelemetryReviewCoordinator {
+   private sourceKey: string | null = null;
+-  private sourceDescriptor: TelemetryFileDescriptor | { kind: 'sample' } | null = null;
++  private sourceKind: 'file' | 'sample' | null = null;
++  private sourceDescriptor: TelemetryFileDescriptor | null = null;
+   private sourceSeq = 0;
+   private selectionUid = 0;
+   private analysisOpId = 0;
+@@ -121,10 +122,12 @@ export class TelemetryReviewCoordinator {
+     this.sourceSeq += 1;
+     if (descriptor === null) {
+       this.sourceKey = null;
++      this.sourceKind = null;
+       this.sourceDescriptor = null;
+     } else {
+       this.selectionUid += 1;
+       this.sourceDescriptor = descriptor;
++      this.sourceKind = 'file';
+       this.sourceKey = `file#${this.selectionUid}:${descriptor.name}:${descriptor.size}:${descriptor.lastModified}`;
+     }
+     // A source change also releases preparation busy state: any pending
+@@ -138,7 +141,8 @@ export class TelemetryReviewCoordinator {
+   selectSample(): string {
+     this.sourceSeq += 1;
+     this.selectionUid += 1;
+-    this.sourceDescriptor = { kind: 'sample' };
++    this.sourceDescriptor = null;
++    this.sourceKind = 'sample';
+     this.sourceKey = `sample#${this.selectionUid}`;
+     this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false, clearFileInput: true });
+     return this.sourceKey;
+@@ -182,23 +186,21 @@ export class TelemetryReviewCoordinator {
+   }
+ 
+   /**
+-   * Deterministic analysis of a file. The caller passes the selection identity
+-   * obtained at selection time; a stale entry (another selection happened
+-   * since) is refused before rebinding. A current entry rebinds the file with
+-   * a fresh identity (invalidating priors), then encodes it through the
+-   * deferred reader inside the guarded operation. Encoder failures surface
+-   * only when this operation is still current.
++   * Deterministic analysis of a file: the caller passes the selection identity
++   * bound at selection time and never a key fetched later. A stale entry
++   * (another selection happened since) is refused. The identity is NOT
++   * renewed here — selection is the single binding point, so a stored
++   * {file, key} pair stays valid until the next selection. Encoder failures
++   * surface only when this operation is still current.
+    */
+   async runFileAnalysis(
+     selectionKey: string | null,
+     readFile: () => Promise<TelemetryFileSubmit>,
+   ): Promise<void> {
+-    if (selectionKey === null || selectionKey !== this.sourceKey) return;
++    if (selectionKey === null || selectionKey !== this.sourceKey || this.sourceKind !== 'file') return;
+     const descriptor = this.sourceDescriptor;
+-    if (!descriptor || 'kind' in descriptor) return;
++    if (!descriptor) return;
+     this.sourceSeq += 1;
+-    this.selectionUid += 1;
+-    this.sourceKey = `file#${this.selectionUid}:${descriptor.name}:${descriptor.size}:${descriptor.lastModified}`;
+     this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false });
+     const opId = ++this.analysisOpId;
+     const lifetime = this.capture(opId);
+@@ -230,11 +232,11 @@ export class TelemetryReviewCoordinator {
+   }
+ 
+   /**
+-   * Agent analysis of the actively bound file. Refuses when the active source
+-   * is not that exact file (e.g. the bundled sample was selected instead), so
+-   * no request for a detached file can run under a sample identity. Ownership
+-   * starts before file encoding; the deferred reader runs inside the guarded
+-   * operation.
++   * Agent analysis of the actively bound file. Refuses when the presented
++   * selection identity is stale or when the active source is not a file
++   * (e.g. the bundled sample was selected instead), so no request for a
++   * detached file can run under a sample identity. Ownership starts before
++   * file encoding; the deferred reader runs inside the guarded operation.
+    */
+   async askAboutCsv(
+     request: string,
+@@ -244,7 +246,7 @@ export class TelemetryReviewCoordinator {
+   ): Promise<void> {
+     const opId = ++this.askOpId;
+     const lifetime = this.capture(opId);
+-    if (selectionKey === null || selectionKey !== this.sourceKey) return;
++    if (selectionKey === null || selectionKey !== this.sourceKey || this.sourceKind !== 'file') return;
+     this.effects.apply({
+       agentResult: null, reviewRun: null, reviewError: null,
+       analysis: null, agentError: null, agentPhase: 'uploading',
+diff --git a/tests/gui/rest-client-abort.test.ts b/tests/gui/rest-client-abort.test.ts
+index 769a5ab..4762d37 100644
+--- a/tests/gui/rest-client-abort.test.ts
++++ b/tests/gui/rest-client-abort.test.ts
+@@ -48,7 +48,7 @@ describe('BrowserRestClient abort handling', () => {
+     await expect(client.request('GET', '/api/v1/chat/health', undefined, { signal: controller.signal }))
+       .rejects.toMatchObject({ name: 'AbortError' });
+     expect(fetchFn).not.toHaveBeenCalled();
+-    expect(removeSpy).not.toHaveBeenCalled();
++    expect(removeSpy).toHaveBeenCalledTimes(1);
+   });
+ 
+   it('detaches the forwarding listener once a normal request settles', async () => {
+@@ -90,3 +90,73 @@ describe('BrowserRestClient abort handling', () => {
+     expect(fetchFn).toHaveBeenCalledTimes(1);
+   });
+ });
++
++describe('downloadArtifactContent abort handling', () => {
++  function blobFetch() {
++    return vi.fn(async () => ({
++      ok: true,
++      status: 200,
++      headers: { get: () => null },
++      text: async () => '',
++      blob: async () => new Blob(['synthetic-bytes']),
++    }));
++  }
++
++  it('does not start a download when the caller signal is already aborted', async () => {
++    const fetchFn = blobFetch();
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    controller.abort('caller stopped the download');
++    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
++    await expect(client.downloadArtifactContent('run-1', { signal: controller.signal }))
++      .rejects.toMatchObject({ name: 'AbortError' });
++    expect(fetchFn).not.toHaveBeenCalled();
++    expect(removeSpy).toHaveBeenCalledTimes(1);
++  });
++
++  it('reports caller cancellation with a string reason as an abort, and cleans up', async () => {
++    const fetchFn = hangingFetch();
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
++    const pending = client.downloadArtifactContent('run-1', { signal: controller.signal, timeoutMs: 5_000 });
++    controller.abort('caller stopped the download');
++    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
++    await expect(pending).rejects.not.toMatchObject({ name: 'TimeoutError' });
++    expect(fetchFn).toHaveBeenCalledTimes(1);
++    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
++  });
++
++  it('reports caller cancellation with an undefined reason as an abort', async () => {
++    const fetchFn = hangingFetch();
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    const pending = client.downloadArtifactContent('run-1', { signal: controller.signal, timeoutMs: 5_000 });
++    controller.abort();
++    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
++    await expect(pending).rejects.not.toMatchObject({ name: 'TimeoutError' });
++  });
++
++  it('still reports the client deadline as a timeout for downloads', async () => {
++    const fetchFn = hangingFetch();
++    const client = new BrowserRestClient({
++      baseUrl: 'http://127.0.0.1:9',
++      projectRoot: 'C:\\maos-test',
++      fetchFn: fetchFn as unknown as typeof fetch,
++      defaultTimeoutMs: 40,
++    });
++    await expect(client.downloadArtifactContent('run-1'))
++      .rejects.toMatchObject({ name: 'TimeoutError', message: expect.stringContaining('run-1') });
++    expect(fetchFn).toHaveBeenCalledTimes(1);
++  });
++
++  it('returns the blob and detaches the listener on success', async () => {
++    const fetchFn = blobFetch();
++    const client = clientWith(fetchFn);
++    const controller = new AbortController();
++    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
++    const blob = await client.downloadArtifactContent('run-1', { signal: controller.signal });
++    expect(await blob.text()).toBe('synthetic-bytes');
++    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
++  });
++});
+diff --git a/tests/gui/telemetry-review-coordinator.test.ts b/tests/gui/telemetry-review-coordinator.test.ts
+index 54d389c..20523d0 100644
+--- a/tests/gui/telemetry-review-coordinator.test.ts
++++ b/tests/gui/telemetry-review-coordinator.test.ts
+@@ -280,6 +280,57 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12)',
+     expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
+   });
+ 
++  it('stale panel callbacks for analysis are refused; the bound pair stays valid', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const keyB = h.coordinator.selectFile(fileB) as string;
++    expect(keyB).not.toBe(keyA);
++    // The panel held { file: A, key: keyA } at selection time; invoking the
++    // stale analysis entry after B was selected must do nothing at all.
++    const enc = deferred<TelemetryFileSubmit>();
++    const pendingStale = h.coordinator.runFileAnalysis(keyA, () => enc.promise);
++    enc.resolve(submitA());
++    await pendingStale;
++    expect(h.telemetryCalls).toHaveLength(0);
++    expect(h.patches.some((p) => p.busy === true)).toBe(false);
++    expect(h.patches.some((p) => p.analysis != null)).toBe(false);
++    expect(h.patches.some((p) => p.error != null)).toBe(false);
++    // The current pair works, and stays valid for later calls until reselected.
++    const encB = deferred<TelemetryFileSubmit>();
++    const pendingB = h.coordinator.runFileAnalysis(keyB, () => encB.promise);
++    encB.resolve(submitB());
++    const uploadB = deferred();
++    h.telemetryQueue.push(uploadB);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    uploadB.resolve(uploadReceipt('telemetry-b', '.maos/industrial/evidence/b.csv'));
++    await pendingB;
++    const lastAnalysis = [...h.patches].reverse().find((p) => p.analysis !== undefined);
++    expect(lastAnalysis?.analysis).toBeDefined();
++    const encB2 = deferred<TelemetryFileSubmit>();
++    const pendingB2 = h.coordinator.runFileAnalysis(keyB, () => encB2.promise);
++    encB2.resolve(submitB());
++    const uploadB2 = deferred();
++    h.telemetryQueue.push(uploadB2);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(2));
++    uploadB2.resolve(uploadReceipt('telemetry-b2', '.maos/industrial/evidence/b.csv'));
++    await pendingB2;
++    const analyses = h.patches.filter((p) => p.analysis != null);
++    expect(analyses).toHaveLength(2);
++  });
++
++  it('ask requires the active source to be a file, even for a matching key', async () => {
++    const h = makeHarness();
++    const sampleKey = h.coordinator.selectSample();
++    expect(sampleKey).toMatch(/^sample#\d+$/);
++    const enc = deferred<TelemetryFileSubmit>();
++    const pending = h.coordinator.askAboutCsv('Summarize.', sampleKey, () => enc.promise);
++    enc.resolve(submitA());
++    await pending;
++    expect(h.telemetryCalls).toHaveLength(0);
++    expect(h.csvCalls).toHaveLength(0);
++    expect(h.patches.some((p) => p.agentPhase === 'uploading' || p.agentPhase === 'requesting')).toBe(false);
++  });
++
+   it('in-flight analysis A/B: stale resolve, error and finally cannot affect B', async () => {
+     const h = makeHarness();
+     const keyA = h.coordinator.selectFile(fileA) as string;

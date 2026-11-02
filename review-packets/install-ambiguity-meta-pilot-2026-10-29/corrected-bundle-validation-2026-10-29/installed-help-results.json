@@ -1,0 +1,14 @@
+[
+  {
+    "name": "installed-cli-help",
+    "exitCode": 0,
+    "stdout": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\installed-cli-help.stdout.log",
+    "stderr": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\installed-cli-help.stderr.log"
+  },
+  {
+    "name": "installed-industrial-cli-help",
+    "exitCode": 0,
+    "stdout": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\installed-industrial-cli-help.stdout.log",
+    "stderr": "C:\\maos\\review-packets\\install-ambiguity-meta-pilot-2026-10-29\\corrected-bundle-validation-2026-10-29\\installed-industrial-cli-help.stderr.log"
+  }
+]

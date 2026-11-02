@@ -1,0 +1,13 @@
+{
+  "mode": "cancel",
+  "launcherPid": 25952,
+  "launcherNativeExitCode": 130,
+  "failure": "No loopback mock inference request became active.",
+  "ctrlCEventSent": false,
+  "ctrlCWin32Error": 0,
+  "requestActiveBeforeCtrlC": false,
+  "mockRequest": null,
+  "syntheticCredentialAppearedInCapturedOutput": false,
+  "forcedCleanup": false,
+  "mockServerPid": 14636
+}

@@ -1,0 +1,260 @@
+diff --git a/src/gui/src/components/RingOverlay.tsx b/src/gui/src/components/RingOverlay.tsx
+index a708521..922caa6 100644
+--- a/src/gui/src/components/RingOverlay.tsx
++++ b/src/gui/src/components/RingOverlay.tsx
+@@ -52,6 +52,22 @@ function resolvedApprovalIds(events: readonly RingRunEvent[]): Set<string> {
+   return resolved;
+ }
+ 
++/**
++ * Honest in-flight status for the approval -> artifact gap. True only when
++ * an approval was granted, the run is still live, and no artifact.created
++ * has landed after the grant yet. Pure projection of polled events — the
++ * overlay never invents artifacts or progress.
++ */
++function approvedArtifactsPending(events: readonly RingRunEvent[], live: boolean): boolean {
++  if (!live) return false;
++  let granted = false;
++  for (const event of events) {
++    if (event.type === 'approval.resolved' && event.decision === 'approved') granted = true;
++    if (event.type === 'artifact.created' && granted) return false;
++  }
++  return granted;
++}
++
+ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?: number }> = ({
+   runClient,
+   pollIntervalMs = 1000,
+@@ -378,6 +394,11 @@ export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?:
+           </div>
+         )}
+         {events.map(renderEvent)}
++        {approvedArtifactsPending(events, isLive) && (
++          <div data-testid="ring-overlay-generating" role="status" style={{ fontSize: '12px', color: 'var(--text-secondary, #cccccc)' }}>
++            Generating approved artifacts…
++          </div>
++        )}
+         {state?.finalAnswer && <RingFinalAnswer answer={state.finalAnswer} mode={state.mode} />}
+         <div ref={endRef} />
+       </div>
+diff --git a/src/gui/src/components/RingWorkspace.tsx b/src/gui/src/components/RingWorkspace.tsx
+index e026ccb..2bd5a7a 100644
+--- a/src/gui/src/components/RingWorkspace.tsx
++++ b/src/gui/src/components/RingWorkspace.tsx
+@@ -514,6 +514,9 @@ export const RingVerifyCard: React.FC<{ transcript: RingVerifyTranscript }> = ({
+   }
+   return (
+     <div data-testid="ring-verify-card" style={{ marginTop: 10, fontSize: 11 }}>
++      <div data-testid="ring-verify-no-approval" style={{ color: '#8b949e', marginBottom: 6 }}>
++        Audit verify runs automatically — no approval needed.
++      </div>
+       {hasAudit && (
+         <div style={{ marginBottom: 6 }}>
+           <code style={{ display: 'block', color: '#79c0ff', wordBreak: 'break-all' }}>
+diff --git a/src/service/ring-agent-service.ts b/src/service/ring-agent-service.ts
+index 7821cfe..2f515a8 100644
+--- a/src/service/ring-agent-service.ts
++++ b/src/service/ring-agent-service.ts
+@@ -798,6 +798,7 @@ export class RingAgentService {
+     const wantsPlan = /\bplan\b|todo|to-do|next steps/.test(text);
+     const wantsOcr = /\bocr\b|scan(s|ned)?\b|turbine_inspection_scan|inspection.{0,20}scan/.test(text);
+     const wantsWorkOrder = /work[- ]order|raise.{0,20}order|workorder/.test(text);
++    const wantsHandover = /handover|hand-over|hand over|shift.{0,20}note|shift.{0,20}summary/.test(text);
+     const results: Array<{ name: string; result: Record<string, unknown> }> = [];
+     const runTool = async (name: string, args: Record<string, unknown>) => {
+       const out = await this.executeToolLogged(run, 'evidence-' + (results.length + 1), name, args);
+@@ -816,6 +817,7 @@ export class RingAgentService {
+       await runTool(name, args);
+       return before !== (run.context as Record<string, unknown>).__lastApproval || true;
+     };
++    let telemetryRan = wantsTelemetry;
+     if (wantsTelemetry) await runTool('analyze_telemetry', run.context.csvPath ? { csvPath: run.context.csvPath } : {});
+     if (wantsDocument) await runTool('read_company_document', { path: run.context.documentPath || 'sop_turbine_vibration_monitoring.md' });
+     if (wantsVerify) await runTool('verify_export', run.context.exportPath ? { exportPath: run.context.exportPath } : {});
+@@ -825,11 +827,30 @@ export class RingAgentService {
+       else await runTool('remember', { content: run.instruction.slice(0, 2000), tags: ['evidence-only'] });
+     }
+     if (wantsPlan) await runTool('update_plan', { plan: [{ step: 'Review evidence-only findings', status: 'in_progress' }] });
+-    if (wantsWorkOrder) {
++    if ((wantsWorkOrder || wantsHandover) && !telemetryRan) {
++      // Evidence-first: work-order findings require a tool-hashed citation,
++      // so the deterministic telemetry summary must exist before the
++      // approval-gated generation runs (the instruction wording alone may
++      // not mention telemetry at all).
++      await runTool('analyze_telemetry', run.context.csvPath ? { csvPath: run.context.csvPath } : {});
++      telemetryRan = true;
++    }
++    // Deny stops the artifact batch: a denied work order skips the handover.
++    let artifactsDenied = false;
++    if (wantsWorkOrder && !artifactsDenied) {
+       const tel = (run.context as Record<string, unknown>).__telemetry as Record<string, unknown> | undefined;
+       const finding = typeof tel?.verdict === 'string' ? 'Turbine vibration verdict: ' + String(tel.verdict) + ' (deterministic telemetry summary).' : run.instruction.slice(0, 500);
+       const proceed = await runConsequential('create_work_order', { title: 'T-07 work order', assetId: 'T-07', finding, priority: tel?.verdict === 'CRITICAL' ? 'urgent' : 'routine', evidencePaths: typeof tel?.csvRel === 'string' ? [tel.csvRel] : [] });
+       if (!proceed && ((run.status as string) === 'cancelled')) return;
++      if (!proceed) artifactsDenied = true;
++    }
++    if (wantsHandover && !artifactsDenied) {
++      const tel = (run.context as Record<string, unknown>).__telemetry as Record<string, unknown> | undefined;
++      const handoverEvidence = typeof tel?.csvRel === 'string' ? [tel.csvRel] : [];
++      const handoverOpen = typeof tel?.verdict === 'string' ? ['Review turbine vibration verdict: ' + String(tel.verdict) + ' (deterministic telemetry summary).'] : [run.instruction.slice(0, 500)];
++      const proceed = await runConsequential('write_shift_handover', { title: 'T-07 shift handover', outgoingShift: 'Day shift', incomingShift: 'Night shift', openItems: handoverOpen, watchOuts: ['Re-check vibration trend before any operation.'], evidencePaths: handoverEvidence });
++      if (!proceed && ((run.status as string) === 'cancelled')) return;
++      if (!proceed) artifactsDenied = true;
+     }
+     if (wantsSearch) await runTool('search_knowledge', { query: run.instruction });
+     if (results.length === 0) await runTool('search_knowledge', { query: run.instruction });
+@@ -845,6 +866,7 @@ export class RingAgentService {
+       else if (name === 'recall') lines.push(`Recall: ${truncate(String((result as Record<string, unknown>).message ?? JSON.stringify(result)), 500)}`);
+       else if (name === 'update_plan') lines.push(`Plan: ${truncate(JSON.stringify((result as Record<string, unknown>).steps ?? result), 300)}`);
+       else if (name === 'create_work_order') lines.push(`Work order: ${truncate(String((result as Record<string, unknown>).primaryPath ?? (result as Record<string, unknown>).message ?? (result as Record<string, unknown>).error ?? JSON.stringify(result)), 500)}`);
++      else if (name === 'write_shift_handover') lines.push(`Handover: ${truncate(String((result as Record<string, unknown>).primaryPath ?? (result as Record<string, unknown>).message ?? (result as Record<string, unknown>).error ?? JSON.stringify(result)), 500)}`);
+       else lines.push(`${name}: ${truncate(JSON.stringify(result), 500)}`);
+     }
+     lines.push('No model prose was generated in evidence-only mode.');
+diff --git a/tests/gui/ring-devb-surface.test.ts b/tests/gui/ring-devb-surface.test.ts
+index 62b8e3c..66096d8 100644
+--- a/tests/gui/ring-devb-surface.test.ts
++++ b/tests/gui/ring-devb-surface.test.ts
+@@ -466,6 +466,67 @@ describe('RingOverlay', () => {
+     view.unmount();
+   });
+ 
++  it('overlay shows artifact cards and a generating status across the approval gap', async () => {
++    const card: RingRunState = {
++      status: 'completed',
++      mode: 'evidence-only',
++      events: [
++        { type: 'run.started', ts: 't' },
++        { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write work order' },
++        { type: 'approval.resolved', ts: 't', approvalId: 'a1', decision: 'approved' },
++        {
++          type: 'artifact.created',
++          ts: 't',
++          artifact: { path: '.maos/ring-runs/artifacts/run-1/work-order-1.docx', kind: 'docx', size: 1234, sha256: 'a'.repeat(64) },
++        },
++        {
++          type: 'artifact.created',
++          ts: 't',
++          artifact: { path: '.maos/ring-runs/artifacts/run-1/work-order-1.md', kind: 'markdown', size: 99, sha256: 'b'.repeat(64) },
++        },
++      ],
++    };
++    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(card), pollIntervalMs: 60_000 }));
++    await view.render();
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
++    await act(async () => {
++      setter?.call(input, 'raise a work order');
++      input.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(view.container.querySelectorAll('[data-testid="ring-artifact-card"]').length).toBe(2);
++    expect(view.container.querySelector('[data-testid="ring-artifact-open"]')).toBeTruthy();
++    view.unmount();
++
++    const generating: RingRunState = {
++      status: 'running',
++      mode: 'evidence-only',
++      events: [
++        { type: 'run.started', ts: 't' },
++        { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write work order' },
++        { type: 'approval.resolved', ts: 't', approvalId: 'a1', decision: 'approved' },
++        { type: 'tool.call', ts: 't', tool: 'create_work_order', toolCallId: 'c1' },
++      ],
++    };
++    const view2 = mount(React.createElement(RingOverlay, { runClient: overlayClient(generating), pollIntervalMs: 60_000 }));
++    await view2.render();
++    const input2 = view2.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    await act(async () => {
++      setter?.call(input2, 'raise a work order');
++      input2.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view2.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(view2.container.querySelector('[data-testid="ring-overlay-generating"]')?.textContent).toContain('Generating approved artifacts');
++    view2.unmount();
++  });
++
+   it('evidence-only badge stays exact in the overlay', async () => {
+     const state: RingRunState = { status: 'completed', mode: 'evidence-only', events: [], finalAnswer: 'Local summary.' };
+     const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
+diff --git a/tests/industrial/ring-agent.test.ts b/tests/industrial/ring-agent.test.ts
+index 4eee0a3..0e5aa45 100644
+--- a/tests/industrial/ring-agent.test.ts
++++ b/tests/industrial/ring-agent.test.ts
+@@ -6,6 +6,8 @@ import * as os from 'os';
+ import { AddressInfo } from 'net';
+ import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL } from '../../src/backends/meta-api-policy';
+ import { RingAgentService } from '../../src/service/ring-agent-service';
++import { seedEngineFixture } from './ring-dev-audit-proxy.test';
++import { validateRingRunState } from '../../src/gui/src/api/ring-run-types';
+ import { AuditService } from '../../src/service/audit-service';
+ 
+ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
+@@ -221,6 +223,49 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
+     expect(capturedRequests.length).toBe(0);
+   });
+ 
++  it('approval then artifacts for a work-order+handover ask without telemetry wording', async () => {
++    // TASK APPROVAL-ARTIFACT-FIX-01: the overlay demo instruction names no
++    // telemetry keyword, so evidence-only must still establish the
++    // deterministic telemetry summary before the approval-gated generation
++    // (work-order findings require a tool-hashed citation), and the
++    // handover half of the ask must run its own approval + twin artifacts.
++    const haveEngine = seedEngineFixture(tempProjectRoot);
++    delete process.env[BASETEN_API_KEY_ENV];
++    const { createServiceContainer } = await import('../../src/service');
++    const services = createServiceContainer(tempProjectRoot);
++    const audit = new AuditService(tempProjectRoot);
++    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: audit, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
++    const runId = service.startRun('Raise a work order and draft my handover');
++    const awaiting = await service.waitForRun(runId, 30000);
++    expect(awaiting.status).toBe('awaiting_approval');
++    expect(awaiting.pendingApproval?.toolName).toBe('create_work_order');
++    service.resolveApproval(runId, awaiting.pendingApproval!.approvalId, 'approved');
++    for (let i = 0; i < 5; i++) {
++      const snap = await service.waitForRun(runId, 30000);
++      if (snap.status === 'awaiting_approval' && snap.pendingApproval) {
++        service.resolveApproval(runId, snap.pendingApproval.approvalId, 'approved');
++      } else break;
++    }
++    const done = await service.waitForCompletion(runId, 30000);
++    expect(done.status).toBe('completed');
++    if (haveEngine) {
++      const created = done.events.filter((e) => e.type === 'artifact.created');
++      // work-order docx+md twins plus handover docx+md twins
++      expect(created.length).toBe(4);
++      const kinds = created.map((e) => e.artifact?.kind).sort();
++      expect(kinds).toEqual(['docx', 'docx', 'markdown', 'markdown']);
++      for (const e of created) {
++        const abs = path.resolve(tempProjectRoot, e.artifact!.path);
++        expect(fs.existsSync(abs)).toBe(true);
++      }
++      expect(String(done.finalAnswer)).toContain('Work order:');
++      expect(String(done.finalAnswer)).toContain('Handover:');
++    } else {
++      expect(String(done.finalAnswer)).toContain('Engine executable not found');
++    }
++    expect(validateRingRunState(done as unknown).status).toBe('completed');
++  });
++
+   it('(e) prompt safety: model request contains summary and not raw CSV rows', async () => {
+     process.env[BASETEN_API_KEY_ENV] = 'synthetic-ring-agent-key';
+     await startMock(() => completion('Summary reviewed.'));
+diff --git a/tests/industrial/ring-dev-a.test.ts b/tests/industrial/ring-dev-a.test.ts
+index 68b63cf..c11371a 100644
+--- a/tests/industrial/ring-dev-a.test.ts
++++ b/tests/industrial/ring-dev-a.test.ts
+@@ -25,7 +25,6 @@ import * as path from 'path';
+ import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL } from '../../src/backends/meta-api-policy';
+ import type { IProvider, ProviderResponse } from '../../src/backends/provider';
+ import { AuditService } from '../../src/service/audit-service';
+-import { AuditService } from '../../src/service/audit-service';
+ import { seedEngineFixture } from './ring-dev-audit-proxy.test';
+ import { MemoryService } from '../../src/service/memory-service';
+ import { RingAgentService } from '../../src/service/ring-agent-service';

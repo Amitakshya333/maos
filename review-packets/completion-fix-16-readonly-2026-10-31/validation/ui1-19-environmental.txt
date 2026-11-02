@@ -1,0 +1,62 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-fix16-candidate
+
+ Γ¥» tests/gui/ui1-19-service-lifecycle.test.ts (26 tests | 3 failed) 576ms
+       ├ù confirmed force stop marks active tasks INTERRUPTED and records audit event 36ms
+       ├ù cancels chat completion on client abort without breaking service 18ms
+       ├ù rust/test.txt SHA-256 hash is strictly preserved 1ms
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 3 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/gui/ui1-19-service-lifecycle.test.ts > UI1-19: Service Lifecycle and Recovery Controls > 5. Stop Controls & Interruption Defense > confirmed force stop marks active tasks INTERRUPTED and records audit event
+ApiError: AUDIT_PERSISTENCE_FAILED: Force-stop was not acknowledged because the interruption audit could not be persisted: Engine executable not found: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-fix16-candidate\rust\target\release\maos-engine.exe. Install the platform-matched release binary at this path. From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, then copy rust/target/release/maos-engine[.exe] to the missing path.
+ Γ¥» mapHttpError src/gui/src/api/errors.ts:143:14
+    141|         return new ScopeMismatchError(message, details, correlationId);
+    142|       }
+    143|       return new ApiError(message, code, status, details, correlationIΓÇª
+       |              ^
+    144|     case 403:
+    145|       return new ForbiddenLoopbackError(message, details, correlationIΓÇª
+ Γ¥» BrowserRestClient.request src/gui/src/api/rest-client.ts:388:15
+ Γ¥» BrowserRestClient.stopService src/gui/src/api/rest-client.ts:507:17
+ Γ¥» tests/gui/ui1-19-service-lifecycle.test.ts:352:19
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/3]ΓÄ»
+
+ FAIL  tests/gui/ui1-19-service-lifecycle.test.ts > UI1-19: Service Lifecycle and Recovery Controls > 6. Interactive Disconnect & Client Abort > cancels chat completion on client abort without breaking service
+AssertionError: expected [Function] to throw error matching /cancelled/i but got 'Engine executable not found: C:\UsersΓÇª'
+
+- Expected:
+/cancelled/i
+
++ Received:
+"Engine executable not found: C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-fix16-candidate\\rust\\target\\release\\maos-engine.exe. Install the platform-matched release binary at this path. From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, then copy rust/target/release/maos-engine[.exe] to the missing path."
+
+ Γ¥» tests/gui/ui1-19-service-lifecycle.test.ts:408:7
+    406|           signal: controller.signal,
+    407|         }),
+    408|       ).rejects.toThrow(/cancelled/i);
+       |       ^
+    409|
+    410|       // Verify audit record was created for the client abort
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/3]ΓÄ»
+
+ FAIL  tests/gui/ui1-19-service-lifecycle.test.ts > UI1-19: Service Lifecycle and Recovery Controls > 9. Canary Invariant > rust/test.txt SHA-256 hash is strictly preserved
+Error: ENOENT: no such file or directory, open 'C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-fix16-candidate\rust\test.txt'
+ Γ¥» tests/gui/ui1-19-service-lifecycle.test.ts:507:26
+    505|   describe('9. Canary Invariant', () => {
+    506|     it('rust/test.txt SHA-256 hash is strictly preserved', () => {
+    507|       const content = fs.readFileSync(CANARY_PATH);
+       |                          ^
+    508|       const hash = crypto.createHash('sha256').update(content).digest(ΓÇª
+    509|       expect(hash).toBe(CANARY_EXPECTED_HASH);
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[3/3]ΓÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 23 passed (26)
+   Start at  20:20:13
+   Duration  3.48s (transform 2.11s, setup 0ms, import 2.70s, tests 576ms, environment 0ms)
+

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1
+
+
+ Test Files  6 passed (6)
+      Tests  80 passed (80)
+   Start at  15:52:03
+   Duration  8.38s (transform 2.10s, setup 0ms, import 5.01s, tests 2.32s, environment 1ms)
+

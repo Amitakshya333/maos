@@ -1,0 +1,54 @@
+{
+  "declaredBase": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "reconstructionPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-bb871-patch-reconstruction-20261029-01",
+  "baseMethod": "Copied exact Git blobs for the four scoped paths only; private .maos and unrelated project content were not extracted.",
+  "patchApplyCheck": "PASS",
+  "patchApply": "PASS",
+  "expectedScopedPathCount": 4,
+  "actualChangedPathCount": 4,
+  "pathSetEqual": true,
+  "actualPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "comparisons": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "rawSha256": "f80674da117a5cfd611aece8409d0386559f7012c5d2b465bda509593760759b",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "rawMatchesCandidate": false,
+      "lfMatchesCandidate": true
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "rawSha256": "bd45584ac789e1401b8487d38a80dfbb7bfb9e6eb125328b28bd9c8ea1088c8c",
+      "lfNormalizedSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "rawMatchesCandidate": false,
+      "lfMatchesCandidate": true
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "rawSha256": "ab8702cb9dac9f211e1abc2a1595fdcc5e2817dce93fbafc6749c6b564eb6eab",
+      "lfNormalizedSha256": "35f0c25a9ed7f1f89042a79064a5b0e34dcecbe141431094db7e84f41895fe84",
+      "rawMatchesCandidate": true,
+      "lfMatchesCandidate": true
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "rawSha256": "ef6fe2e180c318e9451c2ec5ac100d21112e77babd9cf69a76faec8acac4cafb",
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "rawMatchesCandidate": false,
+      "lfMatchesCandidate": true
+    }
+  ],
+  "allLfNormalizedMatches": true,
+  "rawByteEqualCount": 1,
+  "rawByteDifferentPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "indexEmpty": true
+}

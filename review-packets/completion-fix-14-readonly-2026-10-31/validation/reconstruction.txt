@@ -1,0 +1,25 @@
+reconstruction.txt — COMPLETION-FIX-14 isolated verification (deterministic, mock-only context)
+Generated 2026-10-31 from the candidate worktree; every command ran with an explicit git -C target (no shell-directory ambiguity).
+
+1) Rejected (FIX-12) snapshot, fresh clean clone at 2cfdf9b:
+   git apply FIX-12 complete-correction.patch -> exit 0
+   git apply --check FIX-14 correction-delta.patch -> correction apply-check exit: 0
+
+2) Clean base reconstruction, fresh clean clone at 2cfdf9b:
+   git apply --check FIX-14 complete-correction.patch -> complete apply-check exit: 0
+   git apply FIX-14 complete-correction.patch -> exit 0
+   git hash-object (9 paths, in scope order):
+f8e876f9f9e95b491cd7aa1f0daa434a9657c365
+da8d185b5a81994e2f5f0dfbe17999650142a41e
+81c60338f3b8bb8baed9865e38fe8bcc53b6ee2b
+528c4e1e2ed597556b95a2918cf1fd1549c9e7c5
+5b4fe23b84250fbd6d9c171d568c935b98dc4227
+1ccaf38c52b58a3cb142d65fb2e766690c682112
+da4b7afb51a9c714e648b2084cea873fea6c88a4
+20523d08a522c5a83f347ef0ecbfbeb8d6e750b3
+4762d3750f2e65b3cfb6505fba20a3ea77866a4e
+   Result: all nine reconstructed blob hashes equal the candidate blob hashes.
+
+No hashes were hand-edited; source-hashes.json is generator output that
+refuses to write on any mismatch (blob/raw/LF per file, patch hashes,
+patch-vs-manifest path-set equality, reconstruction-log apply-check exits).

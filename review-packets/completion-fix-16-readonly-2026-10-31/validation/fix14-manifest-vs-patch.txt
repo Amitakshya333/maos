@@ -1,0 +1,10 @@
+FIX-14 packet self-consistency check (manifest blobs vs complete-patch output at candidate seeding), 2026-10-31
+src/core/agent-runner.ts manifest=f8e876f9f9e9 patch=f8e876f9f9e9 MATCH
+src/gui/src/api/rest-client.ts manifest=da8d185b5a81 patch=da8d185b5a81 MATCH
+src/gui/src/components/TelemetryReviewPanel.tsx manifest=81c60338f3b8 patch=81c60338f3b8 MATCH
+tests/industrial/read-only-completion.test.ts manifest=528c4e1e2ed5 patch=528c4e1e2ed5 MATCH
+src/gui/src/components/telemetryReviewState.ts manifest=5b4fe23b8425 patch=5b4fe23b8425 MATCH
+tests/gui/telemetry-review-state.test.ts manifest=1ccaf38c52b5 patch=1ccaf38c52b5 MATCH
+src/gui/src/components/telemetryReviewCoordinator.ts manifest=da4b7afb51a9 patch=da4b7afb51a9 MATCH
+tests/gui/telemetry-review-coordinator.test.ts manifest=20523d08a522 patch=20523d08a522 MATCH
+tests/gui/rest-client-abort.test.ts manifest=4762d3750f2e patch=4762d3750f2e MATCH

@@ -1,0 +1,118 @@
+{
+  "checkedAt": "2026-10-29T14:36:49.6397761+05:30",
+  "commit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "subject": "Harden installation and project Git discovery",
+  "parent": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "pathCount": 17,
+  "committedPathSetExactlyMatchesManifest": true,
+  "committedLfBlobHashesMatched": 17,
+  "blobs": [
+    {
+      "path": "README.md",
+      "blob": "a35c15a4785a3850db51f1529c400a034a8ec3de",
+      "rawSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887",
+      "lfSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887"
+    },
+    {
+      "path": "desktop/README.md",
+      "blob": "5d85ff687f86506fa066b5a28d91dfb3bdd115a1",
+      "rawSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e",
+      "lfSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e"
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "blob": "bea2b90c1077128a2e07fb628ffee1c7f1df98c1",
+      "rawSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "lfSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43"
+    },
+    {
+      "path": "desktop/package.json",
+      "blob": "fb1bdebb742158188a12861e5871ee0981c99724",
+      "rawSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b",
+      "lfSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "blob": "5c5b8eeecafc09dfdecc00c0abf52eed5dfb2bb6",
+      "rawSha256": "c51025b8ec36a7ad2d88aad82994fb27b83766babea6692b525488a6a9583d93",
+      "lfSha256": "c51025b8ec36a7ad2d88aad82994fb27b83766babea6692b525488a6a9583d93"
+    },
+    {
+      "path": "package.json",
+      "blob": "495fd52de6661f6bd8ca58562375a266b0de8655",
+      "rawSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98",
+      "lfSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98"
+    },
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "blob": "0fd8f4ea3fc588618cb4e47e90131976a1072ed3",
+      "rawSha256": "b2dc2175b64609b8966cab4571848959f302441e481e0aa578ce086f1bcd51f5",
+      "lfSha256": "b2dc2175b64609b8966cab4571848959f302441e481e0aa578ce086f1bcd51f5"
+    },
+    {
+      "path": "scripts/New-MaosIndustrialInstallBundle.ps1",
+      "blob": "178a2329293c6c984f40cb21d7cf62dd658e4ec7",
+      "rawSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb",
+      "lfSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb"
+    },
+    {
+      "path": "scripts/prepare-hooks.js",
+      "blob": "74f0ff7b7f66621464bb5ef80287957fb5ef04b4",
+      "rawSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc",
+      "lfSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc"
+    },
+    {
+      "path": "src/cli/doctor.ts",
+      "blob": "69d38b664298af6e815d7d754d2ac8e75ac58aec",
+      "rawSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616",
+      "lfSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "blob": "a2eceac4a5b0185caaa1d7c80f32c119a2fcac9d",
+      "rawSha256": "77f3da0184fbb596d017bb7f4da68553ef0a73f2ef88ae25ae443e78faa5a767",
+      "lfSha256": "77f3da0184fbb596d017bb7f4da68553ef0a73f2ef88ae25ae443e78faa5a767"
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "blob": "c012ed6f0519e7a5a834cf925c1b94e964a1037e",
+      "rawSha256": "70957e9a803a6451b3d2510bd92af66cc03209610f3dda2d88a6f32740234117",
+      "lfSha256": "70957e9a803a6451b3d2510bd92af66cc03209610f3dda2d88a6f32740234117"
+    },
+    {
+      "path": "src/utils/project-git-context.ts",
+      "blob": "1abce8a3bd82444a1e005d553ea4ffb3a939003b",
+      "rawSha256": "91c26478a65bf0d8cc84bf40f33ab3c81b84a41e6352452cdd7017fa17e425a8",
+      "lfSha256": "91c26478a65bf0d8cc84bf40f33ab3c81b84a41e6352452cdd7017fa17e425a8"
+    },
+    {
+      "path": "tests/cli/doctor.test.ts",
+      "blob": "87cdcd9b45d6b5b20083773200f3850058777f5d",
+      "rawSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548",
+      "lfSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548"
+    },
+    {
+      "path": "tests/cli/meta-provider-entrypoints.test.ts",
+      "blob": "b2a988a9060a773993399360fb661718f503cb70",
+      "rawSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15",
+      "lfSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15"
+    },
+    {
+      "path": "tests/cli/project-git-context.test.ts",
+      "blob": "575ef7a228a03822538e65100131a63aeda09636",
+      "rawSha256": "20fce31bb2827e4feb991f6c7fd4e4a21a1072f96331da04e2e71f38982e0188",
+      "lfSha256": "20fce31bb2827e4feb991f6c7fd4e4a21a1072f96331da04e2e71f38982e0188"
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "blob": "8aa06d4f6541557ebb7e8a50678fc76c9a26bcdd",
+      "rawSha256": "6ff70bd820f9c8ef9bd1244df3ed01c4943af4c3f39b3420a48161fd4361b8e6",
+      "lfSha256": "6ff70bd820f9c8ef9bd1244df3ed01c4943af4c3f39b3420a48161fd4361b8e6"
+    }
+  ],
+  "commitDiffCheckExitCode": 0,
+  "indexEmpty": true,
+  "commitCommand": "git -c core.hooksPath=NUL commit -m \"Harden installation and project Git discovery\"",
+  "hooksBypassWasCommandScoped": true,
+  "formattersRun": false
+}

@@ -1,0 +1,137 @@
+COMMAND=npm exec -- vitest run tests/industrial/f10-05-deterministic-reset.test.ts tests/industrial/analysis-agent-auth-http.test.ts tests/industrial/judged-run-lock.test.ts tests/industrial/f10-06-judged-run.test.ts tests/f3-05-artifact-store.test.ts tests/industrial/f6-02-generate-docx.test.ts tests/industrial/f7-03-workflow-planning.test.ts tests/checkpoint.test.ts tests/queue.test.ts tests/gui/ui1-10-evidence-retention.test.ts tests/industrial/f9-08-interruption-atomic-cleanup.test.ts tests/industrial/f9-09-disconnected-full-rehearsal.test.ts tests/industrial/gate-g9-sovereignty-gate.test.ts tests/industrial/analysis-agent-contract.test.ts tests/industrial/analysis-agent-service.test.ts tests/f3-07-verifier-idempotency.test.ts tests/f3-03-rest-contract.test.ts tests/gui/ui1-02-api-clients.test.ts tests/industrial/telemetry-analysis.test.ts
+
+ RUN  v4.1.11 C:/maos
+
+ ❯ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts (20 tests | 3 failed) 18703ms
+       × orchestrates complete atomic cleanup across all subsystems simultaneously 23ms
+       × idempotent execution: second run immediately after is clean and no-op 7ms
+       × installs and cleanly removes process signal handlers without error 8ms
+ ❯ tests/industrial/f9-09-disconnected-full-rehearsal.test.ts (0 test)
+ ❯ tests/industrial/gate-g9-sovereignty-gate.test.ts (20 tests | 20 skipped) 27ms
+ ❯ tests/industrial/f7-03-workflow-planning.test.ts (30 tests | 1 failed) 998ms
+       × ServiceContainer provides workflowPlanning service 21ms
+ ❯ tests/gui/ui1-10-evidence-retention.test.ts (27 tests | 1 failed) 643ms
+       × refuses artifact-preview purge while a judged-run output lock is held 42ms
+ ❯ tests/f3-05-artifact-store.test.ts (27 tests | 1 failed) 343ms
+       × defers orphan cleanup while a judged-run output lock is held 10ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/industrial/f9-09-disconnected-full-rehearsal.test.ts [ tests/industrial/f9-09-disconnected-full-rehearsal.test.ts ]
+TypeError: The "path" argument must be of type string. Received undefined
+ ❯ tests/industrial/f9-09-disconnected-full-rehearsal.test.ts:526:30
+    524| Zone D: Vibration RMS > 7.1 mm/s. Critical danger limit. Vibration val…
+    525|
+    526|     const specDocPath = path.join(rehearsalTempDir, 'evidence', 'ISO-1…
+       |                              ^
+    527|     let docId: string;
+    528|     let sourceHash: string;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  tests/industrial/gate-g9-sovereignty-gate.test.ts > Gate G9: Sovereignty & Prevention Gate Acceptance Evaluation
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-gate-g9-k2BSaT\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/gate-g9-sovereignty-gate.test.ts:118:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/f3-05-artifact-store.test.ts > F3-05 Safe Artifact Store > Interruption, Rollback & Orphan Cleanup > defers orphan cleanup while a judged-run output lock is held
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/f3-05-artifact-store.test.ts:469:22
+    467|
+    468|       const purged = withJudgedRunOutputLock(testDir, () => artifactSe…
+    469|       expect(purged).toBe(0);
+       |                      ^
+    470|       expect(fs.existsSync(tmpPath)).toBe(true);
+    471|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  tests/industrial/f7-03-workflow-planning.test.ts > F7-03: Typed Workflow Planning & Safety Engine > 6. WorkflowPlanningService & Persistence Integration > ServiceContainer provides workflowPlanning service
+Error: MAOS config not found at C:\Users\AMITAK~1\AppData\Local\Temp\maos-f7-03-test-hdLOkh\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f7-03-workflow-planning.test.ts:837:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > orchestrates complete atomic cleanup across all subsystems simultaneously
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > idempotent execution: second run immediately after is clean and no-op
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > installs and cleanly removes process signal handlers without error
+Error: MAOS config not found at C:\maos\.maos\test-temp-f908-1793173097367\.maos\maos.config.json
+ ❯ ProjectService.loadConfig src/service/project-service.ts:88:13
+     86|     const configPath = getConfigPath(this.projectRoot);
+     87|     if (!fs.existsSync(configPath)) {
+     88|       throw new Error(`MAOS config not found at ${configPath}`);
+       |             ^
+     89|     }
+     90|     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+ ❯ createServiceContainer src/service/index.ts:279:33
+ ❯ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts:732:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > orchestrates complete atomic cleanup across all subsystems simultaneously
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > idempotent execution: second run immediately after is clean and no-op
+ FAIL  tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > installs and cleanly removes process signal handlers without error
+TypeError: Cannot read properties of undefined (reading 'task')
+ ❯ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts:736:16
+    734|
+    735|     afterEach(() => {
+    736|       services.task.clean();
+       |                ^
+    737|     });
+    738|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  tests/gui/ui1-10-evidence-retention.test.ts > UI1-10: Evidence / Brainstorm Modes and Retention > 3. RetentionService & Scoped Purge Safety Invariants > refuses artifact-preview purge while a judged-run output lock is held
+AssertionError: expected undefined to be 'JUDGED_RUN_BUSY' // Object.is equality
+
+- Expected:
+"JUDGED_RUN_BUSY"
+
++ Received:
+undefined
+
+ ❯ tests/gui/ui1-10-evidence-retention.test.ts:513:27
+    511|         error = caught;
+    512|       }
+    513|       expect(error?.code).toBe('JUDGED_RUN_BUSY');
+       |                           ^
+    514|       expect(fs.existsSync(previewPath)).toBe(true);
+    515|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+
+ Test Files  6 failed | 13 passed (19)
+      Tests  6 failed | 319 passed | 20 skipped (345)
+   Start at  13:08:14
+   Duration  80.87s (transform 2.83s, setup 0ms, import 11.44s, tests 65.73s, environment 2ms)
+
+EXIT_CODE=1

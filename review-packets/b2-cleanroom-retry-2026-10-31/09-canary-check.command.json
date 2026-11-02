@@ -1,0 +1,10 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "node.exe",
+  "args": [
+    "-e",
+    "const fs=require('fs'),crypto=require('crypto');const p='rust/test.txt';if(!fs.existsSync(p)){console.error('STOP: required plan canary rust/test.txt is absent from the clean reconstruction; no fixture will be created or copied.');process.exit(1);}const actual=crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');console.log(actual);if(actual!=='1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435')throw Error('Canary mismatch');"
+  ],
+  "startedAt": "2026-10-31T15:59:57.908Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

@@ -1,0 +1,16 @@
+COMMAND: powershell.exe -NoProfile -ExecutionPolicy Bypass -File Install-MaosIndustrial.ps1 -BundleRoot <extracted bundle> -InstallRoot <fresh empty destination>
+NPM_CONFIG_CACHE: <prior task-isolated cache>
+ELECTRON_CONFIG_CACHE: <prior task-isolated cache>
+
+> maosorch@0.3.0 prepare
+> node scripts/prepare-hooks.js
+
+
+added 77 packages in 8s
+
+added 13 packages in 1s
+Installed MAOS Industrial 0.3.0 from base 189e786ff0431b02b95ca618bb4791a5ad7b0215 plus delta f2edd4658fcdba9716050d2a377ed941498300177656f3ff91a77e45fdd4b3e5.
+Application: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\install-release-short-0e63159ec6934a8ba7604e3bf81190ff\install\app
+Electron runtime: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\install-release-short-0e63159ec6934a8ba7604e3bf81190ff\install\app\desktop\node_modules\electron\dist\electron.exe
+Rust Industrial engine remains a separate prerequisite; see desktop/README.md.
+EXIT_CODE: 0

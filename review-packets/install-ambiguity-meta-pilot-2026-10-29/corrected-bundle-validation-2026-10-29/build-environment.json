@@ -1,0 +1,17 @@
+{
+  "taskRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981",
+  "worktree": "C:\\Users\\AMITAKSHYA SUTAR\\.codex\\worktrees\\install-correction-build\\maos",
+  "worktreeHead": "d526bfe95d334ad8a0c73a25db7611c1d0fc7417",
+  "nodePath": "C:\\Program Files\\nodejs\\node.exe",
+  "nodeVersion": "v24.11.0",
+  "npmPath": "C:\\Program Files\\nodejs\\npm.cmd",
+  "npmVersion": "11.6.1",
+  "tarPath": "C:\\Windows\\system32\\tar.exe",
+  "buildNpmCacheInitiallyEmpty": true,
+  "installNpmCacheInitiallyEmpty": true,
+  "electronCacheInitiallyEmpty": true,
+  "updateNotifierOverride": "unset",
+  "huskyHookSetup": "HUSKY=0 in isolated npm ci process only",
+  "sensitiveEnvironmentNamesRemoved": 3,
+  "hookPathBefore": ".husky/_"
+}

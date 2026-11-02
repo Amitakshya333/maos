@@ -1,0 +1,16 @@
+{
+  "command": "COMMAND=node review-packets/reset-replay-review/validation-shared-boundaries-2026-10-28/reproduce-shared-boundaries-packet.cjs",
+  "status": "PASS",
+  "base": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "patchSha256": "96fdbeb470c3862248021602707b6f657ec77893e9d76f7d948d4f2d77501e01",
+  "manifestSha256": "f15af24c01a5c3cdff3ff911c6bb0381df553c15e43617174ac4e6ecdddb3fc2",
+  "gitApplyCheck": "PASS",
+  "gitApply": "PASS",
+  "reverseCheck": "PASS",
+  "scopedFiles": 94,
+  "lfEqual": 94,
+  "rawEqual": 37,
+  "rawLineEndingDifferences": 57,
+  "contentMismatches": 0,
+  "exitCode": "0"
+}

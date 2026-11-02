@@ -1,0 +1,18 @@
+{
+  "sourceRevision": "d526bfe95d334ad8a0c73a25db7611c1d0fc7417",
+  "sourceDeltaSha256": "ba002a437f6cfcde26fa30bc41947193754a88dab31aa2a65a10c8904d44da10",
+  "bundleSha256": "a1bdd2bc00978b80cc4578a68de06bf426bf1cb5e6a9dbbd17b67125941b99fc",
+  "oldBundleSha256": "1f333348e92ea988e8fa9ef3be37dd362e69e6d1ab380d3e653f731240b8b61b",
+  "packageSha256": "3e4f8ee275194ae1f408768e6d798d11ba1cedd8f18c9ffaae2f745154312afb",
+  "installerExpectedSha256": "df5bfdca073dcb89bd6b8f4b5995522135e586748bcbd4887dcbee6a2cbb38a1",
+  "bundleInstallerSha256": "df5bfdca073dcb89bd6b8f4b5995522135e586748bcbd4887dcbee6a2cbb38a1",
+  "manifestInstallerSha256": "df5bfdca073dcb89bd6b8f4b5995522135e586748bcbd4887dcbee6a2cbb38a1",
+  "bundleRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\expanded bundle with spaces",
+  "installRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces",
+  "bundleEntries": [
+    "bundle-manifest.json",
+    "Install-MaosIndustrial.ps1",
+    "maosorch.tgz",
+    "package-lock.json"
+  ]
+}

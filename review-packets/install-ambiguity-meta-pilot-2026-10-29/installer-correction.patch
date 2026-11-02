@@ -1,0 +1,100 @@
+diff --git a/scripts/Install-MaosIndustrial.ps1 b/scripts/Install-MaosIndustrial.ps1
+index 0fd8f4e..8451eec 100644
+--- a/scripts/Install-MaosIndustrial.ps1
++++ b/scripts/Install-MaosIndustrial.ps1
+@@ -20,6 +20,20 @@ function Assert-Hash([string]$Path, [string]$Expected, [string]$Label) {
+   if ($actual -ne $Expected) { throw "$Label SHA-256 mismatch. Expected $Expected, found $actual." }
+ }
+ 
++function Invoke-NpmCi([string]$WorkingDirectory, [string]$Component) {
++  $previousErrorActionPreference = $ErrorActionPreference
++  Push-Location $WorkingDirectory
++  try {
++    $ErrorActionPreference = 'Continue'
++    & $npm.Source ci --omit=dev --no-audit --no-fund
++    $npmExitCode = $LASTEXITCODE
++  } finally {
++    $ErrorActionPreference = $previousErrorActionPreference
++    Pop-Location
++  }
++  if ($npmExitCode -ne 0) { throw "Pinned $Component dependency install failed (exit $npmExitCode)." }
++}
++
+ $archivePath = Join-Path $bundlePath $manifest.package.archive
+ $lockPath = Join-Path $bundlePath $manifest.applicationLock.path
+ $scriptPath = Join-Path $bundlePath $manifest.installer.path
+@@ -102,17 +116,8 @@ if ($installedPackage.name -ne $manifest.package.name -or $installedPackage.vers
+ }
+ Assert-Hash (Join-Path $appRoot 'desktop/package-lock.json') $manifest.desktopLock.sha256 'Packaged desktop lockfile'
+ 
+-Push-Location $appRoot
+-try {
+-  & $npm.Source ci --omit=dev --no-audit --no-fund
+-  if ($LASTEXITCODE -ne 0) { throw "Pinned application dependency install failed (exit $LASTEXITCODE)." }
+-} finally { Pop-Location }
+-
+-Push-Location (Join-Path $appRoot 'desktop')
+-try {
+-  & $npm.Source ci --omit=dev --no-audit --no-fund
+-  if ($LASTEXITCODE -ne 0) { throw "Pinned Electron dependency install failed (exit $LASTEXITCODE)." }
+-} finally { Pop-Location }
++Invoke-NpmCi $appRoot 'application'
++Invoke-NpmCi (Join-Path $appRoot 'desktop') 'Electron'
+ 
+ $electronInstall = Join-Path $appRoot 'desktop/node_modules/electron/install.js'
+ if (-not (Test-Path -LiteralPath $electronInstall -PathType Leaf)) { throw 'Pinned Electron package is missing its install script.' }
+diff --git a/tests/industrial/package-runtime-assets.test.ts b/tests/industrial/package-runtime-assets.test.ts
+index 8aa06d4..1083978 100644
+--- a/tests/industrial/package-runtime-assets.test.ts
++++ b/tests/industrial/package-runtime-assets.test.ts
+@@ -9,6 +9,9 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..');
+ const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'));
+ const packageFiles = packageJson.files as string[];
+ const npmIgnore = fs.readFileSync(path.join(PROJECT_ROOT, '.npmignore'), 'utf8');
++const pwshPath = process.platform === 'win32'
++  ? spawnSync('where.exe', ['pwsh.exe'], { encoding: 'utf8' }).stdout.trim().split(/\r?\n/)[0]
++  : undefined;
+ 
+ describe('Industrial npm runtime assets', () => {
+   it('ships all four T-07 demo inputs needed by the judged workflow', () => {
+@@ -95,6 +98,40 @@ describe('Industrial npm runtime assets', () => {
+     expect(desktopLock.packages['node_modules/electron'].version).toBe('45.0.0');
+   });
+ 
++  it.skipIf(!pwshPath)('uses npm exit codes when native npm output includes stderr notices', () => {
++    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-installer-native-stderr-'));
++    try {
++      const fakeNpm = path.join(tempRoot, 'npm.cmd');
++      const harness = path.join(tempRoot, 'invoke-npm-ci.ps1');
++      fs.writeFileSync(fakeNpm, '@echo off\r\necho npm notice: synthetic stderr 1>&2\r\nexit /b %FAKE_NPM_EXIT%\r\n');
++      fs.writeFileSync(harness, String.raw`
++$ErrorActionPreference = 'Stop'
++$tokens = $null; $parseErrors = $null
++$ast = [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$parseErrors)
++if ($parseErrors.Count) { throw 'Could not parse the shipped installer.' }
++$definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-NpmCi' }, $true)
++if (-not $definition) { throw 'Invoke-NpmCi is missing from the shipped installer.' }
++$npm = Get-Command $args[1] -ErrorAction Stop
++Invoke-Expression $definition.Extent.Text
++$env:FAKE_NPM_EXIT = '0'
++Invoke-NpmCi $args[2] 'application'
++$env:FAKE_NPM_EXIT = '23'
++try { Invoke-NpmCi $args[2] 'application'; throw 'A failing npm exit code was accepted.' }
++catch { if ($_.Exception.Message -notmatch 'exit 23') { throw } }
++`);
++
++      const result = spawnSync(pwshPath!, [
++        '-NoProfile', '-NonInteractive', '-File', harness,
++        path.join(PROJECT_ROOT, 'scripts/Install-MaosIndustrial.ps1'), fakeNpm, tempRoot,
++      ], { encoding: 'utf8' });
++      expect(result.error).toBeUndefined();
++      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
++      expect(result.stderr).toContain('npm notice: synthetic stderr');
++    } finally {
++      fs.rmSync(tempRoot, { recursive: true, force: true });
++    }
++  });
++
+   it('skips the development-only Husky hook setup when installing outside a Git checkout', () => {
+     const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-prepare-hook-'));
+     try {

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "candidate": "Cancellation callback/disposal lifetime correction plus preserved four-file contract correction",
+  "baseCommit": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "candidateHead": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "candidateBranch": "detached",
+  "patchFile": "complete-correction.patch",
+  "patchSha256": "d3eb82e46a242ff63aae6323c84820a3a1ff000fdd990bf7e23717b103c8b059",
+  "hashConvention": "sha256 fields are full lowercase SHA-256; lfNormalizedSha256 converts CRLF and lone CR to LF before hashing.",
+  "files": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "status": "modified",
+      "baseGitBlob": "c305021c4d24867a21e3740da270f5add1d0ca83",
+      "rawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "rawBytes": 7061
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "status": "modified",
+      "baseGitBlob": "158238b2b76c4bec41e0db778d7a16582b12b709",
+      "rawSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "lfNormalizedSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "rawBytes": 14298
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "status": "modified",
+      "baseGitBlob": "cbc2731d098ecc73abf6f19c2297520fe11fe34f",
+      "rawSha256": "5f850a5e6547a78ba4bcf1022915a6d1af87d726bc0c0b301f00dbf16d0c947c",
+      "lfNormalizedSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb",
+      "rawBytes": 21091
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "status": "modified",
+      "baseGitBlob": "e96e5c3ab006e8fa2721d899824b95391172630b",
+      "rawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "rawBytes": 34153
+    }
+  ]
+}

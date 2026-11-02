@@ -1,0 +1,29 @@
+{
+  "output": "C:\\maos\\artifacts\\verification\\agent-gui-2026-10-27\\reset-replay-validation-2026-10-28\\packet-source-comparison.json",
+  "canonicalScopeCount": 72,
+  "canonicalRawEqual": 32,
+  "canonicalNormalizedEqual": 72,
+  "canonicalLineEndingOnlyMismatches": 40,
+  "followupChangedFiles": [
+    "src/api/middleware.ts",
+    "src/api/router.ts",
+    "src/gui/src/api/rest-client.ts",
+    "src/industrial/deterministic-reset.ts",
+    "src/industrial/industrial-cli.ts",
+    "src/industrial/judged-run.ts",
+    "src/industrial/atomic-cleanup-coordinator.ts",
+    "src/service/artifact-service.ts",
+    "src/service/retention-service.ts",
+    "tests/f3-05-artifact-store.test.ts",
+    "tests/gui/ui1-10-evidence-retention.test.ts",
+    "tests/industrial/f10-05-deterministic-reset.test.ts",
+    "src/industrial/judged-run-lock.ts",
+    "tests/industrial/analysis-agent-auth-http.test.ts"
+  ],
+  "followupSha256": "a3738009bb73395b9d6993744c9462422f5dab85d32bf76edc306d05c1de9569",
+  "followupRawEqual": 32,
+  "followupNormalizedEqual": 72,
+  "followupLineEndingOnlyMismatches": 40,
+  "commandCount": 30
+}
+EXIT_CODE=0

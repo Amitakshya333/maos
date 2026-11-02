@@ -1,0 +1,17 @@
+{
+  "patchPath": "C:\\maos\\review-packets\\reset-replay-review\\uninitialized-f2-safety-canonical.patch",
+  "patchBytes": 704991,
+  "patchSha256": "41971ac2753b12eb414390cca892a9ad20f441aedfb41e596fcd27bb53dca661",
+  "manifestPath": "C:\\maos\\review-packets\\reset-replay-review\\uninitialized-f2-safety-canonical-source-hashes.json",
+  "scopeCount": 100,
+  "trackedCount": 78,
+  "addedCount": 22,
+  "excludedTracked": [
+    ".maos/maos.config.json",
+    ".maos/pool.json",
+    "demo/industrial/MASTER_DEMO_PLAN.md",
+    "demo/industrial/RECORDING_READINESS.md"
+  ],
+  "excludedUntrackedCount": 100,
+  "manifestSha256": "a8843a32c6803273be1ca440f02d248106d359d3bf20bff7dbae131ebac779c4"
+}

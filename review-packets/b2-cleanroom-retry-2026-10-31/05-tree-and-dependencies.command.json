@@ -1,0 +1,10 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "node.exe",
+  "args": [
+    "-e",
+    "const fs=require('fs'),cp=require('child_process'),crypto=require('crypto');const temp='C:/maos/review-packets/b2-cleanroom-retry-2026-10-31/tree-check.index';if(fs.existsSync(temp))throw Error('Unexpected existing temp index');const index=cp.execFileSync('git',['rev-parse','--path-format=absolute','--git-path','index'],{encoding:'utf8'}).trim();fs.copyFileSync(index,temp);try{const env={...process.env,GIT_INDEX_FILE:temp};cp.execFileSync('git',['add','-A','--'],{env});const actual=cp.execFileSync('git',['write-tree'],{env,encoding:'utf8'}).trim();const expected=cp.execFileSync('git',['rev-parse','2cfdf9b81f56eada7df2041625da18e44531151e^{tree}'],{encoding:'utf8'}).trim();console.log(JSON.stringify({actualTree:actual,expectedTree:expected,match:actual===expected}));if(actual!==expected)throw Error('Reconstruction mismatch');}finally{fs.unlinkSync(temp);}const pkg=JSON.parse(fs.readFileSync('package.json','utf8')),lockBytes=fs.readFileSync('package-lock.json'),lock=JSON.parse(lockBytes);const hosts=[...new Set(Object.values(lock.packages||{}).filter(x=>x.resolved).map(x=>new URL(x.resolved).hostname))];console.log(JSON.stringify({node:process.version,engines:pkg.engines,scripts:pkg.scripts,lockSha256:crypto.createHash('sha256').update(lockBytes).digest('hex'),resolvedHosts:hosts},null,2));if(hosts.some(h=>h!=='registry.npmjs.org'))throw Error('Unexpected dependency host');"
+  ],
+  "startedAt": "2026-10-31T15:58:56.788Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

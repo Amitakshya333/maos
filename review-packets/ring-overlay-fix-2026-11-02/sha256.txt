@@ -1,0 +1,1 @@
+6fa8f711fd0e52c2f28d68fb927063e3deff4f7faf523ba0ff93de5f97782b36  candidate.patch

@@ -1,0 +1,936 @@
+diff --git a/src/api/router.ts b/src/api/router.ts
+index 8a85d46..7db61e6 100644
+--- a/src/api/router.ts
++++ b/src/api/router.ts
+@@ -11,6 +11,7 @@ import * as path from 'path';
+ import * as crypto from 'crypto';
+ import * as child_process from 'child_process';
+ import { ServiceContainer, ChatInferenceError, IndustrialAnalysisAgentError } from '../service';
++import { ProviderApiPolicyError } from '../backends/meta-api-policy';
+ import {
+   getCorrelationId,
+   checkLoopback,
+@@ -1280,6 +1281,42 @@ export class RestApiRouter {
+       return true;
+     }
+ 
++    // ── Ring Inference (TASK RING-SVC-01) ─────────────────────────
++
++    if (method === 'POST' && pathname === '/api/v1/ring/ask') {
++      const bodyResult = await readJsonBody<{
++        question?: string;
++        analysisId?: string;
++      }>(req, res, correlationId);
++      if (!bodyResult) return true;
++
++      const payload = bodyResult.parsed;
++      if (!payload || typeof payload !== 'object' || typeof payload.question !== 'string' || !payload.question.trim()) {
++        sendError(res, 400, 'VALIDATION_FAILED', 'question is required and must be a non-empty string.', correlationId);
++        return true;
++      }
++
++      if (payload.analysisId !== undefined && (typeof payload.analysisId !== 'string' || !payload.analysisId.trim())) {
++        sendError(res, 400, 'VALIDATION_FAILED', 'analysisId must be a non-empty string when provided.', correlationId);
++        return true;
++      }
++
++      try {
++        const result = await this.services.ringInference.ask({
++          question: payload.question.trim(),
++          analysisId: payload.analysisId?.trim(),
++        });
++        sendJson(res, 200, { data: result }, correlationId);
++      } catch (err: any) {
++        if (err instanceof ProviderApiPolicyError) {
++          sendError(res, 400, err.code, err.message, correlationId);
++        } else {
++          sendError(res, 500, 'RING_ASK_FAILED', err.message || 'Ring ask failed', correlationId);
++        }
++      }
++      return true;
++    }
++
+     // ── Tasks ─────────────────────────────────────────────────────
+ 
+     if (method === 'GET' && pathname === '/api/v1/tasks') {
+diff --git a/src/service/index.ts b/src/service/index.ts
+index c1e85c3..5f6337b 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -77,6 +77,7 @@ import { CockpitService } from './cockpit-service';
+ import { SandboxImageService } from './sandbox-image-service';
+ import { SandboxRunnerService } from './sandbox-runner-service';
+ import { ChatInferenceService } from './chat-inference-service';
++import { RingInferenceService } from './ring-inference-service';
+ import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
+ import { OpenAIProvider } from '../backends/openai-provider';
+ import { collectReservedMetaApiKeyEnvVars } from '../backends/meta-api-policy';
+@@ -142,6 +143,7 @@ export interface ServiceContainer {
+   readonly sandboxImage: SandboxImageService;
+   readonly sandboxRunner: SandboxRunnerService;
+   readonly chatInference: ChatInferenceService;
++  readonly ringInference: RingInferenceService;
+   readonly industrialAnalysisAgent: IndustrialAnalysisAgentService;
+   readonly calculationTrace: CalculationTraceService;
+   readonly sovereigntyBoundary: SovereigntyBoundaryService;
+@@ -277,6 +279,19 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+     auditService: audit,
+     endpointAllowlist,
+   });
++  const ringInference = new RingInferenceService({
++    projectRoot,
++    auditService: audit,
++    endpointAllowlist,
++    loadProjectConfig: () => {
++      if (!project.isInitialized()) return undefined;
++      try {
++        return project.loadConfig();
++      } catch {
++        return undefined;
++      }
++    },
++  });
+   const industrialAnalysisAgent = new IndustrialAnalysisAgentService(
+     undefined,
+     undefined,
+@@ -433,6 +448,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+     sandboxImage,
+     sandboxRunner,
+     chatInference,
++    ringInference,
+     industrialAnalysisAgent,
+     calculationTrace,
+     sovereigntyBoundary,
+@@ -450,6 +466,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+ // Re-export individual services for direct import
+ export { CalculationTraceService } from './calculation-trace-service';
+ export { ChatInferenceService, ChatInferenceError } from './chat-inference-service';
++export { RingInferenceService } from './ring-inference-service';
+ export { IndustrialAnalysisAgentService, IndustrialAnalysisAgentError } from '../industrial/analysis-agent-service';
+ export { SandboxImageService } from './sandbox-image-service';
+ export { SandboxRunnerService } from './sandbox-runner-service';
+diff --git a/src/service/ring-inference-service.ts b/src/service/ring-inference-service.ts
+new file mode 100644
+index 0000000..df74bc2
+--- /dev/null
++++ b/src/service/ring-inference-service.ts
+@@ -0,0 +1,399 @@
++import fs from 'node:fs';
++import path from 'node:path';
++import type { AuditService } from './audit-service';
++import type { EndpointAllowlistService } from './endpoint-allowlist-service';
++import type { Project } from '../domain/schemas';
++import type { ChatMessage } from '../backends/provider';
++import {
++  BASETEN_API_BASE_URL,
++  BASETEN_API_KEY_ENV,
++  BASETEN_API_MODEL,
++  ProviderApiPolicyError,
++} from '../backends/meta-api-policy';
++import { OpenAIProvider } from '../backends/openai-provider';
++import {
++  TelemetryAnalysisReceipt,
++  TelemetryMetrics,
++  analyzeTelemetryCsv,
++  loadTelemetryDemoThresholds,
++} from '../industrial/telemetry-analysis';
++
++export interface RingAskRequest {
++  question: string;
++  analysisId?: string;
++}
++
++export type RingSourceKind = 'sop' | 'incident' | 'telemetry' | 'config';
++
++export interface RingSource {
++  kind: RingSourceKind;
++  label: string;
++  path: string;
++}
++
++export interface RingDeterministic {
++  attempted: boolean;
++  verdict?: string;
++  overallRms?: number;
++  analysisId?: string;
++}
++
++export interface RingAskResult {
++  mode: 'hosted' | 'evidence-only';
++  providerName?: string;
++  modelId?: string;
++  servedModelId?: string;
++  answer: string;
++  sources: RingSource[];
++  deterministic: RingDeterministic;
++  refusalTest: { prepared: boolean };
++}
++
++export interface RingInferenceServiceOptions {
++  projectRoot: string;
++  auditService?: AuditService;
++  endpointAllowlist?: EndpointAllowlistService;
++  loadProjectConfig?: () => Project | undefined;
++  fetch?: typeof globalThis.fetch;
++}
++
++export class RingInferenceService {
++  private readonly projectRoot: string;
++  private readonly auditService?: AuditService;
++  private readonly endpointAllowlist?: EndpointAllowlistService;
++  private readonly loadProjectConfig: () => Project | undefined;
++  private readonly fetchImpl?: typeof globalThis.fetch;
++
++  constructor(options: RingInferenceServiceOptions) {
++    this.projectRoot = path.resolve(options.projectRoot);
++    this.auditService = options.auditService;
++    this.endpointAllowlist = options.endpointAllowlist;
++    this.fetchImpl = options.fetch;
++    this.loadProjectConfig =
++      options.loadProjectConfig ||
++      (() => {
++        const configPath = path.resolve(this.projectRoot, '.maos', 'maos.config.json');
++        if (fs.existsSync(configPath)) {
++          try {
++            return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
++          } catch {
++            return undefined;
++          }
++        }
++        return undefined;
++      });
++  }
++
++  /**
++   * Evaluates whether the Baseten hosted provider is armed according to shared policy:
++   * - basetenApiEnabled === true
++   * - baseURL === BASETEN_API_BASE_URL
++   * - model === BASETEN_API_MODEL
++   * - process.env[BASETEN_API_KEY_ENV] is non-empty
++   *
++   * If opt-in is enabled but configuration is invalid, mirrors meta-api-policy validation
++   * error codes (e.g. BASETEN_API_CONFIGURATION_INVALID).
++   */
++  private checkBasetenArming(): {
++    isArmed: boolean;
++    providerConfig?: Record<string, unknown>;
++    apiKey?: string;
++  } {
++    const projectConfig = this.loadProjectConfig();
++    const baseten = projectConfig?.providers?.baseten as Record<string, unknown> | undefined;
++
++    if (!baseten || baseten.basetenApiEnabled !== true) {
++      return { isArmed: false };
++    }
++
++    // Explicit opt-in present: enforce exact endpoint and model configuration
++    if (baseten.baseURL !== BASETEN_API_BASE_URL) {
++      throw new ProviderApiPolicyError(
++        'BASETEN_API_CONFIGURATION_INVALID',
++        `Baseten Model API is limited to provider "baseten", ${BASETEN_API_BASE_URL}, and model ${BASETEN_API_MODEL}.`,
++      );
++    }
++
++    const requestedModel =
++      (typeof baseten.model === 'string' && baseten.model) ||
++      projectConfig?.agents?.find((a) => a.provider === 'baseten')?.model ||
++      BASETEN_API_MODEL;
++
++    if (requestedModel !== BASETEN_API_MODEL) {
++      throw new ProviderApiPolicyError(
++        'BASETEN_API_CONFIGURATION_INVALID',
++        `Baseten Model API is limited to provider "baseten", ${BASETEN_API_BASE_URL}, and model ${BASETEN_API_MODEL}.`,
++      );
++    }
++
++    const apiKey = process.env[BASETEN_API_KEY_ENV];
++    if (!apiKey || !apiKey.trim()) {
++      // Key missing -> not armed (falls back to evidence-only)
++      return { isArmed: false, providerConfig: baseten };
++    }
++
++    return { isArmed: true, providerConfig: baseten, apiKey: apiKey.trim() };
++  }
++
++  /**
++   * Deterministic prefetch: loads demo SOP, incident note, thresholds config, and
++   * recomputes/retrieves the deterministic telemetry verdict for the given analysisId
++   * or the bundled turbine vibration sample.
++   */
++  private prefetchEvidence(analysisId?: string): {
++    sources: RingSource[];
++    verdict?: string;
++    overallRms?: number;
++    resolvedAnalysisId?: string;
++    telemetryMetrics?: TelemetryMetrics;
++    sopText: string;
++    incidentText: string;
++  } {
++    const sources: RingSource[] = [];
++
++    // 1. Demo SOP
++    const sopRel = 'demo/industrial/sop_turbine_vibration_monitoring.md';
++    const sopFull = path.resolve(this.projectRoot, sopRel);
++    let sopText = '';
++    if (fs.existsSync(sopFull)) {
++      sopText = fs.readFileSync(sopFull, 'utf-8');
++      sources.push({
++        kind: 'sop',
++        label: 'Turbine Vibration & Temperature Safety Audit SOP',
++        path: sopRel,
++      });
++    }
++
++    // 2. Incident Note / Maintenance Report
++    const incidentRel = 'demo/industrial/maintenance_report.txt';
++    const incidentFull = path.resolve(this.projectRoot, incidentRel);
++    let incidentText = '';
++    if (fs.existsSync(incidentFull)) {
++      incidentText = fs.readFileSync(incidentFull, 'utf-8');
++      sources.push({
++        kind: 'incident',
++        label: 'Turbine T-07 Maintenance Report',
++        path: incidentRel,
++      });
++    }
++
++    // 3. Safety Thresholds Config
++    const configRel = 'demo/industrial/safety_thresholds.json';
++    const configFull = path.resolve(this.projectRoot, configRel);
++    if (fs.existsSync(configFull)) {
++      sources.push({
++        kind: 'config',
++        label: 'Safety Thresholds Configuration',
++        path: configRel,
++      });
++    }
++
++    // 4. Telemetry Analysis Verdict
++    let verdict: string | undefined;
++    let overallRms: number | undefined;
++    let resolvedAnalysisId: string | undefined;
++    let telemetryPath = 'demo/industrial/turbine_vibration_log.csv';
++    let telemetryMetrics: TelemetryMetrics | undefined;
++
++    if (analysisId) {
++      const receiptPath = path.resolve(
++        this.projectRoot,
++        '.maos',
++        'industrial',
++        'telemetry-analyses',
++        `${analysisId}.json`,
++      );
++      if (fs.existsSync(receiptPath)) {
++        try {
++          const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf-8')) as TelemetryAnalysisReceipt;
++          if (receipt.result) {
++            verdict = receipt.result.verdict;
++            overallRms = receipt.result.overallVibrationRms;
++            telemetryMetrics = receipt.result;
++            resolvedAnalysisId = analysisId;
++            if (receipt.source?.relativePath) {
++              telemetryPath = receipt.source.relativePath;
++            }
++          }
++        } catch {
++          // Non-fatal: fallback to bundled sample
++        }
++      }
++    }
++
++    if (!telemetryMetrics) {
++      const bundledCsvPath = path.resolve(this.projectRoot, 'demo/industrial/turbine_vibration_log.csv');
++      if (fs.existsSync(bundledCsvPath)) {
++        try {
++          const thresholds = loadTelemetryDemoThresholds(this.projectRoot);
++          const csvBuffer = fs.readFileSync(bundledCsvPath);
++          telemetryMetrics = analyzeTelemetryCsv(csvBuffer, thresholds);
++          verdict = telemetryMetrics.verdict;
++          overallRms = telemetryMetrics.overallVibrationRms;
++          telemetryPath = 'demo/industrial/turbine_vibration_log.csv';
++        } catch {
++          // If analysis fails, verdict remains undefined
++        }
++      }
++    }
++
++    sources.push({
++      kind: 'telemetry',
++      label: resolvedAnalysisId ? `Telemetry Analysis (${resolvedAnalysisId})` : 'Turbine Vibration Log (Bundled Sample)',
++      path: telemetryPath,
++    });
++
++    return {
++      sources,
++      verdict,
++      overallRms,
++      resolvedAnalysisId,
++      telemetryMetrics,
++      sopText,
++      incidentText,
++    };
++  }
++
++  /**
++   * Assembles a composed deterministic summary from prefetched evidence sources and
++   * engine calculations with zero model wording.
++   */
++  private buildDeterministicSummary(evidence: ReturnType<typeof this.prefetchEvidence>): string {
++    const { verdict, overallRms, telemetryMetrics } = evidence;
++    const findingsList = telemetryMetrics && telemetryMetrics.findings.length > 0
++      ? telemetryMetrics.findings
++          .map((f) => `- Row ${f.row} [${f.timestamp || 'no-time'}]: ${f.field} = ${f.value} ${f.unit} (threshold: ${f.threshold} ${f.unit}) -> ${f.severity}`)
++          .join('\n')
++      : 'No threshold violations recorded.';
++
++    const lines = [
++      '### Deterministic Evidence Summary',
++      'Asset: Steam Turbine T-07, drive-end bearing assembly',
++      'Standard Operating Procedure: SOP-TURBINE-VIB-DEMO-V1 (Turbine Vibration & Temperature Safety Audit)',
++      'Maintenance Record: MR-T07-2026-0822',
++      '',
++      '### Maintenance Observations',
++      '- Light intermittent metallic sound near drive-end bearing housing.',
++      '- Drive-end bearing housing felt warmer than non-drive-end housing.',
++      '- Small dark lubricant residue below drive-end seal.',
++      '- Two vibration alarms reported during preceding shift.',
++      '',
++      '### Telemetry Engine Verdict (ISO 10816-3)',
++      `Engineering Verdict: ${verdict ?? 'UNAVAILABLE'}`,
++      `Overall Vibration RMS: ${overallRms !== undefined ? `${overallRms.toFixed(3)} mm/s` : 'UNAVAILABLE'}`,
++      telemetryMetrics ? `Peak Vibration: ${telemetryMetrics.peakVibration.toFixed(2)} mm/s` : '',
++      telemetryMetrics ? `Peak Temperature: ${telemetryMetrics.peakTemperature.toFixed(1)} °C` : '',
++      telemetryMetrics ? `Violations Count: ${telemetryMetrics.warningCount} Warnings / ${telemetryMetrics.criticalCount} Critical` : '',
++      '',
++      '### Specific Threshold Breaches',
++      findingsList,
++      '',
++      'Regulatory Notice: Synthetic offline demonstration benchmark only. Negative clearance. Not a certified standard.',
++    ];
++
++    return lines.filter(Boolean).join('\n');
++  }
++
++  /**
++   * Main entrypoint for Ring inquiry.
++   */
++  async ask(input: RingAskRequest): Promise<RingAskResult> {
++    const question = input.question?.trim();
++    if (!question) {
++      throw new Error('RING_ASK_INVALID: question is required and must be a non-empty string.');
++    }
++
++    // Step 2: Deterministic prefetch always attempted
++    const evidence = this.prefetchEvidence(input.analysisId);
++    const deterministicSummary = this.buildDeterministicSummary(evidence);
++
++    const deterministicObj: RingDeterministic = {
++      attempted: true,
++      verdict: evidence.verdict,
++      overallRms: evidence.overallRms,
++      analysisId: evidence.resolvedAnalysisId,
++    };
++
++    // Step 1: Check arming policy
++    const arming = this.checkBasetenArming();
++
++    // Step 3: Not armed -> return evidence-only result
++    if (!arming.isArmed) {
++      return {
++        mode: 'evidence-only',
++        answer: deterministicSummary,
++        sources: evidence.sources,
++        deterministic: deterministicObj,
++        refusalTest: { prepared: false },
++      };
++    }
++
++    // Step 4: Hosted path (armed only)
++    try {
++      const provider = new OpenAIProvider({
++        name: 'baseten',
++        apiKey: arming.apiKey!,
++        model: BASETEN_API_MODEL,
++        baseURL: BASETEN_API_BASE_URL,
++        basetenApiEnabled: true,
++        fetch: this.fetchImpl,
++      });
++
++      // Prompt strictly includes ONLY deterministic summary and the user's question.
++      // NEVER includes raw telemetry CSV rows.
++      const messages: ChatMessage[] = [
++        {
++          role: 'system',
++          content: 'You are the MAOS Industrial Ring Assistant. Answer the question using ONLY the provided deterministic engineering summary. Never contradict or invent engineering data.',
++        },
++        {
++          role: 'user',
++          content: `Deterministic Engineering Context:\n${deterministicSummary}\n\nQuestion:\n${question}`,
++        },
++      ];
++
++      const response = await provider.generate(messages);
++      const answer = typeof response.content === 'string' && response.content.trim()
++        ? response.content
++        : deterministicSummary;
++
++      // Return servedModelId only if echoed by provider response
++      const servedModelId = response.reportedModel && response.reportedModel.trim()
++        ? response.reportedModel
++        : undefined;
++
++      return {
++        mode: 'hosted',
++        providerName: 'baseten',
++        modelId: BASETEN_API_MODEL,
++        servedModelId,
++        answer,
++        sources: evidence.sources,
++        deterministic: deterministicObj,
++        refusalTest: { prepared: false },
++      };
++    } catch (err: unknown) {
++      // Never throw in a way that takes Ring down: fallback to evidence-only on inference error
++      const message = err instanceof Error ? err.message : String(err);
++      if (this.auditService) {
++        this.auditService.recordAuditEvent({
++          category: 'warning',
++          source: 'ring-inference',
++          data: {
++            event: 'RING_HOSTED_INFERENCE_FAILED',
++            error: message,
++          },
++        });
++      }
++
++      return {
++        mode: 'evidence-only',
++        modelId: BASETEN_API_MODEL,
++        answer: `${deterministicSummary}\n\n[Hosted inference unavailable: ${message}]`,
++        sources: evidence.sources,
++        deterministic: deterministicObj,
++        refusalTest: { prepared: false },
++      };
++    }
++  }
++}
+diff --git a/tests/industrial/ring-inference.test.ts b/tests/industrial/ring-inference.test.ts
+new file mode 100644
+index 0000000..79aef30
+--- /dev/null
++++ b/tests/industrial/ring-inference.test.ts
+@@ -0,0 +1,414 @@
++import { describe, it, expect, beforeEach, afterEach } from 'vitest';
++import * as http from 'http';
++import * as path from 'path';
++import * as fs from 'fs';
++import * as os from 'os';
++import { AddressInfo } from 'net';
++import {
++  BASETEN_API_BASE_URL,
++  BASETEN_API_KEY_ENV,
++  BASETEN_API_MODEL,
++  ProviderApiPolicyError,
++} from '../../src/backends/meta-api-policy';
++import {
++  RingInferenceService,
++  RingAskResult,
++} from '../../src/service/ring-inference-service';
++import { RestApiRouter } from '../../src/api/router';
++import { createServiceContainer } from '../../src/service';
++
++describe('TASK RING-SVC-01: Ring Inference Service & Router Integration', () => {
++  let tempProjectRoot: string;
++  let mockServer: http.Server | null = null;
++  let mockServerPort = 0;
++  let capturedRequests: Array<{ url: string; headers: http.IncomingHttpHeaders; body: any }> = [];
++  let restoreFetch: (() => void) | null = null;
++
++  beforeEach(() => {
++    // Create temporary project root
++    tempProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-svc-test-'));
++
++    // Stage required industrial demo assets
++    const repoRoot = path.resolve(__dirname, '../..');
++    fs.mkdirSync(path.join(tempProjectRoot, '.maos'), { recursive: true });
++    fs.mkdirSync(path.join(tempProjectRoot, 'demo', 'industrial'), { recursive: true });
++
++    fs.copyFileSync(
++      path.join(repoRoot, 'demo', 'industrial', 'sop_turbine_vibration_monitoring.md'),
++      path.join(tempProjectRoot, 'demo', 'industrial', 'sop_turbine_vibration_monitoring.md'),
++    );
++    fs.copyFileSync(
++      path.join(repoRoot, 'demo', 'industrial', 'maintenance_report.txt'),
++      path.join(tempProjectRoot, 'demo', 'industrial', 'maintenance_report.txt'),
++    );
++    fs.copyFileSync(
++      path.join(repoRoot, 'demo', 'industrial', 'safety_thresholds.json'),
++      path.join(tempProjectRoot, 'demo', 'industrial', 'safety_thresholds.json'),
++    );
++    fs.copyFileSync(
++      path.join(repoRoot, 'demo', 'industrial', 'turbine_vibration_log.csv'),
++      path.join(tempProjectRoot, 'demo', 'industrial', 'turbine_vibration_log.csv'),
++    );
++
++    // Default configuration with Baseten armed
++    fs.writeFileSync(
++      path.join(tempProjectRoot, '.maos', 'maos.config.json'),
++      JSON.stringify(
++        {
++          schemaVersion: 1,
++          projectName: 'ring-test-project',
++          profile: {
++            id: 'industrial',
++            displayName: 'MAOS Industrial',
++            mode: 'sovereign-local',
++            zeroCloud: true,
++          },
++          providers: {
++            baseten: {
++              baseURL: BASETEN_API_BASE_URL,
++              basetenApiEnabled: true,
++            },
++          },
++          agents: [
++            {
++              id: 'ANALYST_AGENT',
++              role: 'analyst',
++              provider: 'baseten',
++              model: BASETEN_API_MODEL,
++            },
++          ],
++        },
++        null,
++        2,
++      ),
++    );
++
++    capturedRequests = [];
++  });
++
++  afterEach(async () => {
++    if (restoreFetch) {
++      restoreFetch();
++      restoreFetch = null;
++    }
++    if (mockServer) {
++      await new Promise<void>((resolve) => mockServer!.close(() => resolve()));
++      mockServer = null;
++    }
++    delete process.env[BASETEN_API_KEY_ENV];
++    try {
++      fs.rmSync(tempProjectRoot, { recursive: true, force: true });
++    } catch {}
++  });
++
++  const startMockServer = (
++    responseBody: any,
++    statusCode = 200,
++  ): Promise<string> => {
++    return new Promise((resolve, reject) => {
++      mockServer = http.createServer((req, res) => {
++        const chunks: Buffer[] = [];
++        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++        req.on('end', () => {
++          let body: any;
++          try {
++            body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
++          } catch {
++            body = undefined;
++          }
++          capturedRequests.push({ url: req.url || '', headers: req.headers, body });
++          res.writeHead(statusCode, { 'Content-Type': 'application/json' });
++          res.end(JSON.stringify(responseBody));
++        });
++      });
++
++      mockServer.once('error', reject);
++      mockServer.listen(0, '127.0.0.1', () => {
++        mockServerPort = (mockServer!.address() as AddressInfo).port;
++        const mockBaseURL = `http://127.0.0.1:${mockServerPort}`;
++
++        // Install bridge redirecting Baseten calls to loopback mock
++        const originalFetch = globalThis.fetch;
++        const nativeFetch = originalFetch.bind(globalThis);
++        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
++          const targetUrl = String(input);
++          if (targetUrl.startsWith(`${BASETEN_API_BASE_URL}/chat/completions`)) {
++            return nativeFetch(`${mockBaseURL}/chat/completions`, { ...init, redirect: 'error' });
++          }
++          return nativeFetch(input, init);
++        }) as typeof globalThis.fetch;
++
++        restoreFetch = () => {
++          globalThis.fetch = originalFetch;
++        };
++
++        resolve(mockBaseURL);
++      });
++    });
++  };
++
++  // (a) armed + mock returns a message -> mode 'hosted', served id only when echoed
++  it('(a) armed + mock returns a message -> mode hosted, served id only when echoed', async () => {
++    process.env[BASETEN_API_KEY_ENV] = 'synthetic-baseten-key-armed-test';
++    const mockEchoModel = 'meta-models/muse-spark-open-1026-echoed-from-mock';
++
++    await startMockServer({
++      id: 'chatcmpl-mock-baseten-a',
++      object: 'chat.completion',
++      created: 1730000000,
++      model: mockEchoModel,
++      choices: [
++        {
++          index: 0,
++          message: {
++            role: 'assistant',
++            content: 'Analysis shows vibration RMS of 2.637 mm/s exceeding ISO demo alarm threshold.',
++          },
++          finish_reason: 'stop',
++        },
++      ],
++      usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
++    });
++
++    const service = new RingInferenceService({ projectRoot: tempProjectRoot });
++    const result: RingAskResult = await service.ask({
++      question: 'What is the turbine condition verdict?',
++    });
++
++    expect(result.mode).toBe('hosted');
++    expect(result.providerName).toBe('baseten');
++    expect(result.modelId).toBe(BASETEN_API_MODEL);
++    expect(result.servedModelId).toBe(mockEchoModel);
++    expect(result.answer).toBe('Analysis shows vibration RMS of 2.637 mm/s exceeding ISO demo alarm threshold.');
++    expect(result.deterministic.attempted).toBe(true);
++    expect(result.deterministic.verdict).toBe('CRITICAL');
++    expect(result.deterministic.overallRms).toBeCloseTo(2.637, 2);
++    expect(result.refusalTest).toEqual({ prepared: false });
++    expect(result.sources.length).toBeGreaterThanOrEqual(3);
++
++    // Verify subcase: served id is undefined when response does NOT echo a model
++    if (restoreFetch) {
++      restoreFetch();
++      restoreFetch = null;
++    }
++    if (mockServer) {
++      await new Promise<void>((res) => mockServer!.close(() => res()));
++    }
++    await startMockServer({
++      id: 'chatcmpl-mock-baseten-a2',
++      choices: [{ index: 0, message: { role: 'assistant', content: 'Echo without model identity' }, finish_reason: 'stop' }],
++    });
++
++    const resultWithoutEcho = await service.ask({ question: 'Check without echo' });
++    expect(resultWithoutEcho.mode).toBe('hosted');
++    expect(resultWithoutEcho.servedModelId).toBeUndefined();
++  });
++
++  // (b) key missing -> evidence-only, deterministic verdict still present
++  it('(b) key missing -> evidence-only, deterministic verdict still present', async () => {
++    delete process.env[BASETEN_API_KEY_ENV];
++
++    const service = new RingInferenceService({ projectRoot: tempProjectRoot });
++    const result = await service.ask({
++      question: 'Provide turbine inspection verdict without API key',
++    });
++
++    expect(result.mode).toBe('evidence-only');
++    expect(result.modelId).toBeUndefined();
++    expect(result.providerName).toBeUndefined();
++    expect(result.servedModelId).toBeUndefined();
++    expect(result.deterministic.attempted).toBe(true);
++    expect(result.deterministic.verdict).toBe('CRITICAL');
++    expect(result.deterministic.overallRms).toBeCloseTo(2.637, 2);
++    expect(result.answer).toContain('Engineering Verdict: CRITICAL');
++    expect(result.answer).toContain('Overall Vibration RMS: 2.637 mm/s');
++    expect(result.refusalTest).toEqual({ prepared: false });
++  });
++
++  // (c) basetenApiEnabled false -> evidence-only
++  it('(c) basetenApiEnabled false -> evidence-only', async () => {
++    process.env[BASETEN_API_KEY_ENV] = 'synthetic-key-but-optin-disabled';
++
++    const service = new RingInferenceService({
++      projectRoot: tempProjectRoot,
++      loadProjectConfig: () => ({
++        schemaVersion: 1,
++        projectName: 'ring-optin-disabled',
++        profile: { id: 'industrial', mode: 'sovereign-local', zeroCloud: true },
++        providers: {
++          baseten: {
++            baseURL: BASETEN_API_BASE_URL,
++            basetenApiEnabled: false,
++          },
++        },
++      }),
++    });
++
++    const result = await service.ask({
++      question: 'Inquiry when opt-in is false',
++    });
++
++    expect(result.mode).toBe('evidence-only');
++    expect(result.modelId).toBeUndefined();
++    expect(result.deterministic.verdict).toBe('CRITICAL');
++    expect(result.answer).toContain('Deterministic Evidence Summary');
++    expect(result.refusalTest).toEqual({ prepared: false });
++  });
++
++  // (d) endpoint/model mismatch -> evidence-only or the existing policy error, exactly as meta-api-policy behaves
++  it('(d) endpoint/model mismatch -> rejected with BASETEN_API_CONFIGURATION_INVALID', async () => {
++    process.env[BASETEN_API_KEY_ENV] = 'synthetic-key-for-mismatch-test';
++
++    // Subcase d1: Hostile/mismatched endpoint
++    const serviceBadEndpoint = new RingInferenceService({
++      projectRoot: tempProjectRoot,
++      loadProjectConfig: () => ({
++        schemaVersion: 1,
++        projectName: 'ring-bad-endpoint',
++        profile: { id: 'industrial', mode: 'sovereign-local', zeroCloud: true },
++        providers: {
++          baseten: {
++            baseURL: 'https://attacker.invalid/v1',
++            basetenApiEnabled: true,
++          },
++        },
++      }),
++    });
++
++    await expect(serviceBadEndpoint.ask({ question: 'Test bad endpoint' })).rejects.toThrow(
++      ProviderApiPolicyError,
++    );
++    try {
++      await serviceBadEndpoint.ask({ question: 'Test bad endpoint' });
++    } catch (err: any) {
++      expect(err.code).toBe('BASETEN_API_CONFIGURATION_INVALID');
++      expect(err.message).toContain('Baseten Model API is limited to provider "baseten"');
++    }
++
++    // Subcase d2: Mismatched model
++    const serviceBadModel = new RingInferenceService({
++      projectRoot: tempProjectRoot,
++      loadProjectConfig: () => ({
++        schemaVersion: 1,
++        projectName: 'ring-bad-model',
++        profile: { id: 'industrial', mode: 'sovereign-local', zeroCloud: true },
++        providers: {
++          baseten: {
++            baseURL: BASETEN_API_BASE_URL,
++            model: 'unapproved/model-slug',
++            basetenApiEnabled: true,
++          },
++        },
++      }),
++    });
++
++    await expect(serviceBadModel.ask({ question: 'Test bad model' })).rejects.toThrow(
++      ProviderApiPolicyError,
++    );
++    try {
++      await serviceBadModel.ask({ question: 'Test bad model' });
++    } catch (err: any) {
++      expect(err.code).toBe('BASETEN_API_CONFIGURATION_INVALID');
++    }
++  });
++
++  // (e) prompt sent to mock contains the summary and NOT raw telemetry rows (assert on captured request body)
++  it('(e) prompt sent to mock contains the summary and NOT raw telemetry rows', async () => {
++    process.env[BASETEN_API_KEY_ENV] = 'synthetic-baseten-key-prompt-leak-test';
++
++    await startMockServer({
++      id: 'chatcmpl-mock-prompt-check',
++      model: BASETEN_API_MODEL,
++      choices: [{ index: 0, message: { role: 'assistant', content: 'Verified summary received.' }, finish_reason: 'stop' }],
++    });
++
++    const service = new RingInferenceService({ projectRoot: tempProjectRoot });
++    const userQuestion = 'Explain why turbine T-07 is showing high vibration?';
++    await service.ask({ question: userQuestion });
++
++    expect(capturedRequests.length).toBe(1);
++    const captured = capturedRequests[0].body;
++    expect(captured.messages).toBeDefined();
++
++    const userMessage = captured.messages.find((m: any) => m.role === 'user');
++    expect(userMessage).toBeDefined();
++    const content = userMessage.content as string;
++
++    // Must contain high-level summary & user question
++    expect(content).toContain('Deterministic Engineering Context:');
++    expect(content).toContain('Engineering Verdict: CRITICAL');
++    expect(content).toContain('Overall Vibration RMS: 2.637 mm/s');
++    expect(content).toContain(`Question:\n${userQuestion}`);
++
++    // MUST NOT contain raw CSV header or bulk raw row dumps
++    expect(content).not.toContain('sample_time,vibration_rms_mm_s,bearing_temperature_c');
++    expect(content).not.toContain('2026-08-22T09:00:00+05:30,1.25,62.1');
++    expect(content).not.toContain('2026-08-22T09:00:15+05:30,1.28,62.3');
++  });
++
++  // (f) malformed route body rejected
++  it('(f) malformed route body rejected by REST API router', async () => {
++    const services = createServiceContainer(tempProjectRoot);
++    const router = new RestApiRouter(services, tempProjectRoot);
++
++    const executeRoute = async (payload: any): Promise<{ status: number; body: any }> => {
++      const payloadBuf = Buffer.from(typeof payload === 'string' ? payload : JSON.stringify(payload));
++      const req = {
++        method: 'POST',
++        url: '/api/v1/ring/ask',
++        headers: { host: '127.0.0.1', 'content-type': 'application/json' },
++        socket: { remoteAddress: '127.0.0.1' },
++        async *[Symbol.asyncIterator]() {
++          yield payloadBuf;
++        },
++        on: (event: string, cb: any) => {
++          if (event === 'data') cb(payloadBuf);
++          if (event === 'end') cb();
++        },
++      } as any;
++
++      let statusCode = 0;
++      let resBody = '';
++      const res = {
++        writeHead: (status: number) => {
++          statusCode = status;
++        },
++        setHeader: () => {},
++        end: (data: string) => {
++          resBody = data;
++        },
++      } as any;
++
++      const handled = await router.handle(req, res);
++      expect(handled).toBe(true);
++      return { status: statusCode, body: resBody ? JSON.parse(resBody) : {} };
++    };
++
++    // Missing question
++    const resEmpty = await executeRoute({});
++    expect(resEmpty.status).toBe(400);
++    expect(resEmpty.body.error.code).toBe('VALIDATION_FAILED');
++    expect(resEmpty.body.error.message).toContain('question is required');
++
++    // Blank question string
++    const resBlank = await executeRoute({ question: '   ' });
++    expect(resBlank.status).toBe(400);
++    expect(resBlank.body.error.code).toBe('VALIDATION_FAILED');
++
++    // Non-string question
++    const resNonString = await executeRoute({ question: 12345 });
++    expect(resNonString.status).toBe(400);
++    expect(resNonString.body.error.code).toBe('VALIDATION_FAILED');
++
++    // Blank analysisId
++    const resBadAnalysisId = await executeRoute({ question: 'Valid question', analysisId: '   ' });
++    expect(resBadAnalysisId.status).toBe(400);
++    expect(resBadAnalysisId.body.error.code).toBe('VALIDATION_FAILED');
++
++    // Valid request succeeds (evidence-only without key)
++    const resValid = await executeRoute({ question: 'Is T-07 healthy?' });
++    expect(resValid.status).toBe(200);
++    expect(resValid.body.data.mode).toBe('evidence-only');
++    expect(resValid.body.data.deterministic.verdict).toBe('CRITICAL');
++  });
++});

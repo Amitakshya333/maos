@@ -1,0 +1,12 @@
+{
+  "cwd": "C:/clean",
+  "executable": "git.exe",
+  "args": [
+    "clone",
+    "--no-checkout",
+    "https://github.com/Amitakshya333/maos.git",
+    "C:/clean/core"
+  ],
+  "startedAt": "2026-10-31T15:37:03.725Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

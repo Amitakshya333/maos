@@ -1,0 +1,11 @@
+COMMAND=npm exec -- vitest run tests/industrial/f10-05-deterministic-reset.test.ts tests/f3-07-verifier-idempotency.test.ts tests/f3-03-rest-contract.test.ts tests/gui/ui1-02-api-clients.test.ts
+
+ RUN  v4.1.11 C:/maos
+
+
+ Test Files  4 passed (4)
+      Tests  110 passed (110)
+   Start at  13:07:36
+   Duration  14.96s (transform 2.24s, setup 0ms, import 4.93s, tests 9.34s, environment 0ms)
+
+EXIT_CODE=0

@@ -1,0 +1,24 @@
+{
+  "command": "pwsh -NoProfile -NonInteractive -File <embedded installer> -BundleRoot <expanded bundle with spaces> -InstallRoot <fresh install with spaces>",
+  "exitCode": 0,
+  "installRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces",
+  "bundleRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\expanded bundle with spaces",
+  "nodePath": "C:\\Program Files\\nodejs\\node.exe",
+  "nodeVersion": "v24.11.0",
+  "npmPath": "C:\\Program Files\\nodejs\\npm.cmd",
+  "npmVersion": "11.6.1",
+  "pwshVersion": "PowerShell 7.6.9",
+  "npmCacheInitiallyEmpty": true,
+  "electronCacheInitiallyEmpty": true,
+  "npmCacheFileCount": 177,
+  "electronCacheFileCount": 0,
+  "updateNotifierOverride": "unset",
+  "sensitiveEnvironmentNamesRemoved": 3,
+  "stdoutLog": "clean-install.stdout.log",
+  "stderrLog": "clean-install.stderr.log",
+  "electronExePresent": true,
+  "installedPackageJson": {
+    "name": "maosorch",
+    "version": "0.3.0"
+  }
+}

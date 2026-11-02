@@ -1,0 +1,45 @@
+CORRECTION PATCH STAT
+ docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md            |    4 -
+ src/backends/factory.ts                           |   54 +++++++
+ src/backends/meta-api-policy.ts                   |   61 ++++++++
+ src/backends/openai-provider.ts                   |   83 ++++++++++-
+ src/backends/provider.ts                          |    7 +
+ src/cli/doctor.ts                                 |    5 -
+ src/cli/plan.ts                                   |    5 -
+ src/core/agent-runner.ts                          |   46 ++++--
+ src/industrial/analysis-agent-service.ts          |   33 +++--
+ src/service/index.ts                              |   34 +----
+ tests/backends/meta-api-provider-boundary.test.ts |  152 +++++++++++++++++++++
+ tests/cli/meta-provider-entrypoints.test.ts       |  116 ++++++++++++++++
+ tests/core/agent-runner-budget.test.ts            |  111 +++++++++++++++
+ tests/industrial/analysis-agent-auth-http.test.ts |  113 ++++++++++++++--
+ tests/industrial/analysis-agent-contract.test.ts  |   52 +++++++
+ tests/industrial/industrial-repl.test.ts          |    8 +
+ tests/industrial/meta-model-api-contract.test.ts  |  100 +++++++++++++-
+ 17 files changed, 888 insertions(+), 96 deletions(-)
+
+COMPLETE PATCH STAT
+ docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md             |   75 +++
+ src/api/openapi-spec.ts                            |    1 
+ src/api/router.ts                                  |    3 
+ src/backends/factory.ts                            |   54 ++
+ src/backends/meta-api-policy.ts                    |   61 +++
+ src/backends/openai-provider.ts                    |  127 +++++-
+ src/backends/provider.ts                           |    7 
+ src/cli/doctor.ts                                  |    5 
+ src/cli/index.ts                                   |   10 
+ src/cli/plan.ts                                    |    5 
+ src/core/agent-runner.ts                           |  102 +++--
+ src/domain/schemas.ts                              |    4 
+ src/industrial/analysis-agent-service.ts           |  111 ++++-
+ src/industrial/industrial-repl.ts                  |  260 ++++++++++++
+ src/service/index.ts                               |    3 
+ tests/backends/meta-api-provider-boundary.test.ts  |  152 +++++++
+ .../openai-provider-local-tool-call.test.ts        |   37 +-
+ tests/cli/meta-provider-entrypoints.test.ts        |  116 +++++
+ tests/core/agent-runner-budget.test.ts             |  111 +++++
+ tests/industrial/analysis-agent-auth-http.test.ts  |  132 +++++-
+ tests/industrial/analysis-agent-contract.test.ts   |  145 ++++++-
+ tests/industrial/industrial-repl.test.ts           |  245 +++++++++++
+ tests/industrial/meta-model-api-contract.test.ts   |  445 ++++++++++++++++++++
+ 23 files changed, 2116 insertions(+), 95 deletions(-)

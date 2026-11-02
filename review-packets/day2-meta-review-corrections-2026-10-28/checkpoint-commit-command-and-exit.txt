@@ -1,0 +1,2 @@
+COMMAND: git -c core.hooksPath=NUL commit -m "Enforce Meta provider and Industrial agent limits"
+EXIT_CODE: 0

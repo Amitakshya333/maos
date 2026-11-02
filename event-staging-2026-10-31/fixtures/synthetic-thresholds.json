@@ -1,0 +1,10 @@
+{
+  "rulesetId": "SYNTHETIC-PILOT-V1",
+  "title": "Synthetic demonstration thresholds",
+  "disclaimer": "Synthetic demonstration only; not an operational threshold or authorization.",
+  "assetType": "synthetic_turbine",
+  "thresholds": {
+    "vibration_rms_mm_s": {"unit": "mm/s RMS", "warning": 4.5, "critical": 7.1},
+    "bearing_temperature_c": {"unit": "deg C", "warning": 85.0, "critical": 95.0}
+  }
+}

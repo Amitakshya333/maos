@@ -1,0 +1,5 @@
+[31;1mException: [0mC:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-baseten-budget-2cfdf9b-checkout\scripts\New-MaosIndustrialInstallBundle.ps1:21[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  21 | [0m . DE -ne 0) { [36;1mthrow 'package.json and package-lock.json identity or dir[0m .[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mpackage.json and package-lock.json identity or direct dependencies do not match.[0m

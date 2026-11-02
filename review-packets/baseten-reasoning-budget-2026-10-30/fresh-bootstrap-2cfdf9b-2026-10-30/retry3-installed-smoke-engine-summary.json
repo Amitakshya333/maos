@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "bundleCommit": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "scope": "Installed package dist via isolated temporary synthetic projects and loopback HTTP mocks only.",
+  "hostedRequests": 0,
+  "sourceURLInterceptedByHarness": "https://inference.baseten.co/v1/chat/completions",
+  "installedAppPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS installed mock 2cfdf9b retry3\\app",
+  "syntheticProjectRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS synthetic pilot projects 2cfdf9b retry3 engine",
+  "cases": [
+    {
+      "name": "installed-successful-tool-round-trip",
+      "passed": true,
+      "generations": 2,
+      "telemetryExecutions": 1,
+      "reportAccepted": true,
+      "durationMs": 413
+    },
+    {
+      "name": "truncated-partial-tool-response",
+      "passed": true,
+      "generations": 1,
+      "partialToolIncluded": true,
+      "reportAccepted": false
+    },
+    {
+      "name": "empty-reasoning-only-response",
+      "passed": true,
+      "generations": 1,
+      "partialToolIncluded": false,
+      "reportAccepted": false
+    },
+    {
+      "name": "four-generation-ceiling-and-single-telemetry-tool",
+      "passed": true,
+      "generations": 4,
+      "telemetryExecutions": 1,
+      "unauthorizedCommandExecuted": false,
+      "reportAccepted": false
+    },
+    {
+      "name": "provider-error-no-retry",
+      "passed": true,
+      "httpAttempts": 1,
+      "reportAccepted": false
+    },
+    {
+      "name": "redirect-refused-before-destination",
+      "passed": true,
+      "sourceRequests": 1,
+      "redirectDestinationRequests": 0
+    },
+    {
+      "name": "overall-60-second-deadline",
+      "passed": true,
+      "generations": 1,
+      "durationMs": 60034,
+      "requestAborted": true
+    }
+  ],
+  "passed": true
+}

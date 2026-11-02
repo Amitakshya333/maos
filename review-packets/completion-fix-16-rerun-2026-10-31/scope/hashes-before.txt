@@ -1,0 +1,11 @@
+pre-run scoped hash check 2026-10-31T15:23:17.128Z
+OK src/core/agent-runner.ts
+OK src/gui/src/api/rest-client.ts
+OK src/gui/src/components/TelemetryReviewPanel.tsx
+OK tests/industrial/read-only-completion.test.ts
+OK src/gui/src/components/telemetryReviewState.ts
+OK tests/gui/telemetry-review-state.test.ts
+OK src/gui/src/components/telemetryReviewCoordinator.ts
+OK tests/gui/telemetry-review-coordinator.test.ts
+OK tests/gui/rest-client-abort.test.ts
+RESULT: NO_DRIFT

@@ -1,0 +1,28 @@
+{
+  "sourceCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "copiedPaths": [
+    "README.md",
+    "package.json",
+    "desktop/package.json",
+    "desktop/package-lock.json",
+    "desktop/README.md",
+    "src/cli/doctor.ts",
+    "src/cli/index.ts",
+    "src/cli/repl.ts",
+    "tests/cli/meta-provider-entrypoints.test.ts",
+    "tests/industrial/package-runtime-assets.test.ts",
+    "docs/INSTALLATION.md",
+    "scripts/New-MaosIndustrialInstallBundle.ps1",
+    "scripts/Install-MaosIndustrial.ps1",
+    "tests/cli/doctor.test.ts"
+  ],
+  "tempRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-install-reliability-1ca70dbb9f03455cbb4af596caa7a149",
+  "sourceRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-install-reliability-1ca70dbb9f03455cbb4af596caa7a149\\source",
+  "node": "v24.11.0",
+  "npm": "11.6.1",
+  "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "powershell": "7.6.9",
+  "os": "Microsoft Windows 10.0.26300",
+  "arch": "x64"
+}

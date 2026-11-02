@@ -1,0 +1,14 @@
+COMMAND: node.exe app/dist/cli/index.js doctor (empty project)
+EXIT_CODE: 1
+
+
+🩺 MAOS Doctor — Environment Diagnostics
+────────────────────────────────────────────────────────────
+  ✅ Node.js            [required] v24.11.0 (requires >=20.0.0)
+  ✅ Platform           [optional] Windows
+  ❌ Config             [required] maos.config.json not found at C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\installed-smoke-project\.maos\maos.config.json. Run: maos init
+────────────────────────────────────────────────────────────
+  2 passed  1 required failures
+
+  ❌ Required setup is incomplete. Fix the failures above before running this project.
+

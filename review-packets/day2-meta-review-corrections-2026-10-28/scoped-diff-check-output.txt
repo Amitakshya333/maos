@@ -1,0 +1,11 @@
+COMMAND: git diff --check 239a0042b08a3960d3c89f890f01ab194ff82f1 -- <27 manifest paths>
+EXIT_CODE: 0
+warning: in the working copy of 'src/api/openapi-spec.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/api/router.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/backends/factory.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/cli/index.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/cli/plan.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/core/agent-runner.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/core/orchestrator.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/domain/schemas.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/service/index.ts', CRLF will be replaced by LF the next time Git touches it

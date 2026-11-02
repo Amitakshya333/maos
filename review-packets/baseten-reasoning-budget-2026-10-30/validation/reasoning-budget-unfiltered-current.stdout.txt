@@ -1,0 +1,170 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90mC:/maos[39m
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2muses the documented Chat Completions tool-call round trip when default Muse temperature is omitted
+[22m[39m📋 [2026-10-30T13:04:58.747Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-b9b9dcad-3f86-422d-9ec1-84df8b8aa842
+📋 [2026-10-30T13:04:58.749Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2muses the documented Chat Completions tool-call round trip when default Muse temperature is omitted
+[22m[39m🔍 [2026-10-30T13:04:58.809Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 58ms (total: 18)
+📋 [2026-10-30T13:04:58.809Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2muses the documented Chat Completions tool-call round trip when default Muse temperature is omitted
+[22m[39m🔍 [2026-10-30T13:04:58.847Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 12ms (total: 36)
+📋 [2026-10-30T13:04:58.847Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Replay receipt telemetry-1793365498816-c98033cc."})
+✅ [2026-10-30T13:04:58.847Z] [SUCCESS] [industrial-analysis-agent] Task completed: Replay receipt telemetry-1793365498816-c98033cc.
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2muses the documented Chat Completions tool-call round trip when configured Muse temperature is sent
+[22m[39m📋 [2026-10-30T13:04:59.068Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-e771645c-901f-4ba7-8fd1-c62134b67b1e
+📋 [2026-10-30T13:04:59.068Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2muses the documented Chat Completions tool-call round trip when configured Muse temperature is sent
+[22m[39m🔍 [2026-10-30T13:04:59.079Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 11ms (total: 18)
+📋 [2026-10-30T13:04:59.079Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2muses the documented Chat Completions tool-call round trip when configured Muse temperature is sent
+[22m[39m🔍 [2026-10-30T13:04:59.106Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 6ms (total: 36)
+📋 [2026-10-30T13:04:59.106Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Replay receipt telemetry-1793365499083-edd84c25."})
+✅ [2026-10-30T13:04:59.106Z] [SUCCESS] [industrial-analysis-agent] Task completed: Replay receipt telemetry-1793365499083-edd84c25.
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mdoes not accept a malformed tool-call argument response
+[22m[39m📋 [2026-10-30T13:04:59.842Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-f845c514-4cac-4600-a75a-ee37b6f6a201
+📋 [2026-10-30T13:04:59.842Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mdoes not accept a malformed tool-call argument response
+[22m[39m🔍 [2026-10-30T13:04:59.850Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 8ms (total: 18)
+📋 [2026-10-30T13:04:59.850Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({})
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mdoes not accept a malformed tool-call argument response
+[22m[39m🔍 [2026-10-30T13:04:59.864Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 5ms (total: 36)
+📋 [2026-10-30T13:04:59.864Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({})
+❌ [2026-10-30T13:04:59.866Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Tool call limit exceeded for analyze_telemetry_csv (maximum 1).
+    at executeLimitedTool (C:/maos/src/core/agent-runner.ts:207:13)
+    at runAgent (C:/maos/src/core/agent-runner.ts:398:46)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/maos/tests/industrial/meta-model-api-contract.test.ts:365:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mmakes one HTTP attempt for an integrated Meta 429 failure with application retries disabled
+[22m[39m📋 [2026-10-30T13:04:59.982Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-39a46273-6b72-47ce-bcce-1d21ee9c0a77
+📋 [2026-10-30T13:04:59.982Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mmakes one HTTP attempt for an integrated Meta 429 failure with application retries disabled
+[22m[39m❌ [2026-10-30T13:04:59.988Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Rate limit hit on meta. Wait and retry.
+Provider: meta | Model: muse-spark-1.3 | Latency: 4ms
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:247:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/maos/tests/industrial/meta-model-api-contract.test.ts:396:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mmakes one HTTP attempt for an integrated Meta 503 failure with application retries disabled
+[22m[39m📋 [2026-10-30T13:05:00.019Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-987c8fe5-c0cc-4202-979f-67acb62120c5
+📋 [2026-10-30T13:05:00.019Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mmakes one HTTP attempt for an integrated Meta 503 failure with application retries disabled
+[22m[39m❌ [2026-10-30T13:05:00.025Z] [ERROR] [industrial-analysis-agent] Agent error: Error: meta is temporarily unavailable (HTTP 503).
+Provider: meta | Model: muse-spark-1.3 | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:253:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/maos/tests/industrial/meta-model-api-contract.test.ts:396:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mpropagates caller cancellation to the in-flight Meta-compatible request
+[22m[39m📋 [2026-10-30T13:05:00.064Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-28e921f7-633a-4779-b487-37797d7e0935
+📋 [2026-10-30T13:05:00.064Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mpropagates caller cancellation to the in-flight Meta-compatible request
+[22m[39m❌ [2026-10-30T13:05:00.072Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/maos/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/maos/tests/industrial/meta-model-api-contract.test.ts:438:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2menforces the single sixty-second deadline on the configured Meta runtime
+[22m[39m📋 [2026-10-30T13:05:00.090Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-e70e0118-e891-4a1a-a7b4-2627b590a5d0
+📋 [2026-10-30T13:05:00.090Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2menforces the single sixty-second deadline on the configured Meta runtime
+[22m[39m❌ [2026-10-30T13:06:00.090Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mkeeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+[22m[39m📋 [2026-10-30T13:05:00.442Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-5637b0c3-a562-4357-ad0e-a8da47c2dced
+📋 [2026-10-30T13:05:00.442Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mkeeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+[22m[39m🔍 [2026-10-30T13:05:00.448Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 6ms (total: 18)
+📋 [2026-10-30T13:05:00.448Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mkeeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+[22m[39m🔍 [2026-10-30T13:05:00.474Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 4ms (total: 36)
+📋 [2026-10-30T13:05:00.474Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+📋 [2026-10-30T13:05:00.481Z] [INFO] [industrial-analysis-agent] Budget warning: 1 iterations remaining. Nudging to finalize.
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mkeeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+[22m[39m🔍 [2026-10-30T13:05:00.485Z] [DEBUG] [industrial-analysis-agent] Iteration 3/4: 18 tokens, 4ms (total: 54)
+📋 [2026-10-30T13:05:00.485Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mkeeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+[22m[39m🔍 [2026-10-30T13:05:00.497Z] [DEBUG] [industrial-analysis-agent] Iteration 4/4: 18 tokens, 3ms (total: 72)
+📋 [2026-10-30T13:05:00.497Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+⚠️ [2026-10-30T13:05:00.506Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mapplies the sixty-second Industrial deadline and cancellation to Baseten requests
+[22m[39m📋 [2026-10-30T13:05:00.526Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-776590a0-f97e-4d0d-9a40-128b72891bda
+📋 [2026-10-30T13:05:00.526Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+[90mstdout[2m | tests/industrial/meta-model-api-contract.test.ts[2m > [22m[2mMeta Model API opt-in and OpenAI-compatible contract (loopback mock only)[2m > [22m[2mapplies the sixty-second Industrial deadline and cancellation to Baseten requests
+[22m[39m❌ [2026-10-30T13:06:00.526Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/maos/src/industrial/analysis-agent-service.ts:187:17)
+
+ [32m✓[39m tests/industrial/meta-model-api-contract.test.ts [2m([22m[2m32 tests[22m[2m)[22m[33m 1884[2mms[22m[39m
+     [33m[2m✓[22m[39m uses the documented Chat Completions tool-call round trip when default Muse temperature is omitted [33m 362[2mms[22m[39m
+[90mstdout[2m | tests/backends/baseten-api-provider-boundary.test.ts[2m > [22m[2mBaseten exact opt-in provider policy (loopback/injected transport only)[2m > [22m[2mdoes not let Core retry a transient Baseten failure beyond the provider policy
+[22m[39m📋 [2026-10-30T13:05:02.342Z] [INFO] [baseten-test-agent] Starting task: baseten-test-task
+📋 [2026-10-30T13:05:02.342Z] [INFO] [baseten-test-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+📋 [2026-10-30T13:05:02.342Z] [INFO] [baseten-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+[90mstdout[2m | tests/backends/baseten-api-provider-boundary.test.ts[2m > [22m[2mBaseten exact opt-in provider policy (loopback/injected transport only)[2m > [22m[2mdoes not let Core retry a transient Baseten failure beyond the provider policy
+[22m[39m❌ [2026-10-30T13:05:02.351Z] [ERROR] [baseten-test-agent] Agent error: Error: baseten is temporarily unavailable (HTTP 503).
+Provider: baseten | Model: meta-models/muse-spark-open-1026 | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:/maos/src/backends/openai-provider.ts:253:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/maos/src/core/context-manager.ts:206:14)
+    at runAgent (C:/maos/src/core/agent-runner.ts:286:24)
+    at C:/maos/tests/backends/baseten-api-provider-boundary.test.ts:354:20
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+ [32m✓[39m tests/backends/baseten-api-provider-boundary.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 227[2mms[22m[39m
+ [32m✓[39m tests/backends/openai-provider-local-tool-call.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m62 passed[39m[22m[90m (62)[39m
+[2m   Start at [22m 18:34:55
+[2m   Duration [22m 7.50s[2m (transform 2.42s, setup 0ms, import 4.68s, tests 2.19s, environment 0ms)[22m
+

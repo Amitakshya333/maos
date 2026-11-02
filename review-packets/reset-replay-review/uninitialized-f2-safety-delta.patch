@@ -1,0 +1,315 @@
+diff --git a/src/api/openapi-spec.ts b/src/api/openapi-spec.ts
+index 0d1aa82..4d18cf9 100644
+--- a/src/api/openapi-spec.ts
++++ b/src/api/openapi-spec.ts
+@@ -641,7 +641,7 @@ export const OPENAPI_SPEC: Record<string, unknown> = {
+           '200': { description: 'Model-requested analysis tool completed, same-implementation replay matched the persisted source/rules/receipt, and an unverified-explanation report and completion audit were persisted. requestedModel is the configured ID; reportedModel is provider-confirmed or null when omitted.' },
+           '400': { description: 'Invalid request or source path.' },
+           '403': { description: 'Authenticated launcher session required or configured model endpoint was blocked by local-only policy.' },
+-          '503': { description: 'A local provider/model is not configured or required audit persistence failed. Failed reports remain unaccepted.' },
++          '503': { description: 'The project is uninitialized, its MAOS configuration is invalid/unavailable, a local provider/model is not configured, or required audit persistence failed. Failed reports remain unaccepted.' },
+           '500': { description: 'Report acceptance/final replacement failed; no successful completion audit is recorded.' },
+           '422': { description: 'Model did not use the allowlisted tool or source, rules, receipt hash, or replay checks failed.' },
+           '502': { description: 'Local model provider failed.' },
+diff --git a/src/api/router.ts b/src/api/router.ts
+index 90c2205..f1518ca 100644
+--- a/src/api/router.ts
++++ b/src/api/router.ts
+@@ -619,7 +619,7 @@ export class RestApiRouter {
+         const code = err instanceof IndustrialAnalysisAgentError ? err.code : 'INDUSTRIAL_AGENT_FAILED';
+         const status = code === 'INVALID_REQUEST' || code === 'INVALID_SOURCE_PATH' ? 400
+           : code === 'MODEL_ENDPOINT_BLOCKED' ? 403
+-          : code === 'MODEL_NOT_CONFIGURED' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
++          : code === 'MODEL_NOT_CONFIGURED' || code === 'PROJECT_NOT_INITIALIZED' || code === 'PROJECT_CONFIG_INVALID' || code === 'AUDIT_PERSISTENCE_FAILED' ? 503
+           : code === 'AGENT_EXECUTION_FAILED' ? 502
+           : 422;
+         if (!abortController.signal.aborted && !res.writableEnded && !res.destroyed) {
+diff --git a/src/industrial/analysis-agent-service.ts b/src/industrial/analysis-agent-service.ts
+index d767c97..737fb4a 100644
+--- a/src/industrial/analysis-agent-service.ts
++++ b/src/industrial/analysis-agent-service.ts
+@@ -25,12 +25,18 @@ export interface IndustrialAnalysisAgentOptions {
+   signal?: AbortSignal;
+ }
+ 
++export interface IndustrialAnalysisAgentRuntime {
++  provider?: IProvider;
++  modelEndpoint?: string;
++}
++
+ export class IndustrialAnalysisAgentService {
+   constructor(
+     private readonly provider: IProvider | undefined,
+     private readonly modelEndpoint: string | undefined,
+     private readonly audit: Pick<AuditService, 'recordAuditEvent'> & Partial<Pick<AuditService, 'getRecords' | 'verifyChain'>>,
+     private readonly endpointAllowlist?: EndpointAllowlistService,
++    private readonly resolveRuntime?: () => IndustrialAnalysisAgentRuntime,
+   ) {}
+ 
+   private replaceReport(root: string, reportPath: string, value: unknown): void {
+@@ -50,8 +56,21 @@ export class IndustrialAnalysisAgentService {
+     options: IndustrialAnalysisAgentOptions = {},
+   ): Promise<IndustrialAnalysisAgentResult> {
+     if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+-    const provider = this.provider;
+-    if (!provider || !this.modelEndpoint) {
++    let provider = this.provider;
++    let modelEndpoint = this.modelEndpoint;
++    if (this.resolveRuntime) {
++      try {
++        ({ provider, modelEndpoint } = this.resolveRuntime());
++      } catch (error) {
++        if (error instanceof IndustrialAnalysisAgentError) throw error;
++        const detail = error instanceof Error ? error.message : String(error);
++        throw new IndustrialAnalysisAgentError(
++          'PROJECT_CONFIG_INVALID',
++          `Unable to load the configured Industrial analysis model. Check the project's MAOS configuration and permissions, then retry. ${detail}`,
++        );
++      }
++    }
++    if (!provider || !modelEndpoint) {
+       throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure a local analysis model and loopback endpoint in the project agent/provider settings.');
+     }
+     if (typeof input.request !== 'string' || input.request.trim().length === 0 || input.request.length > 4000) {
+@@ -86,7 +105,7 @@ export class IndustrialAnalysisAgentService {
+ 
+     let modelUrl: URL;
+     try {
+-      modelUrl = new URL(this.modelEndpoint);
++      modelUrl = new URL(modelEndpoint);
+     } catch {
+       throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The configured model endpoint URL is invalid.');
+     }
+diff --git a/src/service/index.ts b/src/service/index.ts
+index 4bffbff..4321c4a 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -77,7 +77,7 @@ import { CockpitService } from './cockpit-service';
+ import { SandboxImageService } from './sandbox-image-service';
+ import { SandboxRunnerService } from './sandbox-runner-service';
+ import { ChatInferenceService } from './chat-inference-service';
+-import { IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
++import { IndustrialAnalysisAgentError, IndustrialAnalysisAgentService } from '../industrial/analysis-agent-service';
+ import { OpenAIProvider } from '../backends/openai-provider';
+ import { CalculationTraceService } from './calculation-trace-service';
+ import { SovereigntyBoundaryService } from './sovereignty-boundary-service';
+@@ -276,25 +276,53 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+     auditService: audit,
+     endpointAllowlist,
+   });
+-  const projectConfig = project.loadConfig();
+-  const analysisModel = projectConfig.agents.find((agent) => agent.id === 'ANALYST_AGENT' && agent.provider && agent.model)
+-    ?? projectConfig.agents.find((agent) => agent.provider && agent.model);
+-  const analysisProviderConfig = analysisModel?.provider ? projectConfig.providers[analysisModel.provider] : undefined;
+-  const analysisProvider = analysisModel?.provider && analysisModel.model && analysisProviderConfig?.baseURL
+-    ? new OpenAIProvider({
+-        name: analysisModel.provider,
+-        apiKey: 'local-only',
+-        baseURL: analysisProviderConfig.baseURL,
+-        model: analysisModel.model,
+-        timeout: analysisModel.timeoutMs ?? 60_000,
+-        maxRetries: 0,
+-      })
+-    : undefined;
+   const industrialAnalysisAgent = new IndustrialAnalysisAgentService(
+-    analysisProvider,
+-    analysisProviderConfig?.baseURL,
++    undefined,
++    undefined,
+     audit,
+     endpointAllowlist,
++    () => {
++      if (!project.isInitialized()) {
++        throw new IndustrialAnalysisAgentError(
++          'PROJECT_NOT_INITIALIZED',
++          'Initialize this project with `maos init` before requesting Industrial CSV analysis.',
++        );
++      }
++      let projectConfig: ReturnType<ProjectService['loadConfig']>;
++      try {
++        projectConfig = project.loadConfig();
++      } catch (error) {
++        throw new IndustrialAnalysisAgentError(
++          'PROJECT_CONFIG_INVALID',
++          `Unable to read the project's MAOS configuration. Repair the configuration or its file permissions, then retry. ${error instanceof Error ? error.message : String(error)}`,
++        );
++      }
++      if (!Array.isArray(projectConfig.agents) || !projectConfig.providers || typeof projectConfig.providers !== 'object' || Array.isArray(projectConfig.providers)) {
++        throw new IndustrialAnalysisAgentError(
++          'PROJECT_CONFIG_INVALID',
++          'The project MAOS configuration must define agent and provider settings before Industrial CSV analysis.',
++        );
++      }
++      const analysisModel = projectConfig.agents.find((agent) => agent?.id === 'ANALYST_AGENT');
++      if (typeof analysisModel?.provider !== 'string' || !analysisModel.provider.trim() || typeof analysisModel.model !== 'string' || !analysisModel.model.trim()) return {};
++      const providerConfig = projectConfig.providers[analysisModel.provider];
++      if (!providerConfig || typeof providerConfig !== 'object' || typeof providerConfig.baseURL !== 'string' || !providerConfig.baseURL.trim()) return {};
++      const timeout = analysisModel.timeoutMs ?? 60_000;
++      if (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout <= 0) {
++        throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'ANALYST_AGENT.timeoutMs must be a positive number.');
++      }
++      return {
++        provider: new OpenAIProvider({
++          name: analysisModel.provider,
++          apiKey: 'local-only',
++          baseURL: providerConfig.baseURL,
++          model: analysisModel.model,
++          timeout,
++          maxRetries: 0,
++        }),
++        modelEndpoint: providerConfig.baseURL,
++      };
++    },
+   );
+   const firewall = new FirewallService(projectRoot, {
+     auditService: audit,
+diff --git a/tests/f2-08-lifecycle.test.ts b/tests/f2-08-lifecycle.test.ts
+index 00b403e..a635fbf 100644
+--- a/tests/f2-08-lifecycle.test.ts
++++ b/tests/f2-08-lifecycle.test.ts
+@@ -43,7 +43,8 @@ import {
+   LockData,
+ } from '../src/industrial/lifecycle';
+ 
+-const PROJECT_ROOT = path.resolve(__dirname, '..');
++let PROJECT_ROOT: string;
++const REPOSITORY_ROOT = path.resolve(__dirname, '..');
+ 
+ // These tests exercise lifecycle state transitions without shipping the six
+ // production offline stores. Production/default install remains strict.
+@@ -52,17 +53,13 @@ const installStateOnly = () => lifecycleInstall(PROJECT_ROOT, { stateOnly: true
+ describe('F2-08: Idempotent Lifecycle Scripts', () => {
+ 
+   beforeEach(() => {
+-    const statePath = getStatePath(PROJECT_ROOT);
+-    const lockPath = getLockPath(PROJECT_ROOT);
+-    try { if (fs.existsSync(statePath)) fs.unlinkSync(statePath); } catch { /* ok */ }
+-    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch { /* ok */ }
++    PROJECT_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f2-08-'));
++    fs.writeFileSync(path.join(PROJECT_ROOT, 'package.json'), JSON.stringify({ name: 'maos-f2-08-test' }));
++    fs.writeFileSync(path.join(PROJECT_ROOT, 'tsconfig.json'), '{}');
+   });
+ 
+   afterEach(() => {
+-    const statePath = getStatePath(PROJECT_ROOT);
+-    const lockPath = getLockPath(PROJECT_ROOT);
+-    try { if (fs.existsSync(statePath)) fs.unlinkSync(statePath); } catch { /* ok */ }
+-    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch { /* ok */ }
++    fs.rmSync(PROJECT_ROOT, { recursive: true, force: true });
+   });
+ 
+   // ══════════════════════════════════════════════════════════════
+@@ -184,7 +181,7 @@ describe('F2-08: Idempotent Lifecycle Scripts', () => {
+ 
+     it('should persist OwnedService records on successful start', () => {
+       // This test requires a real executable — gate behind existence
+-      const rustBinary = path.resolve(PROJECT_ROOT, 'rust', 'target', 'release',
++      const rustBinary = path.resolve(REPOSITORY_ROOT, 'rust', 'target', 'release',
+         process.platform === 'win32' ? 'maos-industrial-engine.exe' : 'maos-industrial-engine');
+ 
+       if (!fs.existsSync(rustBinary)) {
+diff --git a/tests/f3-01-services.test.ts b/tests/f3-01-services.test.ts
+index 0cdd1a2..9a594e2 100644
+--- a/tests/f3-01-services.test.ts
++++ b/tests/f3-01-services.test.ts
+@@ -96,9 +96,13 @@ describe('F3-01 ProjectService', () => {
+ 
+   it('should detect non-initialized project', () => {
+     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-empty-'));
+-    const emptySvc = createServiceContainer(emptyDir);
+-    expect(emptySvc.project.isInitialized()).toBe(false);
+-    fs.rmSync(emptyDir, { recursive: true, force: true });
++    try {
++      const emptySvc = createServiceContainer(emptyDir);
++      expect(emptySvc.industrialAnalysisAgent).toBeDefined();
++      expect(emptySvc.project.isInitialized()).toBe(false);
++    } finally {
++      fs.rmSync(emptyDir, { recursive: true, force: true });
++    }
+   });
+ 
+   it('should load config as domain Project type', () => {
+diff --git a/tests/industrial/analysis-agent-auth-http.test.ts b/tests/industrial/analysis-agent-auth-http.test.ts
+index 27b9a67..95b9b6c 100644
+--- a/tests/industrial/analysis-agent-auth-http.test.ts
++++ b/tests/industrial/analysis-agent-auth-http.test.ts
+@@ -491,9 +491,79 @@ describe('authenticated Industrial analysis agent HTTP integration', () => {
+     });
+     expect(JSON.stringify(completionAudit!.data)).not.toContain(requestText);
+     expect(system.model.requests).toHaveLength(2);
++    expect(system.model.requests.every((request) => request.model === 'configured-mock-model-v1')).toBe(true);
+     expect(system.model.requests.every((request) => request.max_tokens === 256)).toBe(true);
+   });
+ 
++  it('returns a structured initialization error before mock inference when the project config is absent', async () => {
++    const system = await createSystem();
++    fs.rmSync(path.join(system.root, '.maos', 'maos.config.json'));
++
++    const result = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.',
++      sourcePath: 'selected.csv',
++    });
++
++    expect(result.status).toBe(503);
++    expect(result.payload.error).toMatchObject({
++      code: 'PROJECT_NOT_INITIALIZED',
++      message: expect.stringContaining('maos init'),
++    });
++    expect(system.model.requests).toHaveLength(0);
++  });
++
++  it('reports malformed analysis configuration instead of falling back to a provider', async () => {
++    const system = await createSystem();
++    const configPath = path.join(system.root, '.maos', 'maos.config.json');
++    fs.writeFileSync(configPath, '{malformed json');
++
++    const malformed = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.',
++      sourcePath: 'selected.csv',
++    });
++    expect(malformed.status).toBe(503);
++    expect(malformed.payload.error).toMatchObject({ code: 'PROJECT_CONFIG_INVALID' });
++    expect(system.model.requests).toHaveLength(0);
++  });
++
++  it('surfaces config read failures without attempting mock inference', async () => {
++    const system = await createSystem();
++    const project = system.host.getServer()!.getServices().project;
++    vi.spyOn(project, 'loadConfig').mockImplementation(() => {
++      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
++    });
++
++    const result = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.',
++      sourcePath: 'selected.csv',
++    });
++
++    expect(result.status).toBe(503);
++    expect(result.payload.error).toMatchObject({ code: 'PROJECT_CONFIG_INVALID' });
++    expect(result.payload.error.message).toContain('permissions');
++    expect(system.model.requests).toHaveLength(0);
++  });
++
++  it('does not substitute another configured agent when ANALYST_AGENT lacks a provider', async () => {
++    const system = await createSystem();
++    const configPath = path.join(system.root, '.maos', 'maos.config.json');
++    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
++    config.agents = [
++      { id: 'ANALYST_AGENT', role: 'analyst', model: 'missing-provider-model' },
++      { id: 'CODER_1', role: 'coder', provider: 'mock', model: 'must-not-be-used' },
++    ];
++    fs.writeFileSync(configPath, JSON.stringify(config));
++
++    const result = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.',
++      sourcePath: 'selected.csv',
++    });
++
++    expect(result.status).toBe(503);
++    expect(result.payload.error).toMatchObject({ code: 'MODEL_NOT_CONFIGURED' });
++    expect(system.model.requests).toHaveLength(0);
++  });
++
+   it('rejects missing/invalid sessions, wrong project identities, and wrong origins', async () => {
+     const system = await createSystem();
+     const payload = { request: 'Check it.', sourcePath: 'selected.csv' };

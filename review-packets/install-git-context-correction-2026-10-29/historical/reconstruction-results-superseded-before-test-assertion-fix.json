@@ -1,0 +1,27 @@
+﻿{
+    "baseCommit":  "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+    "fullPatchSha256":  "73451c028307d9e045310373b7020d6d4d4f81bd13310429a490251984f52e57",
+    "correctionPatchSha256":  "acafb9e99ce499eda9a98abfacfbe6e00e60753c82fd449b5959c2260ac64aa1",
+    "fullApplyCheckExitCode":  0,
+    "fullApplyExitCode":  0,
+    "correctionApplyCheckExitCode":  0,
+    "correctionApplyExitCode":  0,
+    "sourceFileCount":  17,
+    "comparedAgainst":  "current source manifest rawSha256/lfSha256 fields",
+    "fullRawByteEqualCount":  15,
+    "fullLfNormalizedEqualCount":  17,
+    "fullRawByteMismatchPaths":  [
+                                     "README.md",
+                                     "src/cli/index.ts"
+                                 ],
+    "correctionRawByteEqualCount":  15,
+    "correctionLfNormalizedEqualCount":  17,
+    "correctionRawByteMismatchPaths":  [
+                                           "README.md",
+                                           "src/cli/index.ts"
+                                       ],
+    "mismatches":  [
+
+                   ],
+    "checkedAt":  "2026-10-29T13:11:12.7471567+05:30"
+}

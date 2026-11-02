@@ -1,0 +1,12 @@
+{
+  "cwd": "C:/clean/core-b2-02/rust",
+  "executable": "rustup.exe",
+  "args": [
+    "run",
+    "1.95.0",
+    "cargo",
+    "--version"
+  ],
+  "startedAt": "2026-10-31T16:02:47.912Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

@@ -1,0 +1,6 @@
+
+> maosorch@0.3.0 prepare
+> husky
+
+
+added 252 packages in 12s

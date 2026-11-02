@@ -1,0 +1,17 @@
+{
+  "cwd": "C:/clean/core-b2-02/rust",
+  "executable": "rustup.exe",
+  "args": [
+    "run",
+    "1.95.0",
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--offline",
+    "--manifest-path",
+    "Cargo.toml"
+  ],
+  "startedAt": "2026-10-31T16:02:48.527Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

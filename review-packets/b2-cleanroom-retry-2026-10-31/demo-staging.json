@@ -1,0 +1,23 @@
+{
+  "demoRoot": "C:/clean/demo-b2-02",
+  "fixtures": [
+    {
+      "name": "safety_thresholds.json",
+      "sha256": "e860af9eec46875c13d4ef120197f4950b2ac9f0aa9c25a3d9c52b598ce1a33d"
+    },
+    {
+      "name": "turbine_vibration_log.csv",
+      "sha256": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6"
+    },
+    {
+      "name": "maintenance_report.txt",
+      "sha256": "7ed8e5b9f2a9fb74e212f70c2e78768b1850d7815d7c633a8af381f61bb08503"
+    },
+    {
+      "name": "turbine_inspection_scan.pdf",
+      "sha256": "fcb75e928d0ada2ce7cbf187d3ec880c821d89b99563a06d86bb36f70211b9bd"
+    }
+  ],
+  "engineSha256": "280cf92ef4343c8876f48924977079c548e45471b4c4d8d253228fa1e8a6b4a8",
+  "configuration": "Copied public Industrial starter profile; destination private-state contents not inspected."
+}

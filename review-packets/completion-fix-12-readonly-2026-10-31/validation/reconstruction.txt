@@ -1,0 +1,28 @@
+reconstruction.txt — COMPLETION-FIX-12 isolated verification (deterministic, mock-only context)
+Generated 2026-10-31 from the candidate worktree; all commands run with explicit CWD, no shell-directory ambiguity.
+
+1) Rejected (FIX-10) snapshot, fresh clean clone at 2cfdf9b:
+   git apply FIX-10 complete-correction.patch -> exit 0
+   git apply --check FIX-12 correction-delta.patch -> exit 0
+
+2) Clean base reconstruction, fresh clean clone at 2cfdf9b:
+   git apply --check FIX-12 complete-correction.patch -> exit 0
+   git apply FIX-12 complete-correction.patch -> exit 0
+   git hash-object (9 paths, in scope order):
+f8e876f9f9e95b491cd7aa1f0daa434a9657c365
+7d12a3b00cc8815bd36caab012641f4bc04f2d35
+861c065a02e90218d98648aa6e0a5540b57c0201
+528c4e1e2ed597556b95a2918cf1fd1549c9e7c5
+5b4fe23b84250fbd6d9c171d568c935b98dc4227
+1ccaf38c52b58a3cb142d65fb2e766690c682112
+d963016d831b435d742a1ad415fe39c1d603eba9
+54d389cfec36564648fc3384b66d2105507f2dca
+769a5ab55cef9b11ca54cf6c7d8cabc7c9e7ecb1
+   Result: all nine reconstructed blob hashes equal the candidate blob hashes.
+
+Note: one intermediate reconstruction attempt in a reused scratch directory
+reported a spurious apply-check failure caused by stale shell-directory state
+(index.lock / wrong-CWD output interleaving), not by the patch; it was
+discarded and the verification above was redone in isolated fresh clones
+with per-command CWD. No hashes were hand-edited; mismatches would have
+stopped the packet per the delivery constraint.

@@ -1,0 +1,13 @@
+
+> maosorch@0.3.0 build:gui
+> vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 71 modules transformed.
+rendering chunks...
+computing gzip size...
+../../dist/gui/index.html                   1.12 kB │ gzip:   0.63 kB
+../../dist/gui/assets/index--HY-Ci0b.css   10.35 kB │ gzip:   2.47 kB
+../../dist/gui/assets/index-Byj5yDkj.js   515.99 kB │ gzip: 127.77 kB
+✓ built in 1.20s

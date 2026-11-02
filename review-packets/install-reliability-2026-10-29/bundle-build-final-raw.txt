@@ -1,0 +1,1 @@
+Created lockfile bootstrap bundle: C:\maos\review-packets\install-reliability-2026-10-29\candidate-final\maos-industrial-windows-x64.zip

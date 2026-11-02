@@ -1,0 +1,58 @@
+{
+  "candidateHead": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "candidateBranch": "detached",
+  "candidateIndexEmpty": true,
+  "candidateTrackedDiffPaths": [
+    "scripts/Start-BasetenSyntheticPilot.ps1",
+    "scripts/Windows-ProcessTree.ps1",
+    "tests/industrial/baseten-pilot-process-tree.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "candidateTrackedScopeExact": true,
+  "mainHead": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "mainBranch": "main",
+  "mainIndexEmpty": true,
+  "completePatchSha256": "d3eb82e46a242ff63aae6323c84820a3a1ff000fdd990bf7e23717b103c8b059",
+  "completePatchMatchesManifest": true,
+  "completeManifestSha256": "324baa7ee8869ecf2d74925d59c449f5df2628e866d887454cbde16af34e024d",
+  "deltaPatchSha256": "c90e4ea595eb7226580f75288041a649759dd4c413220003c6f374d01cfd04cd",
+  "deltaPatchMatchesManifest": true,
+  "deltaManifestSha256": "ade42f0343fec0d8e3f8710c8e4abcc492933000eeab9aab98bc6ec40b6376eb",
+  "sourceFiles": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "rawMatch": true,
+      "lfNormalizedMatch": true,
+      "rawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a"
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "rawMatch": true,
+      "lfNormalizedMatch": true,
+      "rawSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "lfNormalizedSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74"
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "rawMatch": true,
+      "lfNormalizedMatch": true,
+      "rawSha256": "5f850a5e6547a78ba4bcf1022915a6d1af87d726bc0c0b301f00dbf16d0c947c",
+      "lfNormalizedSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "rawMatch": true,
+      "lfNormalizedMatch": true,
+      "rawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3"
+    }
+  ],
+  "allCurrentRawSourceHashesMatch": true,
+  "allCurrentLfSourceHashesMatch": true,
+  "diffCheckExitCode": 0,
+  "diffCheckStderr": "warning: in the working copy of 'scripts/Start-BasetenSyntheticPilot.ps1', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/industrial/baseten-pilot-process-tree.test.ts', CRLF will be replaced by LF the next time Git touches it\n",
+  "historicalRejectedPatchSha256": "dbb62ab351b474cd158071b34f47be173f890cb869391b6befa0e9ddb45b8ad1",
+  "historicalRejectedManifestSha256": "2f089126d37461c4bcb60633bfd35f3845a2b3274d99567c28984a147af64a92",
+  "result": "PASS"
+}

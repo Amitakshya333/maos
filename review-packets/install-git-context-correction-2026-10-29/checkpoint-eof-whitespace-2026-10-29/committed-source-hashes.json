@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "candidateLabel": "checkpoint-27dd1711-committed-source",
+  "sourceCommit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "parentCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "originalReviewedBaseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "originalReviewedPatchSha256": "ea2ffa2c90cb571add1cab5d3b9f5b26ec2d44b30b0cadbfd621a852304903bb",
+  "originalReviewedManifestSha256": "1d32ed58087d030a85d9e637c43bbb569f72ea4d102b02091c868aedb0a8edfd",
+  "correctedCandidateManifestSha256": "1d0590a93567b6ebc7dc51dc34c00923e40fd874eae70ae1f741dadebe08c5ed",
+  "authorizedWhitespaceException": "Exactly one final LF removed from src/cli/doctor.ts; no other candidate bytes changed.",
+  "fileCount": 17,
+  "files": [
+    {
+      "path": "README.md",
+      "status": "modified",
+      "committedRawSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887",
+      "committedLfSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887"
+    },
+    {
+      "path": "desktop/README.md",
+      "status": "modified",
+      "committedRawSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e",
+      "committedLfSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e"
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "status": "modified",
+      "committedRawSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "committedLfSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43"
+    },
+    {
+      "path": "desktop/package.json",
+      "status": "modified",
+      "committedRawSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b",
+      "committedLfSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "status": "added",
+      "committedRawSha256": "c51025b8ec36a7ad2d88aad82994fb27b83766babea6692b525488a6a9583d93",
+      "committedLfSha256": "c51025b8ec36a7ad2d88aad82994fb27b83766babea6692b525488a6a9583d93"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "committedRawSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98",
+      "committedLfSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98"
+    },
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "status": "added",
+      "committedRawSha256": "b2dc2175b64609b8966cab4571848959f302441e481e0aa578ce086f1bcd51f5",
+      "committedLfSha256": "b2dc2175b64609b8966cab4571848959f302441e481e0aa578ce086f1bcd51f5"
+    },
+    {
+      "path": "scripts/New-MaosIndustrialInstallBundle.ps1",
+      "status": "added",
+      "committedRawSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb",
+      "committedLfSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb"
+    },
+    {
+      "path": "scripts/prepare-hooks.js",
+      "status": "added",
+      "committedRawSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc",
+      "committedLfSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc"
+    },
+    {
+      "path": "src/cli/doctor.ts",
+      "status": "modified",
+      "committedRawSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616",
+      "committedLfSha256": "1e62cfddf37d535f8225fc852efe2aa0007abbafd663db54ab72b00b7147a616"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "status": "modified",
+      "committedRawSha256": "77f3da0184fbb596d017bb7f4da68553ef0a73f2ef88ae25ae443e78faa5a767",
+      "committedLfSha256": "77f3da0184fbb596d017bb7f4da68553ef0a73f2ef88ae25ae443e78faa5a767"
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "status": "modified",
+      "committedRawSha256": "70957e9a803a6451b3d2510bd92af66cc03209610f3dda2d88a6f32740234117",
+      "committedLfSha256": "70957e9a803a6451b3d2510bd92af66cc03209610f3dda2d88a6f32740234117"
+    },
+    {
+      "path": "src/utils/project-git-context.ts",
+      "status": "added",
+      "committedRawSha256": "91c26478a65bf0d8cc84bf40f33ab3c81b84a41e6352452cdd7017fa17e425a8",
+      "committedLfSha256": "91c26478a65bf0d8cc84bf40f33ab3c81b84a41e6352452cdd7017fa17e425a8"
+    },
+    {
+      "path": "tests/cli/doctor.test.ts",
+      "status": "added",
+      "committedRawSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548",
+      "committedLfSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548"
+    },
+    {
+      "path": "tests/cli/meta-provider-entrypoints.test.ts",
+      "status": "modified",
+      "committedRawSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15",
+      "committedLfSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15"
+    },
+    {
+      "path": "tests/cli/project-git-context.test.ts",
+      "status": "added",
+      "committedRawSha256": "20fce31bb2827e4feb991f6c7fd4e4a21a1072f96331da04e2e71f38982e0188",
+      "committedLfSha256": "20fce31bb2827e4feb991f6c7fd4e4a21a1072f96331da04e2e71f38982e0188"
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "status": "modified",
+      "committedRawSha256": "6ff70bd820f9c8ef9bd1244df3ed01c4943af4c3f39b3420a48161fd4361b8e6",
+      "committedLfSha256": "6ff70bd820f9c8ef9bd1244df3ed01c4943af4c3f39b3420a48161fd4361b8e6"
+    }
+  ]
+}

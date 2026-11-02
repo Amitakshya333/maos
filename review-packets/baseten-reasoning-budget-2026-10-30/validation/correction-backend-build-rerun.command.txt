@@ -1,0 +1,1 @@
+cmd.exe /d /s /c npm run build:backend

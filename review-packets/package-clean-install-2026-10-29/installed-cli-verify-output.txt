@@ -1,0 +1,21 @@
+{
+  "target": "audit",
+  "verification": {
+    "valid": true,
+    "recordCount": 9,
+    "errors": [],
+    "verifiedAt": "2026-10-28T19:27:31.727Z",
+    "latestHash": "b87e4d46f47ededf233983a070b46474f898dbde7319b8bfcff78b3311a4390b",
+    "executableHash": "fb874225cae45d9cc4629f3cf0b038bf2680d9f36d56b6cf968b41775dfb255b"
+  },
+  "judgedRun": {
+    "runId": "judged-run-1793215649111-7ad1d4",
+    "status": "completed",
+    "approvalId": "appr-judged-run-1793215649111-7ad1d4",
+    "verdict": "FAIL",
+    "valid": true,
+    "deliverablePath": "artifacts/generated/turbine_safety_approval_note.docx",
+    "deliverableSha256": "3ef74c23c917e21046946acdcd835be2b369e871ee284f8c3542bbdc40f2176c",
+    "auditExportPath": "artifacts/generated/judged-run-1793215649111-7ad1d4-audit-export.json"
+  }
+}

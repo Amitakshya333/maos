@@ -1,0 +1,2 @@
+COMMAND: <installed-package>/.bin/maos-industrial repl; interactive input help then exit (cwd=<temporary-project>)
+EXIT_CODE: 0

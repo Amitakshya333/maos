@@ -1,0 +1,44 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-fix16-candidate
+
+stdout | tests/industrial/industrial-repl.test.ts > MAOS Industrial bounded REPL > runs the selected-file mock analysis through persisted review, report and verification
+≡ƒôï [2026-10-31T14:50:22.969Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-31945609-16f9-4346-9c48-2de8a1ab46b5
+≡ƒôï [2026-10-31T14:50:22.970Z] [INFO] [industrial-analysis-agent] Branch: local | Model: mock/fixture-model
+
+stdout | tests/industrial/industrial-repl.test.ts > MAOS Industrial bounded REPL > runs the selected-file mock analysis through persisted review, report and verification
+≡ƒöì [2026-10-31T14:50:22.997Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 10 tokens, 27ms (total: 10)
+≡ƒôï [2026-10-31T14:50:22.997Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/industrial-repl.test.ts > MAOS Industrial bounded REPL > runs the selected-file mock analysis through persisted review, report and verification
+≡ƒöì [2026-10-31T14:50:23.020Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 10 tokens, 5ms (total: 20)
+≡ƒôï [2026-10-31T14:50:23.020Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Replay found 4 rows with verdict CRITICAL; receipt telemetry-1793458223002-1c691436."})
+Γ£à [2026-10-31T14:50:23.020Z] [SUCCESS] [industrial-analysis-agent] Task completed: Replay found 4 rows with verdict CRITICAL; receipt telemetry-1793458223002-1c691436.
+
+ Γ¥» tests/industrial/industrial-repl.test.ts (2 tests | 1 failed) 5113ms
+     ├ù runs the selected-file mock analysis through persisted review, report and verification 5074ms
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 1 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/industrial/industrial-repl.test.ts > MAOS Industrial bounded REPL > runs the selected-file mock analysis through persisted review, report and verification
+Error: Timed out waiting for REPL output: Review run: judged-run-agent-
+MAOS Industrial local operator. Type `help` for commands.
+maos-industrial> Error: Unknown command 'shell'. Type 'help' for supported commands.
+maos-industrial> Error: Run ID must contain only letters, numbers, dots, underscores, or hyphens.
+maos-industrial> maos-industrial> Error: Engine executable not found: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-industrial-repl-pAu4jz\rust\target\release\maos-engine.exe. Install the platform-matched release binary at this path. From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, then copy rust/target/release/maos-engine[.exe] to the missing path.
+maos-industrial> 
+ Γ¥» Timeout.<anonymous> tests/industrial/industrial-repl.test.ts:101:43
+     99|   if (readText().slice(after).includes(text)) return Promise.resolve();
+    100|   return new Promise((resolve, reject) => {
+    101|     const timer = setTimeout(() => finish(new Error(`Timed out waitingΓÇª
+       |                                           ^
+    102|     const onData = () => {
+    103|       if (readText().slice(after).includes(text)) finish();
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/1]ΓÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  20:20:18
+   Duration  9.96s (transform 3.22s, setup 0ms, import 4.13s, tests 5.11s, environment 0ms)
+

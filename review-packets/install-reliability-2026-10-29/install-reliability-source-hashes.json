@@ -1,0 +1,96 @@
+{
+  "baseCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "scopeCount": 15,
+  "files": [
+    {
+      "path": "README.md",
+      "status": "modified",
+      "rawSha256": "f00131b7f8551efb081675038445400ff256e75c0cd282d21ba7470e8615e74c",
+      "lfSha256": "c492e38e9f89f2d0cd0c75ac405006ff7bb5e5261dd9d71e12313c910c930887"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "rawSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98",
+      "lfSha256": "369dad59bff2972b044ba18d0a258b42730e9ee80c0fa36dfecf712dadb70f98"
+    },
+    {
+      "path": "desktop/package.json",
+      "status": "modified",
+      "rawSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b",
+      "lfSha256": "0048c33c5c8008f6506d6bdb55452e469a6a05e3b8bf8e92d5359717e7c58f1b"
+    },
+    {
+      "path": "desktop/package-lock.json",
+      "status": "modified",
+      "rawSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "lfSha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43"
+    },
+    {
+      "path": "desktop/README.md",
+      "status": "modified",
+      "rawSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e",
+      "lfSha256": "58a1268c9a776aec26772d0e0faf876df72f0d32ecc06964f1259011f124306e"
+    },
+    {
+      "path": "src/cli/doctor.ts",
+      "status": "modified",
+      "rawSha256": "7c309e047d677db7a4cf43c35980bdab8b3db454085e355ad23afca662374566",
+      "lfSha256": "7c309e047d677db7a4cf43c35980bdab8b3db454085e355ad23afca662374566"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "status": "modified",
+      "rawSha256": "155eeeed95144e211e12c05bd5bd1d051d5c9cac4479b4cb950c700e6512422d",
+      "lfSha256": "2e6c9c8c5dacdcd740f6d25af9798f40946601f2152e491963e6e39f04ee72ab"
+    },
+    {
+      "path": "src/cli/repl.ts",
+      "status": "modified",
+      "rawSha256": "c0ff1dcc9fd6a4a858e342273fdf99619af8699813887be0f4854f29c69117f0",
+      "lfSha256": "c0ff1dcc9fd6a4a858e342273fdf99619af8699813887be0f4854f29c69117f0"
+    },
+    {
+      "path": "tests/cli/meta-provider-entrypoints.test.ts",
+      "status": "modified",
+      "rawSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15",
+      "lfSha256": "3fddf2c0f04e733f8aabc905a0f9549a743eda21642bfd95cfbe464c02231f15"
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "status": "modified",
+      "rawSha256": "41ef36a794ae844eb054dc7d566ff98f10477f8a3e5db32fcef14707ef2c366a",
+      "lfSha256": "41ef36a794ae844eb054dc7d566ff98f10477f8a3e5db32fcef14707ef2c366a"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "status": "added",
+      "rawSha256": "c15d81b760b869f2b82ed9eb6a0fcbd92cab771f7e43d8609dba14c240c80bb9",
+      "lfSha256": "c15d81b760b869f2b82ed9eb6a0fcbd92cab771f7e43d8609dba14c240c80bb9"
+    },
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "status": "added",
+      "rawSha256": "c949ddc76f243508e813aa24e8e2881535e189530df38f7fb88f95fc9863841d",
+      "lfSha256": "c949ddc76f243508e813aa24e8e2881535e189530df38f7fb88f95fc9863841d"
+    },
+    {
+      "path": "scripts/New-MaosIndustrialInstallBundle.ps1",
+      "status": "added",
+      "rawSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb",
+      "lfSha256": "2bd3f8e73fce990734c70cd33b142efd619dbe91891a5e5c0debdb8b1f0dbbdb"
+    },
+    {
+      "path": "scripts/prepare-hooks.js",
+      "status": "added",
+      "rawSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc",
+      "lfSha256": "9570439f0699c9b43c4724381d620eec48ccfe11e5432712229e2e5f5c8045fc"
+    },
+    {
+      "path": "tests/cli/doctor.test.ts",
+      "status": "added",
+      "rawSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548",
+      "lfSha256": "6ac644e400bc61633e96cce212ace6f602870602df90fb39ef2a415dedcdc548"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Approved local B2 headless validation only. Public pinned source plus 0001-0003; FIX-16 is NOT part of this reconstruction. No hosted inference, desktop, commits or publication. Isolated configs and sanitized child environment; shared installed tools, not OS/network sandboxing. Cargo offline; stop on deviation.

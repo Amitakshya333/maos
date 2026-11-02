@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "sourceDeltaSha256": "3d5a51146c5e79210a925516c61e5b3b671ef6f8dd2d75ee0b8ab93437d9ef5f",
+  "packagePath": "artifacts-final/maosorch-0.3.0.tgz",
+  "packageBytes": 1223706,
+  "packageSha256": "bc7ed56913a5afe3ae7bfe344004f2dee71c57371d3e4385b6bdb17fc55a7e0e",
+  "packageEntryCount": 497,
+  "requiredAssetsPresent": 9,
+  "forbiddenPackageEntryCount": 3,
+  "rustEngineBundled": false,
+  "bundlePath": "artifacts-final/maos-industrial-bootstrap-windows-x64-git-context-final-2026-10-29.zip",
+  "bundleBytes": 1255319,
+  "bundleSha256": "2090f13a70492e10df945a43863e00db7aa635440fbbdc205465bb69fbf0eb60",
+  "bundleEntryCount": 4,
+  "forbiddenBundleEntryCount": 0,
+  "bundleSourceRevision": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "bundleSourceDeltaSha256": "3d5a51146c5e79210a925516c61e5b3b671ef6f8dd2d75ee0b8ab93437d9ef5f"
+}

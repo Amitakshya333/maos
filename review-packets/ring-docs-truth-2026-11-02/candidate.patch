@@ -1,0 +1,682 @@
+diff --git a/HACKATHON_SUBMISSION.md b/HACKATHON_SUBMISSION.md
+index 1a19797..dbe38a6 100644
+--- a/HACKATHON_SUBMISSION.md
++++ b/HACKATHON_SUBMISSION.md
+@@ -2,8 +2,9 @@
+ 
+ **Status:** Local packet prepared; **not submitted**. No video has been recorded.
+ Confirm selected-participant eligibility and inspect the actual participant
+-rules/form before using this draft. Meta credits are not active, so no hosted
+-request was made and no live Meta integration is claimed.
++rules/form before using this draft. Ring is wired to the hosted Meta model
++(see "Ring hosted integration" below); the demo video is not recorded, so no
++submitted video claims a recorded live run yet.
+ 
+ ## Project summary
+ 
+@@ -15,8 +16,9 @@ same returned run ID. A changed source or threshold file invalidates approval;
+ an explicit rejection persists without generating a report.
+ 
+ The verified T-07 analysis is deterministic TypeScript. A separately installed
+-Rust engine provides audit-chain hashing and verification. No Meta Model API
+-request is part of the verified run. Loopback service binding does not prove
++Rust engine provides audit-chain hashing and verification. The T-07
++judged-run path itself makes no hosted call; Ring (the agent surface) is
++separately wired to the Meta Model API — see "Ring hosted integration". Loopback service binding does not prove
+ that the whole workstation is offline.
+ 
+ ## Confirmed public event information
+@@ -42,7 +44,8 @@ government-affiliated participants and certain family/household members; the
+ entrant's personal eligibility and acceptance are not verified here.
+ 
+ The public page's model-use language is promotional/theme language, not enough
+-to confirm a mandatory live Meta runtime call. The following remain
++to confirm a mandatory live Meta runtime call. Integration status (wired vs.
++recorded) is stated under "Ring hosted integration"; the following remain
+ **unconfirmed** until the current participant rules/form are inspected:
+ 
+ - whether a live Meta model call is mandatory at runtime;
+@@ -54,9 +57,92 @@ to confirm a mandatory live Meta runtime call. The following remain
+ Do not submit on the assumption that the pasted waiver or public promotional
+ copy is the current complete rule set. The user's approved spending/data
+ envelope is synthetic data only, active hackathon credits only, and no paid
+-overage. Before any hosted request, confirm an active, unexpired positive
+-credit balance in the intended account and provider-side hard no-overage
+-protection. No API key is needed for that confirmation.
++overage. The two retained live reliability reports each record 4 hosted
++instruction-runs (8 total; see "Ring hosted integration"); the packet
++history holds no provider-side spend records, so that count is TO-FILL
++against authoritative usage if available. Before any further hosted request,
++confirm an active, unexpired positive credit balance in the intended account
++and provider-side hard no-overage protection. No API key is needed for that
++confirmation.
++
++## Ring hosted integration
++
++Ring (`ring-agent-service` + `ring-inference-service`) is wired to the
++hosted Meta model `meta-models/muse-spark-open-1026` served via
++`https://inference.baseten.co/v1`. The endpoint and model are policy-pinned
++in one place (`src/backends/meta-api-policy.ts:3-5`): any other
++endpoint/model is refused with `BASETEN_API_CONFIGURATION_INVALID`
++(`src/backends/meta-api-policy.ts:211-224`), use requires explicit
++`providers.<name>.basetenApiEnabled=true` opt-in with the exact
++provider/endpoint/model triple, and the credential is read only from the
++`BASETEN_API_KEY` environment variable in the launching shell — never from a
++file (`src/service/ring-inference-service.ts:97-135`).
++
++Arming and fallback (`src/service/ring-inference-service.ts:300-398`):
++armed config + present key returns `mode: 'hosted'` with
++`modelId: meta-models/muse-spark-open-1026` and `servedModelId` only when
++the provider echoes its own model id
++(`src/service/ring-inference-service.ts:360-369`); anything else returns
++`mode: 'evidence-only'` with the deterministic summary and zero model
++wording. Hosted inference errors fall back to evidence-only and are
++recorded as `RING_HOSTED_INFERENCE_FAILED`, never thrown in a way that takes
++Ring down (`src/service/ring-inference-service.ts:376-398`). On-screen
++badges: `HOSTED · meta-models/muse-spark-open-1026 via Baseten` vs
++`EVIDENCE-ONLY · no model configured`
++(`tests/gui/ring-impl-01.test.ts:94,105`).
++
++Loopback-proven streaming: in hosted mode each streamed model fragment is
++recorded as a `model.delta` transcript entry and fanned out over the
++existing event-bus/wire projection
++(`src/service/ring-agent-service.ts:890-908`). A provider without
++streaming completes via one non-streamed call with NO fabricated deltas
++(`src/service/ring-agent-service.ts:903-908`;
++`tests/industrial/ring-dev-a.test.ts:173-177`). Evidence-only mode never
++touches a provider, so no `model.delta` is fabricated there
++(`tests/industrial/ring-dev-a.test.ts:109`).
++
++Live reliability result (both retained live reports agree at 3/4):
++evidence tools (`analyze_telemetry`, `read_company_document`,
++`search_knowledge`, `verify_export`) are called reliably, while the
++`memory-and-plan` instruction fails its expectation both times — the model
++calls only `analyze_telemetry` and never calls `remember`/`update_plan`
++(`missingTools: ["remember", "update_plan"]`, `pass: false` in each retained
++`live-report.json`). The decided hybrid routing is the consequence:
++in HOSTED mode the server pre-runs the deterministic bookkeeping chain FIRST
++(same registry-direct code as the evidence-only path), records an honest
++server-side `skill.prefetch` marker (never a model tool call), then hands
++the model established facts; the model writes prose and proposes (never
++performs) the consequential step, with the approval gate unchanged
++(`src/service/ring-agent-service.ts:194-230`;
++`tests/industrial/ring-hybrid.test.ts:1-60`). Bookkeeping prefetch fires
++iff the instruction matches one of the exact recall/remember/plan patterns
++(`src/service/ring-agent-service.ts:215-220`); everything else —
++telemetry/documents/search/verify/OCR AND handover/work-order/draft/report
++asks — stays fully model-driven. Evidence-only mode is untouched by the
++router. All automated tests are evidence-only/mocks-only with zero live
++calls: `BASETEN_API_KEY` is deleted in `beforeEach`/`afterEach` and asserted
++unset (`tests/industrial/ring-hybrid.test.ts:52-59`).
++
++Day-2 surface: the six frozen slash-command skills are prompt templates
++with required tool lists (`src/service/ring-skills.ts:42+`); matching
++workflows run deterministically evidence-first server-side
++(`src/service/ring-skill-workflows.ts:245+`). The overlay hotkey defaults to
++`Ctrl+Shift+Space` (`desktop/ring-overlay-host.cjs:20`; smoke-checked in
++`desktop/ring-smoke.cjs:29`) and the overlay renders inline Allow/Deny
++approval cards for `approval.pending` events
++(`src/gui/src/components/RingOverlay.tsx:10,366-374`).
++
++What is NOT included: voice is stretch-only and cut
++(`docs/product/RING_AGENT_PM_BRIEF.md:119,169`); the P-12 scan PNG and
++equipment photo are explicitly NOT wired into Ring evidence paths in this
++packet (scan needs OCR, photo needs vision weights — both unavailable, so
++Ring reports them unavailable rather than fabricate text)
++(`demo/industrial/DEMO_PACK_PROVENANCE.json:278,292`). This packet states
++decision support, not operating authority — the shared refusal wording ends
++"This is decision support, not operating authority. Synthetic demo data
++only." (`src/service/ring-safety.ts:77`). T-07 numbers for camera are the
++deterministic verdict `CRITICAL` with overall RMS `2.637 mm/s`
++(`tests/industrial/ring-inference.test.ts:184-185,223-224`).
+ 
+ ## Demo and evidence package
+ 
+@@ -121,7 +207,7 @@ engine is unknown. T-07 does not call the packaged Python assets.
+    Rules and final submission form; confirm the appropriate track and personal
+    eligibility.
+ 2. Resolve the live Meta requirement from those rules. If a hosted call is
+-   required, keep this packet blocked until active hackathon credits and
++   required, confirm active hackathon credits and provider-side no-overage
+    provider-side no-overage protection are confirmed.
+ 3. Confirm exact disclosure, repository/media fields, recording requirements,
+    and entrant-work license terms; review the MIT project license together
+diff --git a/demo/industrial/PRESENTATION_SCRIPT.md b/demo/industrial/PRESENTATION_SCRIPT.md
+index cc672f8..76c78c1 100644
+--- a/demo/industrial/PRESENTATION_SCRIPT.md
++++ b/demo/industrial/PRESENTATION_SCRIPT.md
+@@ -1,124 +1,161 @@
+-# MAOS Industrial — 3–5 Minute Recording Script
+-
+-**Status:** Script prepared for a truthful local/synthetic capture. No video has
+-been recorded. Before using it as a hackathon submission, check the actual
+-participant rules and confirm that a local demo with no live Meta request is
+-eligible.
+-
+-## Capture setup
+-
+-Use the final installed package from the same release rehearsal gate, a fresh
+-temporary project, the bundled synthetic T-07 fixtures/profile, and the
+-separately staged Rust engine. Follow the authenticated-shell setup in
+-[`RUNBOOK.md`](RUNBOOK.md). The Windows launch command is:
+-
+-```powershell
+-$projectRoot = (Resolve-Path .\demo-project).Path
+-npx electron .\node_modules\maosorch\desktop\main.cjs --project-root $projectRoot --allow-temp
+-```
+-
+-Record the real Electron window. Keep run IDs visible; never show session
+-tokens, API keys, personal browser profiles, unrelated files, or unsanitized
+-terminal output. Use four isolated runs so approval, stale-source failure,
+-stale-rules failure, and rejection cannot be confused as one run. Use brief
+-cuts for waits and clearly signal each new run; do not imply skipped time was
+-instantaneous.
+-
+-## Timed script
+-
+-### 0:00–0:25 — Explain the boundary
+-
+-**Show:** The Cockpit running in the native shell and the synthetic T-07 input.
+-
+-**Say:** “This is a local industrial evidence workflow using synthetic turbine
+-data and demonstration thresholds. The T-07 calculation is deterministic. This
+-capture makes no hosted Meta Model API call and is not an operating decision.”
+-
+-### 0:25–1:10 — Analyze and resume the pending review
+-
+-**Action:** In a fresh project, click **Run T-07 Safety Audit**. Copy the run ID
+-shown in the T-07 judged-run panel. Show the pending approval and that no report
+-exists yet. Open **Review the evidence**, reload the window, click **Refresh**
+-in approvals, return to **Cockpit** and show the same pending run ID, then open
+-**Review the evidence** again.
+-
+-**Say:** “The workflow pauses for review. Refresh reconnects to the same
+-project-scoped run; it does not silently approve it.”
+-
+-### 1:10–2:05 — Review and approve that run
+-
+-**Action:** Open the approval for the same ID. Inspect the evidence and
+-source/rule hashes. Click **Review & Approve**, enter reviewer
+-`release-reviewer`, and note “Reviewed synthetic T-07 evidence; not operational
+-authorization.” Confirm approval. Return to the Cockpit and show the completed
+-report for that run.
+-
+-**Say:** “This approval is bound to the reviewed evidence and rules. A later
+-change invalidates it.”
+-
+-### 2:05–2:55 — Download and verify the exact run
+-
+-**Action:** Open **Deliverables**, download that run’s DOCX, then in the
+-project-root terminal run:
+-
+-```powershell
+-$runId = '<the exact run ID shown in the Cockpit>'
+-& .\node_modules\.bin\maos-industrial.cmd verify audit --run-id $runId --json
+-```
+-
+-Open the Audit view, click **Verify Cryptographic Chain**, and show
+-`CHAIN: VERIFIED`. Keep the same run ID visible in the report, download, audit
+-export, and verifier output.
+-
+-**Say:** “The software workflow completed and the artifacts verify. Its
+-engineering verdict is still **FAIL** because the synthetic measurements cross
+-the configured demo limits.”
+-
+-### 2:55–3:40 — Show source and rules stale-approval failures
+-
+-**Action:** In a separate fresh project, start a new run and change one byte in
+-`demo/industrial/turbine_vibration_log.csv` after analysis but before approval.
+-Attempt approval/resume; show the failed state and absence of a report. In
+-another fresh project, repeat but change
+-`demo/industrial/safety_thresholds.json` after analysis. Show the failed state
+-and absence of a report. Keep the different run IDs visible between cuts.
+-
+-**Say:** “Both source evidence and the safety-rule input are checked again at
+-resume. A stale review fails closed; no report is created.”
+-
+-### 3:40–4:10 — Show explicit rejection
+-
+-**Action:** In a third fresh project, analyze a new run, open its approval,
+-choose **Reject**, enter a concise reason, and confirm. Show the persisted
+-rejected state and that no report is listed for that run.
+-
+-**Say:** “A reviewer can reject the evidence. Rejection is persisted, and the
+-system does not present it as a successful report.”
+-
+-### 4:10–4:35 — Close with limitations
+-
+-**Say:** “The fixtures and limits are synthetic and not safety certification.
+-TypeScript performs the T-07 analysis; a separately installed Rust engine
+-provides audit hashing and verification. No live Meta integration is shown.
+-Loopback binding does not prove the whole workstation is offline.”
++# MAOS Industrial — 5-Minute Ring Stage Arc (Recording Script)
++
++**Status:** Script prepared for a Ring-centered capture. No video has been
++recorded — every segment below is TO-RECORD. Before using it as a hackathon
++submission, check the actual participant rules and confirm the demonstrated
++hosted Meta use satisfies them. Ring on camera is the hosted agent surface
++(`ring-agent-service` + `ring-inference-service`) wired to
++`meta-models/muse-spark-open-1026` via `https://inference.baseten.co/v1`
++(policy-pinned: `src/backends/meta-api-policy.ts:3-5`). Synthetic data only.
++Decision support, not operating authority.
++
++## Capture setup (staging recipe)
++
++Stage a packaged build exactly as the recording checklist requires: fresh
++scratch at current main HEAD, `npm ci`, build, source-built Rust engine with
++matching SHA, Baseten config from the redacted template (`providers.baseten`
++with `baseURL https://inference.baseten.co/v1`, model
++`meta-models/muse-spark-open-1026`, `basetenApiEnabled: true`) **plus the
++`schemaVersion` template rule** (config must carry the required schema
++version field), and the `BASETEN_API_KEY` in the launcher shell ONLY — never
++pasted, never in a file. Follow the authenticated-shell setup in
++[`RUNBOOK.md`](RUNBOOK.md) and the full go/no-go in
++[`RECORDING_READINESS.md`](RECORDING_READINESS.md). Use one fresh temporary
++project per run so approval, stale-source failure, stale-rules failure, and
++rejection cannot be confused as one run. Record the real windows (full app +
++overlay). Keep run and thread IDs visible; never show session tokens, API
++keys, personal browser profiles, unrelated files, or unsanitized terminal
++output. Use brief cuts for waits and clearly signal each new run; do not
++imply skipped time was instantaneous. Rebuilding before recording is
++mandatory: the staging tree must match current main (this rule was
++bitten twice before — do not record from a stale tree).
++
++On-screen identity (identical everywhere):
++`HOSTED · meta-models/muse-spark-open-1026 via Baseten`
++(`tests/gui/ring-impl-01.test.ts:94`); fallback badge
++`EVIDENCE-ONLY · no model configured`
++(`tests/gui/ring-impl-01.test.ts:105`). If the hosted path is unavailable on
++camera, run the evidence-only fallback path instead and label it as such on
++screen — never replay a saved model response while showing it as live.
++
++## Timed arc
++
++### 0:00–0:30 — The plant can't use ChatGPT (TO-RECORD)
++
++**Show:** The plant context and why generic chat is not an option (sovereignty:
++company evidence stays in MAOS; telemetry/RMS math is deterministic local
++code, never model prose).
++
++**Say:** "A plant can't paste turbine telemetry into ChatGPT. Company evidence
++stays in MAOS; the T-07 calculation is deterministic local code using
++synthetic turbine data and demonstration thresholds. This is decision
++support, not an operating decision."
++
++### 0:30–1:00 — Ask Ring the turbine question (TO-RECORD)
++
++**Action:** In the full app, ask Ring the T-07 turbine question (example: "Analyze
++turbine vibration telemetry for T-07 and summarize the verdict, citing the
++deterministic overall RMS."). Watch streamed fragments arrive as `model.delta`
++events (`src/service/ring-agent-service.ts:890-908`).
++
++**Say:** "I'm asking Ring — wired to meta-models/muse-spark-open-1026 via
++Baseten — the turbine question. Tokens stream live; the verdict and RMS come
++from the deterministic summary, never from model invention."
++
++### 1:00–1:45 — Sources shown (TO-RECORD)
++
++**Action:** Show the cited sources: SOP
++(`demo/industrial/sop_turbine_vibration_monitoring.md`), maintenance report
++(`demo/industrial/maintenance_report.txt`), safety thresholds
++(`demo/industrial/safety_thresholds.json`), and the T-07 telemetry log
++(`demo/industrial/turbine_vibration_log.csv`). Show the deterministic verdict
++`CRITICAL` with overall RMS `2.637 mm/s`
++(`tests/industrial/ring-inference.test.ts:184-185,223-224`).
++
++**Say:** "Every number on screen is cited to one of these sources. Raw CSV
++rows never ride along to the model — only the deterministic summary does."
++
++### 1:45–2:45 — Deterministic verdict FAIL, RMS 2.637 (TO-RECORD)
++
++**Action:** Show the deterministic verdict FAIL (engineering `CRITICAL`,
++overall RMS `2.637 mm/s`, critical excursion `8.3 mm/s` row 367) and the
++hybrid routing on a bookkeeping ask: the server pre-runs the deterministic
++bookkeeping chain first and records a `skill.prefetch` marker, then the model
++writes prose over established facts
++(`src/service/ring-agent-service.ts:194-230`;
++`tests/industrial/ring-hybrid.test.ts:1-60`).
++
++**Say:** "The verdict is FAIL — RMS 2.637 against demo limits. Bookkeeping
++stays deterministic: the server establishes facts first, the model only
++writes prose and proposes the consequential step."
++
++### 2:45–3:15 — Refusal beat (TO-RECORD)
++
++**Action:** Ask Ring to approve a turbine restart. Show the calm refusal
++verbatim — "I can't approve a restart or operation … This is decision
++support, not operating authority. Synthetic demo data only."
++(`src/service/ring-safety.ts:68-78`). No tools run, no files are written.
++
++**Say:** "Ring refuses to approve a restart. That refusal is the trust
++moment: the authorized engineer decides, not the model."
++
++### 3:15–4:00 — Cockpit approvals and audit (TO-RECORD)
++
++**Action:** Open the approval for the run ID, review evidence and hashes, and
++approve as reviewer `release-reviewer`. Then open the Audit view and verify
++the chain (`CHAIN: VERIFIED` in `src/gui/src/views/AuditView.tsx:186`).
++Keep the same run ID visible in the report, download, audit export, and
++verifier output. Show the overlay hotkey moment: press **Ctrl+Shift+Space**
++(`desktop/ring-overlay-host.cjs:20`; `desktop/ring-smoke.cjs:29`) to summon
++the overlay, and approve via the inline approval card in the overlay
++(`src/gui/src/components/RingOverlay.tsx:10,366-374`).
++
++**Say:** "Approval is bound to the reviewed evidence and rules. The overlay —
++summoned with Ctrl+Shift+Space — carries the same approval card, and the
++audit chain verifies."
++
++### 4:00–4:40 — Judge verifier tamper moment (TO-RECORD)
++
++**Action:** Re-verify the completed run by its exact returned run ID, then
++demonstrate the tamper beat on a copy: altering one record hash fails closed
++(`tests/industrial/judge-verifier.test.ts:177-185` — "fails closed when a
++record hash is tampered"). Show the failed state; never splice a negative
++case into the approved run.
++
++**Say:** "Same run ID, verified artifacts — and a tampered copy fails closed.
++The chain catches modification; nothing is presented as a successful report."
++
++### 4:40–5:00 — One-person close (TO-RECORD)
++
++**Say:** "Synthetic data only. Voice and P-12 vision are not included —
++voice is stretch-only and cut
++(`docs/product/RING_AGENT_PM_BRIEF.md:119,169`), and the P-12 scan PNG and
++photo are not wired into Ring evidence paths in this packet
++(`demo/industrial/DEMO_PACK_PROVENANCE.json:278,292`). Evidence-only mode is
++the honest fallback, labelled as such. Decision support, not operating
++authority."
+ 
+ ## Capture checks
+ 
+-- Confirm each segment uses the correct, distinct run ID. Never splice a
+-  negative case into the approved run.
+-- Keep the engineering `FAIL` verdict visible after report generation; do not
+-  describe it as a passing safety result.
+-- Make sure the DOCX download, report hash, audit export, and CLI verification
+-  all refer to the approved run ID.
+-- If any action fails, show the failure state or retake the full segment in a
+-  fresh project. Do not edit the video to imply a failed operation succeeded.
+-- The earlier three rehearsals used a separate browser context and temporary
+-  project on one installed Windows package. They are test evidence, not a
+-  recording, submission, safety certification, or live Meta integration.
++- Confirm each segment uses the correct, distinct run/thread ID. Never splice
++a negative case into the approved run.
++- Keep the engineering `FAIL`/`CRITICAL` verdict visible after report
++generation; do not describe it as a passing safety result.
++- Make sure the report, its hash, the audit export, and the verifier
++output all refer to the approved run ID.
++- Keep the model/endpoint identical everywhere:
++`meta-models/muse-spark-open-1026` via `https://inference.baseten.co/v1`.
++- If any action fails, show the failure state or retake the full segment in
++a fresh project. Do not edit the video to imply a failed operation
++succeeded.
++- If hosted mode is unavailable, record the evidence-only fallback path and
++label it EVIDENCE-ONLY on screen (the evidence-only answer contains the
++deterministic summary with zero model wording;
++`src/service/ring-inference-service.ts:320-328`).
+ 
+ ## Headless fallback
+ 
+-If the Cockpit cannot be shown, a separate CLI capture may demonstrate package
++If the app windows cannot be shown, a CLI capture may demonstrate package
+ execution and verification, but it cannot stand in for the human-review flow:
+ 
+ ```powershell
+diff --git a/demo/industrial/RECORDING_READINESS.md b/demo/industrial/RECORDING_READINESS.md
+index 4b815e4..4a73754 100644
+--- a/demo/industrial/RECORDING_READINESS.md
++++ b/demo/industrial/RECORDING_READINESS.md
+@@ -1,96 +1,137 @@
+-# MAOS Industrial — Recording Readiness
++# MAOS Industrial — Recording Readiness (Ring)
+ 
+-Last reviewed: 2026-10-27 11:59 IST
++Last reviewed: 2026-11-02
+ 
+-**State:** The supported Windows Electron test-shell path passed three
+-consecutive installed-package browser rehearsals on one runtime build. A final
+-submission-text-only repack passed clean install and CLI verification; it was
+-not opened in Electron. The local/synthetic recording script is prepared. No
+-video has been recorded, and
+-the hackathon submission remains on hold until the owner can review the
+-participant-accessible rules/form and resolve the Meta-use gate.
++**State:** Ring (`ring-agent-service` + `ring-inference-service`) is wired to
++the hosted Meta model `meta-models/muse-spark-open-1026` via
++`https://inference.baseten.co/v1` (policy-pinned:
++`src/backends/meta-api-policy.ts:3-5`). The 5-minute Ring stage arc is in
++[`PRESENTATION_SCRIPT.md`](PRESENTATION_SCRIPT.md). No video has been
++recorded — every segment is TO-RECORD. Three clean rehearsals from the
++packaged build are still required before recording.
++
++On-screen identity (identical everywhere):
++`HOSTED · meta-models/muse-spark-open-1026 via Baseten`
++(`tests/gui/ring-impl-01.test.ts:94`); fallback
++`EVIDENCE-ONLY · no model configured`
++(`tests/gui/ring-impl-01.test.ts:105`).
+ 
+ ## Verified evidence
+ 
+-- Full browser-gate package `maosorch-0.3.0.tgz`: 946 entries, 12,994,081 unpacked
+-  bytes, SHA-256
+-  `156e8b93dd99d975d07d4c6890ba43a86378f24383e6083330d4ad11eabc0553`.
+-  The archive contains four synthetic fixtures, four Python sources, three GUI
+-  assets, five desktop runtime/tooling assets, and the Industrial profile. It
+-  does not contain the Rust engine.
+-- Full browser-gate CLI run `judged-run-1793082059836-b70aa1` completed with a
+-  persisted manifest, expected engineering verdict `FAIL`, DOCX and audit
+-  export, and exact-returned-run-ID verification `valid=true`. Successful
+-  workflow execution and the engineering `FAIL` result are separate facts.
+-- The final documentation repack had 946 entries / 12,994,514 unpacked
+-  bytes and SHA-256
+-  `4819e703d6687a76c8d97ad6de814d672ac84a81dae17d059843816a0d9cc58a`. It was
+-  clean-installed, then CLI run `judged-run-1793082585055-f415a6` completed
+-  with a valid manifest, expected engineering `FAIL`, DOCX/audit exports, and
+-  exact-ID verification `valid=true`. The two packaged text files updated after
+-  the three browser rehearsals were `HACKATHON_SUBMISSION.md` and
+-  `PRESENTATION_SCRIPT.md`; GUI interaction was not repeated on this
+-  documentation-only archive.
+-- Three consecutive browser rehearsals on that tarball:
+-
+-  | Scenario | Completed run | Negative case | Result |
+-  |---|---|---|---|
+-  | Source change | `judged-run-1793082068886-159c1b` | `judged-run-1793082067932-b720c0` | Stale approval failed closed |
+-  | Rules change | `judged-run-1793082081352-576737` | `judged-run-1793082080423-bbbe12` | Stale approval failed closed |
+-  | Rejection | `judged-run-1793082093074-61cfaf` | `judged-run-1793082092138-46400e` | Rejection persisted; no report |
+-
+-- Each completed run has a `completed` manifest with verdict `FAIL`, an
+-  authenticated DOCX download whose hash matches the manifest, same-run audit
+-  linkage, a verified audit chain, and installed CLI verification of the exact
+-  browser-returned run ID. Refresh/reconnect while awaiting review resumed the
+-  same pending run. Failed download did not trigger a native download.
+-- The security checks rejected missing/invalid sessions, wrong project and
+-  missing/wrong origin. The session token was absent from URL, browser storage,
+-  and cookies. The supported launch is the Electron main process →
+-  `ProjectHostLauncher` → private IPC → isolated renderer path. REST and events
+-  use the runtime project and exact renderer origin.
+-- Sanitized latest rehearsal evidence is retained under
+-  `%TEMP%\maos-desktop-release-35394b7bbbc34984b6a93badc722b9ea\evidence\rehearsal-1.json`
+-  through `rehearsal-3.json`. The earlier Computer Use URL-identification
+-  limitation was an automation issue before navigation; the Playwright
+-  rehearsals supersede it.
++- Hosted wiring: exact provider/endpoint/model triple plus
++`basetenApiEnabled=true` opt-in enforced
++(`src/service/ring-inference-service.ts:97-135`); `mode: 'hosted'` with
++`servedModelId`-only-on-echo vs `mode: 'evidence-only'`, and
++`RING_HOSTED_INFERENCE_FAILED` fallback
++(`src/service/ring-inference-service.ts:300-398`). No other endpoint/model
++is possible without tripping `BASETEN_API_CONFIGURATION_INVALID`.
++- Loopback-proven streaming: streamed fragments recorded as `model.delta`
++(`src/service/ring-agent-service.ts:890-908`); no-stream provider completes
++with NO fabricated deltas
++(`tests/industrial/ring-dev-a.test.ts:173-177`); evidence-only never
++touches a provider (`tests/industrial/ring-dev-a.test.ts:109`).
++- Live reliability: both retained `live-report.json` runs agree at 3/4 —
++evidence tools reliable; `memory-and-plan` misses `remember`/`update_plan`
++both times. Decided hybrid: server-side deterministic bookkeeping prefetch
++(`skill.prefetch`) first, model writes prose and proposes
++(`src/service/ring-agent-service.ts:194-230`;
++`tests/industrial/ring-hybrid.test.ts:1-60`). All automated tests are
++evidence-only/mocks-only (`BASETEN_API_KEY` asserted unset;
++`tests/industrial/ring-hybrid.test.ts:52-59`).
++- Deterministic T-07 for camera: verdict `CRITICAL`, overall RMS
++`2.637 mm/s` (`tests/industrial/ring-inference.test.ts:184-185,223-224`);
++refusal wording ends "This is decision support, not operating authority.
++Synthetic demo data only." (`src/service/ring-safety.ts:77`).
++- Overlay: hotkey defaults to `Ctrl+Shift+Space`
++(`desktop/ring-overlay-host.cjs:20`; `desktop/ring-smoke.cjs:29`); inline
++Allow/Deny approval cards on `approval.pending`
++(`src/gui/src/components/RingOverlay.tsx:10,366-374`).
++- T-07 judged-run evidence retained from the prior gate: full browser-gate
++package `maosorch-0.3.0.tgz` (946 entries, 12,994,081 unpacked bytes,
++SHA-256 `156e8b93dd99d975d07d4c6890ba43a86378f24383e6083330d4ad11eabc0553`);
++docs-only repack (946 entries / 12,994,514 bytes, SHA-256
++`4819e703d6687a76c8d97ad6de814d672ac84a81dae17d059843816a0d9cc58a`); three
++consecutive browser rehearsals with same-run artifact/audit linkage and
++exact returned-run-ID verification (completed runs
++`judged-run-1793082068886-159c1b`, `judged-run-1793082081352-576737`,
++`judged-run-1793082093074-61cfaf`; stale negatives failed closed;
++rejection persisted without a report). Rehearsal evidence retained under
++`%TEMP%\maos-desktop-release-35394b7bbbc34984b6a93badc722b9ea\evidence\rehearsal-1.json`
++through `rehearsal-3.json`.
+ - The separate Rust binary answered `maos-industrial-engine` 0.1.0, protocol
+-  1.0, Rust 1.95.0, status `ok`; its staged SHA-256 matched the source-built
+-  binary. This is copy-integrity evidence, not a signed publisher attestation.
+-  The tested missing-engine error gives the expected path, build command, and
+-  copy instructions. Evaluator acceptance of the separate prerequisite is
+-  unknown. T-07 analysis does not invoke Python.
+-
+-## Remaining gates
+-
+-- The official [Meta event page](https://dev.meta.ai/events/global-hackathon)
+-  lists the Indie and Startup tracks, the manufacturing theme, and project
+-  submissions due Nov 4, 2026 at 9:00 PM ET (Nov 5 at 07:30 IST). It says
+-  Official Rules were to be published before Oct 26. The public waiver link at
+-  `https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver` currently
+-  renders only “Loading”; both public `/submit` URL variants returned HTTP 404.
+-  Selected-participant access, current final fields, existing-code disclosure,
+-  license terms, video specifications, and whether live Meta runtime use is
+-  mandatory remain unconfirmed.
+-- No hosted Meta request was made. The user reports that the additional credit
+-  has not arrived. Before any hosted request, the intended account must show an
+-  active, unexpired hackathon credit balance and provider-side protection
+-  against paid overage. A client estimate or API key alone is not that
+-  protection. Do not request or expose an API key.
+-- No video was captured and nothing was submitted or published. Confirm the
+-  selected-participant account can access the actual rules and form, whether a
+-  local/non-Meta demonstration is eligible, and acceptance of the separate
+-  unsigned Rust prerequisite before final submission.
++1.0, Rust 1.95.0, status `ok`; its staged SHA-256 matched the source-built
++binary (copy-integrity evidence, not a signed publisher attestation).
++Evaluator acceptance of the separate unsigned prerequisite is unknown.
++
++## Packaged build staging recipe (Ring recording)
++
++1. Fresh scratch: new detached worktree at current main HEAD (never reuse a
++stale tree; never touch `C:/maos` except the packet dir).
++2. `npm ci`, then build (`npm run build` + backend build), on the staging
++tree.
++3. Stage the source-built Rust engine; record its SHA-256 and confirm the
++staged binary hash matches.
++4. Baseten config from the redacted template (`providers.baseten` with
++`baseURL https://inference.baseten.co/v1`, model
++`meta-models/muse-spark-open-1026`, `basetenApiEnabled: true`) **plus the
++`schemaVersion` template rule** (config must carry the required
++`schemaVersion` field) — arm at recording time only, never commit
++`basetenApiEnabled: true` to main.
++5. `BASETEN_API_KEY` in the launcher shell ONLY — never pasted, never in a
++file, never committed.
++6. Rebuild-before-record rule: the staging tree must match current main.
++This rule was bitten twice before — do not record from a stale tree.
++
++## Hosted budget
++
++- Planning caps (not spend records):
++`docs/product/RING_AGENT_PM_HANDOFF_2.md:39-41` — Day 1 (Nov 2) up to 5
++hosted runs; Day 2 (Nov 3) up to 15; Day 3 (Nov 4) up to 15.
++- State runs used so far: the two retained live reliability reports each
++record 4 hosted instruction-runs = 8 hosted instruction-runs evidenced
++here. No provider-side spend records exist in the packet history, so this
++count is TO-FILL against authoritative provider usage if available.
++- Before any further hosted request: the intended account must show an
++active, unexpired hackathon credit balance and provider-side protection
++against paid overage. A client estimate or API key alone is not that
++protection. Do not request or expose an API key.
++
++## Evidence-only fallback path
++
++If hosted mode is unavailable on camera, run the evidence-only fallback and
++label it EVIDENCE-ONLY on screen: `mode: 'evidence-only'` returns the
++deterministic summary with zero model wording
++(`src/service/ring-inference-service.ts:320-328`); the banner states that
++no model wrote the answer and no model ran
++(`tests/gui/ring-impl-01.test.ts:116-120`). Never replay a saved model
++response while showing it as live. The fallback still shows the refusal
++beat, the approval card, and the audit verify.
++
++## Rehearsal and freeze gates
++
++- Three clean rehearsals from the packaged build are required (definition
++of done: 8-step demo runs from the packaged build three times in a row in
++hosted mode, once in evidence-only —
++`docs/product/RING_AGENT_PM_HANDOFF_2.md:133-135`). TO-RECORD: none of the
++three Ring rehearsals have been recorded yet.
++- Bug-fix only Nov 4 12:00; feature freeze Nov 4 18:00; video by Nov 4
++23:59; submission Nov 5 07:30 IST
++(`docs/product/RING_AGENT_PM_HANDOFF_2.md:103-106`).
++- No video has been captured and nothing has been submitted or published.
++Confirm the selected-participant account can access the actual rules/form,
++that the demonstrated hosted Meta use satisfies them, and acceptance of
++the separate unsigned Rust prerequisite before final submission.
+ 
+ ## Recording go/no-go
+ 
+-The exact local recording script is in
+-[`PRESENTATION_SCRIPT.md`](PRESENTATION_SCRIPT.md). It labels the demo as
+-synthetic/local, keeps the engineering `FAIL` visible, uses separate run IDs
+-for approval, stale-input failure, and rejection, and verifies the completed
+-run by its returned ID. The script is suitable for a truthful local capture.
+-Use it for a hackathon entry only after reviewing the current participant
+-rules and confirming that the demonstrated Meta use satisfies them.
++The exact Ring recording script is in
++[`PRESENTATION_SCRIPT.md`](PRESENTATION_SCRIPT.md): synthetic/local
++labels, `FAIL`/`CRITICAL` verdict visible, separate run/thread IDs per
++segment, same-ID verification, tamper beat on a copy, overlay hotkey +
++approval card, refusal beat, and HOSTED/EVIDENCE-ONLY identity identical
++everywhere. Use it for a hackathon entry only after reviewing the current
++participant rules and confirming that the demonstrated hosted Meta use
++satisfies them.
+ 
+ The supported launch requires the separately installed Electron runtime and
+ Rust engine; the npm tarball is not a signed desktop installer and does not
+@@ -99,15 +140,19 @@ bundle Rust. Use the exact package path and launch instructions in
+ 
+ ## Claims and limits
+ 
+-- Inputs are synthetic T-07 fixtures. Thresholds are demo rules, not a certified
+-  standard or operating authorization.
+-- TypeScript performs the T-07 RMS/threshold analysis. Rust backs audit-chain
+-  hashing and verification.
+-- The verified workflow makes no hosted Meta call. Do not describe it as a live
+-  Meta integration.
+-- Loopback binding does not establish that the entire workstation is offline.
+-- A pending manual-review run has no completed report until approval and resume.
+-  CLI `--auto-approve --yes` is an explicit synthetic approval path, not human
+-  review.
+-- The legacy direct CLI dashboard path is not the supported authenticated GUI
+-  topology and is not used as release-rehearsal evidence.
++- Inputs are synthetic T-07 (plus P-12 triplet) fixtures. Thresholds are
++demo rules, not a certified standard or operating authorization.
++- TypeScript performs the T-07 RMS/threshold analysis. Rust backs
++audit-chain hashing and verification.
++- Voice is stretch-only and cut
++(`docs/product/RING_AGENT_PM_BRIEF.md:119,169`); the P-12 scan PNG and
++photo are NOT wired into Ring evidence paths in this packet
++(`demo/industrial/DEMO_PACK_PROVENANCE.json:278,292`). Do not show them as
++Ring vision.
++- Loopback binding does not establish that the entire workstation is
++offline.
++- A pending manual-review run has no completed report until approval and
++resume. CLI `--auto-approve --yes` is an explicit synthetic approval path,
++not human review.
++- The legacy direct CLI dashboard path is not the supported authenticated
++GUI topology and is not used as release-rehearsal evidence.

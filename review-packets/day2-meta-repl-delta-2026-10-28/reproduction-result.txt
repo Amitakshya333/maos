@@ -1,0 +1,24 @@
+base=239a0042b08a3960d3c89f890f01ab194ff82f1f
+clean_base_status=PASS
+git_apply_check=PASS
+git_apply=PASS
+scoped_paths=15 exact_file_set=PASS
+lf_normalized_matches=15/15
+raw_byte_matches=9/15
+raw_byte_line_ending_only=6
+raw_mismatch_paths=src/api/openapi-spec.ts, src/api/router.ts, src/cli/index.ts, src/core/agent-runner.ts, src/domain/schemas.ts, src/service/index.ts
+repro_status= M src/api/openapi-spec.ts
+ M src/api/router.ts
+ M src/backends/openai-provider.ts
+ M src/cli/index.ts
+ M src/core/agent-runner.ts
+ M src/domain/schemas.ts
+ M src/industrial/analysis-agent-service.ts
+ M src/service/index.ts
+ M tests/backends/openai-provider-local-tool-call.test.ts
+ M tests/industrial/analysis-agent-auth-http.test.ts
+ M tests/industrial/analysis-agent-contract.test.ts
+?? docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+?? src/industrial/industrial-repl.ts
+?? tests/industrial/industrial-repl.test.ts
+?? tests/industrial/meta-model-api-contract.test.ts

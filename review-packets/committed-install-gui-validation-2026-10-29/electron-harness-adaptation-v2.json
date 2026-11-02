@@ -1,0 +1,6 @@
+{
+  "sourceHarnessSha256": "59e963cabdbb0e02f1593641e83eee1caa382c6dcc8823ee8658e79fd653d272",
+  "adaptedHarnessSha256": "36c252368a2c1f54ac76377491abac9d7c23a55aef6dfbafeda70081b3d946f8",
+  "adaptationPatchSha256": "f2a5ae1bebf9a5e83a5928324e80a3da27400c7d239b4d2b73406be5df443148",
+  "change": "Reuse stopped UI port on process restart so same isolated browser origin can restore pending-review UI state."
+}

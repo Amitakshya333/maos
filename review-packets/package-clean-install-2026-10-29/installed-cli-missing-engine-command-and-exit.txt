@@ -1,0 +1,2 @@
+COMMAND: <installed-package>/.bin/maos-industrial run --auto-approve --yes --json (cwd=<temporary-project>; Rust engine absent)
+EXIT_CODE: 1

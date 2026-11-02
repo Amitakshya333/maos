@@ -1,0 +1,49 @@
+{
+  "packageSha256": "8f57f15bbbd96da493cf35646836aa2784a9d23165f3177a9819f2d7ffdae27a",
+  "fileCount": 495,
+  "requiredEntries": [
+    "package/dist/cli/index.js",
+    "package/dist/industrial/entrypoint.js",
+    "package/dist/gui/index.html",
+    "package/desktop/main.cjs",
+    "package/desktop/preload.cjs",
+    "package/desktop/package.json",
+    "package/desktop/package-lock.json",
+    "package/dist/industrial/python/pdf_rasterizer.py",
+    "package/dist/industrial/python/ocr_engine.py",
+    "package/demo/industrial/turbine_vibration_log.csv",
+    "package/profiles/industrial/maos.config.json",
+    "package/scripts/prepare-hooks.js",
+    "package/scripts/Install-MaosIndustrial.ps1",
+    "package/docs/INSTALLATION.md"
+  ],
+  "missingRequired": [],
+  "rustEngineBundled": false,
+  "electronRuntimeBundled": false,
+  "nodeModulesBundled": false,
+  "privateOrSecretPatterns": [],
+  "bundleManifest": {
+    "schemaVersion": 1,
+    "sourceRevision": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+    "sourceDeltaSha256": "f2edd4658fcdba9716050d2a377ed941498300177656f3ff91a77e45fdd4b3e5",
+    "package": {
+      "archive": "maosorch.tgz",
+      "name": "maosorch",
+      "version": "0.3.0",
+      "sha256": "8f57f15bbbd96da493cf35646836aa2784a9d23165f3177a9819f2d7ffdae27a"
+    },
+    "applicationLock": {
+      "sha256": "5d9577c499c53d1e78457d00901d117f626fcb824ba76ef8e5fa76637d7eae27",
+      "path": "package-lock.json"
+    },
+    "desktopLock": {
+      "sha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "path": "package/desktop/package-lock.json"
+    },
+    "installer": {
+      "sha256": "c949ddc76f243508e813aa24e8e2881535e189530df38f7fb88f95fc9863841d",
+      "path": "Install-MaosIndustrial.ps1"
+    }
+  },
+  "recordedAt": "2026-10-29T02:57:09.550+05:30"
+}

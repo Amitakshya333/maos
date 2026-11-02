@@ -1,0 +1,4 @@
+COMMAND: npm ci --prefix <temp>/desktop-tools --no-audit --no-fund --include=dev
+NODE: v24.11.0
+NPM: 11.6.1
+EXIT_CODE: 0

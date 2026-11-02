@@ -1,0 +1,12 @@
+{
+  "branch": "main",
+  "head": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "parent": "239a0042b08a3960d3c89f890f01ab194ff82f1f",
+  "subject": "Enforce Meta provider and Industrial agent limits",
+  "committedPaths": 27,
+  "manifestPaths": 27,
+  "committedPathSetExact": true,
+  "committedBlobHashesChecked": 27,
+  "committedBlobMismatches": [],
+  "indexPaths": 0
+}

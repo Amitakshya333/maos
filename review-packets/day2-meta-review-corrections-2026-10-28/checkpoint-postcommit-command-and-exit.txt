@@ -1,0 +1,2 @@
+COMMAND: verify commit path set, committed blobs, parent, subject, and index against complete manifest
+EXIT_CODE: 0

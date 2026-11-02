@@ -1,0 +1,10 @@
+
+ RUN  v4.1.11 C:/maos
+
+··························
+
+ Test Files  1 passed (1)
+      Tests  26 passed (26)
+   Start at  23:23:00
+   Duration  3.63s (transform 1.77s, setup 0ms, import 2.45s, tests 1.01s, environment 0ms)
+

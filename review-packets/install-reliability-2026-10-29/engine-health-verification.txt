@@ -1,0 +1,4 @@
+COMMAND: node -e <bridge health verification> C:\maos\review-packets\install-reliability-2026-10-29\engine-candidate-windows-x64\maos-engine.exe
+EXIT_CODE: 0
+OUTPUT: {"manifest":{"executablePath":"C:\\maos\\review-packets\\install-reliability-2026-10-29\\engine-candidate-windows-x64\\maos-engine.exe","executableHash":"011dd53795d025f11c605ee62bc25b1e85fcf7d5ae69503bbcef2fb3a40129de","engineVersion":"0.1.0","protocolVersion":"1.0"},"response":{"operation":"health","version":"1.0","data":{"engine":"maos-industrial-engine","protocol_version":"1.0","rust_version":"1.95.0","status":"ok","unsafe_code":false,"version":"0.1.0"}}}
+

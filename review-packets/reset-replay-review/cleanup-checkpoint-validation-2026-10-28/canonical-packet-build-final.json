@@ -1,0 +1,17 @@
+{
+  "patchPath": "C:\\maos\\review-packets\\reset-replay-review\\cleanup-checkpoint-canonical.patch",
+  "patchBytes": 696417,
+  "patchSha256": "a1e32ed71ea29540d29159e4e8afc8d6ae3eeaac3ffbde9d6dede6302e8e6ace",
+  "manifestPath": "C:\\maos\\review-packets\\reset-replay-review\\cleanup-checkpoint-canonical-source-hashes.json",
+  "scopeCount": 99,
+  "trackedCount": 77,
+  "addedCount": 22,
+  "excludedTracked": [
+    ".maos/maos.config.json",
+    ".maos/pool.json",
+    "demo/industrial/MASTER_DEMO_PLAN.md",
+    "demo/industrial/RECORDING_READINESS.md"
+  ],
+  "excludedUntrackedCount": 82,
+  "manifestSha256": "c1d8eb2182218f4c80a45cbc772404ac3cf293af47ebaaa47dbca63ceaedaa8e"
+}

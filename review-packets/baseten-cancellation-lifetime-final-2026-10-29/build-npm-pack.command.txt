@@ -1,0 +1,1 @@
+node.exe npm-cli.js pack --ignore-scripts --pack-destination C:\maos\review-packets\baseten-cancellation-lifetime-final-2026-10-29\candidate-artifacts-f201cfe

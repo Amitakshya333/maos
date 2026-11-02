@@ -1,0 +1,50 @@
+{
+  "commit": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "sourceDeltaSha256": "c916ddc30baf3b35c80fbe099fb97ee568431a6bc663cf612e3114f2f8f5bac1",
+  "package": {
+    "path": "retry3-native-tar-maosorch-0.3.0.tgz",
+    "bytes": 1233768,
+    "sha256": "591dff32c60a609349f9e9d33a74a3c4024c888302c0a207227aca0078f10225"
+  },
+  "bundle": {
+    "path": "retry3-native-tar-maos-industrial-windows-x64.zip",
+    "bytes": 1265935,
+    "sha256": "797b3f89d94b37f9ddb765e413679d4ae8335aad18e5feac2d8d481a65cd1c59"
+  },
+  "bundleManifest": {
+    "schemaVersion": 1,
+    "sourceRevision": "2cfdf9b81f56eada7df2041625da18e44531151e",
+    "sourceDeltaSha256": "c916ddc30baf3b35c80fbe099fb97ee568431a6bc663cf612e3114f2f8f5bac1",
+    "package": {
+      "name": "maosorch",
+      "version": "0.3.0",
+      "sha256": "591dff32c60a609349f9e9d33a74a3c4024c888302c0a207227aca0078f10225",
+      "archive": "maosorch.tgz"
+    },
+    "applicationLock": {
+      "sha256": "5d9577c499c53d1e78457d00901d117f626fcb824ba76ef8e5fa76637d7eae27",
+      "path": "package-lock.json"
+    },
+    "desktopLock": {
+      "sha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+      "path": "package/desktop/package-lock.json"
+    },
+    "installer": {
+      "sha256": "df5bfdca073dcb89bd6b8f4b5995522135e586748bcbd4887dcbee6a2cbb38a1",
+      "path": "Install-MaosIndustrial.ps1"
+    }
+  },
+  "bundleMembers": [
+    "Install-MaosIndustrial.ps1",
+    "bundle-manifest.json",
+    "maosorch.tgz",
+    "package-lock.json"
+  ],
+  "buildContext": {
+    "path": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-baseten-budget-2cfdf9b-retry3-checkout",
+    "runtime": "PowerShell 7",
+    "PATHEXTProvided": true,
+    "tarExecutable": "C:\\Windows\\System32\\tar.exe",
+    "PATHPrefixedSystem32": true
+  }
+}

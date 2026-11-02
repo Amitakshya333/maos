@@ -1,0 +1,10 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "node.exe",
+  "args": [
+    "-e",
+    "const fs=require('fs'),crypto=require('crypto');const root='C:/clean/core-b2-02',engine=root+'/rust/target/release/maos-engine.exe';const sha=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');for(const demo of ['C:/clean/demo-b2-gate4','C:/clean/demo-b2-gate10']){if(fs.existsSync(demo))throw Error('Refusing existing gate project');fs.mkdirSync(demo+'/demo/industrial',{recursive:true});fs.mkdirSync(demo+'/.maos');fs.mkdirSync(demo+'/rust/target/release',{recursive:true});for(const n of ['safety_thresholds.json','turbine_vibration_log.csv','maintenance_report.txt','turbine_inspection_scan.pdf'])fs.copyFileSync(root+'/demo/industrial/'+n,demo+'/demo/industrial/'+n);fs.copyFileSync(root+'/profiles/industrial/maos.config.json',demo+'/.maos/maos.config.json');const dst=demo+'/rust/target/release/maos-engine.exe';fs.copyFileSync(engine,dst);if(sha(dst)!==sha(engine))throw Error('Engine copy mismatch');console.log('Staged synthetic gate project: '+demo);}"
+  ],
+  "startedAt": "2026-10-31T16:04:56.416Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

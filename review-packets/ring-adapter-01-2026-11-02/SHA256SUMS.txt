@@ -1,0 +1,3 @@
+base-commit  b76363a77e931c417327b7a5fe8cb3a299f125c1
+7c95723fd4ddb6a6c619807d91bb997a12fec2c6bd57c9c61536d9dab3197bb4 */c/maos/review-packets/ring-adapter-01-2026-11-02/candidate.patch
+e9f9890678ef68ce91b1f0401c49163c0087f49f6d3cdbb4cab41f7f0d795dca */c/maos/review-packets/ring-adapter-01-2026-11-02/run-log.md

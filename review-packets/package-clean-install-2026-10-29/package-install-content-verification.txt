@@ -1,0 +1,13 @@
+ARCHIVE_FILES=491
+INSTALLED_FILES=491
+ARCHIVE_INSTALL_PATH_SET_EQUAL=True
+ARCHIVE_INSTALL_SHA256_EQUAL=True
+REQUIRED_ASSETS_PRESENT=True
+FORBIDDEN_PATH_ENTRIES=0
+SECRET_PATTERN_HITS=0
+PYTHON_ASSETS=['dist/industrial/python/embedding_engine.py', 'dist/industrial/python/ocr_engine.py', 'dist/industrial/python/pdf_rasterizer.py', 'dist/industrial/python/vlm_engine.py']
+GUI_ASSETS=['dist/gui/assets/index--HY-Ci0b.css', 'dist/gui/assets/index-Byj5yDkj.js', 'dist/gui/index.html']
+FIXTURES=['demo/industrial/maintenance_report.txt', 'demo/industrial/safety_thresholds.json', 'demo/industrial/turbine_inspection_scan.pdf', 'demo/industrial/turbine_vibration_log.csv']
+ENGINE_BUNDLED=False
+REVIEW_PACKET_BUNDLED=False
+PRIVATE_PROJECT_STATE_BUNDLED=False

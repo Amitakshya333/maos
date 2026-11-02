@@ -1,0 +1,5 @@
+Test-only adaptation of the committed desktop-agent-deliverable-rehearsal.cjs for an installed npm package:
+- Replaced the harness-only engine lookup under packageRoot with MAOS_TEST_RUST_ENGINE; the harness still copies the separately built binary into the synthetic project and verifies protocol 1.0 before launch.
+- Changed page/event socket bindings to allow a second Electron launch.
+- After renderer reload/resume, closed the first Electron/service pair, verified both loopback listeners stopped, relaunched the installed main.cjs against the same temporary project, verified a fresh launcher session, then resumed the persisted pending review.
+- Checked both session tokens are absent from captured logs and added restart evidence fields. No assertions were removed or relaxed; the test-only changes are not in the package or repository source.

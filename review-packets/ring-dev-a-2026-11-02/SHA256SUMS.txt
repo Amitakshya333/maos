@@ -1,0 +1,4 @@
+SHA-256(candidate.patch) = ecd2b1ec67c323fbb63826546098a2d5143383452a82aa9dfdd51671db40769a
+base = 8b39caf36cacdb461504bd54ce66e7f8b9707855 Freeze Ring contracts for threads streams and tools
+files = candidate.patch run-log.md SHA256SUMS.txt
+ecd2b1ec67c323fbb63826546098a2d5143383452a82aa9dfdd51671db40769a  candidate.patch

@@ -1,0 +1,19 @@
+{
+  "attempt": 5,
+  "sourceCommit": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "bundleSha256": "8ce5da16d81a788fd8c8596c445c95df8227aa551595171d95da75817273572c",
+  "installRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\MAOS f201cfe installed ctrl-c rehearsal 6f51863fdb344e62a8147099926ab8b0\\installed application",
+  "testRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-pilot-attempt-5-ef6ab0a541964d4f99d93d3af445a6b8",
+  "profileDirectories": [
+    "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-pilot-attempt-5-ef6ab0a541964d4f99d93d3af445a6b8\\pilot profile\\OneDrive\\Documents\\Desktop",
+    "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-pilot-attempt-5-ef6ab0a541964d4f99d93d3af445a6b8\\pilot profile\\OneDrive\\Documents",
+    "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-pilot-attempt-5-ef6ab0a541964d4f99d93d3af445a6b8\\pilot profile\\Desktop",
+    "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-pilot-attempt-5-ef6ab0a541964d4f99d93d3af445a6b8\\pilot profile\\Documents",
+    "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-pilot-attempt-5-ef6ab0a541964d4f99d93d3af445a6b8\\pilot profile\\Downloads"
+  ],
+  "engineSha256": "3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2",
+  "engineBytes": 472064,
+  "engineTrust": "external, unsigned, unapproved; hash identifies bytes only",
+  "mockInference": "loopback test-only interception",
+  "createdAt": "2026-10-29T18:40:28.0731927Z"
+}

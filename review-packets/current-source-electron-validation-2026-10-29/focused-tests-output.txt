@@ -1,0 +1,10 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-electron-validation-009fecfaf12c4635a139f93e65117fdf/source
+
+···························································································································
+
+ Test Files  9 passed (9)
+      Tests  123 passed (123)
+   Start at  00:30:51
+   Duration  32.74s (transform 2.46s, setup 0ms, import 9.80s, tests 20.61s, environment 1ms)
+

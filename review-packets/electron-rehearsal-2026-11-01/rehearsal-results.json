@@ -1,0 +1,76 @@
+{
+  "success": true,
+  "results": {
+    "stepA": {
+      "pass": true,
+      "projectTag": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-antigravity-20261101-111414\\disposable-project",
+      "sessionStatus": "SESSION TOKEN: PRESENT",
+      "screenshot": "C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\a-cockpit-session-root.png"
+    },
+    "stepB": {
+      "pass": true,
+      "apiStatus": "API: HEALTHY",
+      "statusBar": "PROJECT: C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-antigravity-20261101-111414\\disposable-projectAPI: HEALTHYSTAGE: NO ACTIVE RUN REPORTEDEVENTS: CONNECTED · #0000API TARGET: 127.0.0.1:56109Alt+1..8: ViewsCtrl+J: Cockpit",
+      "screenshot": "C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\b-backend-connection.png"
+    },
+    "stepC": {
+      "pass": true,
+      "verdict": "RESULT: CRITICAL",
+      "detailsSummary": "RESULT: CRITICAL500 rows · bundled synthetic dataID telemetry-1793515013381-8baf61b3",
+      "screenshot": "C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\c-synthetic-t07-sample.png"
+    },
+    "stepD": {
+      "pass": true,
+      "verdict": "RESULT: CRITICAL",
+      "detailsSummary": "RESULT: CRITICAL500 rows · device uploadID telemetry-1793515014039-a8323966",
+      "screenshot": "C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\d-file-analysis-csv.png"
+    },
+    "stepE": {
+      "pass": true,
+      "dotClass": "status-dot muted",
+      "backgroundColor": "rgb(85, 85, 85)",
+      "screenshot": "C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\e-engine-dot-grey.png"
+    },
+    "stepF": {
+      "pass": true,
+      "panelPreview": "Governance & Human-in-the-Loop ApprovalsDeterministic governance gating for document generation (DOCX/XLSX/PPTX), safety verdicts, artifact overwrites, and force-stops.Force-Stop ExecutionRefreshStatu",
+      "screenshot": "C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\f-approvals-queue.png"
+    }
+  },
+  "logs": [
+    "Electron launched, first window acquired.",
+    "Main application loaded.",
+    "\n=== Checking Step A: Cockpit opens, session present, project root ===",
+    "Header project tag: C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-antigravity-20261101-111414\\disposable-project",
+    "Session badge: SESSION TOKEN: PRESENT",
+    "Captured screenshot A: C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\a-cockpit-session-root.png",
+    "\n=== Checking Step B: Backend connection confirmed ===",
+    "API status badge: API: HEALTHY",
+    "Status bar text: PROJECT: C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-antigravity-20261101-111414\\disposable-projectAPI: HEALTHYSTAGE: NO ACTIVE RUN REPORTEDEVENTS: CONNECTED · #0000API TARGET: 127.0.0.1:56109Alt+1..8: ViewsCtrl+J: Cockpit",
+    "Captured screenshot B: C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\b-backend-connection.png",
+    "\n=== Checking Step C: Run bundled synthetic T-07 sample ===",
+    "Clicked \"Use bundled synthetic sample\"",
+    "Sample Analysis Result: RESULT: CRITICAL",
+    "Sample Details preview: RESULT: CRITICAL500 rows · bundled synthetic dataID telemetry-1793515013381-8baf61b3",
+    "Captured screenshot C: C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\c-synthetic-t07-sample.png",
+    "\n=== Checking Step D: Run file analysis on turbine_vibration_log.csv ===",
+    "Set file input to: C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-antigravity-20261101-111414\\disposable-project\\demo\\industrial\\turbine_vibration_log.csv",
+    "Clicked \"Analyze selected CSV\"",
+    "File Analysis Result: RESULT: CRITICAL",
+    "File Analysis Details preview: RESULT: CRITICAL500 rows · device uploadID telemetry-1793515014039-a8323966",
+    "Captured screenshot D: C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\d-file-analysis-csv.png",
+    "\n=== Checking Step E: ENGINE: NOT REPORTED dot is grey, not amber ===",
+    "Engine dot class: status-dot muted",
+    "Engine dot computed background-color: rgb(85, 85, 85)",
+    "Confirmed dot is muted grey, NOT amber.",
+    "Captured screenshot E: C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\e-engine-dot-grey.png",
+    "\n=== Checking Step F: Approvals queue check ===",
+    "Navigated to Approvals view",
+    "Approvals panel preview: Governance & Human-in-the-Loop ApprovalsDeterministic governance gating for document generation (DOCX/XLSX/PPTX), safety verdicts, artifact overwrites, and force-stops.Force-Stop ExecutionRefreshStatus:allpendingapprovedrejectedexpiredScope:All ScopesDOCX GenerationXLSX GenerationPPTX GenerationSafe",
+    "Approvals empty / no items confirmed: true",
+    "Captured screenshot F: C:\\maos\\review-packets\\electron-rehearsal-2026-11-01\\screenshots\\f-approvals-queue.png",
+    "\nALL 6 CHECKS (A-F) PASSED!",
+    "Closing Electron application...",
+    "Electron closed."
+  ]
+}

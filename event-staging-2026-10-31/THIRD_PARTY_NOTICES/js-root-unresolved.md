@@ -1,0 +1,76 @@
+# JS root unresolved license texts
+
+Generated 2026-10-31 from snapshot `package-lock.json` vs local `C:/maos/node_modules` (no installs, no fetches). Each row: no verifiable local text for the locked version.
+
+| Package | Lock version | Lock license | Reason |
+|---|---|---|---|
+| @esbuild/aix-ppc64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/android-arm | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/android-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/android-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/darwin-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/darwin-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/freebsd-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/freebsd-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-arm | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-ia32 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-loong64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-mips64el | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-ppc64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-riscv64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-s390x | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/linux-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/netbsd-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/netbsd-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/openbsd-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/openbsd-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/openharmony-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/sunos-x64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/win32-arm64 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/win32-ia32 | 0.28.2 | MIT | not-installed-locally |
+| @esbuild/win32-x64 | 0.28.2 | MIT | no-license-file-installed |
+| @napi-rs/lzma-linux-x64-gnu | 1.5.1 | MIT | not-installed-locally |
+| @rollup/rollup-android-arm-eabi | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-android-arm64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-darwin-arm64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-darwin-x64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-freebsd-arm64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-freebsd-x64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-arm-gnueabihf | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-arm-musleabihf | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-arm64-gnu | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-arm64-musl | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-loong64-gnu | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-loong64-musl | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-ppc64-gnu | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-ppc64-musl | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-riscv64-gnu | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-riscv64-musl | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-s390x-gnu | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-x64-gnu | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-linux-x64-musl | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-openbsd-x64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-openharmony-arm64 | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-win32-arm64-msvc | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-win32-ia32-msvc | 4.63.3 | MIT | not-installed-locally |
+| @rollup/rollup-win32-x64-gnu | 4.63.3 | MIT | no-license-file-installed |
+| @rollup/rollup-win32-x64-msvc | 4.63.3 | MIT | no-license-file-installed |
+| @simple-git/args-pathspec | 1.0.3 | MIT | no-license-file-installed |
+| @simple-git/argv-parser | 1.1.1 | MIT | no-license-file-installed |
+| emoji-regex | 8.0.0 | MIT | no-license-file-installed |
+| fsevents | 2.3.3 | MIT | not-installed-locally |
+| jsesc | 3.1.0 | MIT | no-license-file-installed |
+| lightningcss-android-arm64 | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-darwin-arm64 | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-darwin-x64 | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-freebsd-x64 | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-linux-arm-gnueabihf | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-linux-arm64-gnu | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-linux-arm64-musl | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-linux-x64-gnu | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-linux-x64-musl | 1.33.0 | MPL-2.0 | not-installed-locally |
+| lightningcss-win32-arm64-msvc | 1.33.0 | MPL-2.0 | not-installed-locally |
+| simple-git | 3.36.0 | MIT | no-license-file-installed |
+| stackback | 0.0.2 | MIT | no-license-file-installed |
+| standardwebhooks | 1.0.0 | MIT | no-license-file-installed |

@@ -1,0 +1,3 @@
+COMMAND: <installed-package>/.bin/maos init; select Solo, Ollama, default local model; no API key entered
+SOURCE: candidate tarball, installed dependency tree pinned to committed package-lock
+EXIT_CODE: 0

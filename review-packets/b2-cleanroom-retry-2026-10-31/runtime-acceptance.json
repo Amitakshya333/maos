@@ -1,0 +1,22 @@
+{
+  "runtimeAcceptance": "PASS",
+  "scope": "Local deterministic T-07 only; synthetic explicit auto-approval; no model inference or human review",
+  "runId": "judged-run-1793462662903-370574",
+  "engineeringVerdict": "FAIL",
+  "overallRms": 2.637109971161612,
+  "auditRecordCount": 9,
+  "engineSha256": "280cf92ef4343c8876f48924977079c548e45471b4c4d8d253228fa1e8a6b4a8",
+  "artifacts": [
+    {
+      "path": "artifacts/generated/turbine_safety_approval_note.docx",
+      "sha256": "d489ab371efcc80e20d50a48d494b85d408d59e7b0a3f5c02e7a295d1284c005",
+      "bytes": 5436
+    },
+    {
+      "path": "artifacts/generated/judged-run-1793462662903-370574-audit-export.json",
+      "sha256": "0d9f299066bd011915d23884f48cde7b0e373bf16ec0ba3dd161113b8da86864",
+      "bytes": 6255
+    }
+  ],
+  "canary": "Missing ignored test fixture explicitly separated from runtime gate by owner; no canary test passing claim"
+}

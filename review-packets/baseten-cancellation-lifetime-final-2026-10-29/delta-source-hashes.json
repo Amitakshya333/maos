@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "baseSnapshot": {
+    "description": "Exact previously rejected four-file snapshot, verified against retained manifest after LF normalization.",
+    "baseCommit": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+    "historicalPatchSha256": "dbb62ab351b474cd158071b34f47be173f890cb869391b6befa0e9ddb45b8ad1",
+    "historicalManifestSha256": "2f089126d37461c4bcb60633bfd35f3845a2b3274d99567c28984a147af64a92"
+  },
+  "candidateHead": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "patchFile": "lifetime-delta-from-rejected-four-file-snapshot.patch",
+  "patchSha256": "c90e4ea595eb7226580f75288041a649759dd4c413220003c6f374d01cfd04cd",
+  "hashConvention": "Full lowercase SHA-256; normalized hashes convert CRLF and lone CR to LF before hashing.",
+  "files": [
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "priorSnapshotRawSha256": "bd45584ac789e1401b8487d38a80dfbb7bfb9e6eb125328b28bd9c8ea1088c8c",
+      "priorSnapshotLfNormalizedSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "currentRawSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74",
+      "currentLfNormalizedSha256": "2d662cbf4f69b1fb0e9bd95783dd1398d275bf869b4440e864e71df754af0c74"
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "priorSnapshotRawSha256": "ab8702cb9dac9f211e1abc2a1595fdcc5e2817dce93fbafc6749c6b564eb6eab",
+      "priorSnapshotLfNormalizedSha256": "35f0c25a9ed7f1f89042a79064a5b0e34dcecbe141431094db7e84f41895fe84",
+      "currentRawSha256": "5f850a5e6547a78ba4bcf1022915a6d1af87d726bc0c0b301f00dbf16d0c947c",
+      "currentLfNormalizedSha256": "37291182a5e83c883040ce2a9cf4960a63dbe037ab8f87069a1af80ca3a175cb"
+    }
+  ]
+}

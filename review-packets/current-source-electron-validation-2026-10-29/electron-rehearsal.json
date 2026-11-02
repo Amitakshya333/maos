@@ -1,0 +1,92 @@
+{
+  "status": "PASS",
+  "timestamp": "2026-10-28T19:02:17.417Z",
+  "browser": "Visible Electron BrowserWindow controlled through Playwright; no personal browser profile.",
+  "topology": "desktop/main.cjs -> ProjectHostLauncher -> ProjectServiceHost; renderer session initialized through the actual private preload IPC bridge.",
+  "inference": "MOCK ONLY — loopback synthetic HTTP inference, no live Meta or other model inference.",
+  "projectRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-electron-agent-3uxMpR\\project",
+  "projectId": "maos-industrial-demo",
+  "uiOrigin": "http://127.0.0.1:62226",
+  "apiOrigin": "http://127.0.0.1:62231",
+  "apiPort": 62231,
+  "projectRootHash": "c82265bebfb7fe25174220d9710d9537c3cb69199b4bb432a1469b80fbd8f8f2",
+  "serviceInstanceId": "inst_1793214132773_bcc9f41d9749",
+  "session": "real launcher-issued session delivered to renderer through private IPC; token not recorded in evidence.",
+  "model": {
+    "requested": "mock-configured-model-v1",
+    "providerReported": "mock-returned-model-v1",
+    "requests": 8
+  },
+  "syntheticOracle": {
+    "rowsAnalyzed": 3,
+    "peakVibration": 8.7,
+    "peakTemperature": 101,
+    "verdict": "CRITICAL"
+  },
+  "attempts": [
+    {
+      "outcome": "mock inference failure",
+      "httpStatus": 502,
+      "acceptedSuccess": false
+    },
+    {
+      "outcome": "client cancelled while mock inference was pending",
+      "acceptedSuccess": false
+    },
+    {
+      "outcome": "rejected",
+      "runId": "judged-run-agent-telemetry-1793214133834-a7a61824",
+      "analysisId": "telemetry-1793214133834-a7a61824",
+      "artifactCreated": false
+    },
+    {
+      "outcome": "stale source approval refused",
+      "runId": "judged-run-agent-telemetry-1793214134531-9159fd97",
+      "analysisId": "telemetry-1793214134531-9159fd97",
+      "artifactCreated": false
+    },
+    {
+      "outcome": "approved and downloaded",
+      "runId": "judged-run-agent-telemetry-1793214135375-63095596",
+      "analysisId": "telemetry-1793214135375-63095596",
+      "engineeringVerdict": "FAIL",
+      "artifactSha256": "7dd1b2031d08ca16080626f807aa69d31380ce34a90af88d78a6f11943191646",
+      "downloadSha256": "7dd1b2031d08ca16080626f807aa69d31380ce34a90af88d78a6f11943191646"
+    }
+  ],
+  "sameRunAudit": {
+    "event": "JUDGED_RUN_COMPLETED",
+    "runId": "judged-run-agent-telemetry-1793214135375-63095596",
+    "analysisId": "telemetry-1793214135375-63095596",
+    "agentRunId": "30f67945-a909-42be-97f3-ce2394a16d48",
+    "receiptSha256": "c0efcb309ccbadf9ba495ff874f502df8ca566ba36b79d2549877c37f9f00c7f",
+    "deliverableSha256": "7dd1b2031d08ca16080626f807aa69d31380ce34a90af88d78a6f11943191646",
+    "chainVerified": true
+  },
+  "invalidRequestRejections": {
+    "missingSession": 401,
+    "invalidSession": 401,
+    "wrongProject": 400,
+    "wrongOrigin": 403,
+    "unauthenticatedDownload": 401
+  },
+  "privacy": {
+    "tokenInUrl": false,
+    "tokenInPersistentStorage": false,
+    "tokenInCookies": false,
+    "tokenInCapturedElectronLogs": false
+  },
+  "processCleanup": {
+    "electronClosed": true,
+    "projectServiceStopped": true,
+    "uiServerStopped": true,
+    "mockStopped": true
+  },
+  "rustPrerequisite": {
+    "version": "0.1.0",
+    "protocolVersion": "1.0",
+    "capturedBinarySha256": "26d899fa7c3404457aad5931240def6e8d468252fa630dd8def22696b451422f",
+    "trustManifestComparison": "not performed"
+  },
+  "evidencePath": "C:\\maos\\review-packets\\current-source-electron-validation-2026-10-29\\electron-rehearsal.json"
+}

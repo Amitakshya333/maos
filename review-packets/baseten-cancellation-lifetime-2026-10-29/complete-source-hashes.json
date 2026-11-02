@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "bb871cb191184b5de1b790d42fc452a29f8f072e",
+  "candidateSource": "Complete four-path uncommitted correction; contains the reviewed launcher cancellation adapter plus the lifetime-race fix and regression coverage.",
+  "patchFile": "complete-correction.patch",
+  "patchSha256": "f0cdb87b69008276c896b8c48633f6e09d17f1885c200e0c2cfab34222ca9e11",
+  "files": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "status": "modified",
+      "rawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "lfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a"
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "status": "modified",
+      "rawSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3",
+      "lfNormalizedSha256": "a2ac66e8fb7413678379ed85a39b435be82ff066daac8bfdd98aacad8b8770d3"
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "status": "modified",
+      "rawSha256": "33b0775c84c6db27445c7072763598982a88a6e04cfa0e84872820446e17f104",
+      "lfNormalizedSha256": "a13de33a8188641d8a0fb28d092c1455daefb671fa002378550c33aa96f32aeb"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "status": "modified",
+      "rawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "lfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3"
+    }
+  ]
+}

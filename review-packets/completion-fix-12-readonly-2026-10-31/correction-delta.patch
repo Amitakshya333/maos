@@ -1,0 +1,784 @@
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index ca36e5d..7d12a3b 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -374,6 +374,13 @@ export class BrowserRestClient {
+         throw err;
+       }
+       if (err instanceof Error && err.name === 'AbortError') {
++        // Caller cancellation stays an abort/cancel outcome; only the
++        // client's own deadline maps to TimeoutError. This keeps the
++        // coordinator's cancellation state truthful.
++        if (callerSignal?.aborted) {
++          const reason = callerSignal.reason;
++          throw reason instanceof Error ? reason : new DOMException('The operation was aborted by the caller.', 'AbortError');
++        }
+         throw new TimeoutError(`Request timed out after ${timeoutMs}ms for ${endpoint}`);
+       }
+       throw new NetworkError(
+diff --git a/src/gui/src/components/TelemetryReviewPanel.tsx b/src/gui/src/components/TelemetryReviewPanel.tsx
+index 24c6274..861c065 100644
+--- a/src/gui/src/components/TelemetryReviewPanel.tsx
++++ b/src/gui/src/components/TelemetryReviewPanel.tsx
+@@ -93,8 +93,9 @@ export const TelemetryReviewPanel: React.FC = () => {
+       return;
+     }
+     const file = selectedFile;
++    const selectionKey = coordinator.getActiveSourceKey();
+     const descriptor = { name: file.name, size: file.size, lastModified: file.lastModified };
+-    await coordinator.runFileAnalysis(descriptor, async () => ({
++    await coordinator.runFileAnalysis(selectionKey, async () => ({
+       ...descriptor,
+       contentBase64: await fileAsBase64(file),
+     }));
+@@ -106,9 +107,10 @@ export const TelemetryReviewPanel: React.FC = () => {
+     const controller = new AbortController();
+     agentController.current = controller;
+     const file = selectedFile;
++    const selectionKey = coordinator.getActiveSourceKey();
+     const descriptor = { name: file.name, size: file.size, lastModified: file.lastModified };
+     try {
+-      await coordinator.askAboutCsv(agentRequest, descriptor, async () => ({
++      await coordinator.askAboutCsv(agentRequest, selectionKey, async () => ({
+         ...descriptor,
+         contentBase64: await fileAsBase64(file),
+       }), { signal: controller.signal });
+diff --git a/src/gui/src/components/telemetryReviewCoordinator.ts b/src/gui/src/components/telemetryReviewCoordinator.ts
+index a04167a..d963016 100644
+--- a/src/gui/src/components/telemetryReviewCoordinator.ts
++++ b/src/gui/src/components/telemetryReviewCoordinator.ts
+@@ -21,11 +21,9 @@ import type {
+   JudgedRunResponse,
+ } from '../api/rest-client';
+ import {
+-  buildSourceKey,
+   clearedOnSourceChange,
+   isCurrentResponse,
+   shouldApplyReconnect,
+-  type TelemetrySourceDescriptor,
+ } from './telemetryReviewState';
+ 
+ export type TelemetryAgentPhase = 'idle' | 'uploading' | 'requesting' | 'completed' | 'failed' | 'cancelled';
+@@ -91,7 +89,9 @@ const CANCELLED_MESSAGE = 'Cancelled. No successful model result was returned; r
+ 
+ export class TelemetryReviewCoordinator {
+   private sourceKey: string | null = null;
++  private sourceDescriptor: TelemetryFileDescriptor | { kind: 'sample' } | null = null;
+   private sourceSeq = 0;
++  private selectionUid = 0;
+   private analysisOpId = 0;
+   private askOpId = 0;
+   private reviewOpId = 0;
+@@ -116,21 +116,32 @@ export class TelemetryReviewCoordinator {
+     this.sourceSeq += 1;
+   }
+ 
+-  /** Bind an uploaded file (or detach with null) and clear all review state. */
+-  selectFile(descriptor: TelemetryFileDescriptor | null): void {
++  /** Bind an uploaded file (or detach with null) and clear all review state. Returns the unique selection identity. */
++  selectFile(descriptor: TelemetryFileDescriptor | null): string | null {
+     this.sourceSeq += 1;
+-    this.sourceKey = descriptor === null ? null : buildSourceKey({ kind: 'file', ...descriptor });
++    if (descriptor === null) {
++      this.sourceKey = null;
++      this.sourceDescriptor = null;
++    } else {
++      this.selectionUid += 1;
++      this.sourceDescriptor = descriptor;
++      this.sourceKey = `file#${this.selectionUid}:${descriptor.name}:${descriptor.size}:${descriptor.lastModified}`;
++    }
+     // A source change also releases preparation busy state: any pending
+     // prepare belongs to the detached source and its finish is guarded, so
+     // the new source is never blocked by stale busy.
+     this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false });
++    return this.sourceKey;
+   }
+ 
+-  /** Bind the bundled synthetic sample as the single active source. */
+-  selectSample(): void {
++  /** Bind the bundled synthetic sample as the single active source. Returns the unique selection identity. */
++  selectSample(): string {
+     this.sourceSeq += 1;
+-    this.sourceKey = buildSourceKey({ kind: 'sample' });
++    this.selectionUid += 1;
++    this.sourceDescriptor = { kind: 'sample' };
++    this.sourceKey = `sample#${this.selectionUid}`;
+     this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false, clearFileInput: true });
++    return this.sourceKey;
+   }
+ 
+   private capture(opId: number): CapturedOperation {
+@@ -171,17 +182,23 @@ export class TelemetryReviewCoordinator {
+   }
+ 
+   /**
+-   * Deterministic analysis of a file: binds the file as the active source
+-   * first (invalidating priors), then encodes it through the deferred
+-   * reader inside the guarded operation. Encoder failures surface only when
+-   * this operation is still current.
++   * Deterministic analysis of a file. The caller passes the selection identity
++   * obtained at selection time; a stale entry (another selection happened
++   * since) is refused before rebinding. A current entry rebinds the file with
++   * a fresh identity (invalidating priors), then encodes it through the
++   * deferred reader inside the guarded operation. Encoder failures surface
++   * only when this operation is still current.
+    */
+   async runFileAnalysis(
+-    descriptor: TelemetryFileDescriptor,
++    selectionKey: string | null,
+     readFile: () => Promise<TelemetryFileSubmit>,
+   ): Promise<void> {
++    if (selectionKey === null || selectionKey !== this.sourceKey) return;
++    const descriptor = this.sourceDescriptor;
++    if (!descriptor || 'kind' in descriptor) return;
+     this.sourceSeq += 1;
+-    this.sourceKey = buildSourceKey({ kind: 'file', ...descriptor });
++    this.selectionUid += 1;
++    this.sourceKey = `file#${this.selectionUid}:${descriptor.name}:${descriptor.size}:${descriptor.lastModified}`;
+     this.effects.apply({ ...clearedOnSourceChange(), busy: false, busySource: null, reviewBusy: false });
+     const opId = ++this.analysisOpId;
+     const lifetime = this.capture(opId);
+@@ -221,13 +238,13 @@ export class TelemetryReviewCoordinator {
+    */
+   async askAboutCsv(
+     request: string,
+-    descriptor: TelemetryFileDescriptor,
++    selectionKey: string | null,
+     readFile: () => Promise<TelemetryFileSubmit>,
+     options: { signal?: AbortSignal } = {},
+   ): Promise<void> {
+     const opId = ++this.askOpId;
+     const lifetime = this.capture(opId);
+-    if (this.sourceKey !== buildSourceKey({ kind: 'file', ...descriptor })) return;
++    if (selectionKey === null || selectionKey !== this.sourceKey) return;
+     this.effects.apply({
+       agentResult: null, reviewRun: null, reviewError: null,
+       analysis: null, agentError: null, agentPhase: 'uploading',
+diff --git a/tests/gui/rest-client-abort.test.ts b/tests/gui/rest-client-abort.test.ts
+index 6b18729..769a5ab 100644
+--- a/tests/gui/rest-client-abort.test.ts
++++ b/tests/gui/rest-client-abort.test.ts
+@@ -1,7 +1,8 @@
+ /**
+- * REST client abort hardening (COMPLETION-FIX-10 finding 1).
+- * A pre-aborted caller signal must not start a request, and the forwarding
+- * listener must always be cleaned up. Loopback/injected fetch only.
++ * REST client abort handling (COMPLETION-FIX-10 finding 1, FIX-12 finding 2).
++ * A pre-aborted caller signal must not start a request; listener cleanup is
++ * mandatory. Caller cancellation stays an abort outcome while the client's
++ * own deadline remains a TimeoutError. Loopback/injected fetch only.
+  */
+ import { describe, expect, it, vi } from 'vitest';
+ import { BrowserRestClient } from '../../src/gui/src/api/rest-client';
+@@ -15,6 +16,18 @@ function okFetch(body: unknown = { data: {} }) {
+   }));
+ }
+ 
++function hangingFetch(onAbort?: (reason?: unknown) => void) {
++  return vi.fn(async (_input: unknown, init?: { signal?: AbortSignal }) => {
++    await new Promise<never>((_resolve, reject) => {
++      init?.signal?.addEventListener('abort', () => {
++        if (onAbort) onAbort(init.signal?.reason);
++        reject(new DOMException('The operation was aborted.', 'AbortError'));
++      }, { once: true });
++    });
++    throw new Error('unreachable');
++  });
++}
++
+ function clientWith(fetchFn: ReturnType<typeof vi.fn>) {
+   return new BrowserRestClient({
+     baseUrl: 'http://127.0.0.1:9',
+@@ -29,7 +42,7 @@ describe('BrowserRestClient abort handling', () => {
+     const fetchFn = okFetch();
+     const client = clientWith(fetchFn);
+     const controller = new AbortController();
+-    controller.abort();
++    controller.abort(new DOMException('Caller cancelled.', 'AbortError'));
+     const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+ 
+     await expect(client.request('GET', '/api/v1/chat/health', undefined, { signal: controller.signal }))
+@@ -52,17 +65,28 @@ describe('BrowserRestClient abort handling', () => {
+     controller.abort();
+   });
+ 
+-  it('still maps a mid-flight abort to a timeout', async () => {
+-    const fetchFn = vi.fn(async (_input: unknown, init?: { signal?: AbortSignal }) => {
+-      await new Promise<void>((_resolve, reject) => {
+-        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted.', 'AbortError')), { once: true });
+-      });
+-      throw new Error('unreachable');
+-    });
++  it('reports mid-flight caller cancellation as an abort, not a timeout', async () => {
++    const seen: unknown[] = [];
++    const fetchFn = hangingFetch((reason) => { seen.push(reason); });
+     const client = clientWith(fetchFn);
+     const controller = new AbortController();
+     const pending = client.request('GET', '/api/v1/chat/health', undefined, { signal: controller.signal, timeoutMs: 5_000 });
+-    controller.abort();
+-    await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
++    controller.abort(new DOMException('Caller cancelled mid-flight.', 'AbortError'));
++    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
++    await expect(pending).rejects.not.toMatchObject({ name: 'TimeoutError' });
++    expect(seen).toHaveLength(1);
++  });
++
++  it('still reports the client deadline as a timeout when the caller did not abort', async () => {
++    const fetchFn = hangingFetch();
++    const client = new BrowserRestClient({
++      baseUrl: 'http://127.0.0.1:9',
++      projectRoot: 'C:\\maos-test',
++      fetchFn: fetchFn as unknown as typeof fetch,
++      defaultTimeoutMs: 40,
++    });
++    await expect(client.request('GET', '/api/v1/chat/health'))
++      .rejects.toMatchObject({ name: 'TimeoutError' });
++    expect(fetchFn).toHaveBeenCalledTimes(1);
+   });
+ });
+diff --git a/tests/gui/telemetry-review-coordinator.test.ts b/tests/gui/telemetry-review-coordinator.test.ts
+index cbc519e..54d389c 100644
+--- a/tests/gui/telemetry-review-coordinator.test.ts
++++ b/tests/gui/telemetry-review-coordinator.test.ts
+@@ -1,9 +1,10 @@
+ /**
+  * Behavioral coverage for the panel's delegated async/state coordination
+- * (COMPLETION-FIX-06/08). These tests drive TelemetryReviewCoordinator — the
+- * exact implementation TelemetryReviewPanel delegates every side effect to —
+- * through the SAME entrypoints the panel uses, with deferred promises and
+- * fake adapters/storage/navigation. No new framework; node vitest only.
++ * (COMPLETION-FIX-06/08/10/12). These tests drive TelemetryReviewCoordinator —
++ * the exact implementation TelemetryReviewPanel delegates every side effect
++ * to — through the SAME entrypoints the panel uses (selection keys carried
++ * from select calls into run/ask calls), with deferred promises and fake
++ * adapters/storage/navigation. No new framework; node vitest only.
+  */
+ import { describe, expect, it, vi } from 'vitest';
+ import {
+@@ -104,7 +105,7 @@ function judgedRun(runId: string, status = 'pending_approval') {
+   return { runId, status };
+ }
+ 
+-describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () => {
++describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08/10/12)', () => {
+   it('prepare A, select B, resolve A: no stale review, error, storage or navigation', async () => {
+     const h = makeHarness();
+     h.coordinator.selectFile(fileA);
+@@ -114,7 +115,6 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     h.coordinator.selectSample();
+     prepA.resolve(judgedRun('judged-run-agent-a'));
+     await pending;
+-
+     expect(h.prepareCalls).toEqual(['analysis-a']);
+     expect(h.patches.some((p) => p.reviewRun != null)).toBe(false);
+     expect(h.patches.some((p) => p.reviewError != null)).toBe(false);
+@@ -122,7 +122,7 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     expect(h.navigations).toBe(0);
+   });
+ 
+-  it('same-source preparation A/B: stale success and stale rejection are ignored', async () => {
++  it('same-source preparation: B resolves first, then A resolves and is ignored', async () => {
+     const h = makeHarness();
+     h.coordinator.selectFile(fileA);
+     const prepA = deferred();
+@@ -131,58 +131,21 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     const prepB = deferred();
+     h.prepareQueue.push(prepB);
+     const pendingB = h.coordinator.prepareReview('analysis-b');
+-    prepA.resolve(judgedRun('judged-run-agent-a'));
+-    await pendingA;
+-    expect(h.patches.some((p) => p.reviewRun != null)).toBe(false);
+-    expect(h.writes).toEqual([]);
+-    expect(h.navigations).toBe(0);
+-
+-    {
+-      const prepA2 = deferred();
+-      h.prepareQueue.push(prepA2);
+-      const pendingA2 = h.coordinator.prepareReview('analysis-a2');
+-      const prepB2 = deferred();
+-      h.prepareQueue.push(prepB2);
+-      const pendingB2 = h.coordinator.prepareReview('analysis-b2');
+-      prepA2.reject(new Error('stale backend failure'));
+-      await pendingA2;
+-      expect(h.patches.some((p) => p.reviewError != null)).toBe(false);
+-      prepB2.resolve(judgedRun('judged-run-agent-b2'));
+-      await pendingB2;
+-      const lastRun = [...h.patches].reverse().find((p) => p.reviewRun !== undefined);
+-      expect(lastRun?.reviewRun).toBeDefined();
+-      expect(h.writes).toEqual(['judged-run-agent-b2']);
+-      expect(h.navigations).toBe(1);
+-    }
+     prepB.resolve(judgedRun('judged-run-agent-b'));
+     await pendingB;
+-    const busy = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
+-    expect(busy[busy.length - 1]).toBe(false);
+-  });
+-
+-  it('prepare A, select B, start B, finish A: B stays busy until B finishes', async () => {
+-    const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
+-    const prepA = deferred();
+-    h.prepareQueue.push(prepA);
+-    const pendingA = h.coordinator.prepareReview('analysis-a');
+-    h.coordinator.selectSample();
+-    const prepB = deferred();
+-    h.prepareQueue.push(prepB);
+-    const pendingB = h.coordinator.prepareReview('analysis-b');
++    expect(h.writes).toEqual(['judged-run-agent-b']);
++    expect(h.navigations).toBe(1);
+     prepA.resolve(judgedRun('judged-run-agent-a'));
+     await pendingA;
+-    const busyAfterA = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
+-    expect(busyAfterA[busyAfterA.length - 1]).toBe(true);
+-    prepB.resolve(judgedRun('judged-run-agent-b'));
+-    await pendingB;
+-    const busyAfterB = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
+-    expect(busyAfterB[busyAfterB.length - 1]).toBe(false);
++    const runs = h.patches.filter((p) => p.reviewRun != null);
++    expect(runs).toHaveLength(1);
+     expect(h.writes).toEqual(['judged-run-agent-b']);
+     expect(h.navigations).toBe(1);
++    const busy = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
++    expect(busy[busy.length - 1]).toBe(false);
+   });
+ 
+-  it('same-source preparation: B resolves first, then A resolves and is ignored', async () => {
++  it('same-source preparation: stale rejection is ignored, then B applies', async () => {
+     const h = makeHarness();
+     h.coordinator.selectFile(fileA);
+     const prepA = deferred();
+@@ -191,36 +154,35 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     const prepB = deferred();
+     h.prepareQueue.push(prepB);
+     const pendingB = h.coordinator.prepareReview('analysis-b');
++    prepA.reject(new Error('stale backend failure'));
++    await pendingA;
++    expect(h.patches.some((p) => p.reviewError != null)).toBe(false);
+     prepB.resolve(judgedRun('judged-run-agent-b'));
+     await pendingB;
++    const lastRun = [...h.patches].reverse().find((p) => p.reviewRun !== undefined);
++    expect(lastRun?.reviewRun).toBeDefined();
+     expect(h.writes).toEqual(['judged-run-agent-b']);
+     expect(h.navigations).toBe(1);
+-    prepA.resolve(judgedRun('judged-run-agent-a'));
+-    await pendingA;
+-    const runs = h.patches.filter((p) => p.reviewRun != null).map((p) => p.reviewRun);
+-    expect(runs).toHaveLength(1);
+-    expect(h.writes).toEqual(['judged-run-agent-b']);
+-    expect(h.navigations).toBe(1);
+-    const busy = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
+-    expect(busy[busy.length - 1]).toBe(false);
+   });
+ 
+-  it('same-source preparation: stale rejection is ignored, later success applies', async () => {
++  it('prepare A, select B, start B, finish A: B stays busy until B finishes', async () => {
+     const h = makeHarness();
+     h.coordinator.selectFile(fileA);
+     const prepA = deferred();
+     h.prepareQueue.push(prepA);
+     const pendingA = h.coordinator.prepareReview('analysis-a');
++    h.coordinator.selectSample();
+     const prepB = deferred();
+     h.prepareQueue.push(prepB);
+     const pendingB = h.coordinator.prepareReview('analysis-b');
+-    prepA.reject(new Error('stale backend failure'));
++    prepA.resolve(judgedRun('judged-run-agent-a'));
+     await pendingA;
+-    expect(h.patches.some((p) => p.reviewError != null)).toBe(false);
++    const busyAfterA = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
++    expect(busyAfterA[busyAfterA.length - 1]).toBe(true);
+     prepB.resolve(judgedRun('judged-run-agent-b'));
+     await pendingB;
+-    const lastRun = [...h.patches].reverse().find((p) => p.reviewRun !== undefined);
+-    expect(lastRun?.reviewRun).toBeDefined();
++    const busyAfterB = h.patches.filter((p) => p.reviewBusy !== undefined).map((p) => p.reviewBusy);
++    expect(busyAfterB[busyAfterB.length - 1]).toBe(false);
+     expect(h.writes).toEqual(['judged-run-agent-b']);
+     expect(h.navigations).toBe(1);
+   });
+@@ -234,7 +196,7 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     const sampleUpload = deferred();
+     h.telemetryQueue.push(sampleUpload);
+     const pendingSample = h.coordinator.runSampleAnalysis();
+-    expect(h.coordinator.getActiveSourceKey()).toBe('sample');
++    expect(h.coordinator.getActiveSourceKey()).toMatch(/^sample#\d+$/);
+     prepA.resolve(judgedRun('judged-run-agent-a'));
+     await pendingPrepare;
+     expect(h.patches.some((p) => p.reviewRun != null)).toBe(false);
+@@ -248,15 +210,14 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+ 
+   it('file A then sample: no request for A runs under the sample identity', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    expect(keyA).toMatch(/^file#\d+:a\.csv:136:1793433790000$/);
+     h.coordinator.selectSample();
+-    expect(h.coordinator.getActiveSourceKey()).toBe('sample');
+-
++    expect(h.coordinator.getActiveSourceKey()).toMatch(/^sample#\d+$/);
+     const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileA, () => enc.promise);
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise);
+     enc.resolve(submitA());
+     await pending;
+-
+     expect(h.telemetryCalls).toHaveLength(0);
+     expect(h.csvCalls).toHaveLength(0);
+     expect(h.patches.some((p) => p.agentPhase === 'uploading' || p.agentPhase === 'requesting')).toBe(false);
+@@ -266,10 +227,11 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     const h = makeHarness();
+     h.coordinator.selectFile(fileA);
+     await h.coordinator.runSampleAnalysis();
+-    expect(h.coordinator.getActiveSourceKey()).toBe('sample');
+-    h.coordinator.selectFile(fileB);
++    expect(h.coordinator.getActiveSourceKey()).toMatch(/^sample#\d+$/);
++    const keyB = h.coordinator.selectFile(fileB) as string;
++    expect(keyB).toMatch(/^file#\d+:b\.csv:140:1793433799999$/);
+     const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileB, () => enc.promise);
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyB, () => enc.promise);
+     enc.resolve(submitB());
+     const upload = deferred();
+     h.telemetryQueue.push(upload);
+@@ -281,48 +243,86 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     await vi.waitFor(() => expect(h.csvCalls).toHaveLength(1));
+     agentCall.resolve(agentResult());
+     await pending;
+-
+     const lastResult = [...h.patches].reverse().find((p) => p.agentResult !== undefined);
+     expect(lastResult?.agentResult).not.toBeNull();
+     expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
+   });
+ 
+-  it('analysis A/B: stale result, error and finally cannot affect B', async () => {
++  it('identical metadata selections get distinct identities; stale keys are refused', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
+-    const encA = deferred<TelemetryFileSubmit>();
+-    const pendingA = h.coordinator.runFileAnalysis(fileA, () => encA.promise);
+-    const encB = deferred<TelemetryFileSubmit>();
+-    const pendingB = h.coordinator.runFileAnalysis(fileB, () => encB.promise);
+-    encA.resolve(submitA());
+-    await pendingA;
++    const twin = { name: 'a.csv', size: 136, lastModified: 1793433790000 };
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const keyB = h.coordinator.selectFile(twin) as string;
++    expect(keyA).not.toBe(keyB);
++    const enc = deferred<TelemetryFileSubmit>();
++    const pendingStale = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise);
++    enc.resolve(submitA());
++    await pendingStale;
+     expect(h.telemetryCalls).toHaveLength(0);
++    expect(h.csvCalls).toHaveLength(0);
++    expect(h.patches.some((p) => p.agentPhase === 'uploading')).toBe(false);
++    const keyC = h.coordinator.selectFile({ ...fileA }) as string;
++    expect(keyC).not.toBe(keyA);
++    expect(keyC).not.toBe(keyB);
++    const encC = deferred<TelemetryFileSubmit>();
++    const pendingC = h.coordinator.askAboutCsv('Summarize.', keyC, () => encC.promise);
++    encC.resolve(submitA());
++    const upload = deferred();
++    h.telemetryQueue.push(upload);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    expect((h.telemetryCalls[0] as { name?: string }).name).toBe('a.csv');
++    upload.resolve(uploadReceipt('telemetry-reselect', '.maos/industrial/evidence/a.csv'));
++    const agentCall = deferred();
++    h.csvQueue.push(agentCall);
++    await vi.waitFor(() => expect(h.csvCalls).toHaveLength(1));
++    agentCall.resolve(agentResult());
++    await pendingC;
++    expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
++  });
+ 
++  it('in-flight analysis A/B: stale resolve, error and finally cannot affect B', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const encA = deferred<TelemetryFileSubmit>();
++    const pendingA = h.coordinator.runFileAnalysis(keyA, () => encA.promise);
++    encA.resolve(submitA());
++    const uploadA = deferred();
++    h.telemetryQueue.push(uploadA);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    const keyB = h.coordinator.selectFile(fileB) as string;
++    const encB = deferred<TelemetryFileSubmit>();
+     encB.resolve(submitB());
+     const uploadB = deferred();
+     h.telemetryQueue.push(uploadB);
+-    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
+-    uploadB.resolve(uploadReceipt('telemetry-b', '.maos/industrial/evidence/b.csv'));
+-    await pendingB;
+-    const lastAnalysis = [...h.patches].reverse().find((p) => p.analysis !== undefined);
+-    expect(lastAnalysis?.analysis).toBeDefined();
++    const pendingB = h.coordinator.runFileAnalysis(keyB, () => encB.promise);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(2));
++    uploadA.resolve(uploadReceipt('telemetry-a', '.maos/industrial/evidence/a.csv'));
++    await pendingA;
++    expect(h.patches.some((p) => p.analysis != null)).toBe(false);
+     expect(h.patches.some((p) => p.error != null)).toBe(false);
++    const busyDuringB = h.patches.filter((p) => p.busy !== undefined).map((p) => p.busy);
++    expect(busyDuringB[busyDuringB.length - 1]).toBe(true);
++    uploadB.reject(new Error('backend failure for B'));
++    await pendingB;
++    const errors = h.patches.filter((p) => p.error != null);
++    expect(errors).toHaveLength(1);
++    expect(h.patches.some((p) => p.analysis != null)).toBe(false);
+     const busy = h.patches.filter((p) => p.busy !== undefined).map((p) => p.busy);
+     expect(busy[busy.length - 1]).toBe(false);
+   });
+ 
+   it('analysis A/B: stale rejection leaves B untouched', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
++    const keyA = h.coordinator.selectFile(fileA) as string;
+     const encA = deferred<TelemetryFileSubmit>();
+-    const pendingA = h.coordinator.runFileAnalysis(fileA, () => encA.promise);
++    const pendingA = h.coordinator.runFileAnalysis(keyA, () => encA.promise);
++    const keyB = h.coordinator.selectFile(fileB) as string;
+     const encB = deferred<TelemetryFileSubmit>();
+-    const pendingB = h.coordinator.runFileAnalysis(fileB, () => encB.promise);
++    const pendingB = h.coordinator.runFileAnalysis(keyB, () => encB.promise);
+     encA.reject(new Error('stale encode failure'));
+     await pendingA;
+     expect(h.patches.some((p) => p.error != null)).toBe(false);
+     expect(h.telemetryCalls).toHaveLength(0);
+-
+     encB.resolve(submitB());
+     const uploadB = deferred();
+     h.telemetryQueue.push(uploadB);
+@@ -337,9 +337,9 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+ 
+   it('file encoding failure after a source change reports nothing', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
++    const keyA = h.coordinator.selectFile(fileA) as string;
+     const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileA, () => enc.promise);
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise);
+     h.coordinator.selectFile(fileB);
+     enc.reject(new Error('encode failed'));
+     await pending;
+@@ -350,12 +350,42 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     expect(phases[phases.length - 1]).toBe('idle');
+   });
+ 
++  it('encoding resolve after cancel never calls the telemetry API', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const controller = new AbortController();
++    const enc = deferred<TelemetryFileSubmit>();
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise, { signal: controller.signal });
++    controller.abort();
++    enc.resolve(submitA());
++    await pending;
++    expect(h.telemetryCalls).toHaveLength(0);
++    expect(h.csvCalls).toHaveLength(0);
++    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
++    expect(lastPhase?.agentPhase).toBe('cancelled');
++  });
++
++  it('encoding rejection after cancel stays cancelled, never failed', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const controller = new AbortController();
++    const enc = deferred<TelemetryFileSubmit>();
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise, { signal: controller.signal });
++    controller.abort();
++    enc.reject(new Error('encode failed'));
++    await pending;
++    expect(h.patches.some((p) => p.agentPhase === 'failed')).toBe(false);
++    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
++    expect(lastPhase?.agentPhase).toBe('cancelled');
++    expect(h.telemetryCalls).toHaveLength(0);
++  });
++
+   it('aborted upload that resolves still leaves uploading honestly', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
++    const keyA = h.coordinator.selectFile(fileA) as string;
+     const controller = new AbortController();
+     const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileA, () => enc.promise, { signal: controller.signal });
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise, { signal: controller.signal });
+     enc.resolve(submitA());
+     const upload = deferred();
+     h.telemetryQueue.push(upload);
+@@ -369,19 +399,55 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     expect(h.csvCalls).toHaveLength(0);
+   });
+ 
++  it('aborted upload that rejects stays cancelled for the current operation', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const controller = new AbortController();
++    const enc = deferred<TelemetryFileSubmit>();
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise, { signal: controller.signal });
++    enc.resolve(submitA());
++    const upload = deferred();
++    h.telemetryQueue.push(upload);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    controller.abort();
++    upload.reject(new DOMException('The operation was aborted.', 'AbortError'));
++    await pending;
++    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
++    expect(lastPhase?.agentPhase).toBe('cancelled');
++    expect(h.csvCalls).toHaveLength(0);
++  });
++
++  it('a provider timeout surfaces as failed with a timeout explanation', async () => {
++    const h = makeHarness();
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const enc = deferred<TelemetryFileSubmit>();
++    const pending = h.coordinator.askAboutCsv('Summarize.', keyA, () => enc.promise);
++    enc.resolve(submitA());
++    const upload = deferred();
++    h.telemetryQueue.push(upload);
++    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    upload.reject(new Error('Request timed out after 30000ms for /api/v1/chat/completions'));
++    await pending;
++    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
++    expect(lastPhase?.agentPhase).toBe('failed');
++    const lastError = [...h.patches].reverse().find((p) => p.agentError !== undefined && p.agentError !== null);
++    expect(String(lastError?.agentError)).toContain('Timed out');
++  });
++
+   it('an old abort after a new operation starts cannot touch the new operation', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
++    const keyA = h.coordinator.selectFile(fileA) as string;
+     const controllerA = new AbortController();
+     const encA = deferred<TelemetryFileSubmit>();
+-    const pendingA = h.coordinator.askAboutCsv('First.', fileA, () => encA.promise, { signal: controllerA.signal });
++    const pendingA = h.coordinator.askAboutCsv('First.', keyA, () => encA.promise, { signal: controllerA.signal });
+     encA.resolve(submitA());
+     const uploadA = deferred();
+     h.telemetryQueue.push(uploadA);
+     await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    const keyA2 = h.coordinator.getActiveSourceKey() as string;
+     const controllerB = new AbortController();
+     const encB = deferred<TelemetryFileSubmit>();
+-    const pendingB = h.coordinator.askAboutCsv('Second.', fileA, () => encB.promise, { signal: controllerB.signal });
++    const pendingB = h.coordinator.askAboutCsv('Second.', keyA2, () => encB.promise, { signal: controllerB.signal });
+     controllerA.abort();
+     uploadA.resolve(uploadReceipt('telemetry-a', '.maos/industrial/evidence/a.csv'));
+     await pendingA;
+@@ -399,83 +465,36 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
+   });
+ 
+-  it('encoding resolve after cancel never calls the telemetry API', async () => {
+-    const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
+-    const controller = new AbortController();
+-    const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileA, () => enc.promise, { signal: controller.signal });
+-    controller.abort();
+-    enc.resolve(submitA());
+-    await pending;
+-    expect(h.telemetryCalls).toHaveLength(0);
+-    expect(h.csvCalls).toHaveLength(0);
+-    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
+-    expect(lastPhase?.agentPhase).toBe('cancelled');
+-  });
+-
+-  it('encoding rejection after cancel stays cancelled, never failed', async () => {
++  it('an old abort rejection after a new operation starts cannot touch it either', async () => {
+     const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
+-    const controller = new AbortController();
+-    const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileA, () => enc.promise, { signal: controller.signal });
+-    controller.abort();
+-    enc.reject(new Error('encode failed'));
+-    await pending;
+-    expect(h.patches.some((p) => p.agentPhase === 'failed')).toBe(false);
+-    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
+-    expect(lastPhase?.agentPhase).toBe('cancelled');
+-    expect(h.telemetryCalls).toHaveLength(0);
+-  });
+-
+-  it('aborted upload that rejects leaves the current operation cancelled', async () => {
+-    const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
+-    const controller = new AbortController();
+-    const enc = deferred<TelemetryFileSubmit>();
+-    const pending = h.coordinator.askAboutCsv('Summarize.', fileA, () => enc.promise, { signal: controller.signal });
+-    enc.resolve(submitA());
+-    const upload = deferred();
+-    h.telemetryQueue.push(upload);
+-    await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
+-    controller.abort();
+-    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+-    upload.reject(abortError);
+-    await pending;
+-    const lastPhase = [...h.patches].reverse().find((p) => p.agentPhase !== undefined);
+-    expect(lastPhase?.agentPhase).toBe('cancelled');
+-    expect(h.csvCalls).toHaveLength(0);
+-  });
+-
+-  it('in-flight analysis A/B: stale resolve, error and finally cannot affect B', async () => {
+-    const h = makeHarness();
+-    h.coordinator.selectFile(fileA);
++    const keyA = h.coordinator.selectFile(fileA) as string;
++    const controllerA = new AbortController();
+     const encA = deferred<TelemetryFileSubmit>();
+-    const pendingA = h.coordinator.runFileAnalysis(fileA, () => encA.promise);
++    const pendingA = h.coordinator.askAboutCsv('First.', keyA, () => encA.promise, { signal: controllerA.signal });
+     encA.resolve(submitA());
+     const uploadA = deferred();
+     h.telemetryQueue.push(uploadA);
+     await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(1));
++    const keyA2 = h.coordinator.getActiveSourceKey() as string;
++    const controllerB = new AbortController();
+     const encB = deferred<TelemetryFileSubmit>();
+-    encB.resolve(submitB());
++    const pendingB = h.coordinator.askAboutCsv('Second.', keyA2, () => encB.promise, { signal: controllerB.signal });
++    controllerA.abort();
++    uploadA.reject(new DOMException('The operation was aborted.', 'AbortError'));
++    await pendingA;
++    expect(h.patches.some((p) => p.agentPhase === 'cancelled')).toBe(false);
++    expect(h.patches.some((p) => p.agentError != null)).toBe(false);
++    encB.resolve(submitA());
+     const uploadB = deferred();
+     h.telemetryQueue.push(uploadB);
+-    const pendingB = h.coordinator.runFileAnalysis(fileB, () => encB.promise);
+     await vi.waitFor(() => expect(h.telemetryCalls).toHaveLength(2));
+-    uploadA.resolve(uploadReceipt('telemetry-a', '.maos/industrial/evidence/a.csv'));
+-    await pendingA;
+-    expect(h.patches.some((p) => p.analysis != null)).toBe(false);
+-    expect(h.patches.some((p) => p.error != null)).toBe(false);
+-    const busyDuringB = h.patches.filter((p) => p.busy !== undefined).map((p) => p.busy);
+-    expect(busyDuringB[busyDuringB.length - 1]).toBe(true);
+-    uploadB.reject(new Error('backend failure for B'));
++    uploadB.resolve(uploadReceipt('telemetry-a2', '.maos/industrial/evidence/a.csv'));
++    const agentCall = deferred();
++    h.csvQueue.push(agentCall);
++    await vi.waitFor(() => expect(h.csvCalls).toHaveLength(1));
++    agentCall.resolve(agentResult());
+     await pendingB;
+-    const errors = h.patches.filter((p) => p.error != null);
+-    expect(errors).toHaveLength(1);
+-    expect(h.patches.some((p) => p.analysis != null)).toBe(false);
+-    const busy = h.patches.filter((p) => p.busy !== undefined).map((p) => p.busy);
+-    expect(busy[busy.length - 1]).toBe(false);
++    expect(h.patches.some((p) => p.agentPhase === 'completed')).toBe(true);
+   });
+ 
+   it('dispose invalidates pending preparation and reconnect work', async () => {
+@@ -488,7 +507,7 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     h.judgedQueue.push(judged);
+     const pendingReconnect = h.coordinator.reconnect();
+     h.coordinator.dispose();
+-    prep.resolve(judgedRun('judged-run-agent-a'));
++    prep.resolve(judgedRun('judged-run-agent-a', 'pending_approval'));
+     judged.resolve(judgedRun('judged-run-agent-old', 'completed'));
+     await pendingPrepare;
+     await pendingReconnect;
+@@ -525,7 +544,7 @@ describe('telemetry review coordinator lifetimes (COMPLETION-FIX-06/08)', () =>
+     const upload = deferred();
+     h.telemetryQueue.push(upload);
+     const pending = h.coordinator.runSampleAnalysis();
+-    expect(h.coordinator.getActiveSourceKey()).toBe('sample');
++    expect(h.coordinator.getActiveSourceKey()).toMatch(/^sample#\d+$/);
+     const clearPatches = h.patches.filter((p) => (p as { clearFileInput?: boolean }).clearFileInput === true);
+     expect(clearPatches.length).toBeGreaterThan(0);
+     expect(h.patches.some((p) => p.agentResult != null)).toBe(false);

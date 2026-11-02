@@ -1,0 +1,533 @@
+COMMAND=node review-packets/reset-replay-review/validation-shared-boundaries-2026-10-28/reproduce-shared-boundaries-packet.cjs (first classification attempt: raw-only line-ending differences incorrectly counted as content mismatches)
+{
+  "repositoryRoot": "C:/maos",
+  "baseRevision": "f9525055c56a7f7771dd2fa029c147c2960a98a3",
+  "patchPath": "C:\\maos\\review-packets\\reset-replay-review\\shared-boundaries-canonical.patch",
+  "patchSha256": "96fdbeb470c3862248021602707b6f657ec77893e9d76f7d948d4f2d77501e01",
+  "manifestSha256": "66b0ee7a2f23d66920b0b8b0164a3b114f907b112f01ebc9e3fe385e2ab35c96",
+  "tempRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-shared-boundaries-repro-pVHpPO",
+  "gitApplyCheck": "PASS",
+  "gitApply": "PASS",
+  "reverseCheck": "PASS",
+  "scopedFileCount": 94,
+  "rawEqualCount": 37,
+  "lfEqualCount": 94,
+  "mismatches": [
+    {
+      "path": "README.md",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "f06f78727d920930ffceef555f0ee70cf32a2ed374c077ef19d6ec8303a085c6",
+      "actualRawSha256": "b65b3174846b28a0f347d3b4d5d930b42c73e5a73fabf46e6b9ecf169ec5791f",
+      "expectedLfSha256": "b65b3174846b28a0f347d3b4d5d930b42c73e5a73fabf46e6b9ecf169ec5791f",
+      "actualLfSha256": "b65b3174846b28a0f347d3b4d5d930b42c73e5a73fabf46e6b9ecf169ec5791f"
+    },
+    {
+      "path": "src/api/middleware.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "682170ebfd8553e664b47046d2c795a4c66d7bd69743bc381b4c9482ac02da51",
+      "actualRawSha256": "b9b67224e78c72f133878578e5711bedcb68097a5be47da7276ee6c4bb535e3d",
+      "expectedLfSha256": "b9b67224e78c72f133878578e5711bedcb68097a5be47da7276ee6c4bb535e3d",
+      "actualLfSha256": "b9b67224e78c72f133878578e5711bedcb68097a5be47da7276ee6c4bb535e3d"
+    },
+    {
+      "path": "src/api/openapi-spec.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "f810aae7822f7218fda7823eb9d3da8d005dd40d94b3783c643381bae411aae2",
+      "actualRawSha256": "2d0627e4e7b9f1d79beded8ff03ea9f1e75a35d2ecea7e3229116b539831b2b8",
+      "expectedLfSha256": "2d0627e4e7b9f1d79beded8ff03ea9f1e75a35d2ecea7e3229116b539831b2b8",
+      "actualLfSha256": "2d0627e4e7b9f1d79beded8ff03ea9f1e75a35d2ecea7e3229116b539831b2b8"
+    },
+    {
+      "path": "src/api/router.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "1aaafb9045672a36d7a7cd6460dc833a1bc93254518906300546d7fd69c489c0",
+      "actualRawSha256": "6056d6753db24cb6bd21084d691a4e4e0d724451c03262bf677842705173a8db",
+      "expectedLfSha256": "6056d6753db24cb6bd21084d691a4e4e0d724451c03262bf677842705173a8db",
+      "actualLfSha256": "6056d6753db24cb6bd21084d691a4e4e0d724451c03262bf677842705173a8db"
+    },
+    {
+      "path": "src/api/server.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "a660f656a93adf8d70d0537bb2581e8c5cef143c5bb5f21d126a89b7650bb241",
+      "actualRawSha256": "0c46227b57318181cf2c4d0a0cd795c18c6ef86d128316f942e2974067e3414e",
+      "expectedLfSha256": "0c46227b57318181cf2c4d0a0cd795c18c6ef86d128316f942e2974067e3414e",
+      "actualLfSha256": "0c46227b57318181cf2c4d0a0cd795c18c6ef86d128316f942e2974067e3414e"
+    },
+    {
+      "path": "src/cli/dashboard.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "cde4b195a310bc1304bb338af1b927916b6b2010027fb104c7d5a2e4e3d8d22e",
+      "actualRawSha256": "ca5a4ee179e6ed19588681ad6916a4a4651b470617135afec5c40f98ebf12e52",
+      "expectedLfSha256": "ca5a4ee179e6ed19588681ad6916a4a4651b470617135afec5c40f98ebf12e52",
+      "actualLfSha256": "ca5a4ee179e6ed19588681ad6916a4a4651b470617135afec5c40f98ebf12e52"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "dc63b3d1793b12bc673f9b8c62ff60440e5d0c6d6bda297d0f017f3e581e8959",
+      "actualRawSha256": "a7fdc2725d38603dceebc9cc8ede0c03f9a4dca39f904d41acc3e146de7ba5ad",
+      "expectedLfSha256": "a7fdc2725d38603dceebc9cc8ede0c03f9a4dca39f904d41acc3e146de7ba5ad",
+      "actualLfSha256": "a7fdc2725d38603dceebc9cc8ede0c03f9a4dca39f904d41acc3e146de7ba5ad"
+    },
+    {
+      "path": "src/core/agent-runner.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "a16f4a1c62f956e9e44586775e24930b6f82d259bca253e6467470371731c0c9",
+      "actualRawSha256": "a007d15d506295716d843f49b151cb5860824e1fe330c4022e3d595902192305",
+      "expectedLfSha256": "a007d15d506295716d843f49b151cb5860824e1fe330c4022e3d595902192305",
+      "actualLfSha256": "a007d15d506295716d843f49b151cb5860824e1fe330c4022e3d595902192305"
+    },
+    {
+      "path": "src/core/event-store.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "10f75b25e6d5fc4d153746c6576782b85851ca774f7d261dc83fff968423a8d7",
+      "actualRawSha256": "db58b0ebbb39f81aceeb672723abd0537b65f9be41bebbbaf2df86f3bd0d97f5",
+      "expectedLfSha256": "db58b0ebbb39f81aceeb672723abd0537b65f9be41bebbbaf2df86f3bd0d97f5",
+      "actualLfSha256": "db58b0ebbb39f81aceeb672723abd0537b65f9be41bebbbaf2df86f3bd0d97f5"
+    },
+    {
+      "path": "src/core/idempotency-store.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "df9a2acfe1da5d48cbfd42fed1f26dcaf691c8052a77763a1ff10051546e68e1",
+      "actualRawSha256": "8006b591e8084e208791b2eb6032fa245d3f9ac0c584461a7d7dde45b182beb2",
+      "expectedLfSha256": "8006b591e8084e208791b2eb6032fa245d3f9ac0c584461a7d7dde45b182beb2",
+      "actualLfSha256": "8006b591e8084e208791b2eb6032fa245d3f9ac0c584461a7d7dde45b182beb2"
+    },
+    {
+      "path": "src/core/orchestrator.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "92c8aca1574e477d7cf978ccffa487bfe07655d6b90f4832610d1f9920f3d751",
+      "actualRawSha256": "0668aabf8376d7d8269daef273f45ac54ac32e6aff3eade289c97ebfe9ba7ab9",
+      "expectedLfSha256": "0668aabf8376d7d8269daef273f45ac54ac32e6aff3eade289c97ebfe9ba7ab9",
+      "actualLfSha256": "0668aabf8376d7d8269daef273f45ac54ac32e6aff3eade289c97ebfe9ba7ab9"
+    },
+    {
+      "path": "src/core/queue.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "798b197aadbb68ae2f00b9365d259b11500da9bfbe6a008ba152403d285e06a4",
+      "actualRawSha256": "c88f9f27dedc682aeea83f7f5f65761c57a5f8220101a73bdf4c0ca631e7e2c1",
+      "expectedLfSha256": "c88f9f27dedc682aeea83f7f5f65761c57a5f8220101a73bdf4c0ca631e7e2c1",
+      "actualLfSha256": "c88f9f27dedc682aeea83f7f5f65761c57a5f8220101a73bdf4c0ca631e7e2c1"
+    },
+    {
+      "path": "src/domain/office-artifact.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "cd48b2248823d07d1db5da8a382153c50ec77c953ef2b6402b85eeb4f8b06d43",
+      "actualRawSha256": "b95cf2951be34f69dc4c50a0a15ba52ec19b9314cb84136c9c8e44d793a675a8",
+      "expectedLfSha256": "b95cf2951be34f69dc4c50a0a15ba52ec19b9314cb84136c9c8e44d793a675a8",
+      "actualLfSha256": "b95cf2951be34f69dc4c50a0a15ba52ec19b9314cb84136c9c8e44d793a675a8"
+    },
+    {
+      "path": "src/domain/schemas.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "925332d499546b754b04a17b8be6bbb9ce04de32a053d1cb453414a27859042a",
+      "actualRawSha256": "ea75914cef9dd5fd67b876bd83e42ecbc8194d03e0107b0f340aa4aa754cb4ff",
+      "expectedLfSha256": "ea75914cef9dd5fd67b876bd83e42ecbc8194d03e0107b0f340aa4aa754cb4ff",
+      "actualLfSha256": "ea75914cef9dd5fd67b876bd83e42ecbc8194d03e0107b0f340aa4aa754cb4ff"
+    },
+    {
+      "path": "src/gui/src/api/adapter.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "1071718885eaab700feedc4bd7d125bca3089274cc5cd1f1640dfb0dd5ae6813",
+      "actualRawSha256": "1f16b8ed5f949052c9fad997e57095bbe239b97765f5606ac176cea857af1881",
+      "expectedLfSha256": "1f16b8ed5f949052c9fad997e57095bbe239b97765f5606ac176cea857af1881",
+      "actualLfSha256": "1f16b8ed5f949052c9fad997e57095bbe239b97765f5606ac176cea857af1881"
+    },
+    {
+      "path": "src/gui/src/api/errors.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "09fa1a0a867f6feb835bec0919ca72311ead8e64f9501d27bf8edc304e314d9e",
+      "actualRawSha256": "2389d991aede9317085ae77bf27c5bc5ffb6ce1e7d50bf6da37b782894f25696",
+      "expectedLfSha256": "2389d991aede9317085ae77bf27c5bc5ffb6ce1e7d50bf6da37b782894f25696",
+      "actualLfSha256": "2389d991aede9317085ae77bf27c5bc5ffb6ce1e7d50bf6da37b782894f25696"
+    },
+    {
+      "path": "src/gui/src/api/event-client.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "d800da261a98c086fa8ff20a929824ddc28659753c570ff49f4f02c6f7bea055",
+      "actualRawSha256": "b1d09ed5c05113286c3682a2f473d490ae0f7dea9eb2b7e39901d4027e4aa997",
+      "expectedLfSha256": "b1d09ed5c05113286c3682a2f473d490ae0f7dea9eb2b7e39901d4027e4aa997",
+      "actualLfSha256": "b1d09ed5c05113286c3682a2f473d490ae0f7dea9eb2b7e39901d4027e4aa997"
+    },
+    {
+      "path": "src/gui/src/api/rest-client.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "ddb4f8497fa079b944b64a4fb165f4e0b9333a53c963e51b97afd1c186fa09d6",
+      "actualRawSha256": "47324268358cf5339d7b6d5894bf4ab9861d875819cf832a86803aef4bd2adfd",
+      "expectedLfSha256": "47324268358cf5339d7b6d5894bf4ab9861d875819cf832a86803aef4bd2adfd",
+      "actualLfSha256": "47324268358cf5339d7b6d5894bf4ab9861d875819cf832a86803aef4bd2adfd"
+    },
+    {
+      "path": "src/gui/src/App.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "d306c877b61870e61f962a35bfa5426de05f9f5058275005b5f5ffca9f86c2d6",
+      "actualRawSha256": "b6676823481dc016ead7cdb561587309edec5755247d6dde3d66cf5bfbbff315",
+      "expectedLfSha256": "b6676823481dc016ead7cdb561587309edec5755247d6dde3d66cf5bfbbff315",
+      "actualLfSha256": "b6676823481dc016ead7cdb561587309edec5755247d6dde3d66cf5bfbbff315"
+    },
+    {
+      "path": "src/gui/src/components/ActivityBar.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "3adbf68220b7e3a0602dcd76ed37b4918fe7f79918f080540761e60b7d4495dd",
+      "actualRawSha256": "64e4d4757d10de356f08fa448c72ad22ad38a81622c8e41fa10d536276901b71",
+      "expectedLfSha256": "64e4d4757d10de356f08fa448c72ad22ad38a81622c8e41fa10d536276901b71",
+      "actualLfSha256": "64e4d4757d10de356f08fa448c72ad22ad38a81622c8e41fa10d536276901b71"
+    },
+    {
+      "path": "src/gui/src/components/NavigationSidebar.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "d557085fe126e0c6c562ad97b965a593b9e5483b88115edf733006a499965c7c",
+      "actualRawSha256": "917ecc5b327217ff652ba2d519fbb81e24f15ad9554e565418af469a8a950fff",
+      "expectedLfSha256": "917ecc5b327217ff652ba2d519fbb81e24f15ad9554e565418af469a8a950fff",
+      "actualLfSha256": "917ecc5b327217ff652ba2d519fbb81e24f15ad9554e565418af469a8a950fff"
+    },
+    {
+      "path": "src/gui/src/components/TelemetryReviewPanel.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "1bb4ad9e01aeb96e3ea2f4b45b8500e8a90f8f46ba05b91a4ae13e1cd5c713e1",
+      "actualRawSha256": "2140c8796cf1c52ef9b05f534d75b322c7c0b98865472fe9ed384062f72e736c",
+      "expectedLfSha256": "2140c8796cf1c52ef9b05f534d75b322c7c0b98865472fe9ed384062f72e736c",
+      "actualLfSha256": "2140c8796cf1c52ef9b05f534d75b322c7c0b98865472fe9ed384062f72e736c"
+    },
+    {
+      "path": "src/gui/src/main.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "936e0e578411c1b7142c738f21ba1d02594a36ccb2b9f2dcc6dad17aaffd1217",
+      "actualRawSha256": "201b9e1e05aa50f779280d0a02126379e4c57ddd36968e1270f28722cf91358a",
+      "expectedLfSha256": "201b9e1e05aa50f779280d0a02126379e4c57ddd36968e1270f28722cf91358a",
+      "actualLfSha256": "201b9e1e05aa50f779280d0a02126379e4c57ddd36968e1270f28722cf91358a"
+    },
+    {
+      "path": "src/gui/src/views/ApprovalsView.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "914cab808a80bdeb637166bfc8f5f510550b8a3c2be4d93bfca6df8b29193bf8",
+      "actualRawSha256": "5f465d63c0fee6c8ae6e65ef626e5c467b33c1311d17ab9d0df7292bef063972",
+      "expectedLfSha256": "5f465d63c0fee6c8ae6e65ef626e5c467b33c1311d17ab9d0df7292bef063972",
+      "actualLfSha256": "5f465d63c0fee6c8ae6e65ef626e5c467b33c1311d17ab9d0df7292bef063972"
+    },
+    {
+      "path": "src/gui/src/views/CockpitView.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "14f13ef08473cace6bdec2e2a40d5de8063e5e4507ed1e3ec674502810ffd710",
+      "actualRawSha256": "5d3f209fc397ed68984b28fce2776e35f4292c46bcf9e23dcb266d330b5ed765",
+      "expectedLfSha256": "5d3f209fc397ed68984b28fce2776e35f4292c46bcf9e23dcb266d330b5ed765",
+      "actualLfSha256": "5d3f209fc397ed68984b28fce2776e35f4292c46bcf9e23dcb266d330b5ed765"
+    },
+    {
+      "path": "src/gui/src/views/DocumentsView.tsx",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "ed30eaf4f5a63296e03ecb249d87c6d2aa56d5e24fd8aec3446ad61750cc322c",
+      "actualRawSha256": "3eeb7d10dfe6f354cb22e6207933cc10ddddae6467922d6bedb562a08b8edfc5",
+      "expectedLfSha256": "3eeb7d10dfe6f354cb22e6207933cc10ddddae6467922d6bedb562a08b8edfc5",
+      "actualLfSha256": "3eeb7d10dfe6f354cb22e6207933cc10ddddae6467922d6bedb562a08b8edfc5"
+    },
+    {
+      "path": "src/industrial/atomic-cleanup-coordinator.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "1fff46ca272023fb62de4915086d2c499890a1364735154ecca6bfe4ee43886b",
+      "actualRawSha256": "5e779772d02b7545c470609944d6080c39a9703593991c73e1a7a0dcb951eee6",
+      "expectedLfSha256": "5e779772d02b7545c470609944d6080c39a9703593991c73e1a7a0dcb951eee6",
+      "actualLfSha256": "5e779772d02b7545c470609944d6080c39a9703593991c73e1a7a0dcb951eee6"
+    },
+    {
+      "path": "src/industrial/deterministic-reset.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "858b67def5500e199a7ddbb64c32cf316e26dad82155d4efb7d0ff6b6fdf89f0",
+      "actualRawSha256": "5072c90f0120bb5918cbc85043aa4ff5d1add340c5e66499cdc10fc459f48a0d",
+      "expectedLfSha256": "5072c90f0120bb5918cbc85043aa4ff5d1add340c5e66499cdc10fc459f48a0d",
+      "actualLfSha256": "5072c90f0120bb5918cbc85043aa4ff5d1add340c5e66499cdc10fc459f48a0d"
+    },
+    {
+      "path": "src/industrial/industrial-cli.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "c21cccf4937718a5e395ee0ff8320e6a552447a5e1e6a34c767247e1dd20a11d",
+      "actualRawSha256": "a12428bc2b6bb85b1f08aede8fb23c75018c8bda86c5629c50c03f56dc8acd40",
+      "expectedLfSha256": "a12428bc2b6bb85b1f08aede8fb23c75018c8bda86c5629c50c03f56dc8acd40",
+      "actualLfSha256": "a12428bc2b6bb85b1f08aede8fb23c75018c8bda86c5629c50c03f56dc8acd40"
+    },
+    {
+      "path": "src/industrial/judged-run.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "a0ac16f8ccd0e99c51b415d4aa83aae833324e50c18ab348864003e26be88dd6",
+      "actualRawSha256": "dc743fb82489fbedcef31f015c201dbcb346f35a3e4fb4972a791309a9e0b598",
+      "expectedLfSha256": "dc743fb82489fbedcef31f015c201dbcb346f35a3e4fb4972a791309a9e0b598",
+      "actualLfSha256": "dc743fb82489fbedcef31f015c201dbcb346f35a3e4fb4972a791309a9e0b598"
+    },
+    {
+      "path": "src/industrial/rust-engine-bridge.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "0feb5bcd476055efe7c158fc0254b94b12a153c535c2a550e0299739867102bb",
+      "actualRawSha256": "c5cc758aeb5fa79495fcbe93b6e4822d720224d8820eef285615d671b12ea1a4",
+      "expectedLfSha256": "c5cc758aeb5fa79495fcbe93b6e4822d720224d8820eef285615d671b12ea1a4",
+      "actualLfSha256": "c5cc758aeb5fa79495fcbe93b6e4822d720224d8820eef285615d671b12ea1a4"
+    },
+    {
+      "path": "src/industrial/telemetry-analysis.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "b312665b6217fbe5a264b4b666190b8437be8b6faabb5b3fb84774f2b16b337f",
+      "actualRawSha256": "7977570c58a4b4c2b4df7ae9d3694cb5493142c66787c4ae69aa06b100be95b0",
+      "expectedLfSha256": "7977570c58a4b4c2b4df7ae9d3694cb5493142c66787c4ae69aa06b100be95b0",
+      "actualLfSha256": "7977570c58a4b4c2b4df7ae9d3694cb5493142c66787c4ae69aa06b100be95b0"
+    },
+    {
+      "path": "src/integrations/tools.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "0db956015559f925425269ccd06c7ee79f30ded48fcdcd41c190a22e162af388",
+      "actualRawSha256": "f6bcfc137dcd8f5b21298ea68b45293f87231e3d0bab63f17127f11a1ad6168a",
+      "expectedLfSha256": "f6bcfc137dcd8f5b21298ea68b45293f87231e3d0bab63f17127f11a1ad6168a",
+      "actualLfSha256": "f6bcfc137dcd8f5b21298ea68b45293f87231e3d0bab63f17127f11a1ad6168a"
+    },
+    {
+      "path": "src/service/artifact-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "a3eaadd74329f3a472a4c044041a5e9f354b30a7be00ef79d66adf09dd00bd05",
+      "actualRawSha256": "ae5ddd003991b4a22542f431bf6f3578261b23a7c01a09089dd4946d1fda69fd",
+      "expectedLfSha256": "ae5ddd003991b4a22542f431bf6f3578261b23a7c01a09089dd4946d1fda69fd",
+      "actualLfSha256": "ae5ddd003991b4a22542f431bf6f3578261b23a7c01a09089dd4946d1fda69fd"
+    },
+    {
+      "path": "src/service/docx-generator-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "868520cea938b8287a8329c4ddacebe16f3bd9b9acf77e1b0e669d7139ab2650",
+      "actualRawSha256": "104430406567dbf507aac36bc9d177b1696c144a8802b5a44194228a9664326c",
+      "expectedLfSha256": "104430406567dbf507aac36bc9d177b1696c144a8802b5a44194228a9664326c",
+      "actualLfSha256": "104430406567dbf507aac36bc9d177b1696c144a8802b5a44194228a9664326c"
+    },
+    {
+      "path": "src/service/index.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "358496119e9bb65df214148c2b746164012c4166ef223859241026e00194e10e",
+      "actualRawSha256": "a471fbea96ecb17a6216a11639dec6ecf0275822a0d2dc6b6ab966bfcc2cc510",
+      "expectedLfSha256": "a471fbea96ecb17a6216a11639dec6ecf0275822a0d2dc6b6ab966bfcc2cc510",
+      "actualLfSha256": "a471fbea96ecb17a6216a11639dec6ecf0275822a0d2dc6b6ab966bfcc2cc510"
+    },
+    {
+      "path": "src/service/project-service/entrypoint.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "f5dd31f9826c612ddedd5dc7306a4962c515185328870c910715c554f14add4a",
+      "actualRawSha256": "a8cc2c976df990bd7f98c947a24e120cdab3d281ecf2da9892c826dd542110ee",
+      "expectedLfSha256": "a8cc2c976df990bd7f98c947a24e120cdab3d281ecf2da9892c826dd542110ee",
+      "actualLfSha256": "a8cc2c976df990bd7f98c947a24e120cdab3d281ecf2da9892c826dd542110ee"
+    },
+    {
+      "path": "src/service/retention-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "6b22c0bdd2032754f3ddc9b5247c4f14fcc511aec9ac10db5d01d2f2ae70b7ea",
+      "actualRawSha256": "1713f5172a976bc3f3171b3b412699a8096a4b0c8d732a9f8f4d7edd93a802b4",
+      "expectedLfSha256": "1713f5172a976bc3f3171b3b412699a8096a4b0c8d732a9f8f4d7edd93a802b4",
+      "actualLfSha256": "1713f5172a976bc3f3171b3b412699a8096a4b0c8d732a9f8f4d7edd93a802b4"
+    },
+    {
+      "path": "src/service/sovereignty-bundle-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "1e73b9fea12d8859ad9d2dd599619d7b33d342652ac0911408fcc59ccf32a3ae",
+      "actualRawSha256": "c8925acbb05fa37635b19cf4bb486e55d93fc38c0d6951043942b016e1a12555",
+      "expectedLfSha256": "c8925acbb05fa37635b19cf4bb486e55d93fc38c0d6951043942b016e1a12555",
+      "actualLfSha256": "c8925acbb05fa37635b19cf4bb486e55d93fc38c0d6951043942b016e1a12555"
+    },
+    {
+      "path": "src/service/task-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "777f02ef98a574762a384a08ba2b204b8d868fff8b44c98517d42db0aaa82a06",
+      "actualRawSha256": "5a002d1d02cd32318c9d24e2455b2b625423aa3d38774e42d7e259b4001e86c3",
+      "expectedLfSha256": "5a002d1d02cd32318c9d24e2455b2b625423aa3d38774e42d7e259b4001e86c3",
+      "actualLfSha256": "5a002d1d02cd32318c9d24e2455b2b625423aa3d38774e42d7e259b4001e86c3"
+    },
+    {
+      "path": "src/service/workflow-planning-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "02b729088c5b6f1df631edb0fea2fc672b278f852d360d0f666c14f837429ac6",
+      "actualRawSha256": "c5602a1b925451ddbfd594f9989e7ace35636b7765ddff91b431acf2fbe3a631",
+      "expectedLfSha256": "c5602a1b925451ddbfd594f9989e7ace35636b7765ddff91b431acf2fbe3a631",
+      "actualLfSha256": "c5602a1b925451ddbfd594f9989e7ace35636b7765ddff91b431acf2fbe3a631"
+    },
+    {
+      "path": "src/service/workflow-service.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "cbd7c659e0d8b627579fed9fac3a09ed14f1d74c1cb9a524ae0c6e748c3a53b7",
+      "actualRawSha256": "bfea4b50095639acd56552c115f99696d0516f0a8877f4c6150295995b746f09",
+      "expectedLfSha256": "bfea4b50095639acd56552c115f99696d0516f0a8877f4c6150295995b746f09",
+      "actualLfSha256": "bfea4b50095639acd56552c115f99696d0516f0a8877f4c6150295995b746f09"
+    },
+    {
+      "path": "tests/f3-03-rest-contract.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "241295661234b692f44f14ca22335083d744e277dcb6b2f886172dfe2a07e1f9",
+      "actualRawSha256": "171ee1e2edbbd06887ea90517ee38b9f62340efecce372ecbd26e9ce01b28377",
+      "expectedLfSha256": "171ee1e2edbbd06887ea90517ee38b9f62340efecce372ecbd26e9ce01b28377",
+      "actualLfSha256": "171ee1e2edbbd06887ea90517ee38b9f62340efecce372ecbd26e9ce01b28377"
+    },
+    {
+      "path": "tests/f3-05-artifact-store.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "cb99d54f1fdec407a9d6098d4e37966c2e842d34e4e000954a1bceafdb5487b5",
+      "actualRawSha256": "197fca8c41e90d8c556edc75d90914f558c6489040268acfa2bffaf68bb1bea6",
+      "expectedLfSha256": "197fca8c41e90d8c556edc75d90914f558c6489040268acfa2bffaf68bb1bea6",
+      "actualLfSha256": "197fca8c41e90d8c556edc75d90914f558c6489040268acfa2bffaf68bb1bea6"
+    },
+    {
+      "path": "tests/f3-07-verifier-idempotency.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "bc43a0859337755e5dc82474607fa51165f45f9c5ddeca81227e94ff30844d2a",
+      "actualRawSha256": "4864188ec754c9a8c0f0ff9712365c35c64b7843468d1cb6f01f7b3ec3dc780b",
+      "expectedLfSha256": "4864188ec754c9a8c0f0ff9712365c35c64b7843468d1cb6f01f7b3ec3dc780b",
+      "actualLfSha256": "4864188ec754c9a8c0f0ff9712365c35c64b7843468d1cb6f01f7b3ec3dc780b"
+    },
+    {
+      "path": "tests/gui/ui1-01-spa-shell.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "6a92ec63f4a4d011d5a10c363924189f5fbb7982172b0a4bb9c2fa3dbc057efc",
+      "actualRawSha256": "9d3df58f89de247a763f414295b8e2272b2eb682af321485a7abcd2161bf5ef3",
+      "expectedLfSha256": "9d3df58f89de247a763f414295b8e2272b2eb682af321485a7abcd2161bf5ef3",
+      "actualLfSha256": "9d3df58f89de247a763f414295b8e2272b2eb682af321485a7abcd2161bf5ef3"
+    },
+    {
+      "path": "tests/gui/ui1-02-api-clients.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "88f1f995e0137051beeace4767b18029f90c7e8cc11d83e43649586276bac8de",
+      "actualRawSha256": "dd0df98d3e0d89eb514837dc25dfaa66816ae18f35519fa96078b854d7c4faa3",
+      "expectedLfSha256": "dd0df98d3e0d89eb514837dc25dfaa66816ae18f35519fa96078b854d7c4faa3",
+      "actualLfSha256": "dd0df98d3e0d89eb514837dc25dfaa66816ae18f35519fa96078b854d7c4faa3"
+    },
+    {
+      "path": "tests/gui/ui1-04-launcher-handshake.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "b6dc35f4e19fafc80cae7e08b073ebaa4160e977f64a277f7dcab1d03dc82d81",
+      "actualRawSha256": "3a2c503bc1a37acec5bbf79fee354a2f1d4731ee7e412e487d05244bad503c29",
+      "expectedLfSha256": "3a2c503bc1a37acec5bbf79fee354a2f1d4731ee7e412e487d05244bad503c29",
+      "actualLfSha256": "3a2c503bc1a37acec5bbf79fee354a2f1d4731ee7e412e487d05244bad503c29"
+    },
+    {
+      "path": "tests/gui/ui1-10-evidence-retention.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "abb4f9488013a45ee47abbd8e9c04b41fd9f2397a7a44a1496b0f777b1872299",
+      "actualRawSha256": "d50b3b5409aa61c058a34e9fcd4893804d1dad602c54e1a3eacdbd22a62ff4ec",
+      "expectedLfSha256": "d50b3b5409aa61c058a34e9fcd4893804d1dad602c54e1a3eacdbd22a62ff4ec",
+      "actualLfSha256": "d50b3b5409aa61c058a34e9fcd4893804d1dad602c54e1a3eacdbd22a62ff4ec"
+    },
+    {
+      "path": "tests/gui/ui1-24-one-project-v1-1.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "39cd6abcc783a823ccb1f276d7bff64e785ac03a2685ebb66f4f7f592f9e90e7",
+      "actualRawSha256": "f2ee79ac1efb2d19c3ed79801331879a443f9ab995c737d822d6eaa629989854",
+      "expectedLfSha256": "f2ee79ac1efb2d19c3ed79801331879a443f9ab995c737d822d6eaa629989854",
+      "actualLfSha256": "f2ee79ac1efb2d19c3ed79801331879a443f9ab995c737d822d6eaa629989854"
+    },
+    {
+      "path": "tests/industrial/f10-05-deterministic-reset.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "6f3699f42141387e75ebe53e12a56bf850ff96e12cea67c35ca1e91ee5d9fcb5",
+      "actualRawSha256": "55a6ab0ea9635817d73eac7dc5e7ee1a1f7f08b5d5af05541acd82fa687afef3",
+      "expectedLfSha256": "55a6ab0ea9635817d73eac7dc5e7ee1a1f7f08b5d5af05541acd82fa687afef3",
+      "actualLfSha256": "55a6ab0ea9635817d73eac7dc5e7ee1a1f7f08b5d5af05541acd82fa687afef3"
+    },
+    {
+      "path": "tests/industrial/f10-06-judged-run.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "811a8771093dcc01959b608cac6206ae9bcb86f64dadba60d648fb1218ae43e1",
+      "actualRawSha256": "42ba42ec4e0c424698935e4c0563c00c9cffd8bf7b4199648f3ab3d549ece23c",
+      "expectedLfSha256": "42ba42ec4e0c424698935e4c0563c00c9cffd8bf7b4199648f3ab3d549ece23c",
+      "actualLfSha256": "42ba42ec4e0c424698935e4c0563c00c9cffd8bf7b4199648f3ab3d549ece23c"
+    },
+    {
+      "path": "tests/industrial/f7-03-workflow-planning.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "ba3ba4ed556c084c41ef98b426db96a9c0828e4a22242aa8d30f150c2348f9ca",
+      "actualRawSha256": "6368129bcbf41456b2b111bcf43fa651252f81a679917ec00b43729c62c2f4c9",
+      "expectedLfSha256": "6368129bcbf41456b2b111bcf43fa651252f81a679917ec00b43729c62c2f4c9",
+      "actualLfSha256": "6368129bcbf41456b2b111bcf43fa651252f81a679917ec00b43729c62c2f4c9"
+    },
+    {
+      "path": "tests/industrial/f9-08-interruption-atomic-cleanup.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "6d7ad887e4b0ceba7f64c9020ca32268c45426089aea187289404eee3e3f60d7",
+      "actualRawSha256": "243707447108e624ae5e1c773ab965e0343aa3028cfb12de0668eece9a40dafd",
+      "expectedLfSha256": "243707447108e624ae5e1c773ab965e0343aa3028cfb12de0668eece9a40dafd",
+      "actualLfSha256": "243707447108e624ae5e1c773ab965e0343aa3028cfb12de0668eece9a40dafd"
+    },
+    {
+      "path": "tests/industrial/f9-09-disconnected-full-rehearsal.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "b84a3559cb4bf131464ec61f6db1855672778a7ef41ae10d459b7e5f156a1a64",
+      "actualRawSha256": "53e1d05c01f0d4cfb0e3359eea782a29065b843dd3777a43530dc382a48c756c",
+      "expectedLfSha256": "53e1d05c01f0d4cfb0e3359eea782a29065b843dd3777a43530dc382a48c756c",
+      "actualLfSha256": "53e1d05c01f0d4cfb0e3359eea782a29065b843dd3777a43530dc382a48c756c"
+    },
+    {
+      "path": "tests/industrial/gate-g9-sovereignty-gate.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "8283b17ece8e9f19c220af443add078502db3d00b1aef41d08b06b416532cdc4",
+      "actualRawSha256": "a83f85fb9558ef20545d312757e8910e07aa83a2cab463a53698546c0f05a6ba",
+      "expectedLfSha256": "a83f85fb9558ef20545d312757e8910e07aa83a2cab463a53698546c0f05a6ba",
+      "actualLfSha256": "a83f85fb9558ef20545d312757e8910e07aa83a2cab463a53698546c0f05a6ba"
+    },
+    {
+      "path": "tests/industrial/telemetry-analysis.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "expectedRawSha256": "8afd16563a78700c14f8499714017254f23beecd8137e49f4cfb7ca33c7ab622",
+      "actualRawSha256": "cae245373c8ea7575ba2f70ef77abafe75d35be0272ebcd20f83a543dee6d581",
+      "expectedLfSha256": "cae245373c8ea7575ba2f70ef77abafe75d35be0272ebcd20f83a543dee6d581",
+      "actualLfSha256": "cae245373c8ea7575ba2f70ef77abafe75d35be0272ebcd20f83a543dee6d581"
+    }
+  ],
+  "extraPaths": [],
+  "status": "FAIL"
+}
+EXIT_CODE=1

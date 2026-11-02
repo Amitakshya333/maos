@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-10-29T14:56:32.7936833+05:30",
+  "installedAppRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed app retry with spaces\\app",
+  "nodeVersion": "v24.11.0",
+  "profilePath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed-cli-smoke-final\\profile with spaces",
+  "projectPath": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed-cli-smoke-final\\missing config project with spaces",
+  "secretLikeEnvironmentNamesRemoved": 4,
+  "commands": [
+    {
+      "output": "0.3.0",
+      "exitCode": 0,
+      "command": "node dist/cli/index.js --version"
+    },
+    {
+      "output": "Usage: maos-industrial [options] [command]\r\n\r\nMAOS Industrial commands and local operator REPL\r\n\r\nOptions:\r\n  -V, --version                output the version number\r\n  -h, --help                   display help for command\r\n\r\nCommands:\r\n  repl                         Start the bounded local operator REPL\r\n  bundle                       Manage offline bundle packaging and verification\r\n  rehearsal [options]          Run clean disconnected VM rehearsal workflow\r\n  evidence                     Manage and verify rehearsal evidence\r\n  kb                           Manage project local knowledge base (build,\r\n                               status, verify, clear)\r\n  boundary [options] <action>  Manage the process-scoped sovereignty boundary\r\n                               (enable | status | disable)\r\n  preflight [options]          Run industrial preflight and boundary\r\n                               verification\r\n  start [options]              Start the industrial project service host\r\n  demo [options]               Run sovereign industrial coding demo (e.g. RMS\r\n                               calculation)\r\n  verify [options] [target]    Verify industrial state: audit, boundary,\r\n                               service, or telemetry analysis\r\n  stop [options]               Stop the running industrial service (graceful or\r\n                               force with --yes)\r\n  reset [options]              Deterministically reset confirmed generated test\r\n                               state (dry-run and allowlist)\r\n  run [options]                One-command judged run (preflight → policy →\r\n                               services → DAG → approvals → verify → audit\r\n                               export)\r\n  open [options] <target>      Open a validated local deliverable (.docx, .xlsx,\r\n                               .pptx, .pdf) in desktop office application",
+      "exitCode": 0,
+      "command": "node dist/industrial/entrypoint.js --help"
+    },
+    {
+      "output": "🩺 MAOS Doctor — Environment Diagnostics\r\n────────────────────────────────────────────────────────────\r\n  ✅ Node.js            [required] v24.11.0 (requires >=20.0.0)\r\n  ✅ Platform           [optional] Windows\r\n  ❌ Config             [required] maos.config.json not found at C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed-cli-smoke-final\\missing config project with spaces\\.maos\\maos.config.json. Run: maos init\r\n────────────────────────────────────────────────────────────\r\n  2 passed  1 required failures\r\n\r\n  ❌ Required setup is incomplete. Fix the failures above before running this project.",
+      "exitCode": 1,
+      "command": "node dist/cli/index.js doctor"
+    }
+  ],
+  "missingConfigActionable": true
+}

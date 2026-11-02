@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-10-29T12:52:36.9673366+05:30",
+  "bundlePath": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final3\\maos-industrial-bootstrap-windows-x64-install-correction-189e786-01c456f4-2026-10-29.zip",
+  "packagePath": "C:\\maos\\review-packets\\install-git-context-correction-2026-10-29\\artifacts-final3\\maosorch-0.3.0.tgz",
+  "sourceRevision": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "sourceDeltaSha256": "01c456f4ccdfe58cb0cce8266f32fc236dde98036482b84b471c901d53963054",
+  "packageBytes": 1223893,
+  "packageSha256": "2def02d94f806d591c552b9d9e993d18b949d9415ef8b441ebf7b5bd1c1632d9",
+  "bundleBytes": 1255722,
+  "bundleSha256": "b2b04382e971c3ca41921519ce06d74ce1cc364ae42e1995faf574d6081011d8",
+  "entryCount": 497,
+  "requiredAssets": [
+    "package/dist/cli/index.js",
+    "package/dist/cli/repl.js",
+    "package/dist/utils/project-git-context.js",
+    "package/package.json",
+    "package/desktop/package.json",
+    "package/desktop/package-lock.json"
+  ],
+  "missingRequiredAssets": [],
+  "forbiddenPathCount": 0,
+  "forbiddenPaths": [],
+  "manifestChecks": {
+    "sourceRevision": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+    "sourceDeltaSha256": "01c456f4ccdfe58cb0cce8266f32fc236dde98036482b84b471c901d53963054",
+    "completePatchSha256": "01c456f4ccdfe58cb0cce8266f32fc236dde98036482b84b471c901d53963054",
+    "packageSha256Matches": true,
+    "installerMatchesCurrent": true,
+    "lockShaMatches": true
+  }
+}

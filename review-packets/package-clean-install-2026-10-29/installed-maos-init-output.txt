@@ -1,0 +1,40 @@
+╭───────────────────────────────────────────────────────╮
+│   MAOS  Multi-Agent Orchestrator                      │
+│  Isolated docker-compose system for AI coding agents  │
+╰───────────────────────────────────────────────────────╯
+
+? Project name: (initialized-evidence-project) ? Project name: initialized-evidence-project
+? Team configuration: (Use arrow keys)
+  Solo    — 1 agent (fastest setup) 
+  Duo     — 2 agents (backend + frontend) 
+> Team    — 3 agents (architect + backend + frontend) 
+  Mixed   — 4 agents (API + CLI runtimes)  ★ NEW 
+
+
+
+? Team configuration: Solo    — 1 agent (fastest setup)
+? Default AI provider: (Use arrow keys)
+> Freemodel  — api.freemodel.dev (OpenAI-compatible)
+  OpenAI     — api.openai.com
+  DeepSeek   — api.deepseek.com
+  Ollama     — localhost (free, local models) 
+  Custom     — enter your own base URL 
+
+
+
+
+? Default AI provider: Ollama     — localhost (free, local models)
+? Local Ollama model name (e.g., qwen2.5-coder, llama3, deepseek-coder):        
+(qwen2.5-coder)
+
+
+
+? Local Ollama model name (e.g., qwen2.5-coder, llama3, deepseek-coder): 
+qwen2.5-coder
+  Initialized git repo for branch isolation
+
+✅ MAOS initialized successfully!  Team Status
+  ─────────────────────────────────────────
+  ⚙️  DEV                  ✅ Connected  ollama/qwen2.5-coderNext steps:
+  1. Create a task:   maos task "Build a login page"
+  2. Start agents:    maos start

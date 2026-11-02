@@ -1,0 +1,7 @@
+Repository: C:\maos
+Branch: main
+HEAD: 189e786ff0431b02b95ca618bb4791a5ad7b0215
+Index: empty
+Isolated build checkout: detached at the same HEAD; tracked working tree clean; index empty.
+Test-owned Node/Electron/CMD processes after attempt 12: 0.
+No commit, push, publication, source edit, model download, hosted call, or package distribution was performed.

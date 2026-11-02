@@ -1,0 +1,125 @@
+COMMAND: node app/dist/industrial/entrypoint.js --help
+EXIT_CODE: 0
+Usage: maos-industrial [options] [command]
+
+MAOS Industrial commands and local operator REPL
+
+Options:
+  -V, --version                output the version number
+  -h, --help                   display help for command
+
+Commands:
+  repl                         Start the bounded local operator REPL
+  bundle                       Manage offline bundle packaging and verification
+  rehearsal [options]          Run clean disconnected VM rehearsal workflow
+  evidence                     Manage and verify rehearsal evidence
+  kb                           Manage project local knowledge base (build,
+                               status, verify, clear)
+  boundary [options] <action>  Manage the process-scoped sovereignty boundary
+                               (enable | status | disable)
+  preflight [options]          Run industrial preflight and boundary
+                               verification
+  start [options]              Start the industrial project service host
+  demo [options]               Run sovereign industrial coding demo (e.g. RMS
+                               calculation)
+  verify [options] [target]    Verify industrial state: audit, boundary,
+                               service, or telemetry analysis
+  stop [options]               Stop the running industrial service (graceful or
+                               force with --yes)
+  reset [options]              Deterministically reset confirmed generated test
+                               state (dry-run and allowlist)
+  run [options]                One-command judged run (preflight → policy →
+                               services → DAG → approvals → verify → audit
+                               export)
+  open [options] <target>      Open a validated local deliverable (.docx, .xlsx,
+                               .pptx, .pdf) in desktop office application
+
+COMMAND: node app/dist/cli/index.js repl --help
+EXIT_CODE: 0
+Usage: maos repl [options]
+
+Launch the interactive MAOS REPL
+
+Options:
+  -h, --help  display help for command
+
+COMMAND: app/desktop/node_modules/electron/dist/electron.exe --version
+EXIT_CODE: 0
+
+COMMAND: node app/dist/cli/index.js doctor (empty project; required config absent)
+EXIT_CODE: 1
+
+🩺 MAOS Doctor — Environment Diagnostics
+────────────────────────────────────────────────────────────
+  ✅ Node.js            [required] v24.11.0 (requires >=20.0.0)
+  ✅ Platform           [optional] Windows
+  ❌ Config             [required] maos.config.json not found at C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\installed-smoke-project-final\.maos\maos.config.json. Run: maos init
+────────────────────────────────────────────────────────────
+  2 passed  1 required failures
+
+  ❌ Required setup is incomplete. Fix the failures above before running this project.
+
+
+COMMAND: node app/dist/cli/index.js doctor (valid config; optional CLI absent)
+EXIT_CODE: 0
+
+🩺 MAOS Doctor — Environment Diagnostics
+────────────────────────────────────────────────────────────
+  ✅ Node.js            [required] v24.11.0 (requires >=20.0.0)
+  ✅ Platform           [optional] Windows
+  ✅ Config             [required] maos.config.json found (1 agents)
+  ✅ ollama             [required] [LOCAL] Credential/runtime configuration resolved
+  ⚠️  Connectivity       [optional] Not tested; doctor never sends inference requests.
+  ⚠️  CLI runtimes       [optional] No optional CLI-agent runtimes are configured.
+  ⚠️  Directories        [optional] 7/7 dirs missing (run maos init)
+  ⚠️  Git                [optional] Git not found — install git for branch isolation
+────────────────────────────────────────────────────────────
+  4 passed  4 optional warnings  
+
+  ⚠️  Required checks passed; optional capabilities are unavailable or untested.
+
+
+COMMAND: node app/dist/cli/index.js doctor (Industrial engine absent)
+EXIT_CODE: 1
+
+🩺 MAOS Doctor — Environment Diagnostics
+────────────────────────────────────────────────────────────
+  ✅ Node.js            [required] v24.11.0 (requires >=20.0.0)
+  ✅ Platform           [optional] Windows
+  ✅ Config             [required] maos.config.json found (1 agents)
+  ✅ ollama             [required] [LOCAL] Credential/runtime configuration resolved
+  ⚠️  Connectivity       [optional] Not tested; doctor never sends inference requests.
+  ⚠️  CLI runtimes       [optional] No optional CLI-agent runtimes are configured.
+  ⚠️  Directories        [optional] 7/7 dirs missing (run maos init)
+  ❌ Rust engine        [required] Engine executable not found: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\installed-smoke-project-final\rust\target\release\maos-engine.exe. Install the platform-matched release binary at this path. From a MAOS source checkout, build it with: cargo build --release --locked --manifest-path rust/Cargo.toml, then copy rust/target/release/maos-engine[.exe] to the missing path.
+  ⚠️  Git                [optional] Git not found — install git for branch isolation
+────────────────────────────────────────────────────────────
+  4 passed  4 optional warnings  1 required failures
+
+  ❌ Required setup is incomplete. Fix the failures above before running this project.
+
+
+COMMAND: node app/dist/cli/index.js doctor (Industrial engine identity/protocol checked)
+EXIT_CODE: 0
+
+🩺 MAOS Doctor — Environment Diagnostics
+────────────────────────────────────────────────────────────
+  ✅ Node.js            [required] v24.11.0 (requires >=20.0.0)
+  ✅ Platform           [optional] Windows
+  ✅ Config             [required] maos.config.json found (1 agents)
+  ✅ ollama             [required] [LOCAL] Credential/runtime configuration resolved
+  ⚠️  Connectivity       [optional] Not tested; doctor never sends inference requests.
+  ⚠️  CLI runtimes       [optional] No optional CLI-agent runtimes are configured.
+  ⚠️  Directories        [optional] 7/7 dirs missing (run maos init)
+  ✅ Rust engine        [required] 0.1.0, protocol 1.0, SHA-256 011dd53795d025f11c605ee62bc25b1e85fcf7d5ae69503bbcef2fb3a40129de
+  ⚠️  Git                [optional] Git not found — install git for branch isolation
+────────────────────────────────────────────────────────────
+  5 passed  4 optional warnings  
+
+  ⚠️  Required checks passed; optional capabilities are unavailable or untested.
+
+
+ELECTRON_VERSION_MARKER: 45.0.0
+ENGINE_CANDIDATE_SHA256: 011dd53795d025f11c605ee62bc25b1e85fcf7d5ae69503bbcef2fb3a40129de
+ENGINE_IDENTITY: maos-industrial-engine 0.1.0, protocol 1.0
+PLAYWRIGHT_INSTALLED: False

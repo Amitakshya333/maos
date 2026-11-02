@@ -1,0 +1,104 @@
+diff --git a/scripts/Start-BasetenSyntheticPilot.ps1 b/scripts/Start-BasetenSyntheticPilot.ps1
+index c305021c4d24867a21e3740da270f5add1d0ca83..556593d7615fdb7e78fa663429d2ec8165184b84 100644
+--- a/scripts/Start-BasetenSyntheticPilot.ps1
++++ b/scripts/Start-BasetenSyntheticPilot.ps1
+@@ -152,20 +152,13 @@ if (-not (Test-Path -LiteralPath $processTreeHelper -PathType Leaf)) {
+   throw 'The task-owned process-tree helper is missing from this installation.'
+ }
+ . $processTreeHelper
+-$cancelSource = [System.Threading.CancellationTokenSource]::new()
+-$cancelHandler = [System.ConsoleCancelEventHandler] {
+-  param($sender, $eventArgs)
+-  $eventArgs.Cancel = $true
+-  $cancelSource.Cancel()
+-}
+-[Console]::add_CancelKeyPress($cancelHandler)
++$cancelSource = [MaosPilotConsoleCancellation]::new()
+ try {
+   $applicationExitCode = Invoke-MaosOwnedProcessTree -FilePath $electron -ArgumentList $arguments -WorkingDirectory $projectRoot -CancellationToken $cancelSource.Token
+ } catch [System.OperationCanceledException] {
+   Write-Output 'Pilot cancelled; the task-owned application process tree was terminated and waited before releasing the launcher lock.'
+   $applicationExitCode = 130
+ } finally {
+-  [Console]::remove_CancelKeyPress($cancelHandler)
+   $cancelSource.Dispose()
+ }
+ } finally {
+diff --git a/scripts/Windows-ProcessTree.ps1 b/scripts/Windows-ProcessTree.ps1
+index 158238b2b76c4bec41e0db778d7a16582b12b709..2f938a69d426bd814ca67250e9b633a944973651 100644
+--- a/scripts/Windows-ProcessTree.ps1
++++ b/scripts/Windows-ProcessTree.ps1
+@@ -251,6 +251,31 @@ public static class MaosPilotProcessTree
+         return result.ToString();
+     }
+ }
++public sealed class MaosPilotConsoleCancellation : IDisposable
++{
++    private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
++    private readonly ConsoleCancelEventHandler handler;
++
++    public CancellationToken Token { get { return cancellation.Token; } }
++
++    public MaosPilotConsoleCancellation()
++    {
++        handler = new ConsoleCancelEventHandler(HandleCancel);
++        Console.CancelKeyPress += handler;
++    }
++
++    private void HandleCancel(object sender, ConsoleCancelEventArgs eventArgs)
++    {
++        eventArgs.Cancel = true;
++        cancellation.Cancel();
++    }
++
++    public void Dispose()
++    {
++        Console.CancelKeyPress -= handler;
++        cancellation.Dispose();
++    }
++}
+ '@ -Language CSharp
+ }
+ 
+diff --git a/tests/industrial/baseten-pilot-process-tree.test.ts b/tests/industrial/baseten-pilot-process-tree.test.ts
+index cbc2731d098ecc73abf6f19c2297520fe11fe34f..c43bf1fb48e63fc30d7b155a8434363d0957236d 100644
+--- a/tests/industrial/baseten-pilot-process-tree.test.ts
++++ b/tests/industrial/baseten-pilot-process-tree.test.ts
+@@ -154,4 +154,15 @@ describe.skipIf(powershells.length === 0)('Baseten pilot task-owned Windows proc
+     expect(source).toContain('Invoke-MaosOwnedProcessTree');
+     expect(source).not.toContain('Start-Process -FilePath $electron -ArgumentList $arguments -WorkingDirectory $projectRoot -Wait');
+   });
++  it('uses a runspace-free console cancel adapter', () => {
++    const launcher = fs.readFileSync(launcherPath, 'utf8');
++    const helper = fs.readFileSync(helperPath, 'utf8');
++    expect(launcher).toContain('[MaosPilotConsoleCancellation]::new()');
++    expect(launcher).not.toContain('[System.ConsoleCancelEventHandler]');
++    expect(launcher).not.toContain('[Console]::remove_CancelKeyPress()');
++    expect(helper).toContain('Console.CancelKeyPress += handler;');
++    expect(helper).toContain('eventArgs.Cancel = true;');
++    expect(helper).toContain('cancellation.Cancel();');
++    expect(helper).toContain('Console.CancelKeyPress -= handler;');
++  });
+ });
+diff --git a/tests/industrial/meta-model-api-contract.test.ts b/tests/industrial/meta-model-api-contract.test.ts
+index e96e5c3ab006e8fa2721d899824b95391172630b..af78c4cf011f2703005311583900c0088baae3aa 100644
+--- a/tests/industrial/meta-model-api-contract.test.ts
++++ b/tests/industrial/meta-model-api-contract.test.ts
+@@ -125,7 +125,7 @@ function makeProject(options: {
+       [providerName]: {
+         baseURL: options.baseURL,
+         ...(providerName === 'meta'
+-          ? { metaApiEnabled: options.omitOptIn ? undefined : options.enabled !== false, ...(options.enabled === false ? {} : { apiKeyEnv: keyEnv }) }
++          ? { metaApiEnabled: options.omitOptIn ? undefined : options.enabled !== false, apiKeyEnv: keyEnv }
+           : { basetenApiEnabled: options.omitOptIn ? undefined : options.enabled !== false }),
+         ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+       },
+@@ -334,7 +334,7 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
+     ['other model', META_URL, 'muse-spark-1.3-contributor', true, 'PROJECT_CONFIG_INVALID'],
+     ['Meta endpoint with no opt-in field', META_URL, MODEL, true, 'MODEL_ENDPOINT_BLOCKED', true],
+     ['Meta endpoint without opt-in', META_URL, MODEL, false, 'MODEL_ENDPOINT_BLOCKED'],
+-    ['remote endpoint without opt-in', 'https://example.invalid/v1', MODEL, false, 'MODEL_ENDPOINT_BLOCKED'],
++    ['remote endpoint with reserved Meta credential', 'https://example.invalid/v1', MODEL, false, 'PROJECT_CONFIG_INVALID'],
+   ])('rejects %s without a request', async (_label, baseURL, model, enabled, code, omitOptIn) => {
+     const mock = await startServer(() => ({ body: completion('task_complete', '{}') }));
+     const project = makeProject({ baseURL, model, enabled, omitOptIn });

@@ -1,0 +1,107 @@
+
+ RUN  v4.1.11 C:/maos
+
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 1. Chat Completion Cancellation & Interruption > rejects immediately when AbortSignal is already aborted before starting 46ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 1. Chat Completion Cancellation & Interruption > aborts in-flight inference on client cancellation via AbortSignal 87ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 1. Chat Completion Cancellation & Interruption > handles server timeout cleanly without phantom success 91ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 2. Task Interruption & Queue Protection > interrupts a specific active task and updates on-disk task metadata 36ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 2. Task Interruption & Queue Protection > interrupts all active tasks and clears active queue on fleet interrupt 39ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 2. Task Interruption & Queue Protection > fail-closed: interrupted tasks never transition to done without re-execution 27ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 3. Workflow / Objective Cancellation > cancels an objective and marks uncompleted subtasks cancelled/interrupted 47ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 3. Workflow / Objective Cancellation > interruptAllWorkflows marks all in-flight stages failed 32ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 4. Sandbox Container Crash & Timeout Cleanup > guarantees cleanupContainerSync and cleanupContainer do not throw on missing containers 331ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 4. Sandbox Container Crash & Timeout Cleanup > coordinator tracks and cleans up registered containers and staging dirs 167ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 5. Firewall Unclean Shutdown & Rollback > detects RESTORE_REQUIRED when state file indicates an interrupted transaction 6ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 5. Firewall Unclean Shutdown & Rollback > automatically restores previous snapshot on coordinator recovery sweep 9ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 6. Network Observation Session Teardown > halts active observation sessions, clears polling timers, and flushes traces 5ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 7. Model Lease Reclamation > releases all active model leases and resets lease count to zero 12878ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > purges orphan temporary files across artifacts, bundles, and stale locks 24ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > forced cleanup preserves a live owner and another lifecycle command cannot enter 450ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > removes only a stale same-host lock whose owner is confirmed dead 53ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > treats an unverified process-liveness result as possibly alive 1ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > leaves foreign host ownership ambiguity blocked 12ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 8. Orphan File & Stale Lock Removal > leaves malformed record ownership ambiguity blocked 12ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > orchestrates complete atomic cleanup across all subsystems simultaneously 320ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > idempotent execution: second run immediately after is clean and no-op 172ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 9. Unified Atomic Cleanup Coordinator Integration > installs and cleanly removes process signal handlers without error 14ms
+ ✓ tests/industrial/f9-08-interruption-atomic-cleanup.test.ts > F9-08: Interruption and Atomic Cleanup > 10. Canary Invariant > rust/test.txt SHA-256 remains strictly untouched and unmodified 1ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Discovery & Category Allowlist > discovers all generated files when category is all 113ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Discovery & Category Allowlist > filters discovery strictly to specified allowlist categories 87ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Discovery & Category Allowlist > filters discovery by runId when specified 100ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Dry-Run Safety Guarantee > reports candidates without removing any files during dry-run 92ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > refuses index even in dry-run mode 81ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > refuses sandbox even in dry-run mode 80ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > refuses conversation even in dry-run mode 86ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Reset categories without coordinated writers > returns an actionable failure from the Industrial CLI for a disabled category 109ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Confirmation & Live Execution > rejects live execution when confirmed is false or omitted 101ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Confirmation & Live Execution > deletes allowlisted files when live reset is explicitly confirmed 146ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > keeps an active generic publisher temp file out of cleanup and serializes CLI reset across processes 2741ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > rejects a cross-process retry-queue writer while the project reset lock is held 415ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > rejects cross-process event and checkpoint writers while the reset lock is held 454ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > refuses queue reset while a normal TaskService task is active 122ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > queue reset clears old checkpoints before a reused task ID can be recovered 145ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > refuses queue reset after TaskService interrupt until worker exit is established 127ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > reports scanned and actually removed bytes separately when candidates disappear 89ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Shared publication/reset boundary > counts only successful unlinks when one candidate cannot be removed 89ms
+stdout | tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > defaults to dry-run when --yes is omitted
+
+🔍 MAOS Industrial — Deterministic Reset (DRY-RUN)
+
+Project Root: C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-05-zqAHbu
+Categories:   queue, output
+
+Candidate Files to Remove (7 files, 1393 bytes):
+  [queue       ] .maos/queue/pending/AUTO__1793177300102_qfnw.md (626 bytes)
+  [queue       ] .maos/queue/pending/AUTO__1793177300107_slc1.md (626 bytes)
+  [queue       ] .maos/queue/objectives/obj-runA.json (42 bytes)
+  [queue       ] .maos/plans/plan-runA.json (38 bytes)
+  [queue       ] .maos/events/events-runA.jsonl (31 bytes)
+  [output      ] artifacts/generated/report-run-A.docx (18 bytes)
+  [output      ] demo/industrial/generated/output.md (12 bytes)
+
+No files were deleted. To perform live reset, run with --yes.
+
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > defaults to dry-run when --yes is omitted 97ms
+stderr | tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > rejects invalid category with INVALID_ARGS exit code 2
+Invalid reset category 'invalid_category_xyz'. Allowed categories: queue, output, index, sandbox, conversation, or 'all'.
+
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > rejects invalid category with INVALID_ARGS exit code 2 93ms
+stdout | tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > executes confirmed live reset with --yes and returns exit code 0
+
+🧹 MAOS Industrial — Deterministic Reset (COMPLETED)
+
+Project Root: C:\Users\AMITAK~1\AppData\Local\Temp\maos-test-temp-f10-05-aaOVwt
+Categories:   queue, output
+Removed 7 generated files (1393 bytes).
+
+
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > CLI Wrapper: runIndustrialReset > executes confirmed live reset with --yes and returns exit code 0 157ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > never scans or deletes review packets 107ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects canary file rust/test.txt 85ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects anything in fixtures/ 86ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects demo/industrial source files 88ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath allows demo/industrial/generated outputs 87ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > isForbiddenPath rejects audit logs and root configs 97ms
+ ✓ tests/industrial/f10-05-deterministic-reset.test.ts > F10-05: Deterministic Reset for Industrial Generated Test State > Strict Negative Invariants > preserves canary hash byte-for-byte throughout all operations 97ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > dispatches typed workflow stage and returns run and stage links 90ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > creates persistent workflow objective accessible through WorkflowService 63ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > creates objective task accessible through TaskService without direct fake INGEST assignment 67ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > supports custom goal parameter 76ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > handleIndustrialTrigger execution > records audited event in audit trail 63ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > HTTP endpoint execution > handles POST /api/industrial/trigger via server and returns JSON with run/stage links 93ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_BUSY as unavailable/in-progress 11ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_LOCK_UNAVAILABLE as unavailable/in-progress 7ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves a genuine engineering FAIL 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_BUSY as unavailable/in-progress 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves JUDGED_RUN_LOCK_UNAVAILABLE as unavailable/in-progress 9ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > legacy T-07 contention response > preserves a genuine engineering FAIL 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > Static code verification for negative requirements > verifies src/cli/dashboard.ts does not directly import core/queue createTask 6ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > Static code verification for negative requirements > verifies src/cli/dashboard.ts does not assign fake INGEST_AGENT in trigger endpoint 7ms
+ ✓ tests/industrial/f10-02-dashboard-trigger.test.ts > F10-02: Typed Dashboard Workflow Trigger > Static code verification for negative requirements > exposes typed workflow run and stage links from the dashboard trigger 7ms
+
+ Test Files  3 passed (3)
+      Tests  67 passed (67)
+   Start at  14:17:56
+   Duration  26.37s (transform 2.05s, setup 0ms, import 4.26s, tests 21.58s, environment 0ms)
+
+EXIT_CODE=0

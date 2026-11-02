@@ -1,0 +1,14 @@
+{
+  "status": "SUPERSEDED INTERMEDIATE BUILD — not installed",
+  "sourceDeltaSha256": "3d5a51146c5e79210a925516c61e5b3b671ef6f8dd2d75ee0b8ab93437d9ef5f",
+  "package": {
+    "bytes": 1223706,
+    "sha256": "bc7ed56913a5afe3ae7bfe344004f2dee71c57371d3e4385b6bdb17fc55a7e0e"
+  },
+  "bundle": {
+    "bytes": 1255319,
+    "sha256": "2090f13a70492e10df945a43863e00db7aa635440fbbdc205465bb69fbf0eb60"
+  },
+  "reason": "Long-path preflight parsed lockfiles with ConvertFrom-Json, which rejected npm lockfile package key \"\" on the supported PowerShell runtime. Replaced with a bounded Node JSON probe; this bundle was never installed.",
+  "recordedAt": "2026-10-29T12:49:58.5467352+05:30"
+}

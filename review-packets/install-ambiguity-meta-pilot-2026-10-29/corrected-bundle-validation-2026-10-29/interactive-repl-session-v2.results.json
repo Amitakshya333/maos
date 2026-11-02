@@ -1,0 +1,95 @@
+{
+  "rehearsalDate": "2026-10-29",
+  "sourceCommit": "d526bfe95d334ad8a0c73a25db7611c1d0fc7417",
+  "activeValidationWorktreeStatus": "clean at the recorded baseline",
+  "bundle": {
+    "path": "review-packets/install-ambiguity-meta-pilot-2026-10-29/corrected-bundle-validation-2026-10-29/candidate-artifacts/maos-industrial-bootstrap-windows-x64-commit-d526bfe-2026-10-29.zip",
+    "sha256": "a1bdd2bc00978b80cc4578a68de06bf426bf1cb5e6a9dbbd17b67125941b99fc",
+    "bytes": 1256200,
+    "node": "v24.11.0",
+    "npm": "11.6.1",
+    "powershell": "7.6.9",
+    "electron": "45.0.0"
+  },
+  "interactiveSession": {
+    "mode": "actual installed maos-industrial REPL PTY session",
+    "transport": "loopback mock only",
+    "endpoint": "127.0.0.1:59352",
+    "hostedCalls": 0,
+    "credentialValuesReadOrPrinted": false,
+    "commands": [
+      "help",
+      "project selection",
+      "analyze",
+      "status",
+      "cancel",
+      "reject",
+      "report",
+      "approve",
+      "verify",
+      "exit"
+    ],
+    "cancellation": {
+      "error": "AGENT_CANCELLED",
+      "clientAbortObserved": true,
+      "acceptedRun": false
+    },
+    "activeProjectSwitch": {
+      "refusedAsBusy": true,
+      "activeProjectPreserved": true
+    },
+    "missingEngineAttempt": {
+      "analysisToolCompleted": true,
+      "judgedReportPreparation": "blocked",
+      "acceptedReport": false
+    },
+    "rejectedRun": {
+      "runId": "judged-run-agent-telemetry-1793270581881-9d512b4a",
+      "status": "rejected",
+      "acceptedReport": false,
+      "rejectedReportLookupRefused": true,
+      "engineeringVerdict": "FAIL"
+    },
+    "approvedRun": {
+      "runId": "judged-run-agent-telemetry-1793270595767-bc7c6c04",
+      "status": "completed",
+      "accepted": true,
+      "verification": "VERIFIED",
+      "auditChain": "valid",
+      "docx": "artifacts/generated/judged-run-agent-telemetry-1793270595767-bc7c6c04-turbine_safety_approval_note.docx",
+      "docxSha256": "19bc6626da08709b269e715d22a52dac03a5aa00635dd1b862e5f79e8bc9ed18",
+      "auditExportPresent": true,
+      "engineeringVerdict": "FAIL",
+      "reviewerIdentity": "operator-supplied synthetic name; explicitly not independently authenticated"
+    },
+    "numericFindings": {
+      "rows": 3,
+      "peakVibration": 8.6,
+      "peakTemperatureC": 99,
+      "warningCount": 2,
+      "criticalCount": 2,
+      "displayedVerdict": "CRITICAL"
+    },
+    "modelIdentity": {
+      "requested": "fixture-model-v2",
+      "providerReported": "mock-repl-reported-v2"
+    },
+    "explanationLabel": "UNVERIFIED",
+    "mockHttpRequests": 7,
+    "cleanup": "The mock process was stopped after identity check; subsequent process scan found no process under the rehearsal root.",
+    "replExitStatus": "not retained; exit command was accepted and no test process remained"
+  },
+  "externalEngine": {
+    "sha256": "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+    "version": "0.1.0",
+    "protocol": "1.0",
+    "approved": false,
+    "action": "existing candidate copied only into disposable test project; no rebuild or distribution"
+  },
+  "fixtureIncident": "Earlier v1 fixture error was corrected in v2; no production change.",
+  "evidenceFiles": [
+    "interactive-repl-session-v2.sanitized.log",
+    "interactive-repl-session-v2.results.json",
+    "META_API_PILOT_OWNER_DECISION.md"
+  ]
+}

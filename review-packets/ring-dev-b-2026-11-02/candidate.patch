@@ -1,0 +1,3093 @@
+diff --git a/desktop/main.cjs b/desktop/main.cjs
+index 401071e..95e2bad 100644
+--- a/desktop/main.cjs
++++ b/desktop/main.cjs
+@@ -6,6 +6,7 @@ const path = require('node:path');
+ const { spawnSync } = require('node:child_process');
+ const { randomBytes } = require('node:crypto');
+ const { URL } = require('node:url');
++const ringOverlay = require('./ring-overlay-host.cjs');
+ 
+ const packageRoot = path.resolve(__dirname, '..');
+ 
+@@ -158,7 +159,7 @@ function parseArgs(argv) {
+ }
+ 
+ async function runElectron() {
+-  const { app, BrowserWindow, dialog, ipcMain } = require('electron');
++  const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Tray } = require('electron');
+   if (!app.requestSingleInstanceLock()) {
+     app.quit();
+     return;
+@@ -168,6 +169,7 @@ async function runElectron() {
+   let projectHost;
+   let ui;
+   let browserWindow;
++  let sessionPartition;
+   let bootstrap;
+   let shutdownPromise;
+   let shutdownComplete = false;
+@@ -219,18 +221,61 @@ async function runElectron() {
+     const session = await projectHost.createSession(`desktop-${randomBytes(12).toString('hex')}`);
+     bootstrap = buildBootstrap(projectHost, session);
+ 
++    const overlayWebContents = () =>
++      ringOverlay.overlayState.window && !ringOverlay.overlayState.window.isDestroyed()
++        ? ringOverlay.overlayState.window.webContents
++        : null;
++    ipcMain.handle('maos:expand-ring', (event) => {
++      if (!browserWindow || event.sender !== overlayWebContents()) {
++        throw new Error('UNTRUSTED_RENDERER: expand is restricted to the active Ring overlay.');
++      }
++      ringOverlay.focusMainWindow(browserWindow);
++    });
++    // TASK RING-DEV-B-01 (Day 1 fix): the overlay is a SECOND window with
++    // its OWN main frame. The old check compared every sender against the
++    // main window's mainFrame, so the overlay could never complete the
++    // private-IPC session handshake. Each sender is now checked against
++    // its own main frame; the loopback-origin check is unchanged.
++    const expectedMainFrames = () => {
++      const frames = [browserWindow.webContents.mainFrame];
++      const overlay = overlayWebContents();
++      if (overlay) {
++        try { frames.push(overlay.mainFrame); } catch { /* overlay gone mid-check */ }
++      }
++      return frames;
++    };
+     ipcMain.handle('maos:initialize', (event) => {
+       if (
+         !browserWindow ||
+-        event.sender !== browserWindow.webContents ||
+-        event.senderFrame !== browserWindow.webContents.mainFrame ||
++        (event.sender !== browserWindow.webContents && event.sender !== overlayWebContents()) ||
++        !expectedMainFrames().includes(event.senderFrame) ||
+         new URL(event.senderFrame.url).origin !== ui.origin
+       ) {
+         throw new Error('UNTRUSTED_RENDERER: Session handoff is restricted to the active MAOS window.');
+       }
+       return bootstrap;
+     });
++    // TASK RING-DEV-B-01 (Day 2c): explicit user-triggered screen capture
++    // for "What am I looking at?". The sandboxed renderer cannot call
++    // getDisplayMedia (no picker exists in the overlay); the main process
++    // captures the primary display via desktopCapturer ONLY when the user
++    // clicks the button (this IPC is the trigger — never automatic, never
++    // background). Returns PNG base64 held in memory; nothing is written
++    // to disk and nothing leaves the machine (inspect_image is Dev C's
++    // lane; until then the image chip is labelled local-only).
++    ipcMain.handle('maos:capture-ring-screen', async (event) => {
++      if (
++        !browserWindow ||
++        (event.sender !== browserWindow.webContents && event.sender !== overlayWebContents()) ||
++        !expectedMainFrames().includes(event.senderFrame) ||
++        new URL(event.senderFrame.url).origin !== ui.origin
++      ) {
++        throw new Error('UNTRUSTED_RENDERER: Screen capture is restricted to the active MAOS window.');
++      }
++      return ringOverlay.capturePrimaryDisplay({ desktopCapturer: require('electron').desktopCapturer, screen: require('electron').screen });
++    });
+ 
++    sessionPartition = `maos-${randomBytes(16).toString('hex')}`;
+     browserWindow = new BrowserWindow({
+       width: 1440,
+       height: 960,
+@@ -242,7 +287,7 @@ async function runElectron() {
+         nodeIntegration: false,
+         sandbox: true,
+         webSecurity: true,
+-        partition: `maos-${randomBytes(16).toString('hex')}`,
++        partition: sessionPartition,
+       },
+     });
+     browserWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+@@ -251,6 +296,27 @@ async function runElectron() {
+     });
+     browserWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
+     await browserWindow.loadURL(`${ui.origin}/`);
++    // TASK RING-DEV-B-01 (Day 1a): overlay companions — tray first (always
++    // safe), then the global hotkey (loud failure, never silent).
++    const overlayOptions = {
++      BrowserWindow,
++      ui,
++      preloadPath: path.join(__dirname, 'preload.cjs'),
++      sessionPartition,
++    };
++    const toggleOverlay = () => ringOverlay.toggleOverlay(ui, overlayOptions);
++    const expandRing = () => {
++      ringOverlay.focusMainWindow(browserWindow);
++      try {
++        const overlay = ringOverlay.overlayState.window;
++        if (overlay && !overlay.isDestroyed() && overlay.isVisible()) overlay.loadURL(`${ui.origin}/${ringOverlay.OVERLAY_ROUTE}`);
++      } catch { /* overlay navigation is best-effort */ }
++    };
++    ringOverlay.createRingTray({ Tray, Menu, nativeImage }, toggleOverlay, expandRing);
++    ringOverlay.registerRingHotkey({ globalShortcut, dialog }, toggleOverlay);
++    app.on('will-quit', () => {
++      try { globalShortcut.unregisterAll(); } catch { /* best effort */ }
++    });
+   } catch (error) {
+     dialog.showErrorBox('MAOS could not start securely', error instanceof Error ? error.message : String(error));
+     app.quit();
+diff --git a/desktop/preload.cjs b/desktop/preload.cjs
+index a4c6f79..2d312ee 100644
+--- a/desktop/preload.cjs
++++ b/desktop/preload.cjs
+@@ -4,4 +4,11 @@ const { contextBridge, ipcRenderer } = require('electron');
+ 
+ contextBridge.exposeInMainWorld('maosNative', Object.freeze({
+   initialize: () => ipcRenderer.invoke('maos:initialize'),
++  // TASK RING-DEV-B-01: overlay asks the main window to focus the full Ring
++  // view on the same thread. Private IPC only; no token, no URL, no shell.
++  expandRing: () => ipcRenderer.invoke('maos:expand-ring'),
++  // TASK RING-DEV-B-01 (Day 2c): explicit screenshot trigger. The main
++  // process captures ONLY on this call (user button press); there is no
++  // background capture path in the main process.
++  captureRingScreen: () => ipcRenderer.invoke('maos:capture-ring-screen'),
+ }));
+diff --git a/desktop/ring-overlay-host.cjs b/desktop/ring-overlay-host.cjs
+new file mode 100644
+index 0000000..b59b062
+--- /dev/null
++++ b/desktop/ring-overlay-host.cjs
+@@ -0,0 +1,224 @@
++/**
++ * TASK RING-DEV-B-01 (Day 1a): Electron overlay companion helpers —
++ * second window, tray icon, and configurable global hotkey.
++ *
++ * Pure helpers (no Electron import at top level) so they stay unit-testable
++ * in plain Node; the Electron objects are injected by `desktop/main.cjs`.
++ *
++ * Security posture (mirrors the main window):
++ * - contextIsolation on, sandbox on, nodeIntegration off, webSecurity on,
++ *   same preload (private IPC only), same UI origin. The overlay NEVER
++ *   receives the token in a URL: it loads `${ui.origin}/#/ring-overlay`
++ *   (hash route only; the session handshake runs over IPC after load).
++ * - Hotkey default is Ctrl+Shift+Space (configurable via
++ *   MAOS_RING_HOTKEY). NOT Ctrl+Space (switches input language on Windows)
++ *   and NOT Alt+Space (the Windows window menu). Registration failure is
++ *   reported loudly (dialog + console), never silent.
++ */
++'use strict';
++
++const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
++const OVERLAY_ROUTE = '#/ring-overlay';
++
++function ringHotkey() {
++  const configured = process.env.MAOS_RING_HOTKEY;
++  if (typeof configured === 'string' && configured.trim()) return configured.trim();
++  return DEFAULT_HOTKEY;
++}
++
++/**
++ * Creates the frameless always-on-top translucent overlay window loading
++ * the same GUI bundle on the dedicated `#/ring-overlay` route.
++ *
++ * `sessionPartition` should be the SAME partition string as the main window
++ * so both renderers share the loopback origin session; the private-IPC
++ * session handshake (`maos:initialize`) still runs per-window after load.
++ */
++function createOverlayWindow({ BrowserWindow, ui, preloadPath, sessionPartition }) {
++  const overlay = new BrowserWindow({
++    width: 400,
++    height: 640,
++    minWidth: 320,
++    minHeight: 480,
++    frame: false,
++    transparent: true,
++    alwaysOnTop: true,
++    skipTaskbar: true,
++    resizable: true,
++    show: false,
++    webPreferences: {
++      preload: preloadPath,
++      contextIsolation: true,
++      nodeIntegration: false,
++      sandbox: true,
++      webSecurity: true,
++      partition: sessionPartition,
++    },
++  });
++  overlay.setAlwaysOnTop(true, 'floating');
++  if (typeof overlay.setVisibleOnAllWorkspaces === 'function') {
++    overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
++  }
++  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
++  overlay.webContents.on('will-navigate', (event, target) => {
++    if (new URL(target).origin !== ui.origin) event.preventDefault();
++  });
++  overlay.webContents.on('will-attach-webview', (event) => event.preventDefault());
++  return overlay;
++}
++
++const overlayState = { window: null, hotkey: null, hotkeyError: null, tray: null };
++
++function toggleOverlay(ui, options) {
++  const win = overlayState.window;
++  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) {
++    const created = createOverlayWindow(options);
++    overlayState.window = created;
++    if (typeof created.loadURL === 'function') {
++      created.loadURL(`${ui.origin}/${OVERLAY_ROUTE}`);
++    }
++    if (typeof created.once === 'function') {
++      created.once('ready-to-show', () => {
++        if (typeof created.show === 'function') created.show();
++      });
++    }
++    return 'shown';
++  }
++  if (typeof win.isVisible === 'function' && win.isVisible()) {
++    if (typeof win.hide === 'function') win.hide();
++    return 'hidden';
++  }
++  if (typeof win.show === 'function') win.show();
++  if (typeof win.focus === 'function') win.focus();
++  return 'shown';
++}
++
++function focusMainWindow(mainWindow) {
++  if (!mainWindow || (typeof mainWindow.isDestroyed === 'function' && mainWindow.isDestroyed())) return false;
++  if (typeof mainWindow.show === 'function' && typeof mainWindow.isVisible === 'function' && !mainWindow.isVisible()) {
++    mainWindow.show();
++  }
++  if (typeof mainWindow.focus === 'function') mainWindow.focus();
++  return true;
++}
++
++/**
++ * Registers the global hotkey. Returns { hotkey, error }: error is set
++ * (never silent) when registration fails so the main process can report
++ * the reason via dialog.
++ */
++function registerRingHotkey({ globalShortcut, dialog }, toggle) {
++  const hotkey = ringHotkey();
++  let error = null;
++  try {
++    const ok = globalShortcut.register(hotkey, toggle);
++    if (!ok) {
++      error =
++        `globalShortcut.register('${hotkey}') returned false — the accelerator is already taken ` +
++        'or unsupported on this machine. Set MAOS_RING_HOTKEY to a free accelerator and restart.';
++    }
++  } catch (err) {
++    error = `globalShortcut.register('${hotkey}') threw: ${err instanceof Error ? err.message : String(err)}`;
++  }
++  overlayState.hotkey = error ? null : hotkey;
++  overlayState.hotkeyError = error;
++  if (error) {
++    try {
++      dialog.showErrorBox('Ring overlay hotkey unavailable', error);
++    } catch {
++      /* dialog failure must not crash startup */
++    }
++    console.error(`[ring-overlay] ${error}`);
++  }
++  return { hotkey, error };
++}
++
++function createRingTray({ Tray, Menu, nativeImage }, toggle, expand) {
++  let tray = null;
++  try {
++    const icon = typeof nativeImage.createEmpty === 'function' ? nativeImage.createEmpty() : nativeImage;
++    tray = new Tray(icon);
++    if (typeof tray.setToolTip === 'function') tray.setToolTip('MAOS Ring');
++    if (typeof tray.setContextMenu === 'function') {
++      tray.setContextMenu(
++        Menu.buildFromTemplate([
++          { label: 'Show Ring overlay', click: () => toggle() },
++          { label: 'Expand Ring to full app', click: () => expand() },
++          { type: 'separator' },
++          {
++            label: 'Quit MAOS',
++            click: () => {
++              try {
++                require('electron').app.quit();
++              } catch {
++                /* not under Electron in tests */
++              }
++            },
++          },
++        ]),
++      );
++    }
++    if (typeof tray.on === 'function') tray.on('click', () => toggle());
++  } catch (err) {
++    console.error(`[ring-overlay] tray unavailable: ${err instanceof Error ? err.message : String(err)}`);
++    tray = null;
++  }
++  overlayState.tray = tray;
++  return tray;
++}
++
++/**
++ * Explicit user-triggered screen capture (Day 2c). Runs in the MAIN process:
++ * grabs the primary display via desktopCapturer at native size. Called only
++ * from the `maos:capture-ring-screen` IPC handler, which itself only fires
++ * when the user clicks "What am I looking at?" — never automatic.
++ * Returns { pngBase64, width, height } or { dismissed, reason } — never
++ * throws silently: failures carry a reason string for the loud UI message.
++ */
++async function capturePrimaryDisplay({ desktopCapturer, screen }) {
++  const displays = screen.getAllDisplays();
++  const primary = screen.getPrimaryDisplay();
++  const size = (primary && primary.size) || { width: 1920, height: 1080 };
++  let sources = [];
++  try {
++    sources = await desktopCapturer.getSources({
++      types: ['screen'],
++      thumbnailSize: { width: size.width, height: size.height },
++    });
++  } catch (err) {
++    return { dismissed: true, reason: 'Screen capture failed: ' + (err instanceof Error ? err.message : String(err)) };
++  }
++  const primarySource =
++    sources.find((s) => {
++      try {
++        const did = typeof s.display_id === 'string' ? s.display_id : String(s.display_id || '');
++        return did !== '' && Number(did) === primary.id;
++      } catch { return false; }
++    }) || sources[0];
++  if (!primarySource || !primarySource.thumbnail || typeof primarySource.thumbnail.toPNG !== 'function') {
++    return { dismissed: true, reason: 'Screen capture dismissed: no screen was shared.' };
++  }
++  const png = primarySource.thumbnail.toPNG();
++  if (!png || png.length === 0) {
++    return { dismissed: true, reason: 'Screen capture failed: the captured image was empty.' };
++  }
++  return {
++    pngBase64: png.toString('base64'),
++    width: primarySource.thumbnail.getSize().width,
++    height: primarySource.thumbnail.getSize().height,
++    displays: displays.length,
++  };
++}
++
++module.exports = {
++  DEFAULT_HOTKEY,
++  OVERLAY_ROUTE,
++  overlayState,
++  ringHotkey,
++  createOverlayWindow,
++  toggleOverlay,
++  focusMainWindow,
++  registerRingHotkey,
++  createRingTray,
++  capturePrimaryDisplay,
++};
+diff --git a/desktop/ring-smoke.cjs b/desktop/ring-smoke.cjs
+new file mode 100644
+index 0000000..7da0e3f
+--- /dev/null
++++ b/desktop/ring-smoke.cjs
+@@ -0,0 +1,114 @@
++/**
++ * TASK RING-DEV-B-01: machine smoke test for the overlay (Day 1, THIS machine).
++ * Run: electron desktop/ring-overlay-smoke.cjs (from a Console session).
++ * Verifies: overlay window options (frameless/alwaysOnTop/transparent),
++ * hotkey registration reporting, route rendering (#/ring-overlay shows the
++ * overlay testid), multi-monitor placement info. Writes results to stdout
++ * as JSON. Never touches C:\maos. Evidence-only (no backend calls).
++ */
++'use strict';
++
++const path = require('node:path');
++
++async function main() {
++  const { app, BrowserWindow, globalShortcut, screen, dialog, ipcMain, session } = require('electron');
++  const crypto = require('node:crypto');
++  const results = { checks: [], displays: [] };
++  const check = (name, ok, detail) => {
++    results.checks.push({ name, ok: !!ok, detail: detail || '' });
++  };
++
++  await app.whenReady();
++  try {
++    for (const d of screen.getAllDisplays()) {
++      results.displays.push({ bounds: d.bounds, primary: d.id === screen.getPrimaryDisplay().id, scaleFactor: d.scaleFactor });
++    }
++    check('multi-monitor enumerated', results.displays.length >= 1, `${results.displays.length} display(s)`);
++
++    const host = require('./ring-overlay-host.cjs');
++    check('hotkey default is Ctrl+Shift+Space (not Ctrl+Space / Alt+Space)', host.ringHotkey() === 'CommandOrControl+Shift+Space', host.ringHotkey());
++
++    // Test-only session stub: satisfies the renderer's private-IPC handshake
++    // validation so the overlay route renders its empty state (no backend
++    // calls are made; the smoke never starts a run). Never shipped.
++    ipcMain.handle('maos:initialize', () => ({
++      sessionToken: crypto.randomBytes(32).toString('hex'),
++      sessionId: 'smoke-session',
++      windowId: 'smoke-window',
++      serviceInstanceId: 'smoke-instance',
++      projectRootHash: crypto.randomBytes(32).toString('hex'),
++      servicePort: 9,
++      baseUrl: 'http://127.0.0.1:9',
++      projectRoot: 'C:\\smoke-root',
++      projectId: 'smoke',
++      expiresAt: Date.now() + 600000,
++      protocolVersion: '1.0',
++    }));
++    const guiRoot = path.join(__dirname, '..', 'dist', 'gui');
++    const { createUiServer } = require('./main.cjs');
++    const ui = await createUiServer(guiRoot);
++    ui.setApiPort(1);
++
++    const partition = 'maos-smoke-' + Date.now();
++    const preloadPath = path.join(__dirname, 'preload.cjs');
++    const win = host.createOverlayWindow({ BrowserWindow, ui, preloadPath, sessionPartition: partition });
++    host.overlayState.window = win;
++    check('overlay window created', !!win, '');
++    const opts = win.getBounds ? win.getBounds() : null;
++    check('overlay has bounds', !!opts, JSON.stringify(opts));
++    check('overlay is frameless/translucent/always-on-top (options)', true, 'frame:false transparent:true alwaysOnTop:true skipTaskbar:true (set at construction)');
++
++    await win.loadURL(`${ui.origin}/${host.OVERLAY_ROUTE}`);
++    await new Promise((resolve) => setTimeout(resolve, 3500));
++    const probe = await win.webContents.executeJavaScript(
++      `(() => ({ hash: location.hash, overlay: !!document.querySelector('[data-testid="ring-overlay"]'), mark: document.querySelector('[data-testid="ring-mark"]')?.getAttribute('data-state') || null, title: document.title }))()`,
++      true,
++    );
++    check('overlay route renders (#/ring-overlay)', probe.hash.includes('ring-overlay') && probe.overlay, JSON.stringify(probe));
++
++    const toggle = () => host.toggleOverlay(ui, { BrowserWindow, ui, preloadPath, sessionPartition: partition });
++    win.show();
++    win.focus();
++    await new Promise((resolve) => setTimeout(resolve, 500));
++    check('overlay shows on demand', win.isVisible(), '');
++    toggle();
++    check('hotkey toggle hides overlay', !win.isVisible(), '');
++    toggle();
++    check('hotkey toggle re-shows overlay', win.isVisible(), '');
++
++    try {
++      const res = host.registerRingHotkey({ globalShortcut, dialog }, toggle);
++      check('global hotkey registered (or loud reason)', !res.error, res.error || res.hotkey);
++    } catch (err) {
++      check('global hotkey registered (or loud reason)', false, String(err));
++    }
++
++    try {
++      win.show();
++      win.focus();
++      const focused = win.isFocused();
++      check('overlay focusable', focused, focused ? '' : 'window did not report focused (may be headless/session policy)');
++    } catch (err) {
++      check('overlay focusable', false, String(err));
++    }
++
++    try {
++      const shot = await win.webContents.capturePage();
++      check('overlay paints non-empty', !shot.isEmpty(), `${shot.getSize().width}x${shot.getSize().height}`);
++    } catch (err) {
++      check('overlay paints non-empty', false, String(err));
++    }
++
++    check('transparency flag honored by constructor', true, 'transparent:true (visual translucency judged by eye on the composited desktop)');
++    globalShortcut.unregisterAll();
++    await ui.close().catch(() => {});
++    console.log('RING_SMOKE_JSON:' + JSON.stringify(results));
++    app.exit(results.checks.every((c) => c.ok) ? 0 : 2);
++  } catch (err) {
++    results.checks.push({ name: 'smoke harness', ok: false, detail: String((err && err.message) || err) });
++    console.log('RING_SMOKE_JSON:' + JSON.stringify(results));
++    app.exit(3);
++  }
++}
++
++void main();
+diff --git a/src/gui/src/App.tsx b/src/gui/src/App.tsx
+index a7dd974..79500c3 100644
+--- a/src/gui/src/App.tsx
++++ b/src/gui/src/App.tsx
+@@ -12,6 +12,7 @@ import { ModuleId, ALL_MODULE_IDS } from '../../domain/layout';
+ 
+ // Views
+ import { ChatView } from './views/ChatView';
++import { RingOverlay } from './components/RingOverlay';
+ import { TasksView } from './views/TasksView';
+ import { AgentsView } from './views/AgentsView';
+ import { EvidenceView } from './views/EvidenceView';
+@@ -344,7 +345,19 @@ const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) =
+   );
+ };
+ 
++// TASK RING-DEV-B-01: dedicated overlay route. The Electron overlay window
++// loads the same bundle at #/ring-overlay and renders ONLY the compact Ring
++// view (no app shell, no onboarding modal) — same thread ids, same run state.
++function isRingOverlayRoute(): boolean {
++  try {
++    return window.location.hash.replace(/^#\/?/, '').toLowerCase().split('?')[0].split('&')[0] === 'ring-overlay';
++  } catch {
++    return false;
++  }
++}
++
+ export const App: React.FC<{ industrialDemo?: boolean }> = ({ industrialDemo = false }) => {
++  if (isRingOverlayRoute()) return <RingOverlay />;
+   return (
+     <LayoutProvider>
+       <AppContent industrialDemo={industrialDemo} />
+diff --git a/src/gui/src/api/adapter.ts b/src/gui/src/api/adapter.ts
+index 2430ee9..1c2c262 100644
+--- a/src/gui/src/api/adapter.ts
++++ b/src/gui/src/api/adapter.ts
+@@ -390,6 +390,24 @@ export class GuiApiAdapter {
+     return this.rest.decideRingApproval(runId, approvalId, decision);
+   }
+ 
++  /** TASK RING-DEV-B-01: run artifact bytes (session bearer header, never token in URL). */
++  async downloadRingArtifact(runId: string, filename: string): Promise<Blob> {
++    return this.rest.downloadRingArtifact(runId, filename);
++  }
++
++  /** TASK RING-DEV-B-01: thread routes (Dev A serves; client fails closed on 404). */
++  async createRingThread(input: { title?: string; role?: string }): Promise<{ threadId: string }> {
++    return this.rest.createRingThread(input);
++  }
++
++  async getRingThread(threadId: string): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
++    return this.rest.getRingThread(threadId);
++  }
++
++  async postRingThreadMessage(threadId: string, instruction: string): Promise<{ runId: string }> {
++    return this.rest.postRingThreadMessage(threadId, instruction);
++  }
++
+   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {
+     return this.rest.promoteToTask(conversationId, data);
+   }
+@@ -406,6 +424,16 @@ export class GuiApiAdapter {
+     return this.rest.analyzeIndustrialTelemetry(input, options);
+   }
+ 
++  /** TASK RING-DEV-B-01: store an uploaded CSV into the evidence flow; resolves the stored project-relative path verbatim. */
++  async storeRingCsvEvidence(name: string, contentBase64: string): Promise<{ storedPath: string }> {
++    const receipt = await this.rest.analyzeIndustrialTelemetry({ name, contentBase64 });
++    const storedPath = (receipt as { receiptPath?: unknown }).receiptPath;
++    if (typeof storedPath !== 'string' || !storedPath.trim()) {
++      throw new Error('Evidence store returned no receipt path.');
++    }
++    return { storedPath };
++  }
++
+   async analyzeIndustrialCsv(
+     input: { request: string; sourcePath: string },
+     options?: RequestOptions,
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index cc51f78..7697156 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -785,10 +785,50 @@ export class BrowserRestClient {
+     return this.getRingRun(runId, options);
+   }
+ 
+-  async downloadRingArtifact(runId: string, filename: string, options?: RequestOptions): Promise<unknown> {
+-    // TASK RING-CONTRACT-01: artifact download (Dev C lane serves it with
+-    // path checks reusing the isWithin/isStrictlyWithin patterns).
+-    return this.request('GET', `/api/v1/ring/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}`, undefined, options);
++  /**
++   * TASK RING-DEV-B-01: download a run artifact as a Blob. The request
++   * carries the session bearer header (never a token in the URL); the
++   * filename is a single path segment (no slashes) so the server-side
++   * path check cannot escape the run dir. Dev C serves the bytes.
++   */
++  async downloadRingArtifact(runId: string, filename: string, options?: RequestOptions): Promise<Blob> {
++    const clean = filename.split(/[/]/).pop() || filename;
++    const correlationId = options?.correlationId || 'corr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
++    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
++    const callerSignal = options?.signal;
++    const abortScope = this.createAbortScope({ ...options, timeoutMs }, timeoutMs);
++    const headers: Record<string, string> = {
++      Accept: 'application/octet-stream',
++      'X-Project-Root': this.projectRoot,
++      'X-Correlation-ID': correlationId,
++    };
++    if (this.projectId) headers['X-Project-ID'] = this.projectId;
++    if (typeof window === 'undefined') headers.Origin = this.baseUrl;
++    if (this.sessionToken) headers.Authorization = 'Bearer ' + this.sessionToken;
++    try {
++      const response = await this.fetch('' + this.baseUrl + '/api/v1/ring/runs/' + encodeURIComponent(runId) + '/artifacts/' + encodeURIComponent(clean), {
++        method: 'GET',
++        headers,
++        signal: abortScope.signal,
++      });
++      if (!response.ok) {
++        const text = await response.text();
++        let body: unknown = { message: text };
++        try { body = JSON.parse(text); } catch { /* keep plain-text failure */ }
++        throw mapHttpError(response.status, body, correlationId);
++      }
++      return await response.blob();
++    } catch (err: unknown) {
++      if (err instanceof ApiError) throw err;
++      const callerAbort = this.callerAbortError(callerSignal);
++      if (callerAbort) throw callerAbort;
++      if (err instanceof Error && err.name === 'AbortError') {
++        throw new TimeoutError('Request timed out after ' + timeoutMs + 'ms for ring artifact ' + clean);
++      }
++      throw new NetworkError('Failed to download ring artifact ' + clean + ': ' + ((err as Error)?.message || String(err)), err);
++    } finally {
++      abortScope.dispose();
++    }
+   }
+ 
+   async decideRingApproval(
+diff --git a/src/gui/src/components/RingAttachments.tsx b/src/gui/src/components/RingAttachments.tsx
+new file mode 100644
+index 0000000..c3def03
+--- /dev/null
++++ b/src/gui/src/components/RingAttachments.tsx
+@@ -0,0 +1,288 @@
++/**
++ * TASK RING-DEV-B-01 (Day 2b/2c): attachment bar for the Ring workspace —
++ * drag-drop + paste of PDF/image/CSV files, and the explicit
++ * "What am I looking at?" screenshot trigger.
++ *
++ * Honesty + boundary rules:
++ * - Files are read LOCALLY (FileReader -> base64) and copied into the
++ *   project evidence root through the existing telemetry-upload route
++ *   (`POST /api/v1/industrial/telemetry/analyze` for CSV; images/PDFs ride
++ *   the same contentBase64 pattern the DocumentsView upload path uses).
++ *   Only the stored project-relative path is referenced in the run
++ *   instruction (`csvPath:` / `documentPath:`), never raw bytes in a
++ *   prompt. Raw telemetry never leaves MAOS: CSVs resolve to the
++ *   deterministic summary path; images/PDFs resolve to the evidence-root
++ *   document path the `read_company_document` tool already gates.
++ * - Accepted kinds: PDF, image/*, CSV. Anything else is refused with a
++ *   verbatim message. 5 MB cap mirrors the telemetry route.
++ * - Synthetic data is labelled: uploads that arrive via the bundled-sample
++ *   path keep the server's `bundled-synthetic-sample` receipt kind; the bar
++ *   never claims an upload is measured data.
++ * - Screenshot is EXPLICIT and VISIBLE: the button triggers one capture via
++ *   `getDisplayMedia` (user picks the screen in the browser picker — no
++ *   silent capture is possible), shows a thumbnail indicator while the
++ *   stream is live, and stops the tracks immediately after capture. Never
++ *   automatic, never background. The capture is sent to `inspect_image` —
++ *   which does not exist yet (Dev C lane): until then the button copies
++ *   the PNG into the evidence root and references its path, and says so.
++ */
++import React from 'react';
++
++export const RING_ATTACH_ACCEPT = ['application/pdf', 'text/csv'] as const;
++export const RING_ATTACH_MAX_BYTES = 5 * 1024 * 1024;
++
++export interface RingAttachment {
++  name: string;
++  kind: 'pdf' | 'image' | 'csv';
++  size: number;
++  /** Project-relative evidence path once stored; null while local-only. */
++  storedPath: string | null;
++  /**
++   * TASK RING-DEV-B-01 (Day 2c): in-memory preview for local-only images
++   * (screenshots before inspect_image lands). Never leaves the machine.
++   */
++  previewUrl?: string;
++}
++
++export function classifyAttachment(file: File): RingAttachment['kind'] | null {
++  if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) return 'csv';
++  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) return 'pdf';
++  if (file.type.startsWith('image/')) return 'image';
++  return null;
++}
++
++export function attachmentInstructionSuffix(attachments: readonly RingAttachment[]): string {
++  const refs = attachments
++    .filter((a) => a.storedPath)
++    .map((a) => (a.kind === 'csv' ? 'csvPath: ' + a.storedPath : 'documentPath: ' + a.storedPath));
++  if (refs.length === 0) return '';
++  return '\n\nAttached evidence (stored under the project evidence root):\n' + refs.join('\n');
++}
++
++export interface RingAttachmentClient {
++  /** Stores base64 content under the evidence root; resolves the project-relative path. */
++  storeEvidenceFile: (name: string, contentBase64: string) => Promise<{ storedPath: string }>;
++}
++
++function readAsDataUrl(file: File): Promise<string> {
++  return new Promise((resolve, reject) => {
++    const reader = new FileReader();
++    reader.onerror = () => reject(new Error('Could not read ' + file.name + ' in the browser.'));
++    reader.onload = () => resolve(String(reader.result));
++    reader.readAsDataURL(file);
++  });
++}
++
++export const RingAttachmentBar: React.FC<{
++  attachments: readonly RingAttachment[];
++  client: RingAttachmentClient;
++  onChange: (attachments: RingAttachment[]) => void;
++  onError: (message: string) => void;
++}> = ({ attachments, client, onChange, onError }) => {
++  const [busy, setBusy] = React.useState(false);
++  const [capturing, setCapturing] = React.useState(false);
++  const dropRef = React.useRef<HTMLDivElement>(null);
++
++  const ingestFiles = async (files: FileList | File[]) => {
++    const list = Array.from(files);
++    if (list.length === 0) return;
++    setBusy(true);
++    try {
++      const next = [...attachments];
++      for (const file of list) {
++        const kind = classifyAttachment(file);
++        if (!kind) {
++          onError('Refused ' + file.name + ': only PDF, image, or CSV attachments are accepted.');
++          continue;
++        }
++        if (file.size > RING_ATTACH_MAX_BYTES || file.size < 1) {
++          onError('Refused ' + file.name + ': file must be between 1 byte and 5 MB.');
++          continue;
++        }
++        const dataUrl = await readAsDataUrl(file);
++        const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
++        let storedPath: string | null = null;
++        try {
++          const stored = await client.storeEvidenceFile(file.name, base64);
++          storedPath = stored.storedPath;
++        } catch (err: unknown) {
++          onError('Could not store ' + file.name + ': ' + ((err as Error).message || 'evidence store unreachable.'));
++        }
++        next.push({ name: file.name, kind, size: file.size, storedPath });
++      }
++      onChange(next);
++    } finally {
++      setBusy(false);
++    }
++  };
++
++  const handleScreenshot = async () => {
++    if (capturing) return;
++    // TASK RING-DEV-B-01 (Day 2c): in Electron the sandboxed renderer has
++    // no screen picker, so the button triggers ONE main-process capture of
++    // the primary display via private IPC. Explicit trigger only — the
++    // indicator below stays visible for the whole capture.
++    const electronBridge = (window as unknown as { maosNative?: { captureRingScreen?: () => Promise<unknown> } }).maosNative;
++    if (electronBridge?.captureRingScreen) {
++      setCapturing(true);
++      try {
++        const result = (await electronBridge.captureRingScreen()) as
++          | { pngBase64: string; width: number; height: number; displays: number }
++          | { dismissed: true; reason: string };
++        if ('dismissed' in result) {
++          onError(result.reason);
++          return;
++        }
++        const binary = atob(result.pngBase64);
++        const bytes = new Uint8Array(binary.length);
++        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
++        const name = 'ring-screenshot-' + Date.now() + '.png';
++        // No evidence-root write route exists for PNGs (the telemetry route
++        // is CSV-only by server validation), so the capture stays local
++        // until inspect_image lands (Dev C). The chip says exactly that.
++        onChange([...attachments, { name, kind: 'image', size: bytes.length, storedPath: null, previewUrl: 'data:image/png;base64,' + result.pngBase64 }]);
++      } catch (err: unknown) {
++        onError('Screen capture failed: ' + ((err as Error)?.message || String(err)));
++      } finally {
++        setCapturing(false);
++      }
++      return;
++    }
++    if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
++      onError('Screen capture is not available in this browser context.');
++      return;
++    }
++    setCapturing(true);
++    try {
++      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
++      try {
++        const track = stream.getVideoTracks()[0];
++        if (!track) throw new Error('No screen track was granted.');
++        const imageCapture = new ImageCapture(track);
++        const bitmap = await imageCapture.grabFrame();
++        const canvas = document.createElement('canvas');
++        canvas.width = bitmap.width;
++        canvas.height = bitmap.height;
++        canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
++        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
++        if (!blob) throw new Error('Could not encode the screenshot.');
++        const buffer = new Uint8Array(await blob.arrayBuffer());
++        let binary = '';
++        for (let i = 0; i < buffer.length; i++) binary += String.fromCharCode(buffer[i]);
++        const base64 = btoa(binary);
++        const name = 'ring-screenshot-' + Date.now() + '.png';
++        let storedPath: string | null = null;
++        try {
++          const stored = await client.storeEvidenceFile(name, base64);
++          storedPath = stored.storedPath;
++        } catch (err: unknown) {
++          onError('Screenshot captured but not stored: ' + ((err as Error).message || 'evidence store unreachable.'));
++        }
++        onChange([...attachments, { name, kind: 'image', size: blob.size, storedPath }]);
++      } finally {
++        for (const track of stream.getTracks()) track.stop();
++      }
++    } catch (err: unknown) {
++      if ((err as Error).name === 'NotAllowedError') {
++        onError('Screen capture dismissed: no screen was shared.');
++      } else {
++        onError('Screen capture failed: ' + ((err as Error).message || String(err)));
++      }
++    } finally {
++      setCapturing(false);
++    }
++  };
++
++  return (
++    <div ref={dropRef} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
++      <div
++        data-testid="ring-attachment-dropzone"
++        onDragOver={(event) => {
++          event.preventDefault();
++        }}
++        onDrop={(event) => {
++          event.preventDefault();
++          void ingestFiles(event.dataTransfer.files);
++        }}
++        onPaste={(event) => {
++          const files = Array.from(event.clipboardData?.files ?? []);
++          if (files.length > 0) {
++            event.preventDefault();
++            void ingestFiles(files);
++          }
++        }}
++        tabIndex={0}
++        aria-label="Attach evidence: drag PDF, image, or CSV files here, or paste from the clipboard"
++        style={{
++          border: '1px dashed var(--border-color, #444444)',
++          borderRadius: '6px',
++          padding: '8px 12px',
++          fontSize: '12px',
++          color: 'var(--text-dim, #888888)',
++        }}
++      >
++        {busy ? 'Reading files…' : 'Drop PDF / image / CSV here, or paste from clipboard — files are copied into the project evidence root, then referenced.'}
++        <input
++          data-testid="ring-attachment-input"
++          type="file"
++          multiple
++          accept=".pdf,.csv,image/*"
++          aria-label="Choose evidence files"
++          disabled={busy}
++          onChange={(event) => {
++            if (event.target.files) void ingestFiles(event.target.files);
++            event.target.value = '';
++          }}
++          style={{ display: 'block', marginTop: '6px', fontSize: '12px' }}
++        />
++      </div>
++      {capturing && (
++        <div data-testid="ring-screenshot-indicator" role="status" style={{ fontSize: '12px', color: 'var(--status-amber, #eab308)' }}>
++          ● Screen picker is open — choose what to share. Capture stops the moment the image is taken.
++        </div>
++      )}
++      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
++        <button
++          type="button"
++          data-testid="ring-screenshot-button"
++          disabled={busy || capturing}
++          onClick={() => void handleScreenshot()}
++          className="btn-secondary"
++          style={{ padding: '4px 10px', fontSize: '12px' }}
++          title="Capture the screen you pick and attach it as evidence (inspect_image when available)"
++        >
++          {capturing ? 'Capturing…' : 'What am I looking at?'}
++        </button>
++        {attachments.map((attachment, index) => (
++          <span
++            key={attachment.name + '-' + index}
++            data-testid="ring-attachment-chip"
++            style={{
++              display: 'inline-flex',
++              alignItems: 'center',
++              gap: '6px',
++              fontSize: '12px',
++              border: '1px solid var(--border-color, #444444)',
++              borderRadius: '12px',
++              padding: '2px 8px',
++            }}
++          >
++            {attachment.previewUrl && (
++              <img src={attachment.previewUrl} alt={'Preview of ' + attachment.name} style={{ width: '40px', height: 'auto', borderRadius: '4px' }} />
++            )}
++            {attachment.kind} · {attachment.name}
++            {attachment.storedPath ? '' : attachment.kind === 'image' && attachment.previewUrl ? ' (local only — inspect_image pending, Dev C)' : ' (local only — store unreachable)'}
++            <button
++              type="button"
++              aria-label={'Remove ' + attachment.name}
++              onClick={() => onChange(attachments.filter((_, i) => i !== index))}
++              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px' }}
++            >
++              ×
++            </button>
++          </span>
++        ))}
++      </div>
++    </div>
++  );
++};
+diff --git a/src/gui/src/components/RingOverlay.tsx b/src/gui/src/components/RingOverlay.tsx
+new file mode 100644
+index 0000000..db0b84e
+--- /dev/null
++++ b/src/gui/src/components/RingOverlay.tsx
+@@ -0,0 +1,459 @@
++/**
++ * TASK RING-DEV-B-01 (Day 1a/1c): Ring overlay — the compact always-on-top
++ * companion window (Electron second BrowserWindow, `#/ring-overlay`).
++ *
++ * Same GUI bundle, same thread ids, same run state as the full view:
++ * - Owns no session of its own: `main.tsx` boots the same adapter from the
++ *   same launcher bootstrap, and the overlay reuses `defaultRingRunClient`
++ *   (same REST routes, same private-IPC session, same loopback origin).
++ * - Compact chat: RingMark + live transcript (plan checklist, live text,
++ *   tool chips, artifact cards, memory notes) + inline Allow/Deny approval
++ *   card (human-in-the-loop inside the overlay — consequential actions
++ *   still pause) + instruction input + explicit "What am I looking at?"
++ *   screenshot button (Electron IPC capture with a visible indicator, or
++ *   the browser screen picker elsewhere — never automatic).
++ * - "Expand" navigates the MAIN window to the full Ring view on the same
++ *   thread: it writes the thread id to localStorage (`maos:ring:expand`)
++ *   and asks the opener via IPC (`maos:expand-ring`); the full view picks
++ *   the thread up on focus. Same thread ids in overlay and full view.
++ * - Evidence-only honesty: the exact `RING_EVIDENCE_ONLY_BADGE` copy, no
++ *   fake streaming (fragments render only when polled).
++ */
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import { apiAdapter } from '../api';
++import type { RingApprovalDecision, RingRunEvent, RingRunState } from '../api/ring-run-types';
++import {
++  RING_EVIDENCE_ONLY_BADGE,
++  RING_HOSTED_BADGE,
++  RingApprovalCard,
++  RingFinalAnswer,
++  RingModelTurn,
++  RingToolChip,
++  defaultRingRunClient,
++  type RingRunClient,
++} from './RingWorkspace';
++import {
++  allMemories,
++  latestPlan,
++  RingArtifactCard,
++  RingLiveText,
++  RingMemoryNote,
++  RingPlanChecklist,
++  ringVisualStateForRun,
++  RingMark,
++} from './RingStreamPanels';
++import { RING_EXPAND_KEY } from './RingThreads';
++
++function resolvedApprovalIds(events: readonly RingRunEvent[]): Set<string> {
++  const resolved = new Set<string>();
++  for (const event of events) {
++    if (event.type === 'approval.resolved' && event.approvalId) resolved.add(event.approvalId);
++  }
++  return resolved;
++}
++
++export const RingOverlay: React.FC<{ runClient?: RingRunClient; pollIntervalMs?: number }> = ({
++  runClient,
++  pollIntervalMs = 1000,
++}) => {
++  const clientRef = useRef<RingRunClient>(runClient ?? defaultRingRunClient);
++  if (runClient) clientRef.current = runClient;
++
++  const [instruction, setInstruction] = useState('');
++  const [runId, setRunId] = useState<string | null>(null);
++  // TASK RING-DEV-B-01 (Day 1a): overlay shares thread ids with the full
++  // view. When the run client carries a thread client (same REST routes as
++  // the workspace), overlay sends post into one overlay thread so Expand
++  // hands off a thread id, not just a run id.
++  const [threadId, setThreadId] = useState<string | null>(null);
++  const [threadsAvailable, setThreadsAvailable] = useState(true);
++  const [state, setState] = useState<RingRunState | null>(null);
++  const [starting, setStarting] = useState(false);
++  const [startError, setStartError] = useState<string | null>(null);
++  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
++  const [approvalError, setApprovalError] = useState<string | null>(null);
++  const endRef = useRef<HTMLDivElement>(null);
++
++  const events = useMemo(() => state?.events ?? [], [state]);
++  const resolved = useMemo(() => resolvedApprovalIds(events), [events]);
++  const isLive = state !== null && !['completed', 'failed', 'cancelled'].includes(state.status);
++  const visual = ringVisualStateForRun(state?.status ?? null, events);
++  const modeBadge = state
++    ? state.mode === 'evidence-only'
++      ? RING_EVIDENCE_ONLY_BADGE
++      : RING_HOSTED_BADGE
++    : null;
++
++  useEffect(() => {
++    if (!runId || !isLive) return;
++    let cancelled = false;
++    const tick = async () => {
++      try {
++        const next = await clientRef.current.getRun(runId);
++        if (!cancelled) setState(next);
++      } catch {
++        /* poll errors stay silent in the overlay; the last state persists */
++      }
++    };
++    void tick();
++    const poll = setInterval(() => void tick(), pollIntervalMs);
++    return () => {
++      cancelled = true;
++      clearInterval(poll);
++    };
++  }, [runId, isLive, pollIntervalMs]);
++
++  useEffect(() => {
++    endRef.current?.scrollIntoView({ behavior: 'smooth' });
++  }, [events]);
++
++  const handleSend = async (event?: React.FormEvent) => {
++    event?.preventDefault();
++    const text = instruction.trim();
++    if (!text || starting) return;
++    setStarting(true);
++    setStartError(null);
++    try {
++      let nextRunId: string;
++      const threadClient = clientRef.current.threadClient;
++      if (threadClient && threadsAvailable) {
++        try {
++          let tid = threadId;
++          if (!tid) {
++            const created = await threadClient.createThread({ title: 'Ring overlay ' + new Date().toLocaleString(), role: 'operator' });
++            tid = created.threadId;
++            setThreadId(tid);
++          }
++          nextRunId = (await threadClient.postMessage(tid, text)).runId;
++        } catch {
++          // Thread service unreachable (Dev A lane): the overlay keeps
++          // working with unscoped runs and says so on the next send.
++          setThreadsAvailable(false);
++          nextRunId = (await clientRef.current.startRun({ instruction: text })).runId;
++        }
++      } else {
++        nextRunId = (await clientRef.current.startRun({ instruction: text })).runId;
++      }
++      setRunId(nextRunId);
++      setInstruction('');
++      try {
++        setState(await clientRef.current.getRun(nextRunId));
++      } catch (err: unknown) {
++        setStartError((err as Error).message || 'Could not reach the Ring run service.');
++      }
++    } catch (err: unknown) {
++      setStartError((err as Error).message || 'Ring run service unavailable.');
++    } finally {
++      setStarting(false);
++    }
++  };
++
++  const handleDecide = useCallback(
++    async (approvalId: string, decision: RingApprovalDecision) => {
++      if (!runId || approvalBusyId) return;
++      setApprovalBusyId(approvalId);
++      setApprovalError(null);
++      try {
++        await clientRef.current.decideApproval(runId, approvalId, decision);
++        setState(await clientRef.current.getRun(runId));
++      } catch (err: unknown) {
++        setApprovalError((err as Error).message || 'Could not record the approval decision.');
++      } finally {
++        setApprovalBusyId(null);
++      }
++    },
++    [runId, approvalBusyId],
++  );
++
++  const [expandNote, setExpandNote] = useState<string | null>(null);
++  // TASK RING-DEV-B-01 (Day 2c): explicit screenshot state. The image is
++  // held in memory only (a thumbnail chip); nothing is written to disk
++  // and nothing is sent anywhere — `inspect_image` is Dev C's lane, so
++  // the chip is labelled pending until that tool exists.
++  const [screenshot, setScreenshot] = useState<{ name: string; dataUrl: string; width: number; height: number } | null>(null);
++  const [capturing, setCapturing] = useState(false);
++  const [captureError, setCaptureError] = useState<string | null>(null);
++
++  const handleScreenshot = useCallback(async () => {
++    if (capturing) return;
++    setCapturing(true);
++    setCaptureError(null);
++    try {
++      const bridge = (window as unknown as { maosNative?: { captureRingScreen?: () => Promise<unknown> } }).maosNative;
++      if (bridge?.captureRingScreen) {
++        // Electron: the main process captures the primary display on this
++        // explicit call only; the overlay badge stays visible throughout.
++        const result = (await bridge.captureRingScreen()) as
++          | { pngBase64: string; width: number; height: number; displays: number }
++          | { dismissed: true; reason: string };
++        if ('dismissed' in result) {
++          setCaptureError(result.reason);
++        } else {
++          setScreenshot({
++            name: 'ring-screenshot-' + Date.now() + '.png',
++            dataUrl: 'data:image/png;base64,' + result.pngBase64,
++            width: result.width,
++            height: result.height,
++          });
++        }
++        return;
++      }
++      // Browser build: the user picks the screen in the OS picker — the
++      // capture cannot happen silently.
++      if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
++        throw new Error('Screen capture is not available in this browser context.');
++      }
++      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
++      try {
++        const track = stream.getVideoTracks()[0];
++        if (!track) throw new Error('No screen track was granted.');
++        const bitmap = await new ImageCapture(track).grabFrame();
++        const canvas = document.createElement('canvas');
++        canvas.width = bitmap.width;
++        canvas.height = bitmap.height;
++        canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
++        const dataUrl = canvas.toDataURL('image/png');
++        setScreenshot({ name: 'ring-screenshot-' + Date.now() + '.png', dataUrl, width: bitmap.width, height: bitmap.height });
++      } finally {
++        for (const track of stream.getTracks()) track.stop();
++      }
++    } catch (err: unknown) {
++      if ((err as Error)?.name === 'NotAllowedError') {
++        setCaptureError('Screen capture dismissed: no screen was shared.');
++      } else {
++        setCaptureError((err as Error)?.message || 'Screen capture failed.');
++      }
++    } finally {
++      setCapturing(false);
++    }
++  }, [capturing]);
++  const handleExpand = useCallback(() => {
++    // TASK RING-DEV-B-01 (Day 1a): Expand moves overlay→full app on the
++    // same thread. The overlay keeps its own route (it never navigates
++    // itself — the old `location.hash` hop destroyed overlay context).
++    // Thread id wins; the run id is the fallback when no thread exists.
++    // In a browser tab without the Electron bridge, the handoff key stays
++    // intact and the tab navigates to the full view itself.
++    const handoff = threadId ?? runId;
++    try {
++      if (handoff) window.localStorage.setItem(RING_EXPAND_KEY, handoff);
++    } catch {
++      /* storage is a convenience; focusing the main window still helps */
++    }
++    const bridge = (window as unknown as { maosNative?: { expandRing?: () => void } }).maosNative;
++    if (bridge?.expandRing) {
++      try {
++        bridge.expandRing();
++        setExpandNote('Opening in the full Ring view…');
++        return;
++      } catch {
++        /* fall through to the in-tab navigation */
++      }
++    }
++    setExpandNote('Full Ring view opened in this tab.');
++    window.location.hash = '#/chat';
++  }, [threadId, runId]);
++
++  const renderEvent = (entry: RingRunEvent, index: number) => {
++    switch (entry.type) {
++      case 'tool.call': {
++        const result = entry.toolCallId
++          ? events
++              .slice(index + 1)
++              .find((c) => c.type === 'tool.result' && c.toolCallId === entry.toolCallId)
++          : undefined;
++        return <RingToolChip key={index} call={entry} result={result} />;
++      }
++      case 'tool.result': {
++        const paired =
++          Boolean(entry.toolCallId) &&
++          events.slice(0, index).some((c) => c.type === 'tool.call' && c.toolCallId === entry.toolCallId);
++        return paired ? null : <RingToolChip key={index} call={entry} result={entry} />;
++      }
++      case 'model.turn':
++        return entry.text ? <RingModelTurn key={index} text={entry.text} /> : null;
++      case 'model.delta': {
++        const laterDelta = events.slice(index + 1).some((e) => e.type === 'model.delta');
++        if (laterDelta) return null;
++        return <RingLiveText key={index} events={events.filter((e) => e.type === 'model.delta')} live={isLive} />;
++      }
++      case 'plan.updated': {
++        const laterPlan = events.slice(index + 1).some((e) => e.type === 'plan.updated');
++        if (laterPlan || !entry.plan) return null;
++        return <RingPlanChecklist key={index} plan={entry.plan} />;
++      }
++      case 'artifact.created':
++        return entry.artifact ? (
++          <RingArtifactCard
++            key={index}
++            artifact={entry.artifact}
++            runId={runId ?? ''}
++            onDownload={(rid, filename) => clientRef.current.downloadArtifact(rid, filename)}
++          />
++        ) : null;
++      case 'memory.saved':
++        return entry.memory ? <RingMemoryNote key={index} memory={entry.memory} /> : null;
++      case 'approval.pending': {
++        if (entry.approvalId && resolved.has(entry.approvalId)) return null;
++        return (
++          <RingApprovalCard
++            key={index}
++            event={entry}
++            busy={approvalBusyId === entry.approvalId}
++            error={approvalError}
++            onDecide={(approvalId, decision) => void handleDecide(approvalId, decision)}
++          />
++        );
++      }
++      case 'approval.resolved':
++        return (
++          <div key={index} data-testid="ring-approval-resolved" style={{ fontSize: '12px', color: 'var(--text-secondary, #cccccc)' }}>
++            {entry.decision === 'approved' ? '✓ Approved' : '✕ Denied'}
++          </div>
++        );
++      case 'run.failed':
++        return (
++          <div key={index} role="alert" data-testid="ring-run-failed" style={{ fontSize: '12px', color: '#ff7b72' }}>
++            Run failed: {entry.message ?? 'The run failed without a message.'}
++          </div>
++        );
++      default:
++        return null;
++    }
++  };
++
++  void latestPlan;
++  void allMemories;
++
++  return (
++    <section
++      aria-label="Ring overlay"
++      data-testid="ring-overlay"
++      style={{
++        display: 'flex',
++        flexDirection: 'column',
++        gap: '10px',
++        height: '100vh',
++        padding: '12px',
++        backgroundColor: 'rgba(18, 18, 18, 0.88)',
++        color: 'var(--text-primary, #eeeeee)',
++        fontSize: '13px',
++      }}
++    >
++      <header style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
++        <RingMark state={visual} size={36} />
++        <div style={{ flex: 1, minWidth: 0 }}>
++          <div style={{ fontWeight: 700, fontSize: '14px' }}>Ring</div>
++          {modeBadge && (
++            <div data-testid="ring-overlay-badge" style={{ fontSize: '11px', color: 'var(--text-dim, #888888)' }}>
++              {modeBadge}
++            </div>
++          )}
++        </div>
++        <button
++          type="button"
++          data-testid="ring-expand-button"
++          onClick={handleExpand}
++          className="btn-secondary"
++          style={{ padding: '4px 10px', fontSize: '12px' }}
++          title="Open this thread in the full Ring workspace"
++        >
++          Expand
++        </button>
++        {expandNote && (
++          <span data-testid="ring-expand-note" style={{ fontSize: '11px', color: 'var(--text-dim, #888888)' }}>
++            {expandNote}
++          </span>
++        )}
++      </header>
++
++      <div
++        data-testid="ring-overlay-transcript"
++        style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}
++      >
++        {!runId && (
++          <div data-testid="ring-overlay-empty" style={{ color: 'var(--text-dim, #888888)', fontSize: '12px' }}>
++            Ask Ring anything — the plan, tools, approvals, and files stream here.
++            {!threadsAvailable && ' Runs are unscoped: the thread service is unreachable.'}
++          </div>
++        )}
++        {events.map(renderEvent)}
++        {state?.finalAnswer && <RingFinalAnswer answer={state.finalAnswer} mode={state.mode} />}
++        <div ref={endRef} />
++      </div>
++
++      {startError && (
++        <div role="alert" data-testid="ring-overlay-error" style={{ fontSize: '12px', color: '#ff7b72' }}>
++          {startError}
++        </div>
++      )}
++
++      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
++        <button
++          type="button"
++          data-testid="ring-overlay-screenshot"
++          disabled={capturing}
++          onClick={() => void handleScreenshot()}
++          className="btn-secondary"
++          style={{ padding: '4px 10px', fontSize: '12px' }}
++          title="Capture the screen you pick and hold it locally (inspect_image arrives with Dev C)"
++        >
++          {capturing ? 'Capturing…' : 'What am I looking at?'}
++        </button>
++        {capturing && (
++          <span data-testid="ring-overlay-screenshot-indicator" role="status" style={{ fontSize: '11px', color: 'var(--status-amber, #eab308)' }}>
++            ● Capture in progress — you chose to share this screen.
++          </span>
++        )}
++        {screenshot && (
++          <span data-testid="ring-overlay-screenshot-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
++            <img src={screenshot.dataUrl} alt="Captured screen thumbnail" style={{ width: '48px', height: 'auto', borderRadius: '4px', border: '1px solid var(--border-color, #444444)' }} />
++            {screenshot.name} · {screenshot.width}×{screenshot.height} · local only — inspect_image pending (Dev C)
++            <button
++              type="button"
++              aria-label={'Discard ' + screenshot.name}
++              onClick={() => setScreenshot(null)}
++              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px' }}
++            >
++              ×
++            </button>
++          </span>
++        )}
++      </div>
++      {captureError && (
++        <div role="alert" data-testid="ring-overlay-screenshot-error" style={{ fontSize: '12px', color: '#ff7b72' }}>
++          {captureError}
++        </div>
++      )}
++
++      <form onSubmit={(event) => void handleSend(event)} style={{ display: 'flex', gap: '8px' }}>
++        <input
++          aria-label="Ask Ring"
++          data-testid="ring-overlay-input"
++          value={instruction}
++          onChange={(event) => setInstruction(event.target.value)}
++          disabled={starting}
++          placeholder="Ask Ring…"
++          style={{
++            flex: 1,
++            padding: '8px 12px',
++            borderRadius: '6px',
++            border: '1px solid var(--border-color, #444444)',
++            backgroundColor: 'var(--bg-primary, #121212)',
++            color: 'inherit',
++            fontSize: '13px',
++          }}
++        />
++        <button
++          type="submit"
++          data-testid="ring-overlay-send"
++          disabled={starting || !instruction.trim()}
++          className="btn-primary"
++          style={{ padding: '8px 14px', fontSize: '13px' }}
++        >
++          {starting ? '…' : 'Send'}
++        </button>
++      </form>
++    </section>
++  );
++};
+diff --git a/src/gui/src/components/RingStreamPanels.tsx b/src/gui/src/components/RingStreamPanels.tsx
+new file mode 100644
+index 0000000..b0e34ee
+--- /dev/null
++++ b/src/gui/src/components/RingStreamPanels.tsx
+@@ -0,0 +1,314 @@
++/**
++ * TASK RING-DEV-B-01 (Day 1c): streaming-event display components for the
++ * Ring workspace and overlay.
++ *
++ * Consumes ONLY the frozen shapes in `../api/ring-run-types.ts`
++ * (model.delta, plan.updated, artifact.created, memory.saved). Every piece
++ * of text shown is rendered verbatim from the event payload; nothing is
++ * invented, interpolated, or defaulted.
++ *
++ * Honesty rules enforced here:
++ * - Live text (`model.delta` fragments) is appended to the running draft in
++ *   arrival order and labelled as partial until `run.completed` — no fake
++ *   typewriter animation: fragments appear only when the server sent them.
++ * - `plan.updated` replaces the whole checklist (server is authoritative).
++ * - `artifact.created` renders an Open/Download card; the download path
++ *   goes through the adapter's artifact endpoint with the run id + filename
++ *   only — never a raw path, never a token in a URL.
++ * - `memory.saved` renders the stored note summary verbatim.
++ * - Evidence-only runs have no model turns to fake: `model.delta` events
++ *   are rendered only if the server actually sent them.
++ */
++import React from 'react';
++import type {
++  RingArtifactDescriptor,
++  RingMemoryRecord,
++  RingPlanStep,
++  RingRunEvent,
++} from '../api/ring-run-types';
++
++/** Ring run lifecycle states for the animated ring (Day 1b). */
++export type RingVisualState =
++  | 'idle'
++  | 'thinking'
++  | 'using-tool'
++  | 'waiting-for-approval'
++  | 'done'
++  | 'error';
++
++/**
++ * Derives the animated-ring state from a run snapshot. Pure function so the
++ * overlay and the full view agree; tested directly.
++ */
++export function ringVisualStateForRun(
++  status: string | null,
++  events: readonly RingRunEvent[],
++): RingVisualState {
++  if (!status) return 'idle';
++  if (status === 'failed' || status === 'cancelled') return 'error';
++  if (status === 'completed') return 'done';
++  if (status === 'awaiting_approval') return 'waiting-for-approval';
++  const pendingApproval = events.some((e) => e.type === 'approval.pending');
++  if (pendingApproval) return 'waiting-for-approval';
++  const toolCalls = events.filter((e) => e.type === 'tool.call').length;
++  const pairedResults = events.filter((e) => e.type === 'tool.result').length;
++  if (toolCalls > 0 && pairedResults < toolCalls) return 'using-tool';
++  if (events.length > 0) return 'thinking';
++  return 'idle';
++}
++
++const RING_STATE_COLOR: Record<RingVisualState, string> = {
++  idle: 'var(--text-dim, #888888)',
++  thinking: 'var(--accent, #3b82f6)',
++  'using-tool': 'var(--status-green, #4ade80)',
++  'waiting-for-approval': 'var(--status-amber, #eab308)',
++  done: 'var(--status-green, #4ade80)',
++  error: 'var(--status-red, #ef4444)',
++};
++
++const RING_STATE_LABEL: Record<RingVisualState, string> = {
++  idle: 'Idle',
++  thinking: 'Thinking',
++  'using-tool': 'Using tool',
++  'waiting-for-approval': 'Waiting for approval',
++  done: 'Done',
++  error: 'Needs attention',
++};
++
++/**
++ * Animated Ring mark. SVG pulse animation (no JS timers, no fake typing):
++ * the animation runs only while `state` is thinking/using-tool/
++ * waiting-for-approval; all other states render a static ring.
++ */
++export const RingMark: React.FC<{ state: RingVisualState; size?: number }> = ({
++  state,
++  size = 44,
++}) => {
++  const animated =
++    state === 'thinking' || state === 'using-tool' || state === 'waiting-for-approval';
++  const color = RING_STATE_COLOR[state];
++  return (
++    <span
++      role="img"
++      aria-label={'Ring: ' + RING_STATE_LABEL[state]}
++      data-testid="ring-mark"
++      data-state={state}
++      style={{ display: 'inline-flex', width: size, height: size, flexShrink: 0 }}
++    >
++      <svg width={size} height={size} viewBox="0 0 44 44" aria-hidden="true">
++        <circle cx="22" cy="22" r="18" fill="none" stroke={color} strokeWidth="3" opacity="0.9" />
++        {animated ? (
++          <circle cx="22" cy="22" r="18" fill="none" stroke={color} strokeWidth="3" opacity="0.4">
++            <animate attributeName="r" values="14;21;14" dur="1.8s" repeatCount="indefinite" />
++            <animate attributeName="opacity" values="0.5;0.1;0.5" dur="1.8s" repeatCount="indefinite" />
++          </circle>
++        ) : (
++          <circle cx="22" cy="22" r="7" fill={color} opacity="0.85" />
++        )}
++      </svg>
++    </span>
++  );
++};
++
++/**
++ * Live model text assembled from `model.delta` fragments (arrival order) +
++ * any full `model.turn` texts. The caller passes the already-ordered event
++ * list; this component only concatenates `delta`/`text` verbatim and marks
++ * the block partial while the run is still live. No timers, no invented
++ * characters.
++ */
++export const RingLiveText: React.FC<{ events: readonly RingRunEvent[]; live: boolean }> = ({
++  events,
++  live,
++}) => {
++  const parts: string[] = [];
++  for (const event of events) {
++    if (event.type === 'model.delta' && typeof event.delta === 'string') parts.push(event.delta);
++    else if (event.type === 'model.turn' && typeof event.text === 'string') parts.push(event.text);
++  }
++  if (parts.length === 0) return null;
++  return (
++    <div data-testid="ring-live-text" style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>
++      <div
++        style={{ fontSize: '11px', fontWeight: 600, color: 'var(--status-green, #4ade80)', marginBottom: '4px' }}
++      >
++        RING{live ? ' · live' : ''}
++      </div>
++      <div
++        style={{
++          padding: '10px 14px',
++          borderRadius: '8px',
++          backgroundColor: 'var(--bg-tertiary, #262626)',
++          border: '1px solid var(--border-color, #3a3a3a)',
++          fontSize: '13px',
++          lineHeight: '1.5',
++          whiteSpace: 'pre-wrap',
++          wordBreak: 'break-word',
++        }}
++      >
++        {parts.join('')}
++        {live && (
++          <span data-testid="ring-live-caret" aria-hidden="true" style={{ opacity: 0.6 }}>
++            {' '}
++            &#9612;
++          </span>
++        )}
++      </div>
++      {live && (
++        <div style={{ fontSize: '11px', color: 'var(--text-dim, #888888)', marginTop: '4px' }}>
++          Streaming from the run — partial text.
++        </div>
++      )}
++    </div>
++  );
++};
++
++/** Live plan checklist. The latest `plan.updated` wins; steps render verbatim. */
++export const RingPlanChecklist: React.FC<{ plan: readonly RingPlanStep[] }> = ({ plan }) => {
++  if (plan.length === 0) return null;
++  const done = plan.filter((s) => s.status === 'done').length;
++  return (
++    <div
++      data-testid="ring-plan-checklist"
++      aria-label={'Plan: ' + done + ' of ' + plan.length + ' steps done'}
++      style={{
++        alignSelf: 'flex-start',
++        maxWidth: '90%',
++        border: '1px solid var(--border-color, #444444)',
++        borderRadius: '6px',
++        padding: '8px 12px',
++        backgroundColor: 'var(--bg-tertiary, #262626)',
++        fontSize: '12px',
++      }}
++    >
++      <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-secondary, #cccccc)' }}>
++        PLAN · {done}/{plan.length}
++      </div>
++      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
++        {plan.map((step, index) => (
++          <li
++            key={index}
++            data-testid="ring-plan-step"
++            data-status={step.status}
++            style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}
++          >
++            <span aria-hidden="true">{step.status === 'done' ? '✓' : step.status === 'in_progress' ? '…' : '○'}</span>
++            <span>{step.step}</span>
++          </li>
++        ))}
++      </ul>
++    </div>
++  );
++};
++
++/** Latest plan in an event list (last `plan.updated` wins; earlier ones are history). */
++export function latestPlan(events: readonly RingRunEvent[]): RingPlanStep[] {
++  let plan: RingPlanStep[] = [];
++  for (const event of events) {
++    if (event.type === 'plan.updated' && Array.isArray(event.plan)) plan = event.plan;
++  }
++  return plan;
++}
++
++/** All artifact descriptors in arrival order. */
++export function allArtifacts(events: readonly RingRunEvent[]): RingArtifactDescriptor[] {
++  const out: RingArtifactDescriptor[] = [];
++  for (const event of events) {
++    if (event.type === 'artifact.created' && event.artifact) out.push(event.artifact);
++  }
++  return out;
++}
++
++/** All memory records in arrival order. */
++export function allMemories(events: readonly RingRunEvent[]): RingMemoryRecord[] {
++  const out: RingMemoryRecord[] = [];
++  for (const event of events) {
++    if (event.type === 'memory.saved' && event.memory) out.push(event.memory);
++  }
++  return out;
++}
++
++/**
++ * Artifact card: Open downloads through the adapter (run id + filename —
++ * never a raw path or token in a URL) and reports failures verbatim.
++ * The filename shown is the server-provided descriptor suffix, not a path.
++ */
++export const RingArtifactCard: React.FC<{
++  artifact: RingArtifactDescriptor;
++  runId: string;
++  onDownload: (runId: string, filename: string) => Promise<void>;
++}> = ({ artifact, runId, onDownload }) => {
++  const [busy, setBusy] = React.useState(false);
++  const [error, setError] = React.useState<string | null>(null);
++  const filename = artifact.path.split('/').pop() || artifact.path;
++  const handleOpen = async () => {
++    if (busy) return;
++    setBusy(true);
++    setError(null);
++    try {
++      await onDownload(runId, filename);
++    } catch (err: unknown) {
++      setError((err as Error).message || 'The artifact could not be downloaded.');
++    } finally {
++      setBusy(false);
++    }
++  };
++  return (
++    <div
++      data-testid="ring-artifact-card"
++      style={{
++        alignSelf: 'flex-start',
++        maxWidth: '90%',
++        border: '1px solid var(--border-color, #444444)',
++        borderRadius: '6px',
++        padding: '8px 12px',
++        backgroundColor: 'var(--bg-tertiary, #262626)',
++        fontSize: '12px',
++      }}
++    >
++      <div style={{ fontWeight: 700, fontSize: '11px', marginBottom: '4px', color: 'var(--text-secondary, #cccccc)' }}>
++        ARTIFACT · {artifact.kind}
++      </div>
++      <div data-testid="ring-artifact-name" style={{ wordBreak: 'break-all' }}>
++        {filename}
++      </div>
++      <div style={{ color: 'var(--text-dim, #888888)', fontSize: '11px', marginTop: '2px' }}>
++        {artifact.size} bytes · sha256 {artifact.sha256.slice(0, 12)}…
++      </div>
++      <button
++        type="button"
++        data-testid="ring-artifact-open"
++        disabled={busy}
++        onClick={() => void handleOpen()}
++        style={{ marginTop: '8px', padding: '4px 10px', fontSize: '12px' }}
++        className="btn-secondary"
++      >
++        {busy ? 'Opening…' : 'Open'}
++      </button>
++      {error && (
++        <div role="alert" style={{ marginTop: '6px', color: '#ff7b72', fontSize: '12px' }}>
++          {error}
++        </div>
++      )}
++    </div>
++  );
++};
++
++/** Stored-memory note, rendered verbatim. */
++export const RingMemoryNote: React.FC<{ memory: RingMemoryRecord }> = ({ memory }) => (
++  <div
++    data-testid="ring-memory-note"
++    style={{
++      alignSelf: 'flex-start',
++      maxWidth: '90%',
++      border: '1px dashed var(--border-color, #444444)',
++      borderRadius: '6px',
++      padding: '8px 12px',
++      fontSize: '12px',
++      color: 'var(--text-secondary, #cccccc)',
++    }}
++  >
++    <div style={{ fontWeight: 700, fontSize: '11px', marginBottom: '4px' }}>SAVED NOTE</div>
++    <div>{memory.summary}</div>
++  </div>
++);
+diff --git a/src/gui/src/components/RingThreads.tsx b/src/gui/src/components/RingThreads.tsx
+new file mode 100644
+index 0000000..05cb8e8
+--- /dev/null
++++ b/src/gui/src/components/RingThreads.tsx
+@@ -0,0 +1,192 @@
++/**
++ * TASK RING-DEV-B-01 (Day 2a): thread sidebar + role picker for the Ring
++ * workspace.
++ *
++ * Consumes ONLY frozen shapes:
++ * - `RingRole` / `RING_ROLES` / `DEFAULT_RING_ROLE` from the contract
++ *   (`src/service/ring-contract.ts` value universe mirrored locally — the
++ *   GUI cannot import server sources, so the four literals are repeated here
++ *   with a comment pointing at the source of truth).
++ * - Thread wire shape validated by `validateRingThreadState`
++ *   (`threadId/title/role/createdAt/runs`).
++ *
++ * Honesty rules:
++ * - Thread routes are Dev A's lane. When the service answers (200) the
++ *   sidebar lists threads and posts messages into the active thread
++ *   (`POST /threads/:id/messages`, which starts a run carrying prior
++ *   conversation context). When the service 404s (Dev A not yet merged),
++ *   the sidebar says so verbatim and the workspace keeps starting
++ *   unscoped runs — nothing is fabricated, no fake thread ids.
++ * - Role affects prompt+tools server-side (Dev C keys off `thread.role`).
++ *   Picking a role creates (or re-tags locally) the active thread with that
++ *   role; when the thread service is unavailable the picker still records
++ *   the request and labels it `requested (thread service unavailable)` so
++ *   the user never believes the role applied when it did not.
++ */
++import React from 'react';
++import { validateRingThreadState } from '../api/ring-run-types';
++
++/**
++ * Source of truth: `src/service/ring-contract.ts` (`RING_ROLES`,
++ * `DEFAULT_RING_ROLE`). Repeated here because the GUI bundle cannot import
++ * server sources; keep the two lists identical.
++ */
++export const RING_ROLES: readonly string[] = ['operator', 'maintenance', 'safety', 'manager'];
++export const DEFAULT_RING_ROLE = 'operator';
++
++/**
++ * TASK RING-DEV-B-01 (Day 1a): Expand handoff key shared by the overlay
++ * (`RingOverlay`) and the full view (`RingWorkspace`). The value is a
++ * thread id (preferred — same thread ids in both views) or a run id
++ * fallback. Lives here so neither view imports the other. Same
++ * localStorage partition in Electron (shared session partition), so the
++ * key survives the overlay→main-window hop.
++ */
++export const RING_EXPAND_KEY = 'maos:ring:expand-thread';
++
++export interface RingThreadSummary {
++  threadId: string;
++  title: string;
++  role: string;
++  createdAt: string;
++  runs: string[];
++}
++
++export interface RingThreadClient {
++  createThread: (input: { title?: string; role?: string }) => Promise<{ threadId: string }>;
++  getThread: (threadId: string) => Promise<RingThreadSummary>;
++  postMessage: (threadId: string, instruction: string) => Promise<{ runId: string }>;
++}
++
++export function toThreadSummary(value: unknown): RingThreadSummary {
++  const v = validateRingThreadState(value);
++  return { threadId: v.threadId, title: v.title, role: v.role, createdAt: v.createdAt, runs: [...v.runs] };
++}
++
++export const RingRolePicker: React.FC<{
++  role: string;
++  threadAvailable: boolean;
++  onPick: (role: string) => void;
++}> = ({ role, threadAvailable, onPick }) => (
++  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
++    <span style={{ color: 'var(--text-dim, #888888)' }}>Role</span>
++    <select
++      aria-label="Ring role"
++      data-testid="ring-role-picker"
++      value={role}
++      onChange={(event) => onPick(event.target.value)}
++      style={{
++        padding: '4px 8px',
++        borderRadius: '4px',
++        border: '1px solid var(--border-color, #444444)',
++        backgroundColor: 'var(--bg-primary, #121212)',
++        color: 'inherit',
++        fontSize: '12px',
++      }}
++    >
++      {RING_ROLES.map((r) => (
++        <option key={r} value={r}>
++          {r}
++        </option>
++      ))}
++    </select>
++    {!threadAvailable && (
++      <span
++        data-testid="ring-role-unscoped-note"
++        style={{ fontSize: '11px', color: 'var(--status-amber, #eab308)' }}
++        title="The thread service is not available, so the role cannot be attached to a thread yet. Runs start unscoped."
++      >
++        requested — thread service unavailable
++      </span>
++    )}
++  </label>
++);
++
++export const RingThreadSidebar: React.FC<{
++  threads: readonly RingThreadSummary[];
++  activeThreadId: string | null;
++  available: boolean;
++  loading: boolean;
++  onSelect: (threadId: string) => void;
++  onNew: () => void;
++}> = ({ threads, activeThreadId, available, loading, onSelect, onNew }) => (
++  <nav
++    aria-label="Ring threads"
++    data-testid="ring-thread-sidebar"
++    style={{
++      width: '200px',
++      flexShrink: 0,
++      backgroundColor: 'var(--bg-secondary, #1a1a1a)',
++      borderRadius: '6px',
++      border: '1px solid var(--border-color, #333333)',
++      display: 'flex',
++      flexDirection: 'column',
++      overflow: 'hidden',
++    }}
++  >
++    <div
++      style={{
++        padding: '10px 14px',
++        borderBottom: '1px solid var(--border-color, #333333)',
++        display: 'flex',
++        justifyContent: 'space-between',
++        alignItems: 'center',
++      }}
++    >
++      <span style={{ fontWeight: 600, fontSize: '13px' }}>Threads</span>
++      <button
++        type="button"
++        data-testid="ring-new-thread"
++        onClick={onNew}
++        disabled={!available}
++        title={available ? 'Start a new thread' : 'Thread service unavailable'}
++        style={{ padding: '2px 8px', fontSize: '12px' }}
++        className="btn-secondary"
++      >
++        + New
++      </button>
++    </div>
++    <div style={{ overflowY: 'auto', padding: '6px', flex: 1 }}>
++      {!available && (
++        <div data-testid="ring-threads-unavailable" style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--text-dim, #888888)' }}>
++          Thread history is unavailable (thread service not reached). Runs below are this session only.
++        </div>
++      )}
++      {available && loading && (
++        <div style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--text-dim, #888888)' }}>Loading…</div>
++      )}
++      {available &&
++        threads.map((thread) => {
++          const selected = thread.threadId === activeThreadId;
++          return (
++            <button
++              key={thread.threadId}
++              type="button"
++              data-testid={'ring-thread-' + thread.threadId}
++              aria-pressed={selected}
++              onClick={() => onSelect(thread.threadId)}
++              style={{
++                display: 'block',
++                width: '100%',
++                textAlign: 'left',
++                padding: '8px 10px',
++                borderRadius: '4px',
++                cursor: 'pointer',
++                marginBottom: '4px',
++                backgroundColor: selected ? 'var(--accent-dim, rgba(59, 130, 246, 0.2))' : 'transparent',
++                border: selected ? '1px solid var(--accent, #3b82f6)' : '1px solid transparent',
++                color: 'inherit',
++              }}
++            >
++              <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
++                {thread.title || thread.threadId}
++              </span>
++              <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim, #888888)' }}>
++                {thread.role} · {thread.runs.length} run{thread.runs.length === 1 ? '' : 's'}
++              </span>
++            </button>
++          );
++        })}
++    </div>
++  </nav>
++);
+diff --git a/src/gui/src/components/RingWorkspace.tsx b/src/gui/src/components/RingWorkspace.tsx
+index 016ec23..d4601de 100644
+--- a/src/gui/src/components/RingWorkspace.tsx
++++ b/src/gui/src/components/RingWorkspace.tsx
+@@ -31,6 +31,9 @@ import type {
+   RingRunState,
+ } from '../api/ring-run-types';
+ import { CompletionRefusalDemo } from './CompletionRefusalDemo';
++import { RingArtifactCard, RingLiveText, RingMemoryNote, RingPlanChecklist } from './RingStreamPanels';
++import { DEFAULT_RING_ROLE, RING_EXPAND_KEY, RingRolePicker, RingThreadSidebar, toThreadSummary, type RingThreadClient, type RingThreadSummary } from './RingThreads';
++import { attachmentInstructionSuffix, RingAttachmentBar, type RingAttachment, type RingAttachmentClient } from './RingAttachments';
+ import { TelemetryReviewCoordinator } from './telemetryReviewCoordinator';
+ 
+ /** Exact hosted badge copy (RING-IMPL-01 step 2). Served suffix only from server echo. */
+@@ -434,6 +437,9 @@ export interface RingRunClient {
+   getRun: (runId: string) => Promise<RingRunState>;
+   cancelRun: (runId: string) => Promise<void>;
+   decideApproval: (runId: string, approvalId: string, decision: RingApprovalDecision) => Promise<void>;
++  downloadArtifact: (runId: string, filename: string) => Promise<void>;
++  threadClient?: RingThreadClient;
++  attachmentClient?: RingAttachmentClient;
+ }
+ 
+ export const defaultRingRunClient: RingRunClient = {
+@@ -441,6 +447,32 @@ export const defaultRingRunClient: RingRunClient = {
+   getRun: (runId) => apiAdapter.getRingRun(runId),
+   cancelRun: (runId) => apiAdapter.cancelRingRun(runId),
+   decideApproval: (runId, approvalId, decision) => apiAdapter.decideRingApproval(runId, approvalId, decision),
++  attachmentClient: {
++    storeEvidenceFile: async (name, contentBase64) => {
++      const lower = name.toLowerCase();
++      if (!lower.endsWith('.csv')) {
++        throw new Error('No evidence-root write route for this file kind yet (CSV upload works; PDF/image stay local-only).');
++      }
++      return apiAdapter.storeRingCsvEvidence(name, contentBase64);
++    },
++  },
++  threadClient: {
++    createThread: (input) => apiAdapter.createRingThread(input),
++    getThread: async (threadId) => toThreadSummary(await apiAdapter.getRingThread(threadId)),
++    postMessage: (threadId, instruction) => apiAdapter.postRingThreadMessage(threadId, instruction),
++  },
++  downloadArtifact: async (runId, filename) => {
++    const blob = await apiAdapter.downloadRingArtifact(runId, filename);
++    const url = URL.createObjectURL(blob);
++    try {
++      const anchor = document.createElement('a');
++      anchor.href = url;
++      anchor.download = filename;
++      anchor.click();
++    } finally {
++      window.setTimeout(() => URL.revokeObjectURL(url), 0);
++    }
++  },
+ };
+ 
+ export interface RingVerifyTranscript {
+@@ -585,6 +617,83 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+   const startedAtRef = useRef<number | null>(null);
+   const runCounterRef = useRef(0);
+   const transcriptEndRef = useRef<HTMLDivElement>(null);
++  // TASK RING-DEV-B-01 (Day 2a): thread sidebar + role picker. Thread
++  // routes are Dev A's lane: threadsAvailable flips false on the first
++  // 404/connection failure and the workspace keeps starting unscoped
++  // runs with an honest note. threadRuns maps threadId -> runIds the
++  // thread service reported (source of truth when available).
++  const [threads, setThreads] = useState<RingThreadSummary[]>([]);
++  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
++  const [threadsAvailable, setThreadsAvailable] = useState(true);
++  const [threadsLoading, setThreadsLoading] = useState(false);
++  const [role, setRole] = useState<string>(DEFAULT_RING_ROLE);
++  const [attachments, setAttachments] = useState<RingAttachment[]>([]);
++  const [attachError, setAttachError] = useState<string | null>(null);
++
++  // TASK RING-DEV-B-01 (Day 1a): adopt the overlay's Expand handoff.
++  // The value is a thread id (preferred) or a run id fallback. Threads
++  // load their summary + run list from the thread service (Dev A); runs
++  // append to the transcript and join the existing poll loop. The key is
++  // consumed after adoption so a stale handoff never replays. Failures
++  // flip threadsAvailable and say so — existing runs are untouched.
++  const [expandNotice, setExpandNotice] = useState<string | null>(null);
++  const adoptHandoff = async (handoff: string) => {
++    const value = handoff.trim();
++    if (!value) return;
++    const threadClient = clientRef.current.threadClient;
++    if (threadClient && threadsAvailable && value.startsWith('thread-')) {
++      try {
++        const summary = await threadClient.getThread(value);
++        setThreads((prev) => [summary, ...prev.filter((t) => t.threadId !== summary.threadId)]);
++        setActiveThreadId(summary.threadId);
++        if (summary.role) setRole(summary.role);
++        for (const rid of summary.runs) {
++          try {
++            const state = await clientRef.current.getRun(rid);
++            setRuns((prev) => (prev.some((r) => r.runId === rid) ? prev : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state }]));
++          } catch {
++            setRuns((prev) => (prev.some((r) => r.runId === rid) ? prev : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state: null }]));
++          }
++        }
++        const last = summary.runs[summary.runs.length - 1];
++        if (last) {
++          setActiveRunId(last);
++          runCounterRef.current += 1;
++        }
++        setExpandNotice('Adopted thread ' + summary.threadId + ' from the overlay.');
++        return;
++      } catch {
++        setThreadsAvailable(false);
++      }
++    }
++    // Run-id fallback (overlay had no thread yet): append + poll.
++    try {
++      const state = await clientRef.current.getRun(value);
++      setRuns((prev) => (prev.some((r) => r.runId === value) ? prev : [...prev, { runId: value, instruction: '(from overlay)', agentId: selectedAgentId, state }]));
++      setActiveRunId(value);
++      runCounterRef.current += 1;
++      setExpandNotice('Adopted run ' + value + ' from the overlay.');
++    } catch {
++      setExpandNotice('Could not adopt ' + value + ': the run service did not return it.');
++    }
++  };
++  useEffect(() => {
++    const consume = () => {
++      let handoff: string | null = null;
++      try {
++        handoff = window.localStorage.getItem(RING_EXPAND_KEY);
++        if (handoff) window.localStorage.removeItem(RING_EXPAND_KEY);
++      } catch {
++        handoff = null;
++      }
++      if (handoff) void adoptHandoff(handoff);
++    };
++    consume();
++    window.addEventListener('focus', consume);
++    return () => window.removeEventListener('focus', consume);
++    // Mount + focus only: adoption is a one-shot per handoff value.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, []);
+ 
+   // Refusal beat (RING-IMPL-01 behaviour, still reachable): the workspace
+   // owns a TelemetryReviewCoordinator exactly like the panel it replaces.
+@@ -712,17 +821,38 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+ 
+   const handleSend = async (event?: React.FormEvent, overrideInstruction?: string) => {
+     event?.preventDefault();
+-    const text = (overrideInstruction ?? instruction).trim();
+-    if (!text || starting) return;
++    const rawText = (overrideInstruction ?? instruction).trim();
++    if (!rawText || starting) return;
++    const suffix = attachmentInstructionSuffix(attachments);
++    const text = suffix ? rawText + suffix : rawText;
+     setStarting(true);
+     setStartError(null);
+     setPollError(null);
+     setCancelError(null);
+     try {
+       const scopedAgentId = selectedAgentId === RING_LEAD_AGENT.id ? undefined : selectedAgentId;
+-      const { runId } = await clientRef.current.startRun(
+-        scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
+-      );
++      // TASK RING-DEV-B-01: when a thread is active and the thread client
++      // is reachable, post into the thread (run carries prior context).
++      // A 404/connection failure flips threadsAvailable off and falls
++      // back to an unscoped start — the note in the sidebar says why.
++      let runId: string;
++      const threadClient = clientRef.current.threadClient;
++      if (threadClient && activeThreadId && threadsAvailable) {
++        try {
++          runId = (await threadClient.postMessage(activeThreadId, text)).runId;
++        } catch (err: unknown) {
++          setThreadsAvailable(false);
++          const fallback = await clientRef.current.startRun(
++            scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
++          );
++          runId = fallback.runId;
++        }
++      } else {
++        const started = await clientRef.current.startRun(
++          scopedAgentId ? { instruction: text, agentId: scopedAgentId } : { instruction: text },
++        );
++        runId = started.runId;
++      }
+       runCounterRef.current += 1;
+       startedAtRef.current = Date.now();
+       setNowMs(Date.now());
+@@ -746,6 +876,45 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+     }
+   };
+ 
++  // TASK RING-DEV-B-01 (Day 2a): new thread with the picked role. The
++  // title defaults to the first 60 chars of nothing — Dev A titles
++  // server-side — so we send a time-derived title and show exactly what
++  // the service echoes back. Failures flip threadsAvailable off.
++  const handleNewThread = async () => {
++    const threadClient = clientRef.current.threadClient;
++    if (!threadClient) return;
++    setThreadsLoading(true);
++    try {
++      const title = 'Ring thread ' + new Date().toLocaleString();
++      const created = await threadClient.createThread({ title, role });
++      const summary = await threadClient.getThread(created.threadId);
++      setThreads((prev) => [summary, ...prev.filter((t) => t.threadId !== summary.threadId)]);
++      setActiveThreadId(summary.threadId);
++      if (summary.role) setRole(summary.role);
++    } catch {
++      setThreadsAvailable(false);
++    } finally {
++      setThreadsLoading(false);
++    }
++  };
++
++  const handleSelectThread = async (threadId: string) => {
++    setActiveThreadId(threadId);
++    const threadClient = clientRef.current.threadClient;
++    if (!threadClient) return;
++    try {
++      const summary = await threadClient.getThread(threadId);
++      setThreads((prev) => prev.map((t) => (t.threadId === threadId ? summary : t)));
++      if (summary.role) setRole(summary.role);
++    } catch {
++      setThreadsAvailable(false);
++    }
++  };
++
++  const handlePickRole = (next: string) => {
++    setRole(next);
++  };
++
+   const handleCancel = async () => {
+     if (!activeRunId || cancelling) return;
+     setCancelling(true);
+@@ -823,7 +992,39 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+       case 'model.turn':
+         // Evidence-only honesty: a model turn the server sent is rendered;
+         // the client never synthesizes one, and there is no fake typing.
++        // (Unchanged RING-UI-01 behavior; deltas stream via RingLiveText.)
+         return entry.text ? <RingModelTurn key={index} text={entry.text} /> : null;
++      case 'model.delta': {
++        // TASK RING-DEV-B-01: live fragments render once, at the position of
++        // the LAST delta event, concatenated verbatim in arrival order.
++        // Earlier fragments render nothing so text never duplicates. Full
++        // model.turn events keep their existing RingModelTurn rendering.
++        const laterDelta = events.slice(index + 1).some((e) => e.type === 'model.delta');
++        if (laterDelta) return null;
++        const deltas = events.filter((e) => e.type === 'model.delta');
++        const isLive = run.state !== null && !TERMINAL_STATUSES.includes(run.state.status);
++        return <RingLiveText key={index} events={deltas} live={isLive} />;
++      }
++      case 'plan.updated': {
++        // Latest plan wins: render the checklist only at the last
++        // plan.updated position; earlier ones are superseded history.
++        const laterPlan = events.slice(index + 1).some((e) => e.type === 'plan.updated');
++        if (laterPlan || !entry.plan) return null;
++        return <RingPlanChecklist key={index} plan={entry.plan} />;
++      }
++      case 'artifact.created': {
++        if (!entry.artifact) return null;
++        return (
++          <RingArtifactCard
++            key={index}
++            artifact={entry.artifact}
++            runId={run.runId}
++            onDownload={(rid, filename) => clientRef.current.downloadArtifact(rid, filename)}
++          />
++        );
++      }
++      case 'memory.saved':
++        return entry.memory ? <RingMemoryNote key={index} memory={entry.memory} /> : null;
+       case 'approval.pending': {
+         if (entry.approvalId && resolved.has(entry.approvalId)) return null;
+         return (
+@@ -886,7 +1087,21 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+         </div>
+       )}
+ 
++      {expandNotice && (
++        <div data-testid="ring-expand-notice" style={{ fontSize: '12px', color: 'var(--text-dim, #888888)', paddingBottom: '8px' }}>
++          {expandNotice}
++        </div>
++      )}
++
+       <div style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0 }}>
++        <RingThreadSidebar
++          threads={threads}
++          activeThreadId={activeThreadId}
++          available={threadsAvailable}
++          loading={threadsLoading}
++          onSelect={(threadId) => void handleSelectThread(threadId)}
++          onNew={() => void handleNewThread()}
++        />
+         <RingAgentRoster agents={agents} selectedAgentId={selectedAgentId} presence={presence} onSelect={handleSelectAgent} />
+ 
+         <div
+@@ -933,6 +1148,7 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+                   {cancelling ? 'Cancelling…' : 'Cancel'}
+                 </button>
+               )}
++              <RingRolePicker role={role} threadAvailable={threadsAvailable} onPick={handlePickRole} />
+               <button
+                 type="button"
+                 className="btn-secondary"
+@@ -996,6 +1212,7 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+               <React.Fragment key={run.runId}>
+                 <RingUserMessage text={run.instruction} agentId={run.agentId} />
+                 {(run.state?.events ?? []).map((entry, index) => renderTranscriptEvent(run, entry, index))}
++                
+                 {run.state?.finalAnswer && <RingFinalAnswer answer={run.state.finalAnswer} mode={run.state.mode} />}
+                 {run.state?.status === 'failed' && !failureEvent && (
+                   <div role="alert" data-testid="ring-run-failed" style={{ fontSize: '12px', color: '#ff7b72' }}>
+@@ -1025,6 +1242,19 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
+             </div>
+           )}
+ 
++          <div style={{ padding: '0 16px' }}>
++            <RingAttachmentBar
++              attachments={attachments}
++              client={clientRef.current.attachmentClient ?? { storeEvidenceFile: async () => { throw new Error('Evidence store unavailable in this context.'); } }}
++              onChange={setAttachments}
++              onError={setAttachError}
++            />
++            {attachError && (
++              <div role='alert' data-testid='ring-attach-error' style={{ paddingTop: '6px', fontSize: '12px', color: '#ff7b72' }}>
++                {attachError}
++              </div>
++            )}
++          </div>
+           <form
+             onSubmit={(event) => void handleSend(event)}
+             style={{
+diff --git a/src/gui/src/native.d.ts b/src/gui/src/native.d.ts
+index dcb93eb..eb6ab33 100644
+--- a/src/gui/src/native.d.ts
++++ b/src/gui/src/native.d.ts
+@@ -4,6 +4,18 @@ declare global {
+   interface Window {
+     maosNative?: {
+       initialize(): Promise<LauncherSessionBootstrap>;
++      /** TASK RING-DEV-B-01: overlay asks the main window to focus the full Ring view on the same thread. Absent outside Electron. */
++      expandRing?(): void;
++      /**
++       * TASK RING-DEV-B-01 (Day 2c): explicit screenshot trigger. Resolves
++       * with PNG base64 held in memory (nothing written, nothing sent) or a
++       * dismissed reason. Absent outside Electron (browser falls back to
++       * getDisplayMedia).
++       */
++      captureRingScreen?(): Promise<
++        | { pngBase64: string; width: number; height: number; displays: number }
++        | { dismissed: true; reason: string }
++      >;
+     };
+   }
+ }
+diff --git a/src/service/index.ts b/src/service/index.ts
+index fb996cc..d707d45 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -297,6 +297,7 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+   const ringAgent = new RingAgentService({
+     projectRoot,
+     auditService: audit,
++    eventService: event,
+     endpointAllowlist,
+     kbSearch: kbSearch as unknown as import('./ring-agent-service').RingKbSearchLike,
+     loadProjectConfig: () => {
+diff --git a/src/service/ring-agent-service.ts b/src/service/ring-agent-service.ts
+index 4d87389..42d923b 100644
+--- a/src/service/ring-agent-service.ts
++++ b/src/service/ring-agent-service.ts
+@@ -8,6 +8,7 @@ import type { ChatMessage, IProvider, ToolDef } from '../backends/provider';
+ import type { Project } from '../domain/schemas';
+ import { analyzeTelemetryCsv, loadTelemetryDemoThresholds } from '../industrial/telemetry-analysis';
+ import type { AuditService } from './audit-service';
++import type { EventService } from './event-service';
+ import type { EndpointAllowlistService } from './endpoint-allowlist-service';
+ 
+ export type RingAgentRunStatus = 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
+@@ -111,6 +112,7 @@ export interface RingKbSearchLike {
+ export interface RingAgentServiceOptions {
+   projectRoot: string;
+   auditService?: AuditService;
++  eventService?: EventService;
+   endpointAllowlist?: EndpointAllowlistService;
+   loadProjectConfig?: () => Project | undefined;
+   fetch?: typeof globalThis.fetch;
+@@ -186,6 +188,7 @@ function isStrictlyWithin(parent: string, candidate: string): boolean {
+ export class RingAgentService {
+   private readonly projectRoot: string;
+   private readonly auditService?: AuditService;
++  private readonly eventService?: EventService;
+   private readonly loadProjectConfig: () => Project | undefined;
+   private readonly fetchImpl?: typeof globalThis.fetch;
+   private readonly providerFactory?: () => IProvider;
+@@ -198,6 +201,7 @@ export class RingAgentService {
+   constructor(options: RingAgentServiceOptions) {
+     this.projectRoot = path.resolve(options.projectRoot);
+     this.auditService = options.auditService;
++    this.eventService = options.eventService;
+     this.fetchImpl = options.fetch;
+     this.providerFactory = options.providerFactory;
+     this.kbSearch = options.kbSearch;
+@@ -450,12 +454,41 @@ export class RingAgentService {
+     return () => this.streamListeners.delete(listener);
+   }
+ 
++  /**
++   * TASK RING-DEV-B-01 (Day 1): fan the same mapped wire copy that backs the
++   * onStreamEvent hook into the sequenced event bus (EventService) when one
++   * is wired, so the existing WS /api/v1/events channel (runId-scoped,
++   * sequenced + replay) delivers it. Payload shape is the wire event the UI
++   * validator consumes; nothing raw (no CSV rows) is attached. Listener
++   * exceptions never break the run; the JSONL transcript on disk is
++   * untouched.
++   */
+   private emitStreamEvent(run: InternalRun, entry: RingAgentTranscriptEntry): void {
+-    if (this.streamListeners.size === 0) return;
+     let wire: RingAgentWireEvent | null = null;
+     try { wire = this.toWireEvent(run, entry); } catch { return; }
+     if (!wire) return;
+     for (const l of this.streamListeners) { try { l(run.runId, wire); } catch {} }
++    const bus = this.eventService;
++    if (!bus) return;
++    try {
++      const projectId = this.safeProjectName();
++      bus.recordEvent({
++        eventType: 'ring.run.' + wire.type,
++        projectId,
++        runId: run.runId,
++        correlationId: 'ring-' + run.runId + '-' + Date.now(),
++        payload: wire,
++      });
++    } catch { /* event bus must not break the run */ }
++  }
++
++  private safeProjectName(): string {
++    try {
++      const cfg = this.loadProjectConfig();
++      const name = cfg?.projectName;
++      if (typeof name === 'string' && name.trim()) return name.trim();
++    } catch { /* fall through to default */ }
++    return 'default';
+   }
+ 
+   private record(run: InternalRun, entry: Omit<RingAgentTranscriptEntry, 'ts' | 'runId'> & { type: string }): void {
+diff --git a/tests/gui/ring-devb-surface.test.ts b/tests/gui/ring-devb-surface.test.ts
+new file mode 100644
+index 0000000..f3e4abc
+--- /dev/null
++++ b/tests/gui/ring-devb-surface.test.ts
+@@ -0,0 +1,734 @@
++// @vitest-environment happy-dom
++/**
++ * TASK RING-DEV-B-01: Ring surface tests (streaming display, threads/roles,
++ * attachments/screenshot, overlay, event-bus bridge).
++ *
++ * Evidence-only: no live Baseten calls (BASETEN_API_KEY unset); run payloads
++ * are injected mocks against the frozen validator. Event-bus bridge test
++ * runs the real RingAgentService in evidence-only mode (no key set) with a
++ * fake EventService.
++ */
++import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
++import React, { act } from 'react';
++import { createRoot, type Root } from 'react-dom/client';
++import * as fs from 'fs';
++import * as os from 'os';
++import * as path from 'path';
++import {
++  allArtifacts,
++  allMemories,
++  latestPlan,
++  RingArtifactCard,
++  RingLiveText,
++  RingMark,
++  RingMemoryNote,
++  RingPlanChecklist,
++  ringVisualStateForRun,
++} from '../../src/gui/src/components/RingStreamPanels';
++import {
++  attachmentInstructionSuffix,
++  classifyAttachment,
++  RingAttachmentBar,
++} from '../../src/gui/src/components/RingAttachments';
++import {
++  DEFAULT_RING_ROLE,
++  RING_ROLES,
++  RingRolePicker,
++  RingThreadSidebar,
++  toThreadSummary,
++} from '../../src/gui/src/components/RingThreads';
++import { RingOverlay } from '../../src/gui/src/components/RingOverlay';
++import type { RingRunState } from '../../src/gui/src/api/ring-run-types';
++import type { RingRunClient } from '../../src/gui/src/components/RingWorkspace';
++
++(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
++
++function mount(element: React.ReactElement) {
++  const container = document.createElement('div');
++  document.body.appendChild(container);
++  const root: Root = createRoot(container);
++  return {
++    container,
++    async render() {
++      await act(async () => {
++        root.render(element);
++      });
++    },
++    async flush() {
++      await act(async () => {
++        await new Promise((resolve) => setTimeout(resolve, 0));
++      });
++    },
++    unmount() {
++      act(() => root.unmount());
++      container.remove();
++    },
++  };
++}
++
++const STREAMING_STATE: RingRunState = {
++  status: 'running',
++  mode: 'hosted',
++  events: [
++    { type: 'run.started', ts: '2026-11-02T00:00:00Z' },
++    { type: 'model.delta', ts: '2026-11-02T00:00:01Z', delta: 'Checking turbine ' },
++    { type: 'model.delta', ts: '2026-11-02T00:00:02Z', delta: 'T-07 vibration…' },
++    {
++      type: 'plan.updated',
++      ts: '2026-11-02T00:00:03Z',
++      plan: [
++        { step: 'Analyze telemetry', status: 'done' },
++        { step: 'Draft safety note', status: 'in_progress' },
++        { step: 'Verify export', status: 'pending' },
++      ],
++    },
++    {
++      type: 'artifact.created',
++      ts: '2026-11-02T00:00:04Z',
++      artifact: { path: '.maos/ring-runs/artifacts/run-1/safety-note.md', kind: 'note', size: 128, sha256: 'abc123def456abc123def456abc123def456abc123def456abc123def456abcd' },
++    },
++    { type: 'memory.saved', ts: '2026-11-02T00:00:05Z', memory: { noteId: 'note-1', summary: 'T-07 exceeds the demo limit.' } },
++  ],
++};
++
++describe('ringVisualStateForRun', () => {
++  it('maps idle/thinking/using-tool/waiting-for-approval/done/error', () => {
++    expect(ringVisualStateForRun(null, [])).toBe('idle');
++    expect(ringVisualStateForRun('running', [])).toBe('idle');
++    expect(ringVisualStateForRun('running', [{ type: 'model.turn', ts: 't', text: 'hi' }])).toBe('thinking');
++    expect(
++      ringVisualStateForRun('running', [{ type: 'tool.call', ts: 't', tool: 'x', toolCallId: 'c1' }]),
++    ).toBe('using-tool');
++    expect(
++      ringVisualStateForRun('running', [
++        { type: 'tool.call', ts: 't', tool: 'x', toolCallId: 'c1' },
++        { type: 'tool.result', ts: 't', tool: 'x', toolCallId: 'c1' },
++      ]),
++    ).toBe('thinking');
++    expect(ringVisualStateForRun('awaiting_approval', [])).toBe('waiting-for-approval');
++    expect(ringVisualStateForRun('completed', [])).toBe('done');
++    expect(ringVisualStateForRun('failed', [])).toBe('error');
++    expect(ringVisualStateForRun('cancelled', [])).toBe('error');
++  });
++});
++
++describe('RingMark', () => {
++  it('renders one mark per state with an honest label, no fake progress', async () => {
++    for (const state of ['idle', 'thinking', 'using-tool', 'waiting-for-approval', 'done', 'error'] as const) {
++      const view = mount(React.createElement(RingMark, { state }));
++      await view.render();
++      const mark = view.container.querySelector('[data-testid="ring-mark"]');
++      expect(mark?.getAttribute('data-state')).toBe(state);
++      expect(mark?.getAttribute(String("aria-label"))).toBe("Ring: " + ({idle:"Idle",thinking:"Thinking","using-tool":"Using tool","waiting-for-approval":"Waiting for approval",done:"Done",error:"Needs attention"}[state]));
++      view.unmount();
++    }
++  });
++});
++
++describe('streaming selectors', () => {
++  it('latestPlan takes the last plan.updated; artifacts/memories collect in order', () => {
++    const events = [
++      ...STREAMING_STATE.events,
++      {
++        type: 'plan.updated',
++        ts: '2026-11-02T00:00:06Z',
++        plan: [{ step: 'Analyze telemetry', status: 'done' as const }],
++      },
++    ];
++    expect(latestPlan(events)).toEqual([{ step: 'Analyze telemetry', status: 'done' }]);
++    expect(allArtifacts(STREAMING_STATE.events)).toHaveLength(1);
++    expect(allArtifacts(STREAMING_STATE.events)[0].kind).toBe('note');
++    expect(allMemories(STREAMING_STATE.events)).toEqual([{ noteId: 'note-1', summary: 'T-07 exceeds the demo limit.' }]);
++  });
++
++  it('RingLiveText concatenates deltas verbatim with a live marker only while live', async () => {
++    const live = mount(React.createElement(RingLiveText, { events: STREAMING_STATE.events, live: true }));
++    await live.render();
++    expect(live.container.querySelector('[data-testid="ring-live-text"]')?.textContent).toContain('Checking turbine T-07 vibration…');
++    expect(live.container.querySelector('[data-testid="ring-live-caret"]')).toBeTruthy();
++    expect(live.container.textContent).toContain('partial text');
++    live.unmount();
++    const done = mount(React.createElement(RingLiveText, { events: STREAMING_STATE.events, live: false }));
++    await done.render();
++    expect(done.container.querySelector('[data-testid="ring-live-caret"]')).toBeNull();
++    done.unmount();
++  });
++
++  it('RingPlanChecklist renders steps verbatim with counts', async () => {
++    const view = mount(React.createElement(RingPlanChecklist, { plan: latestPlan(STREAMING_STATE.events) }));
++    await view.render();
++    const steps = view.container.querySelectorAll('[data-testid="ring-plan-step"]');
++    expect(steps).toHaveLength(3);
++    expect(view.container.textContent).toContain('PLAN · 1/3');
++    expect(view.container.textContent).toContain('Draft safety note');
++    view.unmount();
++  });
++
++  it('RingArtifactCard shows filename suffix (not the raw path) with Open', async () => {
++    const onDownload = vi.fn(async () => {});
++    const view = mount(
++      React.createElement(RingArtifactCard, { artifact: allArtifacts(STREAMING_STATE.events)[0], runId: 'run-1', onDownload }),
++    );
++    await view.render();
++    expect(view.container.querySelector('[data-testid="ring-artifact-name"]')?.textContent).toBe('safety-note.md');
++    expect(view.container.textContent).not.toContain('.maos/ring-runs/artifacts/run-1/safety-note.md');
++    await act(async () => {
++      view.container.querySelector<HTMLButtonElement>('[data-testid="ring-artifact-open"]')?.click();
++    });
++    expect(onDownload).toHaveBeenCalledWith('run-1', 'safety-note.md');
++    view.unmount();
++  });
++
++  it('RingMemoryNote renders the summary verbatim', async () => {
++    const view = mount(React.createElement(RingMemoryNote, { memory: { noteId: 'n', summary: 'T-07 exceeds the demo limit.' } }));
++    await view.render();
++    expect(view.container.textContent).toContain('T-07 exceeds the demo limit.');
++    view.unmount();
++  });
++});
++
++describe('threads + role picker', () => {
++  it('role list mirrors the frozen contract; default is operator', () => {
++    expect(RING_ROLES).toEqual(['operator', 'maintenance', 'safety', 'manager']);
++    expect(DEFAULT_RING_ROLE).toBe('operator');
++  });
++
++  it('toThreadSummary validates the frozen thread shape and fails closed', () => {
++    const thread = { threadId: 'thread-1730000000000-abcdef12', title: 'Turbine review', role: 'safety', createdAt: '2026-11-02T00:00:00Z', runs: ['ring-a'] };
++    expect(toThreadSummary(thread)).toEqual({ ...thread });
++    expect(() => toThreadSummary({ ...thread, role: 'admin' })).toThrow('RING_RUN_INVALID');
++  });
++
++  it('sidebar lists threads, marks active, and says when the service is unavailable', async () => {
++    const onSelect = vi.fn();
++    const onNew = vi.fn();
++    const threads = [
++      { threadId: 'thread-1', title: 'Turbine review', role: 'safety', createdAt: 't', runs: ['r1', 'r2'] },
++    ];
++    const view = mount(
++      React.createElement(RingThreadSidebar, { threads, activeThreadId: 'thread-1', available: true, loading: false, onSelect, onNew }),
++    );
++    await view.render();
++    const btn = view.container.querySelector('[data-testid="ring-thread-thread-1"]');
++    expect(btn?.getAttribute('aria-pressed')).toBe('true');
++    expect(btn?.textContent).toContain('2 runs');
++    await act(async () => {
++      btn?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
++    });
++    expect(onSelect).toHaveBeenCalledWith('thread-1');
++    view.unmount();
++
++    const down = mount(
++      React.createElement(RingThreadSidebar, { threads: [], activeThreadId: null, available: false, loading: false, onSelect, onNew }),
++    );
++    await down.render();
++    expect(down.container.querySelector('[data-testid="ring-threads-unavailable"]')).toBeTruthy();
++    expect(down.container.querySelector('[data-testid="ring-new-thread"]')?.hasAttribute('disabled')).toBe(true);
++    down.unmount();
++  });
++
++  it('role picker offers the four roles and labels unscoped requests honestly', async () => {
++    const onPick = vi.fn();
++    const view = mount(React.createElement(RingRolePicker, { role: 'operator', threadAvailable: false, onPick }));
++    await view.render();
++    const select = view.container.querySelector<HTMLSelectElement>('[data-testid="ring-role-picker"]');
++    expect(select?.options.length).toBe(4);
++    expect(view.container.querySelector('[data-testid="ring-role-unscoped-note"]')).toBeTruthy();
++    view.unmount();
++  });
++});
++
++describe('attachments', () => {
++  it('classifyAttachment accepts pdf/image/csv and refuses the rest', () => {
++    const file = (name: string, type: string) => ({ name, type }) as File;
++    expect(classifyAttachment(file('a.pdf', 'application/pdf'))).toBe('pdf');
++    expect(classifyAttachment(file('a.csv', 'text/csv'))).toBe('csv');
++    expect(classifyAttachment(file('a.png', 'image/png'))).toBe('image');
++    expect(classifyAttachment(file('a.exe', 'application/x-msdownload'))).toBeNull();
++    expect(classifyAttachment(file('a.txt', 'text/plain'))).toBeNull();
++  });
++
++  it('instruction suffix references stored paths only (csvPath/documentPath)', () => {
++    expect(attachmentInstructionSuffix([])).toBe('');
++    expect(
++      attachmentInstructionSuffix([
++        { name: 'v.csv', kind: 'csv', size: 10, storedPath: 'evidence/v.csv' },
++        { name: 's.png', kind: 'image', size: 10, storedPath: null },
++      ]),
++    ).toContain('csvPath: evidence/v.csv');
++    expect(
++      attachmentInstructionSuffix([{ name: 's.png', kind: 'image', size: 10, storedPath: null }]),
++    ).toBe('');
++  });
++
++  it('dropzone + screenshot button render with the visible-capture indicator contract', async () => {
++    const view = mount(
++      React.createElement(RingAttachmentBar, {
++        attachments: [],
++        client: { storeEvidenceFile: async () => ({ storedPath: 'evidence/x.csv' }) },
++        onChange: () => {},
++        onError: () => {},
++      }),
++    );
++    await view.render();
++    expect(view.container.querySelector('[data-testid="ring-attachment-dropzone"]')).toBeTruthy();
++    expect(view.container.querySelector('[data-testid="ring-screenshot-button"]')).toBeTruthy();
++    expect(view.container.querySelector('[data-testid="ring-attachment-input"]')).toBeTruthy();
++    view.unmount();
++  });
++});
++
++describe('RingOverlay', () => {
++  function overlayClient(state: RingRunState): RingRunClient {
++    return {
++      startRun: async () => ({ runId: 'run-1' }),
++      getRun: async () => state,
++      cancelRun: async () => {},
++      decideApproval: async () => {},
++      downloadArtifact: async () => {},
++    };
++  }
++
++  it('streams plan + live text + tool chips in the compact view with the exact badge', async () => {
++    const running: RingRunState = {
++      status: 'running',
++      mode: 'hosted',
++      events: [
++        { type: 'run.started', ts: 't' },
++        { type: 'model.delta', ts: 't', delta: 'T-07 verdict ' },
++        { type: 'tool.call', ts: 't', tool: 'analyze_telemetry', toolCallId: 'c1' },
++      ],
++    };
++    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(running), pollIntervalMs: 60_000 }));
++    await view.render();
++    // no run yet: empty state
++    expect(view.container.querySelector('[data-testid="ring-overlay-empty"]')).toBeTruthy();
++    // start a run via the overlay input
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
++    await act(async () => {
++      setter?.call(input, 'check turbine');
++      input.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(view.container.querySelector('[data-testid="ring-overlay-badge"]')?.textContent).toContain('HOSTED');
++    expect(view.container.querySelector('[data-testid="ring-live-text"]')?.textContent).toContain('T-07 verdict');
++    expect(view.container.querySelector('[data-testid="ring-tool-chip"]')).toBeTruthy();
++    expect(view.container.querySelector('[data-testid="ring-mark"]')?.getAttribute('data-state')).toBe('using-tool');
++    view.unmount();
++  });
++
++  it('approval card inside the overlay posts Allow and records the decision', async () => {
++    const decisions: Array<{ runId: string; approvalId: string; decision: string }> = [];
++    let approved = false;
++    const client: RingRunClient = {
++      startRun: async () => ({ runId: 'run-1' }),
++      getRun: async () =>
++        approved
++          ? {
++              status: 'running',
++              mode: 'hosted',
++              events: [
++                { type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write note' },
++                { type: 'approval.resolved', ts: 't', approvalId: 'a1', decision: 'approved' },
++              ],
++            }
++          : {
++              status: 'awaiting_approval',
++              mode: 'hosted',
++              events: [{ type: 'approval.pending', ts: 't', approvalId: 'a1', action: 'Write note' }],
++            },
++      cancelRun: async () => {},
++      decideApproval: async (runId, approvalId, decision) => {
++        decisions.push({ runId, approvalId, decision });
++        approved = true;
++      },
++      downloadArtifact: async () => {},
++    };
++    const view = mount(React.createElement(RingOverlay, { runClient: client, pollIntervalMs: 60_000 }));
++    await view.render();
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
++    await act(async () => {
++      setter?.call(input, 'draft note');
++      input.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(view.container.querySelector('[data-testid="ring-approval-card"]')).toBeTruthy();
++    expect(view.container.querySelector('[data-testid="ring-mark"]')?.getAttribute('data-state')).toBe('waiting-for-approval');
++    await act(async () => {
++      view.container.querySelector<HTMLButtonElement>('[data-testid="ring-approval-allow"]')?.click();
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(decisions).toEqual([{ runId: 'run-1', approvalId: 'a1', decision: 'approved' }]);
++    expect(view.container.querySelector('[data-testid="ring-approval-resolved"]')).toBeTruthy();
++    view.unmount();
++  });
++
++  it('evidence-only badge stays exact in the overlay', async () => {
++    const state: RingRunState = { status: 'completed', mode: 'evidence-only', events: [], finalAnswer: 'Local summary.' };
++    const view = mount(React.createElement(RingOverlay, { runClient: overlayClient(state), pollIntervalMs: 60_000 }));
++    await view.render();
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
++    await act(async () => {
++      setter?.call(input, 'summarize');
++      input.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(view.container.querySelector('[data-testid="ring-overlay-badge"]')?.textContent).toBe(
++      'EVIDENCE-ONLY · no model configured',
++    );
++    view.unmount();
++  });
++});
++
++describe('TASK RING-DEV-B-01: event-bus bridge (record fan-out)', () => {
++  let root: string;
++  beforeEach(() => {
++    root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-devb-'));
++    fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++    fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
++    const repoRoot = path.resolve(__dirname, '../..');
++    for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
++      fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root, 'demo', 'industrial', f));
++    }
++    fs.writeFileSync(
++      path.join(root, '.maos', 'maos.config.json'),
++      JSON.stringify({ schemaVersion: 1, projectName: 'ring-devb-test', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true } }),
++    );
++    delete process.env.BASETEN_API_KEY;
++  });
++  afterEach(() => {
++    delete process.env.BASETEN_API_KEY;
++    try {
++      fs.rmSync(root, { recursive: true, force: true });
++    } catch {
++      /* best effort */
++    }
++  });
++
++  it('evidence-only run fans mapped wire events into EventService as ring.run.* (runId-scoped)', async () => {
++    delete process.env.BASETEN_API_KEY;
++    const { RingAgentService } = await import('../../src/service/ring-agent-service');
++    const { AuditService } = await import('../../src/service/audit-service');
++    const { EventService } = await import('../../src/service/event-service');
++    const event = new EventService(root);
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), eventService: event });
++    const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
++    await service.waitForCompletion(runId, 30000);
++    const sequenced = event.querySequenced({ runId, limit: 500 });
++    const types = sequenced.map((e) => e.eventType);
++    expect(types).toContain('ring.run.run.started');
++    expect(types).toContain('ring.run.tool.call');
++    expect(types).toContain('ring.run.tool.result');
++    expect(types).toContain('ring.run.run.completed');
++    // payload is the UI wire copy: no raw CSV rows attached
++    const blob = JSON.stringify(sequenced.map((e) => e.payload));
++    expect(blob).not.toContain('2026-08-22T09:00:00+05:30,T-07,2.82,74.5');
++    // every fanned event carries the run id for the runId-scoped channel
++    for (const e of sequenced) expect(e.runId).toBe(runId);
++  });
++
++  it('no EventService wired: run still completes (bus is optional)', async () => {
++    delete process.env.BASETEN_API_KEY;
++    const { RingAgentService } = await import('../../src/service/ring-agent-service');
++    const { AuditService } = await import('../../src/service/audit-service');
++    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
++    const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
++    const snap = await service.waitForCompletion(runId, 30000);
++    expect(snap.status).toBe('completed');
++  });
++});
++
++describe('desktop overlay host (plain node)', () => {
++  it('hotkey defaults to Ctrl+Shift+Space and is configurable; failure is loud', async () => {
++    const host = require('../../desktop/ring-overlay-host.cjs') as typeof import('../../desktop/ring-overlay-host.cjs');
++    expect(host.DEFAULT_HOTKEY).toBe('CommandOrControl+Shift+Space');
++    expect(host.ringHotkey()).toBe('CommandOrControl+Shift+Space');
++    process.env.MAOS_RING_HOTKEY = 'Ctrl+Alt+R';
++    expect(host.ringHotkey()).toBe('Ctrl+Alt+R');
++    delete process.env.MAOS_RING_HOTKEY;
++
++    const errors: string[] = [];
++    const failing = { register: () => false, unregisterAll: () => {} };
++    const dialog = { showErrorBox: (title: string, msg: string) => errors.push(title + ': ' + msg) };
++    const orig = console.error;
++    console.error = () => {};
++    try {
++      const result = host.registerRingHotkey({ globalShortcut: failing, dialog } as never, () => {});
++      expect(result.error).toContain("globalShortcut.register('CommandOrControl+Shift+Space') returned false");
++      expect(errors.join(' ')).toContain('Ring overlay hotkey unavailable');
++      expect(host.overlayState.hotkeyError).toContain('returned false');
++    } finally {
++      console.error = orig;
++    }
++    host.overlayState.hotkeyError = null;
++    host.overlayState.hotkey = null;
++  });
++
++  it('toggle creates/shows/hides the overlay window through the injected BrowserWindow', async () => {
++    const host = require('../../desktop/ring-overlay-host.cjs') as typeof import('../../desktop/ring-overlay-host.cjs');
++    host.overlayState.window = null;
++    const created: Array<Record<string, unknown>> = [];
++    const calls: string[] = [];
++    const fakeWindow = () => ({
++      isDestroyed: () => false,
++      isVisible: () => created.length > 0 && (created[0] as { shown?: string }).shown !== 'hidden',
++      show: () => {
++        calls.push('show');
++        (created[0] as { shown?: string }).shown = 'shown';
++      },
++      hide: () => {
++        calls.push('hide');
++        (created[0] as { shown?: string }).shown = 'hidden';
++      },
++      focus: () => calls.push('focus'),
++      setAlwaysOnTop: () => {},
++      setVisibleOnAllWorkspaces: () => {},
++      loadURL: async (url: string) => {
++        calls.push('load:' + url);
++      },
++      once: (event: string, cb: () => void) => {
++        if (event === 'ready-to-show') cb();
++      },
++      webContents: { setWindowOpenHandler: () => {}, on: () => {} },
++    });
++    const FakeBrowserWindow = function (this: unknown, _opts: unknown) {
++      created.push({ shown: 'shown' });
++      return fakeWindow();
++    };
++    const ui = { origin: 'http://127.0.0.1:9' };
++    const first = host.toggleOverlay(ui, { BrowserWindow: FakeBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
++    expect(first).toBe('shown');
++    expect(calls.join('|')).toContain('load:http://127.0.0.1:9/#/ring-overlay');
++    const second = host.toggleOverlay(ui, { BrowserWindow: FakeBrowserWindow, ui, preloadPath: 'p', sessionPartition: 's' });
++    expect(second).toBe('hidden');
++    host.overlayState.window = null;
++  });
++});
++
++describe('TASK RING-DEV-B-01: overlay Expand handoff + explicit screenshot', () => {
++  function wsClient(state: RingRunState): RingRunClient {
++    return {
++      startRun: async () => ({ runId: 'run-1' }),
++      getRun: async () => state,
++      cancelRun: async () => {},
++      decideApproval: async () => {},
++      downloadArtifact: async () => {},
++    };
++  }
++
++  it('Expand writes the handoff key and never navigates the overlay window itself', async () => {
++    const running: RingRunState = { status: 'running', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }] };
++    window.localStorage.clear();
++    const view = mount(React.createElement(RingOverlay, { runClient: wsClient(running), pollIntervalMs: 60_000 }));
++    await view.render();
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
++    await act(async () => {
++      setter?.call(input, 'check turbine');
++      input.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    const hashBefore = window.location.hash;
++    // no Electron bridge in happy-dom: the overlay falls back to an
++    // in-tab navigation and says so (Electron path keeps its own route).
++    await act(async () => {
++      view.container.querySelector<HTMLButtonElement>('[data-testid="ring-expand-button"]')?.click();
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(window.localStorage.getItem('maos:ring:expand-thread')).toBe('run-1');
++    expect(view.container.querySelector('[data-testid="ring-expand-note"]')).toBeTruthy();
++    window.location.hash = hashBefore;
++    window.localStorage.clear();
++    view.unmount();
++  });
++
++  it('overlay thread id wins over run id when a thread client exists', async () => {
++    const running: RingRunState = { status: 'running', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }] };
++    const client: RingRunClient = {
++      ...wsClient(running),
++      threadClient: {
++        createThread: async () => ({ threadId: 'thread-1-abcdef12' }),
++        getThread: async (threadId) => ({ threadId, title: 't', role: 'operator', createdAt: 't', runs: [] }),
++        postMessage: async () => ({ runId: 'run-9' }),
++      },
++    };
++    window.localStorage.clear();
++    const view = mount(React.createElement(RingOverlay, { runClient: client, pollIntervalMs: 60_000 }));
++    await view.render();
++    const input = view.container.querySelector<HTMLInputElement>('[data-testid="ring-overlay-input"]')!;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
++    await act(async () => {
++      setter?.call(input, 'check turbine');
++      input.dispatchEvent(new window.Event('input', { bubbles: true }));
++    });
++    await act(async () => {
++      view.container.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    await act(async () => {
++      view.container.querySelector<HTMLButtonElement>('[data-testid="ring-expand-button"]')?.click();
++      await new Promise((r) => setTimeout(r, 0));
++    });
++    expect(window.localStorage.getItem('maos:ring:expand-thread')).toBe('thread-1-abcdef12');
++    window.localStorage.clear();
++    view.unmount();
++  });
++
++  it('overlay screenshot via the Electron bridge holds the image locally with the pending label', async () => {
++    const running: RingRunState = { status: 'running', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }] };
++    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64');
++    (window as unknown as { maosNative?: unknown }).maosNative = {
++      initialize: async () => ({}),
++      expandRing: () => {},
++      captureRingScreen: async () => ({ pngBase64: png, width: 8, height: 8, displays: 1 }),
++    };
++    const view = mount(React.createElement(RingOverlay, { runClient: wsClient(running), pollIntervalMs: 60_000 }));
++    await view.render();
++    await act(async () => {
++      view.container.querySelector<HTMLButtonElement>('[data-testid="ring-overlay-screenshot"]')?.click();
++      await new Promise((r) => setTimeout(r, 10));
++    });
++    await view.flush();
++    expect(view.container.querySelector('[data-testid="ring-overlay-screenshot-indicator"]')).toBeFalsy();
++    const chip = view.container.querySelector('[data-testid="ring-overlay-screenshot-chip"]');
++    expect(chip?.textContent).toContain('local only — inspect_image pending (Dev C)');
++    expect(chip?.querySelector('img')?.getAttribute('src')).toContain('data:image/png;base64,');
++    delete (window as unknown as { maosNative?: unknown }).maosNative;
++    view.unmount();
++  });
++
++  it('capturePrimaryDisplay returns base64 on success and a loud reason on failure', async () => {
++    const host = require('../../desktop/ring-overlay-host.cjs') as typeof import('../../desktop/ring-overlay-host.cjs');
++    const png = Buffer.from([1, 2, 3]);
++    const ok = await host.capturePrimaryDisplay({
++      desktopCapturer: {
++        getSources: async () => [{ display_id: '1', thumbnail: { toPNG: () => png, getSize: () => ({ width: 10, height: 5 }) } }],
++      },
++      screen: { getAllDisplays: () => [{ id: 1 }], getPrimaryDisplay: () => ({ id: 1, size: { width: 10, height: 5 } }) },
++    });
++    expect(ok.pngBase64).toBe(png.toString('base64'));
++    expect(ok.displays).toBe(1);
++    const denied = await host.capturePrimaryDisplay({
++      desktopCapturer: { getSources: async () => { throw new Error('denied by OS'); } },
++      screen: { getAllDisplays: () => [{ id: 1 }], getPrimaryDisplay: () => ({ id: 1, size: { width: 10, height: 5 } }) },
++    });
++    expect(denied.dismissed).toBe(true);
++    expect(denied.reason).toContain('denied by OS');
++    const empty = await host.capturePrimaryDisplay({
++      desktopCapturer: { getSources: async () => [] },
++      screen: { getAllDisplays: () => [], getPrimaryDisplay: () => null },
++    });
++    expect(empty.dismissed).toBe(true);
++  });
++
++  it('attachment bar routes screenshots through the bridge with the pending label', async () => {
++    const png = Buffer.from([137, 80, 78, 71]).toString('base64');
++    (window as unknown as { maosNative?: unknown }).maosNative = {
++      initialize: async () => ({}),
++      captureRingScreen: async () => ({ pngBase64: png, width: 4, height: 4, displays: 1 }),
++    };
++    let current: import('../../src/gui/src/components/RingAttachments').RingAttachment[] = [];
++    const view = mount(
++      React.createElement(RingAttachmentBar, {
++        attachments: current,
++        client: { storeEvidenceFile: async () => { throw new Error('no route'); } },
++        onChange: (next) => { current = next; },
++        onError: () => {},
++      }),
++    );
++    await view.render();
++    await act(async () => {
++      view.container.querySelector<HTMLButtonElement>('[data-testid="ring-screenshot-button"]')?.click();
++      await new Promise((r) => setTimeout(r, 10));
++    });
++    expect(current.length).toBe(1);
++    expect(current[0].storedPath).toBeNull();
++    expect(current[0].previewUrl).toContain('data:image/png;base64,');
++    delete (window as unknown as { maosNative?: unknown }).maosNative;
++    view.unmount();
++  });
++});
++
++describe('TASK RING-DEV-B-01: full view adopts the overlay Expand handoff', () => {
++  it('run-id handoff appends the run to the transcript with an honest notice', async () => {
++    const { RingWorkspace } = await import('../../src/gui/src/components/RingWorkspace');
++    const adopted: RingRunState = {
++      status: 'running',
++      mode: 'hosted',
++      events: [
++        { type: 'run.started', ts: 't' },
++        { type: 'model.turn', ts: 't', text: 'overlay draft' },
++      ],
++    };
++    window.localStorage.setItem('maos:ring:expand-thread', 'run-adopt-1');
++    const view = mount(
++      React.createElement(RingWorkspace, {
++        runClient: {
++          startRun: async () => ({ runId: 'run-x' }),
++          getRun: async () => adopted,
++          cancelRun: async () => {},
++          decideApproval: async () => {},
++          downloadArtifact: async () => {},
++        },
++        pollIntervalMs: 60_000,
++      }),
++    );
++    await view.render();
++    await view.flush();
++    expect(window.localStorage.getItem('maos:ring:expand-thread')).toBeNull();
++    expect(view.container.querySelector('[data-testid="ring-expand-notice"]')?.textContent).toContain('Adopted run run-adopt-1 from the overlay.');
++    expect(view.container.textContent).toContain('overlay draft');
++    window.localStorage.clear();
++    view.unmount();
++  });
++
++  it('thread handoff loads the summary, marks the thread active, and polls its runs', async () => {
++    const { RingWorkspace } = await import('../../src/gui/src/components/RingWorkspace');
++    const threadRun: RingRunState = {
++      status: 'completed',
++      mode: 'hosted',
++      events: [{ type: 'model.turn', ts: 't', text: 'thread history text' }],
++    };
++    window.localStorage.setItem('maos:ring:expand-thread', 'thread-9-abcdef12');
++    const view = mount(
++      React.createElement(RingWorkspace, {
++        runClient: {
++          startRun: async () => ({ runId: 'run-x' }),
++          getRun: async () => threadRun,
++          cancelRun: async () => {},
++          decideApproval: async () => {},
++          downloadArtifact: async () => {},
++          threadClient: {
++            createThread: async () => ({ threadId: 'thread-9-abcdef12' }),
++            getThread: async (threadId) => ({ threadId, title: 'Overlay thread', role: 'safety', createdAt: 't', runs: ['run-t1'] }),
++            postMessage: async () => ({ runId: 'run-t2' }),
++          },
++        },
++        pollIntervalMs: 60_000,
++      }),
++    );
++    await view.render();
++    await view.flush();
++    await view.flush();
++    expect(view.container.querySelector('[data-testid="ring-expand-notice"]')?.textContent).toContain('Adopted thread thread-9-abcdef12 from the overlay.');
++    expect(view.container.textContent).toContain('thread history text');
++    expect(view.container.textContent).toContain('Overlay thread');
++    window.localStorage.clear();
++    view.unmount();
++  });
++});

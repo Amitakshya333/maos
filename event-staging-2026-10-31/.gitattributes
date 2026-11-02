@@ -1,0 +1,9 @@
+# Patch files are hashed byte-for-byte by scripts/apply-event-patches.ps1.
+# Force LF so a default Windows clone (core.autocrlf=true) preserves the
+# manifest bytes the script checks.
+*.patch text eol=lf
+*.ps1   text eol=lf
+*.csv   text eol=lf
+
+# License texts are included verbatim; keep them byte-identical too.
+THIRD_PARTY_NOTICES/** text eol=lf

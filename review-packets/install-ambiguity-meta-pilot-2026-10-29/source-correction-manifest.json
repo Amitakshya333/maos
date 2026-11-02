@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+  "patchPath": "installer-correction.patch",
+  "patchSha256": "ba002a437f6cfcde26fa30bc41947193754a88dab31aa2a65a10c8904d44da10",
+  "files": [
+    {
+      "path": "scripts/Install-MaosIndustrial.ps1",
+      "workingTreeSha256": "df5bfdca073dcb89bd6b8f4b5995522135e586748bcbd4887dcbee6a2cbb38a1",
+      "gitCleanBlob": "8451eecc6084cf6a0e6db065f34786dfc9ef048e",
+      "headBlob": "0fd8f4ea3fc588618cb4e47e90131976a1072ed3"
+    },
+    {
+      "path": "tests/industrial/package-runtime-assets.test.ts",
+      "workingTreeSha256": "9a91677ef71269e1f1d97ed82f0c22d74de9660af6f23668c8c2dd0156425f2d",
+      "gitCleanBlob": "1083978be30e7f7bebd549c8bc2caf78d6812907",
+      "headBlob": "8aa06d4f6541557ebb7e8a50678fc76c9a26bcdd"
+    }
+  ],
+  "scopeNote": "Only the installer native-stderr handling and its focused regression; no package rebuild."
+}

@@ -1,0 +1,12 @@
+{
+  "bundle": "C:\\maos\\review-packets\\install-reliability-2026-10-29\\candidate-locked-bootstrap-release-2026-10-29\\maos-industrial-bootstrap-windows-x64.zip",
+  "bundleSha256": "1c6fcb695b495d5d79d3a22f2fb1ba56ec49183ae2ae7d30fa5fe439d676d36f",
+  "bundleRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-install-clean-source-37609be196584def850343ff8a22565d\\install-release-short-0e63159ec6934a8ba7604e3bf81190ff\\bundle",
+  "installRoot": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-install-clean-source-37609be196584def850343ff8a22565d\\install-release-short-0e63159ec6934a8ba7604e3bf81190ff\\install",
+  "npmCache": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-install-clean-source-37609be196584def850343ff8a22565d\\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\\npm-cache-empty",
+  "electronCache": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-install-clean-source-37609be196584def850343ff8a22565d\\clean-install-smoke-final-66cd2fa87d28465cb886d4dd63548bf7\\electron-cache-empty",
+  "sourceCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "emptyInstallDestination": true,
+  "isolatedCachesReusedFromPriorFreshDownload": true,
+  "installPathLength": 188
+}

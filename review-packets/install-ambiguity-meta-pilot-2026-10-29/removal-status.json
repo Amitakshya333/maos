@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-10-29T15:26:14.8267781+05:30",
+  "powershellVersion": "7.6.9",
+  "bundleInstallRootStillExists": true,
+  "removalAttempted": "Remove-Item -LiteralPath <exact installRoot> -Recurse -Force",
+  "removalAttemptResult": "Rejected by command execution policy before execution: blocked by policy",
+  "dataAffected": false,
+  "processMatchesUnderTaskRootExcludingCurrent": [],
+  "orphanProcessCount": 0
+}

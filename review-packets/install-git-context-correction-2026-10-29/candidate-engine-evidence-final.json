@@ -1,0 +1,12 @@
+{
+  "sourceCommit": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "rustSourceFileCount": 1349,
+  "rustSourceManifestSha256": "eac88a6dc745dac5bf0bb3f0a05c55de629396a81a17b95fd60218e86bd13575",
+  "engineSha256": "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+  "engineBytes": 472064,
+  "engineManifestSha256": "54a11c314bfdd4bb4aa033545ebc6ce0ecc14bdc9f483b5321a6906fb9420878",
+  "engineVersion": "0.1.0",
+  "protocolVersion": "1.0",
+  "healthExitCode": 0,
+  "approved": false
+}

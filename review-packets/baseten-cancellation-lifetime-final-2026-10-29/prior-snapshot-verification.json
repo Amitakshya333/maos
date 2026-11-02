@@ -1,0 +1,44 @@
+{
+  "snapshotRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-bb871-patch-reconstruction-20261029-01",
+  "retainedPriorPatchSha256": "dbb62ab351b474cd158071b34f47be173f890cb869391b6befa0e9ddb45b8ad1",
+  "retainedPriorManifestSha256": "2f089126d37461c4bcb60633bfd35f3845a2b3274d99567c28984a147af64a92",
+  "files": [
+    {
+      "path": "scripts/Start-BasetenSyntheticPilot.ps1",
+      "retainedManifestRawSha256": "f87673a89605470e1204478a1637cf509b94be1d3418b4bc85b4de26308d3b7f",
+      "reconstructionRawSha256": "f80674da117a5cfd611aece8409d0386559f7012c5d2b465bda509593760759b",
+      "retainedManifestLfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "reconstructionLfNormalizedSha256": "87f6f8e44e595e36e93ffb8155631d7f7d95425f4ca0a3a6b0da52ed1378ca2a",
+      "rawEqualToRetainedManifest": false,
+      "lfNormalizedEqualToRetainedManifest": true
+    },
+    {
+      "path": "scripts/Windows-ProcessTree.ps1",
+      "retainedManifestRawSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "reconstructionRawSha256": "bd45584ac789e1401b8487d38a80dfbb7bfb9e6eb125328b28bd9c8ea1088c8c",
+      "retainedManifestLfNormalizedSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "reconstructionLfNormalizedSha256": "94371a69ff8a77a2cb5745d5c2b1305c99bb3711acd802cfdcac5d7f95df0755",
+      "rawEqualToRetainedManifest": false,
+      "lfNormalizedEqualToRetainedManifest": true
+    },
+    {
+      "path": "tests/industrial/baseten-pilot-process-tree.test.ts",
+      "retainedManifestRawSha256": "ab8702cb9dac9f211e1abc2a1595fdcc5e2817dce93fbafc6749c6b564eb6eab",
+      "reconstructionRawSha256": "ab8702cb9dac9f211e1abc2a1595fdcc5e2817dce93fbafc6749c6b564eb6eab",
+      "retainedManifestLfNormalizedSha256": "35f0c25a9ed7f1f89042a79064a5b0e34dcecbe141431094db7e84f41895fe84",
+      "reconstructionLfNormalizedSha256": "35f0c25a9ed7f1f89042a79064a5b0e34dcecbe141431094db7e84f41895fe84",
+      "rawEqualToRetainedManifest": true,
+      "lfNormalizedEqualToRetainedManifest": true
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "retainedManifestRawSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "reconstructionRawSha256": "ef6fe2e180c318e9451c2ec5ac100d21112e77babd9cf69a76faec8acac4cafb",
+      "retainedManifestLfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "reconstructionLfNormalizedSha256": "111b10e3d929cfe4366d95dda0f4dc77c3103c1d6490ee3048651479330c9bd3",
+      "rawEqualToRetainedManifest": false,
+      "lfNormalizedEqualToRetainedManifest": true
+    }
+  ],
+  "result": "All four reconstructed files match the retained source manifest after LF normalization; raw differences are newline-style only where recorded."
+}

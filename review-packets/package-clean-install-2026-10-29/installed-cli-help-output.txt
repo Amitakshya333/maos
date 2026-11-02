@@ -1,0 +1,33 @@
+Usage: maos-industrial [options] [command]
+
+MAOS Industrial commands and local operator REPL
+
+Options:
+  -V, --version                output the version number
+  -h, --help                   display help for command
+
+Commands:
+  repl                         Start the bounded local operator REPL
+  bundle                       Manage offline bundle packaging and verification
+  rehearsal [options]          Run clean disconnected VM rehearsal workflow
+  evidence                     Manage and verify rehearsal evidence
+  kb                           Manage project local knowledge base (build,
+                               status, verify, clear)
+  boundary [options] <action>  Manage the process-scoped sovereignty boundary
+                               (enable | status | disable)
+  preflight [options]          Run industrial preflight and boundary
+                               verification
+  start [options]              Start the industrial project service host
+  demo [options]               Run sovereign industrial coding demo (e.g. RMS
+                               calculation)
+  verify [options] [target]    Verify industrial state: audit, boundary,
+                               service, or telemetry analysis
+  stop [options]               Stop the running industrial service (graceful or
+                               force with --yes)
+  reset [options]              Deterministically reset confirmed generated test
+                               state (dry-run and allowlist)
+  run [options]                One-command judged run (preflight → policy →
+                               services → DAG → approvals → verify → audit
+                               export)
+  open [options] <target>      Open a validated local deliverable (.docx, .xlsx,
+                               .pptx, .pdf) in desktop office application

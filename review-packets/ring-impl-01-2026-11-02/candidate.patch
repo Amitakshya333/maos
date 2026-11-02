@@ -1,0 +1,899 @@
+diff --git a/.env.example b/.env.example
+index 2eec234..d4f272a 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1 +1,3 @@
+-FREEMODEL_API_KEY=your-key-here
+\ No newline at end of file
++FREEMODEL_API_KEY=your-key-here
++# Ring hosted inference key (env only; export in the launching shell, never commit a value):
++# BASETEN_API_KEY=
+\ No newline at end of file
+diff --git a/src/gui/src/api/adapter.ts b/src/gui/src/api/adapter.ts
+index 11f4bf5..fec3731 100644
+--- a/src/gui/src/api/adapter.ts
++++ b/src/gui/src/api/adapter.ts
+@@ -13,6 +13,7 @@ import type {
+   IndustrialTelemetryAnalysisResponse,
+   IndustrialAnalysisAgentResponse,
+ } from './rest-client';
++import type { RingAskRequest, RingAskResult } from './ring-types';
+ import { BrowserEventClient, ConnectionState, EventListener, StateListener } from './event-client';
+ import type { Task, Artifact, ModelLease, AuditRecord, SequencedEvent, Project, Approval, Conversation, Message, MessageRole, AuditChainVerification } from '../../../domain/schemas';
+ import type {
+@@ -363,6 +364,14 @@ export class GuiApiAdapter {
+     return this.rest.getChatHealth();
+   }
+ 
++  /**
++   * TASK RING-IMPL-01: Ring ask (NEW hosted path). Consumes the exact
++   * RING-SVC-01 contract; the sovereign chatCompletion path is unchanged.
++   */
++  async ringAsk(input: RingAskRequest): Promise<RingAskResult> {
++    return this.rest.ringAsk(input, { timeoutMs: 120_000 });
++  }
++
+   async promoteToTask(conversationId: string, data: PromoteToTaskInput): Promise<PromoteToTaskResult> {
+     return this.rest.promoteToTask(conversationId, data);
+   }
+diff --git a/src/gui/src/api/index.ts b/src/gui/src/api/index.ts
+index 6e293df..a5e2eac 100644
+--- a/src/gui/src/api/index.ts
++++ b/src/gui/src/api/index.ts
+@@ -5,5 +5,6 @@
+ export * from './errors';
+ export * from './runtime-validation';
+ export * from './rest-client';
++export * from './ring-types';
+ export * from './event-client';
+ export * from './adapter';
+diff --git a/src/gui/src/api/rest-client.ts b/src/gui/src/api/rest-client.ts
+index 090d865..50c9534 100644
+--- a/src/gui/src/api/rest-client.ts
++++ b/src/gui/src/api/rest-client.ts
+@@ -110,6 +110,8 @@ import type {
+   ModelSwitchResult,
+   ActiveModelIdentity,
+ } from '../../../domain/model-switch';
++import type { RingAskRequest, RingAskResult } from './ring-types';
++import { validateRingAskResult } from './ring-types';
+ import type {
+   ComparableObservation,
+   ConflictItem,
+@@ -717,6 +719,20 @@ export class BrowserRestClient {
+     return res.data;
+   }
+ 
++  /**
++   * TASK RING-IMPL-01: ask Ring (POST /api/v1/ring/ask). This is the NEW
++   * hosted path beside the sovereign chat path; the sovereign
++   * chatCompletion route is untouched. The response is validated at
++   * runtime and identity fields are never invented client-side.
++   */
++  async ringAsk(input: RingAskRequest, options?: RequestOptions): Promise<RingAskResult> {
++    const res = await this.request<RingAskResult>('POST', '/api/v1/ring/ask', input, {
++      timeoutMs: 120_000,
++      ...options,
++    });
++    return validateRingAskResult(res.data);
++  }
++
+   async promoteToTask(
+     conversationId: string,
+     data: PromoteToTaskInput,
+diff --git a/src/gui/src/api/ring-types.ts b/src/gui/src/api/ring-types.ts
+new file mode 100644
+index 0000000..9bfefa6
+--- /dev/null
++++ b/src/gui/src/api/ring-types.ts
+@@ -0,0 +1,96 @@
++/**
++ * TASK RING-IMPL-01: RingAsk contract types (GUI consumer side).
++ *
++ * The route/service (POST /api/v1/ring/ask) is built by TASK RING-SVC-01
++ * against this exact contract. This module only declares the shape and
++ * validates responses at runtime. It never invents provider, model, or
++ * served-model identity: optional identity fields stay absent unless the
++ * server actually echoed them.
++ */
++
++export interface RingAskRequest {
++  question: string;
++  analysisId?: string;
++}
++
++export type RingSourceKind = 'sop' | 'incident' | 'telemetry' | 'config';
++
++export interface RingSource {
++  kind: RingSourceKind;
++  label: string;
++  path: string;
++}
++
++export interface RingDeterministic {
++  attempted: boolean;
++  verdict?: string;
++  overallRms?: number;
++  analysisId?: string;
++}
++
++export interface RingAskResult {
++  mode: 'hosted' | 'evidence-only';
++  providerName?: string;
++  modelId?: string;
++  servedModelId?: string;
++  answer: string;
++  sources: RingSource[];
++  deterministic: RingDeterministic;
++  refusalTest: { prepared: boolean };
++}
++
++const SOURCE_KINDS: readonly string[] = ['sop', 'incident', 'telemetry', 'config'];
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Runtime validator for RingAskResult. Fails closed on any shape violation.
++ * Identity fields (providerName/modelId/servedModelId) are passed through
++ * only when present as non-empty strings; nothing is defaulted or invented.
++ */
++export function validateRingAskResult(value: unknown): RingAskResult {
++  if (!isRecord(value)) throw new Error('RING_ASK_INVALID: response must be an object.');
++  if (value.mode !== 'hosted' && value.mode !== 'evidence-only') {
++    throw new Error('RING_ASK_INVALID: mode must be hosted or evidence-only.');
++  }
++  if (typeof value.answer !== 'string' || value.answer.length === 0) {
++    throw new Error('RING_ASK_INVALID: answer must be a non-empty string.');
++  }
++  if (!Array.isArray(value.sources)) throw new Error('RING_ASK_INVALID: sources must be an array.');
++  for (const source of value.sources) {
++    if (!isRecord(source)) throw new Error('RING_ASK_INVALID: each source must be an object.');
++    if (!SOURCE_KINDS.includes(source.kind as string)) {
++      throw new Error('RING_ASK_INVALID: source.kind must be sop, incident, telemetry, or config.');
++    }
++    if (typeof source.label !== 'string' || !source.label.trim()) {
++      throw new Error('RING_ASK_INVALID: source.label must be a non-empty string.');
++    }
++    if (typeof source.path !== 'string' || !source.path.trim()) {
++      throw new Error('RING_ASK_INVALID: source.path must be a non-empty string.');
++    }
++  }
++  if (!isRecord(value.deterministic) || typeof value.deterministic.attempted !== 'boolean') {
++    throw new Error('RING_ASK_INVALID: deterministic.attempted must be a boolean.');
++  }
++  if (value.deterministic.verdict !== undefined && typeof value.deterministic.verdict !== 'string') {
++    throw new Error('RING_ASK_INVALID: deterministic.verdict must be a string when present.');
++  }
++  if (value.deterministic.overallRms !== undefined && typeof value.deterministic.overallRms !== 'number') {
++    throw new Error('RING_ASK_INVALID: deterministic.overallRms must be a number when present.');
++  }
++  if (value.deterministic.analysisId !== undefined && typeof value.deterministic.analysisId !== 'string') {
++    throw new Error('RING_ASK_INVALID: deterministic.analysisId must be a string when present.');
++  }
++  if (!isRecord(value.refusalTest) || typeof value.refusalTest.prepared !== 'boolean') {
++    throw new Error('RING_ASK_INVALID: refusalTest.prepared must be a boolean.');
++  }
++  for (const field of ['providerName', 'modelId', 'servedModelId'] as const) {
++    const entry = value[field];
++    if (entry !== undefined && (typeof entry !== 'string' || !entry.trim())) {
++      throw new Error(`RING_ASK_INVALID: ${field} must be a non-empty string when present.`);
++    }
++  }
++  return value as unknown as RingAskResult;
++}
+diff --git a/src/gui/src/components/ActivityBar.tsx b/src/gui/src/components/ActivityBar.tsx
+index d933b91..98e7ee4 100644
+--- a/src/gui/src/components/ActivityBar.tsx
++++ b/src/gui/src/components/ActivityBar.tsx
+@@ -27,6 +27,7 @@ export type ActiveView =
+   | 'agents';
+ 
+ export const INDUSTRIAL_DEMO_VIEWS = [
++  'chat',
+   'cockpit',
+   'evidence',
+   'approvals',
+@@ -46,7 +47,7 @@ interface NavConfig {
+ }
+ 
+ const MODULE_REGISTRY: Record<string, NavConfig> = {
+-  chat: { label: 'Chat & Sessions', icon: <ChatIcon size={20} /> },
++  chat: { label: 'Ring', icon: <ChatIcon size={20} /> },
+   tasks: { label: 'Tasks & Runs', icon: <TasksIcon size={20} /> },
+   code: { label: 'Code & Sandbox', icon: <CodeIcon size={20} /> },
+   terminal: { label: 'Terminal / Shell', icon: <TerminalIcon size={20} /> },
+diff --git a/src/gui/src/components/RingAskPanel.tsx b/src/gui/src/components/RingAskPanel.tsx
+new file mode 100644
+index 0000000..d1684a3
+--- /dev/null
++++ b/src/gui/src/components/RingAskPanel.tsx
+@@ -0,0 +1,362 @@
++/**
++ * TASK RING-IMPL-01: Ring ask panel (NEW hosted path consumer).
++ *
++ * ChatView mounts this panel; the sovereign conversation/model/promotion
++ * flows below it are unchanged. This module:
++ * - calls POST /api/v1/ring/ask via the exact RING-SVC-01 contract,
++ * - renders hosted vs evidence-only states with verbatim copy,
++ * - reuses CompletionRefusalDemo + TelemetryReviewCoordinator.prepareReview
++ *   for the refusal beat (real gate, verbatim refusal text),
++ * - renders the judge verify transcript only from provided real output.
++ *
++ * It invents nothing: no served-model id, no approval, no verify output,
++ * no raw telemetry in any prompt (the client sends only the question text).
++ */
++import React, { useEffect, useRef, useState } from 'react';
++import { apiAdapter } from '../api';
++import type { JudgedRunResponse } from '../api/rest-client';
++import type { RingAskRequest, RingAskResult } from '../api/ring-types';
++import { CompletionRefusalDemo } from './CompletionRefusalDemo';
++import { TelemetryReviewCoordinator } from './telemetryReviewCoordinator';
++
++/** Exact hosted badge copy (step 2). Served-model suffix appended only from server echo. */
++export const RING_HOSTED_BADGE = 'HOSTED · meta-models/muse-spark-open-1026 via Baseten';
++/** Exact evidence-only badge copy (step 2). */
++export const RING_EVIDENCE_ONLY_BADGE = 'EVIDENCE-ONLY · no model configured';
++/** Exact hosted banner copy (step 3). */
++export const RING_HOSTED_BANNER = 'Meta model reasoning via Baseten. Company evidence stays in MAOS.';
++/** Exact telemetry-boundary line (step 3). */
++export const RING_TELEMETRY_BOUNDARY = 'raw telemetry never leaves MAOS; only the summary is sent';
++/** Verify fallback copy (step 6). */
++export const RING_NO_EXPORT_VERIFIED = 'No export verified yet.';
++
++/**
++ * Assistant attribution for Ring (O-2). USER rendering is unchanged;
++ * assistant messages attribute to RING.
++ */
++export function ringRoleLabel(role: string): string {
++  return role === 'assistant' ? 'RING' : role;
++}
++
++/**
++ * Model identity line for the badge (step 2). When a Ring result exists it
++ * determines the text; otherwise the caller keeps its existing local badge.
++ * The served-model suffix appears only when the server echoed an id.
++ */
++export function ringBadgeText(ringResult: RingAskResult | null, localFallback: string): string {
++  if (!ringResult) return localFallback;
++  if (ringResult.mode === 'evidence-only') return RING_EVIDENCE_ONLY_BADGE;
++  const served = ringResult.servedModelId?.trim();
++  return served ? `${RING_HOSTED_BADGE} · reported ${served}` : RING_HOSTED_BADGE;
++}
++
++export const RingHostedBanner: React.FC<{ result: RingAskResult }> = ({ result }) => (
++  <div
++    data-testid="ring-hosted-banner"
++    style={{
++      padding: '8px 14px',
++      backgroundColor: 'var(--bg-tertiary, #222222)',
++      borderLeft: '4px solid var(--status-green, #4ade80)',
++      borderRadius: '4px',
++      marginBottom: '12px',
++      fontSize: '12px',
++      color: 'var(--text-secondary, #cccccc)',
++    }}
++  >
++    <div>{RING_HOSTED_BANNER}</div>
++    <div data-testid="ring-hosted-identity" style={{ marginTop: '4px', fontSize: '11px' }}>
++      Provider: {result.providerName ?? 'not reported'} · Model: {result.modelId ?? 'not reported'}
++      {result.servedModelId?.trim() ? ` · Served: ${result.servedModelId}` : ''}
++    </div>
++    <div data-testid="ring-telemetry-boundary" style={{ marginTop: '4px', fontSize: '11px' }}>
++      {RING_TELEMETRY_BOUNDARY}
++    </div>
++  </div>
++);
++
++export const RingEvidenceOnlyBanner: React.FC = () => (
++  <div
++    data-testid="ring-evidence-only-banner"
++    style={{
++      padding: '8px 14px',
++      backgroundColor: 'var(--bg-tertiary, #222222)',
++      borderLeft: '4px solid var(--status-amber, #eab308)',
++      borderRadius: '4px',
++      marginBottom: '12px',
++      fontSize: '12px',
++      color: 'var(--text-secondary, #cccccc)',
++    }}
++  >
++    Ring is running in evidence-only mode: no model is configured, so no model wrote this answer and no model ran. Local
++    evidence, verification, and review tools remain available.
++  </div>
++);
++
++export interface RingVerifyTranscript {
++  runId?: string | null;
++  auditOutput?: string | null;
++  exportPath?: string | null;
++  exportPassLine?: string | null;
++}
++
++/**
++ * Judge verify card (step 6 / O-5). Renders CLI/transcript text only from
++ * provided real output. With no export evidence it shows the fallback;
++ * it never invents output or a PASS line.
++ */
++export const RingVerifyCard: React.FC<{ transcript: RingVerifyTranscript }> = ({ transcript }) => {
++  const hasAudit = Boolean(transcript.runId && transcript.auditOutput);
++  const hasExport = Boolean(transcript.exportPath && transcript.exportPassLine);
++  if (!hasAudit && !hasExport) {
++    return (
++      <div data-testid="ring-verify-card" style={{ marginTop: 10, fontSize: 11, color: '#8b949e' }}>
++        {RING_NO_EXPORT_VERIFIED}
++      </div>
++    );
++  }
++  return (
++    <div data-testid="ring-verify-card" style={{ marginTop: 10, fontSize: 11 }}>
++      {hasAudit && (
++        <div style={{ marginBottom: 6 }}>
++          <code style={{ display: 'block', color: '#79c0ff', wordBreak: 'break-all' }}>
++            maos-industrial verify audit --run-id {transcript.runId} --json
++          </code>
++          <pre style={{ whiteSpace: 'pre-wrap', color: '#c9d1d9', margin: '4px 0 0' }}>{transcript.auditOutput}</pre>
++        </div>
++      )}
++      {hasExport && (
++        <div>
++          <code style={{ display: 'block', color: '#79c0ff', wordBreak: 'break-all' }}>
++            verify export {transcript.exportPath}
++          </code>
++          <div style={{ color: '#3fb950', marginTop: 4 }}>{transcript.exportPassLine}</div>
++        </div>
++      )}
++    </div>
++  );
++};
++
++export interface RingResultCardProps {
++  result: RingAskResult;
++  reviewBusy: boolean;
++  reviewError: string | null;
++  reviewRun: JudgedRunResponse | null;
++  onClaim: (analysisId: string) => void;
++  verifyTranscript: RingVerifyTranscript;
++}
++
++/**
++ * Presentational Ring result: answer verbatim, sources as citations,
++ * deterministic line in every mode, refusal beat, verify card.
++ */
++export const RingResultCard: React.FC<RingResultCardProps> = ({
++  result,
++  reviewBusy,
++  reviewError,
++  reviewRun,
++  onClaim,
++  verifyTranscript,
++}) => {
++  const deterministic = result.deterministic;
++  const deterministicLine = deterministic.attempted
++    ? `Deterministic: ${deterministic.verdict ?? 'not reported'} · RMS ${deterministic.overallRms ?? 'not reported'} · ${deterministic.analysisId ?? 'no analysis id'}`
++    : 'Deterministic: not attempted';
++  return (
++    <div
++      data-testid="ring-result-card"
++      style={{
++        marginTop: 12,
++        border: '1px solid var(--border-color, #30363d)',
++        borderRadius: 7,
++        padding: 12,
++        background: 'var(--bg-secondary, #0d1117)',
++      }}
++    >
++      {result.mode === 'evidence-only' ? (
++        <div data-testid="ring-no-model-note" style={{ fontSize: 11, color: '#e3b341', marginBottom: 8 }}>
++          No model wrote this answer and no model ran — evidence-only response shown as-is.
++        </div>
++      ) : (
++        <div data-testid="ring-model-note" style={{ fontSize: 11, color: '#8b949e', marginBottom: 8 }}>
++          Model answer · {result.providerName ?? 'provider not reported'} · {result.modelId ?? 'model not reported'} ·{' '}
++          {RING_TELEMETRY_BOUNDARY}
++        </div>
++      )}
++      <div data-testid="ring-answer" style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>
++        {result.answer}
++      </div>
++      <div data-testid="ring-deterministic-line" style={{ marginTop: 8, fontSize: 11, color: '#8b949e' }}>
++        {deterministicLine}
++      </div>
++      {result.sources.length > 0 && (
++        <div style={{ marginTop: 8 }}>
++          <div style={{ fontSize: 11, fontWeight: 600, color: '#60a5fa', marginBottom: 4 }}>
++            Cited sources ({result.sources.length}):
++          </div>
++          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
++            {result.sources.map((source, index) => (
++              <div
++                key={`${source.kind}-${source.path}-${index}`}
++                data-testid="ring-source-item"
++                style={{ fontSize: 11, color: '#c9d1d9' }}
++              >
++                [{source.kind}] {source.label} · <code>{source.path}</code>
++              </div>
++            ))}
++          </div>
++        </div>
++      )}
++      {deterministic.analysisId && (
++        <CompletionRefusalDemo
++          analysisId={deterministic.analysisId}
++          reviewBusy={reviewBusy}
++          reviewError={reviewError}
++          actionsDisabled={false}
++          onClaim={onClaim}
++        />
++      )}
++      {reviewRun && (
++        <div role="status" style={{ marginTop: 8, fontSize: 11 }}>
++          Run {reviewRun.runId} · {reviewRun.status.replace('_', ' ')}
++        </div>
++      )}
++      <RingVerifyCard transcript={verifyTranscript} />
++    </div>
++  );
++};
++
++export interface RingAskPanelProps {
++  onResult?: (result: RingAskResult | null) => void;
++  askFn?: (input: RingAskRequest) => Promise<RingAskResult>;
++  verifyTranscript?: RingVerifyTranscript;
++}
++
++/**
++ * Ring ask container. Owns the question input, the ask lifecycle, and a
++ * Ring-owned TelemetryReviewCoordinator for the refusal beat (same
++ * adapter/effects pattern the telemetry panel uses; per-mount instance).
++ */
++export const RingAskPanel: React.FC<RingAskPanelProps> = ({ onResult, askFn, verifyTranscript }) => {
++  const [question, setQuestion] = useState('Why is turbine 7 above its vibration limit, and what do we do next?');
++  const [asking, setAsking] = useState(false);
++  const [askError, setAskError] = useState<string | null>(null);
++  const [result, setResult] = useState<RingAskResult | null>(null);
++  const [reviewRun, setReviewRun] = useState<JudgedRunResponse | null>(null);
++  const [reviewBusy, setReviewBusy] = useState(false);
++  const [reviewError, setReviewError] = useState<string | null>(null);
++
++  const coordinatorRef = useRef<TelemetryReviewCoordinator | null>(null);
++  if (!coordinatorRef.current) {
++    coordinatorRef.current = new TelemetryReviewCoordinator(
++      {
++        analyzeTelemetry: (input, options) => apiAdapter.analyzeIndustrialTelemetry(input, options),
++        analyzeCsv: (input, options) => apiAdapter.analyzeIndustrialCsv(input, options),
++        prepareReview: (analysisId) => apiAdapter.prepareIndustrialAgentReview(analysisId),
++        getJudgedRun: (runId) => apiAdapter.getIndustrialJudgedRun(runId),
++      },
++      {
++        apply: (patch) => {
++          if (patch.reviewRun !== undefined) setReviewRun(patch.reviewRun);
++          if (patch.reviewError !== undefined) setReviewError(patch.reviewError);
++          if (patch.reviewBusy !== undefined) setReviewBusy(patch.reviewBusy);
++        },
++        readSavedRunId: () =>
++          typeof window === 'undefined' ? null : window.localStorage.getItem('maos:last-industrial-judged-run'),
++        writeSavedRunId: (runId) => {
++          if (typeof window !== 'undefined') window.localStorage.setItem('maos:last-industrial-judged-run', runId);
++        },
++        navigateToApprovals: () => {
++          if (typeof window !== 'undefined') window.location.hash = '#/approvals';
++        },
++      },
++    );
++  }
++
++  useEffect(() => {
++    return () => {
++      coordinatorRef.current?.dispose();
++    };
++  }, []);
++
++  const handleAsk = async (event: React.FormEvent) => {
++    event.preventDefault();
++    const trimmed = question.trim();
++    if (!trimmed || asking) return;
++    setAsking(true);
++    setAskError(null);
++    setReviewError(null);
++    setReviewRun(null);
++    try {
++      const ask = askFn ?? ((input: RingAskRequest) => apiAdapter.ringAsk(input));
++      const answer = await ask({ question: trimmed });
++      setResult(answer);
++      onResult?.(answer);
++    } catch (err: unknown) {
++      // No silent fallback: a failed ask leaves no result and surfaces the
++      // error verbatim. No model ran on this path.
++      setResult(null);
++      onResult?.(null);
++      setAskError((err as Error).message || 'Ring request failed. No model ran.');
++    } finally {
++      setAsking(false);
++    }
++  };
++
++  return (
++    <section
++      aria-label="Ring ask panel"
++      data-testid="ring-ask-panel"
++      style={{
++        padding: 12,
++        borderRadius: 8,
++        border: '1px solid var(--border-color, #30363d)',
++        background: 'var(--card-bg, #161b22)',
++        marginBottom: 12,
++      }}
++    >
++      <form onSubmit={handleAsk} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
++        <input
++          type="text"
++          aria-label="Ask Ring"
++          value={question}
++          onChange={(event) => setQuestion(event.target.value)}
++          disabled={asking}
++          data-testid="ring-question-input"
++          style={{
++            flex: 1,
++            padding: '9px 14px',
++            borderRadius: 6,
++            border: '1px solid var(--border-color, #444444)',
++            backgroundColor: 'var(--bg-primary, #121212)',
++            color: 'inherit',
++            fontSize: 13,
++          }}
++        />
++        <button
++          type="submit"
++          className="btn-primary"
++          disabled={asking || !question.trim()}
++          data-testid="ring-ask-button"
++          style={{ padding: '9px 18px', fontSize: 13 }}
++        >
++          {asking ? 'Asking…' : 'Ask Ring'}
++        </button>
++      </form>
++      {askError && (
++        <div role="alert" data-testid="ring-ask-error" style={{ marginTop: 8, color: '#ff7b72', fontSize: 12 }}>
++          {askError}
++        </div>
++      )}
++      {result && (
++        <RingResultCard
++          result={result}
++          reviewBusy={reviewBusy}
++          reviewError={reviewError}
++          reviewRun={reviewRun}
++          onClaim={(analysisId) => void coordinatorRef.current?.prepareReview(analysisId)}
++          verifyTranscript={verifyTranscript ?? {}}
++        />
++      )}
++    </section>
++  );
++};
+diff --git a/src/gui/src/views/ChatView.tsx b/src/gui/src/views/ChatView.tsx
+index 7da2883..38ef5cb 100644
+--- a/src/gui/src/views/ChatView.tsx
++++ b/src/gui/src/views/ChatView.tsx
+@@ -1,6 +1,8 @@
+ import React, { useState, useEffect, useRef } from 'react';
+ import { ChatIcon, TasksIcon } from '../components/icons';
+ import { apiAdapter } from '../api';
++import type { RingAskResult } from '../api/ring-types';
++import { RingAskPanel, RingEvidenceOnlyBanner, RingHostedBanner, ringBadgeText, ringRoleLabel } from '../components/RingAskPanel';
+ import type { Conversation, Message } from '../../../domain/schemas';
+ import type { ChatAttachment, PromoteToTaskInput } from '../../../domain/conversation';
+ import type { OperationalMode, CitedClaim } from '../../../domain/evidence-mode';
+@@ -39,6 +41,9 @@ export const ChatView: React.FC = () => {
+   });
+   const [promotionNotice, setPromotionNotice] = useState<{ taskId: string; message: string } | null>(null);
+   const [error, setError] = useState<string | null>(null);
++  // TASK RING-IMPL-01: latest Ring ask result drives the badge + state
++  // banner. Null until the first ask; sovereign chat state is untouched.
++  const [ringResult, setRingResult] = useState<RingAskResult | null>(null);
+ 
+   const messagesEndRef = useRef<HTMLDivElement>(null);
+ 
+@@ -288,14 +293,14 @@ export const ChatView: React.FC = () => {
+     <div
+       className="view-container"
+       role="tabpanel"
+-      aria-label="Chat & Conversations View"
++      aria-label="Ring View"
+       style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}
+     >
+       {/* Top Header */}
+       <div className="view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+         <div>
+           <h1 className="view-title" style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>
+-            Chat & Interactive Exploration
++            Ring & Interactive Exploration
+           </h1>
+           <p className="view-desc" style={{ fontSize: '13px', color: 'var(--text-dim, #888888)', margin: '4px 0 0 0' }}>
+             Local interactive sessions with open-weight models. Exploration remains purely conversational until explicitly promoted to a tracked task.
+@@ -394,6 +399,15 @@ export const ChatView: React.FC = () => {
+         </div>
+       )}
+ 
++      {/* TASK RING-IMPL-01: state banner reflects the latest Ring result only.
++          No result yet renders no banner; sovereign chat below is unchanged. */}
++      {ringResult?.mode === 'hosted' && <RingHostedBanner result={ringResult} />}
++      {ringResult?.mode === 'evidence-only' && <RingEvidenceOnlyBanner />}
++
++      {/* TASK RING-IMPL-01: Ring ask panel (NEW hosted path). The sovereign
++          conversation workspace below is unchanged. */}
++      <RingAskPanel onResult={setRingResult} />
++
+       {/* Main Chat Workspace */}
+       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden' }}>
+         {/* Session Selector Sidebar */}
+@@ -528,7 +542,7 @@ export const ChatView: React.FC = () => {
+                 }}
+                 data-testid="chat-active-model-badge"
+               >
+-                {activeModel?.device ? activeModel.device.toUpperCase() : 'LOCAL'}: {activeModel?.modelId || 'None'}
++                {ringBadgeText(ringResult, `${activeModel?.device ? activeModel.device.toUpperCase() : 'LOCAL'}: ${activeModel?.modelId || 'None'}`)}
+               </span>
+ 
+               {availableModels.length > 0 && (
+@@ -679,7 +693,7 @@ export const ChatView: React.FC = () => {
+                         color: m.role === 'user' ? 'var(--accent, #3b82f6)' : 'var(--status-green, #4ade80)',
+                       }}
+                     >
+-                      {m.role}
++                      {ringRoleLabel(m.role)}
+                     </span>
+                     <span>{new Date(m.timestamp).toLocaleTimeString()}</span>
+                   </div>
+diff --git a/tests/gui/ring-impl-01.test.ts b/tests/gui/ring-impl-01.test.ts
+new file mode 100644
+index 0000000..5014297
+--- /dev/null
++++ b/tests/gui/ring-impl-01.test.ts
+@@ -0,0 +1,245 @@
++/**
++ * TASK RING-IMPL-01: Ring hero surface (GUI consumer side).
++ * Static-markup tests in the established ui1-25 pattern
++ * (renderToStaticMarkup; no DOM interaction harness exists).
++ *
++ * Proves: chat is in INDUSTRIAL_DEMO_VIEWS; ActivityBar labels it Ring;
++ * badge/banner copy is verbatim; Ring results render sources +
++ * deterministic line + refusal in both modes; the verify card never
++ * invents output; the contract validator fails closed and never invents
++ * served-model identity.
++ */
++import { describe, expect, it } from 'vitest';
++import React from 'react';
++import { renderToStaticMarkup } from 'react-dom/server';
++import { ActivityBar, INDUSTRIAL_DEMO_VIEWS } from '../../src/gui/src/components/ActivityBar';
++import { LayoutProvider } from '../../src/gui/src/components/LayoutContext';
++import {
++  RING_EVIDENCE_ONLY_BADGE,
++  RING_HOSTED_BADGE,
++  RING_HOSTED_BANNER,
++  RING_NO_EXPORT_VERIFIED,
++  RING_TELEMETRY_BOUNDARY,
++  RingAskPanel,
++  RingEvidenceOnlyBanner,
++  RingHostedBanner,
++  RingResultCard,
++  RingVerifyCard,
++  ringBadgeText,
++  ringRoleLabel,
++} from '../../src/gui/src/components/RingAskPanel';
++import type { RingAskResult } from '../../src/gui/src/api/ring-types';
++import { validateRingAskResult } from '../../src/gui/src/api/ring-types';
++
++const HOSTED_RESULT: RingAskResult = {
++  mode: 'hosted',
++  providerName: 'Baseten',
++  modelId: 'meta-models/muse-spark-open-1026',
++  answer: 'Turbine 7 exceeded its demo vibration limit at rows 12 and 40.',
++  sources: [
++    { kind: 'sop', label: 'SOP-TURBINE-VIB-DEMO-V1 §4', path: 'demo/industrial/sop_turbine_vibration_monitoring.md' },
++    { kind: 'incident', label: 'MR-T07-2026-0822', path: 'demo/industrial/maintenance_report.txt' },
++    { kind: 'telemetry', label: 'T-07 vibration log', path: 'demo/industrial/turbine_vibration_log.csv' },
++  ],
++  deterministic: {
++    attempted: true,
++    verdict: 'WARNING',
++    overallRms: 4.125,
++    analysisId: 'telemetry-1793000000000-abcdef12',
++  },
++  refusalTest: { prepared: false },
++};
++
++const EVIDENCE_ONLY_RESULT: RingAskResult = {
++  mode: 'evidence-only',
++  answer: 'Local evidence summary: WARNING verdict, RMS 4.125 mm/s. No model ran.',
++  sources: [{ kind: 'telemetry', label: 'T-07 vibration log', path: 'demo/industrial/turbine_vibration_log.csv' }],
++  deterministic: {
++    attempted: true,
++    verdict: 'WARNING',
++    overallRms: 4.125,
++    analysisId: 'telemetry-1793000000000-abcdef12',
++  },
++  refusalTest: { prepared: false },
++};
++
++describe('ring demo visibility', () => {
++  it('includes chat in INDUSTRIAL_DEMO_VIEWS with Ring first as the hero surface', () => {
++    expect([...INDUSTRIAL_DEMO_VIEWS]).toContain('chat');
++    expect(INDUSTRIAL_DEMO_VIEWS[0]).toBe('chat');
++  });
++
++  it('labels the chat entry Ring in industrial demo mode', () => {
++    const html = renderToStaticMarkup(
++      React.createElement(
++        LayoutProvider,
++        { autoFetch: false },
++        React.createElement(ActivityBar, { activeView: 'chat', onSelectView: () => {}, industrialDemo: true }),
++      ),
++    );
++
++    expect(html).toContain('data-testid="activity-btn-chat"');
++    expect(html).toContain('Ring (Alt+1)');
++    expect(html).not.toContain('Chat &amp; Sessions');
++    expect(html).not.toContain('Chat & Sessions');
++  });
++});
++
++describe('ring identity copy', () => {
++  it('attributes assistant messages to RING and leaves user attribution unchanged', () => {
++    expect(ringRoleLabel('assistant')).toBe('RING');
++    expect(ringRoleLabel('user')).toBe('user');
++  });
++
++  it('shows the exact hosted badge and appends the served id only from server echo', () => {
++    expect(ringBadgeText(HOSTED_RESULT, 'LOCAL: None')).toBe(RING_HOSTED_BADGE);
++    expect(RING_HOSTED_BADGE).toBe('HOSTED · meta-models/muse-spark-open-1026 via Baseten');
++    expect(ringBadgeText(HOSTED_RESULT, 'LOCAL: None')).not.toContain('reported');
++
++    const echoed: RingAskResult = { ...HOSTED_RESULT, servedModelId: 'meta-models/muse-spark-open-1026' };
++    expect(ringBadgeText(echoed, 'LOCAL: None')).toBe(
++      'HOSTED · meta-models/muse-spark-open-1026 via Baseten · reported meta-models/muse-spark-open-1026',
++    );
++  });
++
++  it('shows the exact evidence-only badge and keeps the local badge before any ask', () => {
++    expect(ringBadgeText(EVIDENCE_ONLY_RESULT, 'LOCAL: None')).toBe(RING_EVIDENCE_ONLY_BADGE);
++    expect(RING_EVIDENCE_ONLY_BADGE).toBe('EVIDENCE-ONLY · no model configured');
++    expect(ringBadgeText(null, 'CUDA: qwen2.5-3b-instruct-local')).toBe('CUDA: qwen2.5-3b-instruct-local');
++  });
++
++  it('renders the exact hosted banner with identity and telemetry boundary', () => {
++    const html = renderToStaticMarkup(React.createElement(RingHostedBanner, { result: HOSTED_RESULT }));
++
++    expect(html).toContain(RING_HOSTED_BANNER);
++    expect(RING_HOSTED_BANNER).toBe('Meta model reasoning via Baseten. Company evidence stays in MAOS.');
++    expect(html).toContain('Baseten');
++    expect(html).toContain('meta-models/muse-spark-open-1026');
++    expect(html).toContain(RING_TELEMETRY_BOUNDARY);
++    expect(RING_TELEMETRY_BOUNDARY).toBe('raw telemetry never leaves MAOS; only the summary is sent');
++  });
++
++  it('renders the evidence-only banner stating no model wrote the answer and no model ran', () => {
++    const html = renderToStaticMarkup(React.createElement(RingEvidenceOnlyBanner));
++
++    expect(html).toContain('no model wrote this answer');
++    expect(html).toContain('no model ran');
++    expect(html).toContain('evidence-only mode');
++  });
++});
++
++describe('ring result rendering', () => {
++  function renderCard(result: RingAskResult, extra?: { reviewError?: string | null }) {
++    return renderToStaticMarkup(
++      React.createElement(RingResultCard, {
++        result,
++        reviewBusy: false,
++        reviewError: extra?.reviewError ?? null,
++        reviewRun: null,
++        onClaim: () => {},
++        verifyTranscript: {},
++      }),
++    );
++  }
++
++  it('renders hosted answers with sources, deterministic line, and the refusal action', () => {
++    const html = renderCard(HOSTED_RESULT);
++
++    expect(html).toContain('Turbine 7 exceeded its demo vibration limit');
++    expect(html).toContain('SOP-TURBINE-VIB-DEMO-V1 §4');
++    expect(html).toContain('demo/industrial/sop_turbine_vibration_monitoring.md');
++    expect(html).toContain('MR-T07-2026-0822');
++    expect(html).toContain('demo/industrial/turbine_vibration_log.csv');
++    expect(html).toContain('ring-source-item');
++    expect(html).toContain('Deterministic: WARNING · RMS 4.125 · telemetry-1793000000000-abcdef12');
++    expect(html).toContain('Try to claim completion without the required tool');
++    expect(html).toContain(RING_TELEMETRY_BOUNDARY);
++  });
++
++  it('renders evidence-only answers as-is with the no-model note and deterministic line', () => {
++    const html = renderCard(EVIDENCE_ONLY_RESULT);
++
++    expect(html).toContain('Local evidence summary: WARNING verdict, RMS 4.125 mm/s. No model ran.');
++    expect(html).toContain('No model wrote this answer and no model ran');
++    expect(html).toContain('Deterministic: WARNING · RMS 4.125 · telemetry-1793000000000-abcdef12');
++    expect(html).toContain('T-07 vibration log');
++  });
++
++  it('shows the gate refusal text verbatim when the Ring claim is refused', () => {
++    const reason = 'Accepted agent report was not found inside the active project.';
++    const html = renderCard(HOSTED_RESULT, { reviewError: reason });
++
++    expect(html).toContain('role="alert"');
++    expect(html).toContain(reason);
++  });
++
++  it('offers no refusal action when no deterministic analysis id exists', () => {
++    const noAnalysis: RingAskResult = {
++      ...HOSTED_RESULT,
++      deterministic: { attempted: false },
++    };
++    const html = renderCard(noAnalysis);
++
++    expect(html).not.toContain('Try to claim completion without the required tool');
++    expect(html).toContain('Deterministic: not attempted');
++  });
++});
++
++describe('ring verify card', () => {
++  it('shows the fallback when no export has been verified', () => {
++    const html = renderToStaticMarkup(React.createElement(RingVerifyCard, { transcript: {} }));
++
++    expect(html).toContain(RING_NO_EXPORT_VERIFIED);
++    expect(RING_NO_EXPORT_VERIFIED).toBe('No export verified yet.');
++    expect(html).not.toContain('PASS');
++  });
++
++  it('renders provided audit and export transcript lines verbatim', () => {
++    const html = renderToStaticMarkup(
++      React.createElement(RingVerifyCard, {
++        transcript: {
++          runId: 'judged-run-agent-abc123',
++          auditOutput: '{"target":"audit","verification":{"valid":true}}',
++          exportPath: 'artifacts/audit-export.json',
++          exportPassLine: 'Verification: PASS · 12 records',
++        },
++      }),
++    );
++
++    expect(html).toContain('maos-industrial verify audit --run-id judged-run-agent-abc123 --json');
++    // Static markup HTML-escapes quotes; the escaped form proves the verbatim content.
++    expect(html).toContain('{&quot;target&quot;:&quot;audit&quot;,&quot;verification&quot;:{&quot;valid&quot;:true}}');
++    expect(html).toContain('verify export artifacts/audit-export.json');
++    expect(html).toContain('Verification: PASS · 12 records');
++  });
++});
++
++describe('ring ask panel shell', () => {
++  it('renders the ask control with no result card before any ask', () => {
++    const html = renderToStaticMarkup(React.createElement(RingAskPanel));
++
++    expect(html).toContain('data-testid="ring-ask-panel"');
++    expect(html).toContain('Ask Ring');
++    expect(html).not.toContain('data-testid="ring-result-card"');
++  });
++});
++
++describe('ring contract validator', () => {
++  it('accepts valid hosted and evidence-only results without inventing identity', () => {
++    expect(validateRingAskResult(HOSTED_RESULT).mode).toBe('hosted');
++    expect(validateRingAskResult(EVIDENCE_ONLY_RESULT).mode).toBe('evidence-only');
++    expect('servedModelId' in validateRingAskResult(HOSTED_RESULT)).toBe(false);
++  });
++
++  it('fails closed on shape violations', () => {
++    expect(() => validateRingAskResult({ ...HOSTED_RESULT, mode: 'streaming' })).toThrow('RING_ASK_INVALID');
++    expect(() => validateRingAskResult({ ...HOSTED_RESULT, answer: '' })).toThrow('RING_ASK_INVALID');
++    expect(() =>
++      validateRingAskResult({ ...HOSTED_RESULT, sources: [{ kind: 'wiki', label: 'x', path: 'y' }] }),
++    ).toThrow('RING_ASK_INVALID');
++    expect(() => validateRingAskResult({ ...HOSTED_RESULT, deterministic: { attempted: 'yes' } })).toThrow(
++      'RING_ASK_INVALID',
++    );
++    expect(() => validateRingAskResult({ ...HOSTED_RESULT, servedModelId: '  ' })).toThrow('RING_ASK_INVALID');
++  });
++});

@@ -1,0 +1,38 @@
+[
+  {
+    "name": "installed-repl-help",
+    "executable": "C:\\Program Files\\nodejs\\node.exe",
+    "arguments": [
+      "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces\\app\\dist\\cli\\index.js",
+      "repl",
+      "--help"
+    ],
+    "workingDirectory": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\fresh doctor project with spaces",
+    "exitCode": 0,
+    "stdout": "installed-repl-help.stdout.log",
+    "stderr": "installed-repl-help.stderr.log"
+  },
+  {
+    "name": "installed-doctor-missing-config",
+    "executable": "C:\\Program Files\\nodejs\\node.exe",
+    "arguments": [
+      "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces\\app\\dist\\cli\\index.js",
+      "doctor"
+    ],
+    "workingDirectory": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\fresh doctor project with spaces",
+    "exitCode": 1,
+    "stdout": "installed-doctor-missing-config.stdout.log",
+    "stderr": "installed-doctor-missing-config.stderr.log"
+  },
+  {
+    "name": "installed-electron-version",
+    "executable": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces\\app\\desktop\\node_modules\\electron\\dist\\electron.exe",
+    "arguments": [
+      "--version"
+    ],
+    "workingDirectory": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\installed app with spaces\\app",
+    "exitCode": 1,
+    "stdout": "installed-electron-version.stdout.log",
+    "stderr": "installed-electron-version.stderr.log"
+  }
+]

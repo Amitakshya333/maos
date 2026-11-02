@@ -1,0 +1,18 @@
+Day 2 review packet hashes (SHA-256)
+
+Declared post-checkpoint base:
+  239a0042b08a3960d3c89f890f01ab194ff82f1f
+
+Rejected 15-file parent snapshot (retained historical artifacts):
+  day2-meta-repl.patch 32eff1a595bb807c9350e04fab2ff8f5e1952f67d8d156a54848e3dbe765ac78
+  day2-meta-repl-source-hashes.json da2c2add01139c196e45fc6c1c2c0aa5e6fa5ff1af3ed5eaf9b212e89ee2cdea
+
+Correction-only delta (21 paths, against reconstructed rejected snapshot):
+  correction-only.patch 7e91283f135b6ea55ccc7eac5e84a1273d6f19b1bfc1cc3ae830d7a79eac345c
+  correction-source-hashes.json f44b64a6a9a7b2e250b69c4e7fd0779e5864f5ed0cb8b948d264adb52511976d
+
+Complete post-checkpoint packet (27 paths, against declared base):
+  complete-post-checkpoint.patch 43dfbc70d4ff90f2d8dd30a5a6db665b63ee9996b0092db738b3f8ad3d3ea54a
+  complete-post-checkpoint-source-hashes.json b9bc4c605c07bdcf25e83de6a781a18095b523bd04866906099a02d2188dd6bc
+
+Manifest sha256 values hash the exact JSON file bytes. Each manifest entry includes both raw-file sha256 and CRLF-to-LF-normalized sha256.

@@ -1,0 +1,3 @@
+b683629e0cfa81408a2b5de5632a6c21eda83971b2d71d797d2d031c0f56e516  candidate.patch
+d7a5dc6cb4a3f521963fe4f89de877564d81a4efb00efaeec72bb1e5ca4efabd  run-log.md
+base-commit  b76363a77e931c417327b7a5fe8cb3a299f125c1

@@ -1,0 +1,24 @@
+﻿{
+    "sourceRevision":  "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+    "sourceDeltaSha256":  "ea2ffa2c90cb571add1cab5d3b9f5b26ec2d44b30b0cadbfd621a852304903bb",
+    "installRoot":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M6-7c1a\\destination with spaces",
+    "installPathContainsSpaces":  true,
+    "installerSucceeded":  true,
+    "genericCliVersionExitCode":  0,
+    "industrialCliHelpExitCode":  0,
+    "missingConfigDoctorExitCode":  1,
+    "missingConfigActionable":  true,
+    "nestedProjectDoctorExitCode":  1,
+    "nestedProjectNoAncestorGit":  true,
+    "wrongGitEnvironmentIgnored":  true,
+    "requiredExternalRustEngineReported":  true,
+    "doctorNoInference":  true,
+    "electronExe":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M6-7c1a\\destination with spaces\\app\\desktop\\node_modules\\electron\\dist\\electron.exe",
+    "electronVersion":  "45.0.0",
+    "electronVersionCommandExitCode":  0,
+    "isolatedCacheFileCounts":  {
+                                    "npmFiles":  501,
+                                    "electronFiles":  2
+                                },
+    "guiWorkflowLaunched":  false
+}

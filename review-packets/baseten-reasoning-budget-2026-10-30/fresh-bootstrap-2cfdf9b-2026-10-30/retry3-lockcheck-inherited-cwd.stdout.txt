@@ -1,0 +1,7 @@
+ARGV=["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-baseten-budget-2cfdf9b-retry3-checkout\\package.json","C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-baseten-budget-2cfdf9b-retry3-checkout\\package-lock.json"]
+CWD=C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-baseten-budget-2cfdf9b-retry3-checkout
+EXEC=C:\Program Files\nodejs\node.exe
+EXISTS=[{"path":"C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-baseten-budget-2cfdf9b-retry3-checkout\\package.json","exists":true},{"path":"C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-baseten-budget-2cfdf9b-retry3-checkout\\package-lock.json","exists":true}]
+IDENTITY={"packageName":"maosorch","lockName":"maosorch","rootName":"maosorch","packageVersion":"0.3.0","lockVersion":"0.3.0","rootVersion":"0.3.0"}
+MISMATCHES=[]
+NATIVE_EXIT=0

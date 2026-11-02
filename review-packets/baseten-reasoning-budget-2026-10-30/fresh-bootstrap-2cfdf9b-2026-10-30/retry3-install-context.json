@@ -1,0 +1,13 @@
+{
+  "bundle": "C:\\maos\\review-packets\\baseten-reasoning-budget-2026-10-30\\fresh-bootstrap-2cfdf9b-2026-10-30\\retry3-native-tar-maos-industrial-windows-x64.zip",
+  "bundleSha256": "797b3f89d94b37f9ddb765e413679d4ae8335aad18e5feac2d8d481a65cd1c59",
+  "bundleRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS bundle 2cfdf9b retry3",
+  "installRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS installed mock 2cfdf9b retry3",
+  "isolatedNpmCache": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\MAOS install home 2cfdf9b retry3\\cache",
+  "node": "C:\\Program Files\\nodejs\\node.exe",
+  "npm": "C:\\Program Files\\nodejs\\npm.cmd",
+  "tar": "C:\\Windows\\System32\\tar.exe",
+  "pwsh": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+  "registry": "https://registry.npmjs.org/",
+  "hostedProviderCredentialsInherited": false
+}

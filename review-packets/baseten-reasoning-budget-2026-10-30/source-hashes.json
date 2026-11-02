@@ -1,0 +1,44 @@
+{
+  "baseCommit": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "candidate": "Baseten reasoning/output-budget compatibility correction",
+  "generatedOn": "2026-10-30",
+  "patchPath": "review-packets/baseten-reasoning-budget-2026-10-30/f201cfe-to-baseten-reasoning-budget.patch",
+  "patchSha256": "a27be14a64b11f58bed185c7b053fbe5ce677f884da8c84bcbc8ca085af5d53a",
+  "files": [
+    {
+      "path": "src/backends/openai-provider.ts",
+      "bytes": 12898,
+      "rawSha256": "fe1869d65dea2e25f837adb00f7064fa932ab199dfeda404020a76740aaa131d",
+      "lfSha256": "fe1869d65dea2e25f837adb00f7064fa932ab199dfeda404020a76740aaa131d",
+      "status": "modified"
+    },
+    {
+      "path": "tests/backends/baseten-api-provider-boundary.test.ts",
+      "bytes": 21444,
+      "rawSha256": "83f04735bca824bf9ccdec0e7b9e817dee4fe00cae575f3224d45ee8a19c6d90",
+      "lfSha256": "83f04735bca824bf9ccdec0e7b9e817dee4fe00cae575f3224d45ee8a19c6d90",
+      "status": "modified"
+    },
+    {
+      "path": "tests/backends/openai-provider-local-tool-call.test.ts",
+      "bytes": 5451,
+      "rawSha256": "51d268a63580bc824e20a0940e226d2d3182b17c9d9b9fc16af1734a82dacbfc",
+      "lfSha256": "51d268a63580bc824e20a0940e226d2d3182b17c9d9b9fc16af1734a82dacbfc",
+      "status": "modified"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "bytes": 37042,
+      "rawSha256": "2bfea2f691ba040396f5d64436adafb3d686f5adaad900eb21574f759d4261df",
+      "lfSha256": "2bfea2f691ba040396f5d64436adafb3d686f5adaad900eb21574f759d4261df",
+      "status": "modified"
+    },
+    {
+      "path": "review-packets/baseten-reasoning-budget-2026-10-30/BASETEN_HACKATHON_PILOT_OWNER_DECISION.md",
+      "bytes": 4526,
+      "rawSha256": "2855666195c4b33c36339a7f816cb86fcaddfb59f0657ec8685d3dcf7724daa6",
+      "lfSha256": "2855666195c4b33c36339a7f816cb86fcaddfb59f0657ec8685d3dcf7724daa6",
+      "status": "added"
+    }
+  ]
+}

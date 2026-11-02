@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-29T14:13:47.1385034+05:30",
+  "expectedHead": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "stagedPathCountBeforeRestore": 17,
+  "stagedPathSetMatchedManifest": true,
+  "stagedBlobLfHashesHadMatchedManifest": true,
+  "diffCheckExitCode": 2,
+  "diffCheckOutput": "src/cli/doctor.ts:320: new blank line at EOF.",
+  "commitCreated": false,
+  "restoreStagedExactManifestPathsOnly": true,
+  "indexEmptyAfterRestore": true,
+  "currentRawHashesMatched": 17,
+  "currentLfHashesMatched": 17,
+  "workingTreeFilesPreserved": true
+}

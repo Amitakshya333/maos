@@ -1,0 +1,40 @@
+diff --git a/src/gui/src/components/Header.tsx b/src/gui/src/components/Header.tsx
+index 6e847d0..642e378 100644
+--- a/src/gui/src/components/Header.tsx
++++ b/src/gui/src/components/Header.tsx
+@@ -12,6 +12,7 @@ interface HeaderProps {
+ 
+ function statusDotTone(status: string): string {
+   if (status.endsWith('HEALTHY') || status.endsWith('AVAILABLE')) return '';
++  if (status.endsWith('NOT REPORTED')) return 'muted';
+   return status.endsWith('UNAVAILABLE') || status.endsWith('UNHEALTHY') ? 'red' : 'amber';
+ }
+ 
+diff --git a/src/gui/src/styles/layout.css b/src/gui/src/styles/layout.css
+index 41f36b7..b2e1f47 100644
+--- a/src/gui/src/styles/layout.css
++++ b/src/gui/src/styles/layout.css
+@@ -90,6 +90,10 @@
+   background-color: var(--status-red);
+ }
+ 
++.status-dot.muted {
++  background-color: var(--text-dim);
++}
++
+ .header-actions {
+   display: flex;
+   align-items: center;
+diff --git a/tests/gui/ui1-25-truthful-readiness.test.ts b/tests/gui/ui1-25-truthful-readiness.test.ts
+index df8b5ca..19efe91 100644
+--- a/tests/gui/ui1-25-truthful-readiness.test.ts
++++ b/tests/gui/ui1-25-truthful-readiness.test.ts
+@@ -24,6 +24,8 @@ describe('GUI readiness status', () => {
+     expect(html).toContain('SESSION TOKEN: NO TOKEN');
+     expect(html).toContain('MODEL: NOT REPORTED');
+     expect(html).toContain('ENGINE: NOT REPORTED');
++    expect(html).toContain('status-dot muted');
++    expect(html).not.toContain('amber');
+     expect(html).not.toContain('LOCAL API // EGRESS UNVERIFIED');
+     expect(html).not.toContain('SHA-256 VERIFIED');
+   });

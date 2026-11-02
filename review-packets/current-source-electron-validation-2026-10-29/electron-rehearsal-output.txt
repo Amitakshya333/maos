@@ -1,0 +1,1 @@
+{"status":"PASS","evidencePath":"C:\\maos\\review-packets\\current-source-electron-validation-2026-10-29\\electron-rehearsal.json","finalRunId":"judged-run-agent-telemetry-1793214135375-63095596","finalAnalysisId":"telemetry-1793214135375-63095596","engineeringVerdict":"FAIL","downloadedSha256":"7dd1b2031d08ca16080626f807aa69d31380ce34a90af88d78a6f11943191646"}

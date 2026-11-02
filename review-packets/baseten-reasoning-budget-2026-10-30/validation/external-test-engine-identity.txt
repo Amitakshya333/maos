@@ -1,0 +1,4 @@
+path=C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\baseten-gate-validation-2026-10-29\rust\target\release\maos-engine.exe
+bytes=472064
+sha256=3DC07F0A5B097867E5E9B150D54E6490898B7465DCFE654A6E490D9C9B6DA2A2
+status=external, unsigned/unapproved; identity only, not trust attestation

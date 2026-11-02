@@ -1,0 +1,18 @@
+﻿{
+    "timestamp":  "2026-10-29T15:00:51.3512891+05:30",
+    "command":  "node \u003ctest-only installed Electron rehearsal\u003e --package-root \u003cinstalled app\u003e --evidence-path \u003cpacket\u003e",
+    "exitCode":  1,
+    "durationSeconds":  27.2,
+    "sourceCommit":  "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+    "bundleSha256":  "1f333348e92ea988e8fa9ef3be37dd362e69e6d1ab380d3e653f731240b8b61b",
+    "installedElectronPath":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed app retry with spaces\\app\\desktop\\node_modules\\electron\\dist\\electron.exe",
+    "installedElectronVersion":  "45.0.0",
+    "playwrightVersion":  "1.64.1",
+    "externalEngineSha256":  "3e2ac50a676d6da67807d55544702523bac46d9656c4df43690b52515b3b7f77",
+    "externalEngineApproved":  false,
+    "secretLikeEnvironmentNamesRemoved":  4,
+    "explicitUserDataAndProjectTemp":  true,
+    "stdoutPath":  "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\electron-installed-journey.stdout.log",
+    "stderrPath":  "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\electron-installed-journey.stderr.log",
+    "evidencePath":  "C:\\maos\\review-packets\\committed-install-gui-validation-2026-10-29\\electron-installed-journey.json"
+}

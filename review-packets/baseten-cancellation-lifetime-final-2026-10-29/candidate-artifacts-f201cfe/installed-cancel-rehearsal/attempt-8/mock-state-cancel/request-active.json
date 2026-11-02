@@ -1,0 +1,17 @@
+{
+  "requestCount": 1,
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "model": "meta-models/muse-spark-open-1026",
+  "toolNames": [
+    "analyze_telemetry_csv",
+    "task_complete"
+  ],
+  "authorizationHeaderPresentAtLoopback": false,
+  "authorizationWasConfiguredAtClient": true,
+  "contentLength": 1915,
+  "receivedAt": "2026-10-29T19:00:31.079Z",
+  "connectionClosed": true,
+  "requestAborted": false,
+  "closedAt": "2026-10-29T19:00:31.515Z"
+}

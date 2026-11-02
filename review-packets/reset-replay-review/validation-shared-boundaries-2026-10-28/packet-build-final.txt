@@ -1,0 +1,19 @@
+COMMAND=node review-packets/reset-replay-review/validation-shared-boundaries-2026-10-28/build-shared-boundaries-packet.cjs
+{
+  "patchPath": "C:\\maos\\review-packets\\reset-replay-review\\shared-boundaries-canonical.patch",
+  "patchBytes": 661002,
+  "patchSha256": "96fdbeb470c3862248021602707b6f657ec77893e9d76f7d948d4f2d77501e01",
+  "manifestPath": "C:\\maos\\review-packets\\reset-replay-review\\shared-boundaries-source-hashes.json",
+  "scopeCount": 94,
+  "trackedCount": 72,
+  "addedCount": 22,
+  "excludedTracked": [
+    ".maos/maos.config.json",
+    ".maos/pool.json",
+    "demo/industrial/MASTER_DEMO_PLAN.md",
+    "demo/industrial/RECORDING_READINESS.md"
+  ],
+  "excludedUntrackedCount": 56,
+  "manifestSha256": "f15af24c01a5c3cdff3ff911c6bb0381df553c15e43617174ac4e6ecdddb3fc2"
+}
+EXIT_CODE=0

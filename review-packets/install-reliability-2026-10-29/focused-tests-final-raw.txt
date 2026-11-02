@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-install-reliability-1ca70dbb9f03455cbb4af596caa7a149/source
+
+
+ Test Files  3 passed (3)
+      Tests  17 passed (17)
+   Start at  02:27:48
+   Duration  11.19s (transform 2.32s, setup 0ms, import 4.83s, tests 5.59s, environment 0ms)
+

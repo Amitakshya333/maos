@@ -1,0 +1,1 @@
+MAOS_TEST_ENGINE_PATH=C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\baseten-gate-validation-2026-10-29\rust\target\release\maos-engine.exe node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/backends/baseten-api-provider-boundary.test.ts tests/backends/openai-provider-local-tool-call.test.ts tests/industrial/meta-model-api-contract.test.ts

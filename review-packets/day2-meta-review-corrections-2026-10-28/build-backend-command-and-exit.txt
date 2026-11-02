@@ -1,0 +1,2 @@
+COMMAND: npm run build:backend
+EXIT_CODE: 0

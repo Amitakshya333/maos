@@ -1,0 +1,12 @@
+{
+  "command": "npm ci --no-audit --no-fund",
+  "exitCode": 0,
+  "stdoutLog": "npm-ci.stdout.log",
+  "stderrLog": "npm-ci.stderr.log",
+  "npmCacheInitialEntries": 0,
+  "npmCacheFinalEntries": 382,
+  "hookPathBefore": ".husky/_",
+  "hookPathAfter": ".husky/_",
+  "hookPathUnchanged": true,
+  "worktreeStatus": null
+}

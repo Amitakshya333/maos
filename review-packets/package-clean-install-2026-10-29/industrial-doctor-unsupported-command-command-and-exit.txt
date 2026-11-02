@@ -1,0 +1,3 @@
+COMMAND: maos-industrial doctor (unsupported namespace command; intended shared CLI command is maos doctor)
+EXIT_CODE: 1
+CLASSIFICATION: Invocation mistake; not a product failure.

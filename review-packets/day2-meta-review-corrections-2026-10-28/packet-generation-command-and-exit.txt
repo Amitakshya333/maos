@@ -1,0 +1,3 @@
+COMMAND: node <temporary generator> <fresh reconstruction of rejected snapshot>
+TEMP_ROOT: C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-day2-packet-rebuild-b669046105314e9991595907fb1f5552
+EXIT_CODE: 0

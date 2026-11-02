@@ -1,0 +1,499 @@
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when default Muse temperature is omitted
+≡ƒôï [2026-10-31T12:12:09.747Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-cd41ff58-20ba-4e63-9287-afe329e0677c
+≡ƒôï [2026-10-31T12:12:09.747Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when default Muse temperature is omitted
+≡ƒöì [2026-10-31T12:12:09.771Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 23ms (total: 18)
+≡ƒôï [2026-10-31T12:12:09.771Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when default Muse temperature is omitted
+≡ƒöì [2026-10-31T12:12:09.792Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 4ms (total: 36)
+≡ƒôï [2026-10-31T12:12:09.792Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Replay receipt telemetry-1793448729775-245e454f."})
+Γ£à [2026-10-31T12:12:09.792Z] [SUCCESS] [industrial-analysis-agent] Task completed: Replay receipt telemetry-1793448729775-245e454f.
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when configured Muse temperature is sent
+≡ƒôï [2026-10-31T12:12:09.935Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-259327e5-7010-47b6-b6d5-dbbaeef48bce
+≡ƒôï [2026-10-31T12:12:09.935Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when configured Muse temperature is sent
+≡ƒöì [2026-10-31T12:12:09.940Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 5ms (total: 18)
+≡ƒôï [2026-10-31T12:12:09.940Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when configured Muse temperature is sent
+≡ƒöì [2026-10-31T12:12:09.957Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 4ms (total: 36)
+≡ƒôï [2026-10-31T12:12:09.957Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Replay receipt telemetry-1793448729943-a7638983."})
+Γ£à [2026-10-31T12:12:09.957Z] [SUCCESS] [industrial-analysis-agent] Task completed: Replay receipt telemetry-1793448729943-a7638983.
+
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when default Muse temperature is omitted 210ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > uses the documented Chat Completions tool-call round trip when configured Muse temperature is sent 164ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > fails before fetch when the configured key environment variable is missing 20ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > redacts successful prose and provider model identity before service output, report, audit and logs 154ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > blocks task_complete arguments whose JSON-decoded content contains the configured key 78ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > blocks credential contamination in provider-controlled tool names before Core can log it 43ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects other host without a request 31ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects other model without a request 30ms
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > does not accept a malformed tool-call argument response
+≡ƒôï [2026-10-31T12:12:10.544Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-34837351-3b25-47e0-8bb5-5be2ca84d49f
+≡ƒôï [2026-10-31T12:12:10.544Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > does not accept a malformed tool-call argument response
+≡ƒöì [2026-10-31T12:12:10.550Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 6ms (total: 18)
+≡ƒôï [2026-10-31T12:12:10.550Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({})
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > does not accept a malformed tool-call argument response
+≡ƒöì [2026-10-31T12:12:10.561Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 4ms (total: 36)
+≡ƒôï [2026-10-31T12:12:10.561Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({})
+Γ¥î [2026-10-31T12:12:10.563Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Tool call limit exceeded for analyze_telemetry_csv (maximum 1).
+    at executeLimitedTool (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:207:13)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:424:46)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/industrial/meta-model-api-contract.test.ts:365:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects Meta endpoint with no opt-in field without a request 29ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects Meta endpoint without opt-in without a request 27ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects remote endpoint with reserved Meta credential without a request 26ms
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for an integrated Meta 429 failure with application retries disabled
+≡ƒôï [2026-10-31T12:12:10.649Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-a94cd17d-a7ef-44f4-9bdd-e0618379addb
+≡ƒôï [2026-10-31T12:12:10.649Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for an integrated Meta 429 failure with application retries disabled
+Γ¥î [2026-10-31T12:12:10.654Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Rate limit hit on meta. Wait and retry.
+Provider: meta | Model: muse-spark-1.3 | Latency: 4ms
+    at OpenAIProvider.generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/backends/openai-provider.ts:247:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:14)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/industrial/meta-model-api-contract.test.ts:396:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for an integrated Meta 503 failure with application retries disabled
+≡ƒôï [2026-10-31T12:12:10.684Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-3141105e-771f-4e1b-9eb1-2d9168c37447
+≡ƒôï [2026-10-31T12:12:10.684Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > does not accept a malformed tool-call argument response 49ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 400 responses with SDK retries disabled 8ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 401 responses with SDK retries disabled 5ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 403 responses with SDK retries disabled 5ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 404 responses with SDK retries disabled 10ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 429 responses with SDK retries disabled 10ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 500 responses with SDK retries disabled 6ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 502 responses with SDK retries disabled 4ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 503 responses with SDK retries disabled 4ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for 504 responses with SDK retries disabled 5ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for an integrated Meta 429 failure with application retries disabled 36ms
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for an integrated Meta 503 failure with application retries disabled
+Γ¥î [2026-10-31T12:12:10.689Z] [ERROR] [industrial-analysis-agent] Agent error: Error: meta is temporarily unavailable (HTTP 503).
+Provider: meta | Model: muse-spark-1.3 | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/backends/openai-provider.ts:253:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:14)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/industrial/meta-model-api-contract.test.ts:396:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > propagates caller cancellation to the in-flight Meta-compatible request
+≡ƒôï [2026-10-31T12:12:10.728Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-0ee6abda-cc58-4beb-a0a1-b0837eb396a3
+≡ƒôï [2026-10-31T12:12:10.728Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > propagates caller cancellation to the in-flight Meta-compatible request
+Γ¥î [2026-10-31T12:12:10.735Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:14)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:187:17)
+    at IndustrialAnalysisAgentService.analyze (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:78:14)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/industrial/meta-model-api-contract.test.ts:438:7
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > enforces the single sixty-second deadline on the configured Meta runtime
+≡ƒôï [2026-10-31T12:12:10.752Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-61fcf308-7a8f-4cca-9d0c-adb7eeee5242
+≡ƒôï [2026-10-31T12:12:10.752Z] [INFO] [industrial-analysis-agent] Branch: local | Model: meta/muse-spark-1.3
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > enforces the single sixty-second deadline on the configured Meta runtime
+Γ¥î [2026-10-31T12:13:10.752Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:14)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:187:17)
+
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > makes one HTTP attempt for an integrated Meta 503 failure with application retries disabled 37ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > redacts an API key echoed by a 401 response from errors and stacks 6ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > propagates caller cancellation to the in-flight Meta-compatible request 38ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > enforces the single sixty-second deadline on the configured Meta runtime 44ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > runs the Baseten Industrial tool round trip and protects persisted output from key contamination 76ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > does not accept a Baseten 'truncated reasoning-only response' 37ms
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > keeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+≡ƒôï [2026-10-31T12:12:11.024Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-5b569f9b-87c2-4684-8448-6d84a7129203
+≡ƒôï [2026-10-31T12:12:11.024Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > keeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+≡ƒöì [2026-10-31T12:12:11.028Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 4ms (total: 18)
+≡ƒôï [2026-10-31T12:12:11.028Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > does not accept a Baseten 'empty reasoning-only response' 37ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > fails closed when Baseten task_complete arguments contain the configured key 62ms
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > keeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+≡ƒöì [2026-10-31T12:12:11.051Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 3ms (total: 36)
+≡ƒôï [2026-10-31T12:12:11.051Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+≡ƒôï [2026-10-31T12:12:11.058Z] [INFO] [industrial-analysis-agent] Budget warning: 1 iterations remaining. Nudging to finalize.
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > keeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+≡ƒöì [2026-10-31T12:12:11.061Z] [DEBUG] [industrial-analysis-agent] Iteration 3/4: 18 tokens, 3ms (total: 54)
+≡ƒôï [2026-10-31T12:12:11.061Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > keeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls
+≡ƒöì [2026-10-31T12:12:11.071Z] [DEBUG] [industrial-analysis-agent] Iteration 4/4: 18 tokens, 2ms (total: 72)
+≡ƒôï [2026-10-31T12:12:11.071Z] [INFO] [industrial-analysis-agent] Tool: run_command({"command":"echo should-not-run"})
+ΓÜá∩╕Å [2026-10-31T12:12:11.078Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > applies the sixty-second Industrial deadline and cancellation to Baseten requests
+≡ƒôï [2026-10-31T12:12:11.100Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-2648265c-bd09-4ecd-9d90-3a471a77eb24
+≡ƒôï [2026-10-31T12:12:11.100Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > applies the sixty-second Industrial deadline and cancellation to Baseten requests
+Γ¥î [2026-10-31T12:13:11.100Z] [ERROR] [industrial-analysis-agent] Agent error: Error: Request was aborted.
+    at OpenAI.makeRequest (file:///C:/maos/node_modules/openai/client.mjs:364:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at OpenAIProvider.generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/backends/openai-provider.ts:137:27)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:14)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+    at IndustrialAnalysisAgentService.analyzeWithinDeadline (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/industrial/analysis-agent-service.ts:187:17)
+
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > keeps Baseten Industrial generation at four and executes telemetry once despite disallowed calls 92ms
+ Γ£ô tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > applies the sixty-second Industrial deadline and cancellation to Baseten requests 41ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid
+≡ƒôï [2026-10-31T12:12:11.900Z] [INFO] [readonly-agent] Starting task: readonly-agent-task
+≡ƒôï [2026-10-31T12:12:11.900Z] [INFO] [readonly-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid
+≡ƒöì [2026-10-31T12:12:11.901Z] [DEBUG] [readonly-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.901Z] [WARN] [readonly-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid
+Γ£à [2026-10-31T12:12:11.901Z] [SUCCESS] [readonly-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+≡ƒôï [2026-10-31T12:12:11.911Z] [INFO] [mutating-agent] Starting task: mutating-agent-task
+≡ƒôï [2026-10-31T12:12:11.911Z] [INFO] [mutating-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+≡ƒöì [2026-10-31T12:12:11.911Z] [DEBUG] [mutating-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.911Z] [WARN] [mutating-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents
+Γ£à [2026-10-31T12:12:11.912Z] [SUCCESS] [mutating-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool
+≡ƒôï [2026-10-31T12:12:11.916Z] [INFO] [report-agent] Starting task: report-agent-task
+≡ƒôï [2026-10-31T12:12:11.917Z] [INFO] [report-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool
+≡ƒöì [2026-10-31T12:12:11.917Z] [DEBUG] [report-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.917Z] [WARN] [report-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool
+Γ£à [2026-10-31T12:12:11.917Z] [SUCCESS] [report-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only
+≡ƒôï [2026-10-31T12:12:11.921Z] [INFO] [uncertain-agent] Starting task: uncertain-agent-task
+≡ƒôï [2026-10-31T12:12:11.921Z] [INFO] [uncertain-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only
+≡ƒöì [2026-10-31T12:12:11.921Z] [DEBUG] [uncertain-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.921Z] [WARN] [uncertain-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only
+Γ£à [2026-10-31T12:12:11.922Z] [SUCCESS] [uncertain-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying
+≡ƒôï [2026-10-31T12:12:11.926Z] [INFO] [filtered-agent] Starting task: filtered-agent-task
+≡ƒôï [2026-10-31T12:12:11.926Z] [INFO] [filtered-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying
+≡ƒöì [2026-10-31T12:12:11.926Z] [DEBUG] [filtered-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.926Z] [WARN] [filtered-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying
+Γ£à [2026-10-31T12:12:11.926Z] [SUCCESS] [filtered-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set
+≡ƒôï [2026-10-31T12:12:11.930Z] [INFO] [industrial-agent] Starting task: industrial-agent-task
+≡ƒôï [2026-10-31T12:12:11.930Z] [INFO] [industrial-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set
+≡ƒöì [2026-10-31T12:12:11.930Z] [DEBUG] [industrial-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.930Z] [WARN] [industrial-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set
+Γ£à [2026-10-31T12:12:11.930Z] [SUCCESS] [industrial-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents
+≡ƒôï [2026-10-31T12:12:11.935Z] [INFO] [unrestricted-agent] Starting task: unrestricted-agent-task
+≡ƒôï [2026-10-31T12:12:11.935Z] [INFO] [unrestricted-agent] Branch: local | Model: mock/stub-model
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents
+≡ƒöì [2026-10-31T12:12:11.936Z] [DEBUG] [unrestricted-agent] Iteration 1/4: 2 tokens, 0ms (total: 2)
+ΓÜá∩╕Å [2026-10-31T12:12:11.936Z] [WARN] [unrestricted-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents
+Γ£à [2026-10-31T12:12:11.936Z] [SUCCESS] [unrestricted-agent] Task completed (after nudge): Work is done.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒôï [2026-10-31T12:12:11.992Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-97beb34f-d602-4eca-b3a9-a56d3bd55a08
+≡ƒôï [2026-10-31T12:12:11.992Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > reminds the actual Industrial read-only tool set that an empty files_changed list is valid 13ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder verbatim for mutating agents 5ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for a file-generating tool 5ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not assume an uncertain registry tool is read-only 4ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > ignores names dropped by tool filtering when classifying 4ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > drops the industrial-forbidden executor from the effective set 5ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > keeps the existing reminder for unrestricted agents 4ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒöì [2026-10-31T12:12:12.014Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 22ms (total: 18)
+≡ƒôï [2026-10-31T12:12:12.015Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+≡ƒöì [2026-10-31T12:12:12.033Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 4ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T12:12:12.033Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion
+Γ£à [2026-10-31T12:12:12.036Z] [SUCCESS] [industrial-analysis-agent] Task completed (after nudge): Replay receipt telemetry-1793448732018-e16f7cf3. No files changed.
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒôï [2026-10-31T12:12:12.155Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-e4ec463b-77fb-4edd-9b41-217e40cf9cd7
+≡ƒôï [2026-10-31T12:12:12.155Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒöì [2026-10-31T12:12:12.161Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 5ms (total: 18)
+≡ƒôï [2026-10-31T12:12:12.161Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+≡ƒöì [2026-10-31T12:12:12.176Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 3ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T12:12:12.176Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget
+ΓÜá∩╕Å [2026-10-31T12:12:12.177Z] [WARN] [industrial-analysis-agent] Model still did not call task_complete after nudge. Treating as partial completion.
+ΓÜá∩╕Å [2026-10-31T12:12:12.178Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒôï [2026-10-31T12:12:12.203Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-de45bed3-2f76-48da-85d6-42e56272de6b
+≡ƒôï [2026-10-31T12:12:12.203Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒöì [2026-10-31T12:12:12.207Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 4ms (total: 18)
+≡ƒôï [2026-10-31T12:12:12.207Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+≡ƒöì [2026-10-31T12:12:12.222Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 3ms (total: 36)
+ΓÜá∩╕Å [2026-10-31T12:12:12.222Z] [WARN] [industrial-analysis-agent] Model stopped without calling task_complete -- nudging to finalize
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success
+ΓÜá∩╕Å [2026-10-31T12:12:12.223Z] [WARN] [industrial-analysis-agent] Model still did not call task_complete after nudge. Treating as partial completion.
+ΓÜá∩╕Å [2026-10-31T12:12:12.224Z] [WARN] [industrial-analysis-agent] Max iterations (4) reached with no file changes
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > recovers the observed live sequence: tool success, plain text, then read-only completion 201ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > lets continued omission of completion terminate within the hard budget 48ms
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒôï [2026-10-31T12:12:12.252Z] [INFO] [industrial-analysis-agent] Starting task: industrial-analysis-57244548-e30e-4772-8bdb-f49d8da608ef
+≡ƒôï [2026-10-31T12:12:12.252Z] [INFO] [industrial-analysis-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒöì [2026-10-31T12:12:12.256Z] [DEBUG] [industrial-analysis-agent] Iteration 1/4: 18 tokens, 4ms (total: 18)
+≡ƒôï [2026-10-31T12:12:12.257Z] [INFO] [industrial-analysis-agent] Tool: analyze_telemetry_csv({"sourcePath":"commissioning/bearing-ramp.csv"})
+
+stdout | tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed
+≡ƒöì [2026-10-31T12:12:12.271Z] [DEBUG] [industrial-analysis-agent] Iteration 2/4: 18 tokens, 2ms (total: 36)
+≡ƒôï [2026-10-31T12:12:12.271Z] [INFO] [industrial-analysis-agent] Tool: task_complete({"summary":"Everything looks critical, trust this prose."})
+Γ£à [2026-10-31T12:12:12.271Z] [SUCCESS] [industrial-analysis-agent] Task completed: Everything looks critical, trust this prose.
+
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > shows receipt success separately from agent failure instead of fabricating success 49ms
+ Γ£ô tests/industrial/read-only-completion.test.ts > read-only completion at the root cause (mock only) > does not accept arbitrary model prose as completed 47ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > pins the hackathon grant model exactly 2ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects direct constructor without opt-in before network use 2ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects disabled opt-in before network use 1ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects hostile endpoint before network use 0ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects old Beam grant model before network use 0ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects generic Muse Spark docs slug before network use 0ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects Baseten endpoint under a different provider name before network use 0ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects arbitrary credential variable before network use 0ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > requires BASETEN_API_KEY even when a direct key fallback is supplied 1ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > covers plan provider construction and doctor credential checks without inference 4ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > blocks the reserved Baseten variable in generic factory and plan/direct paths before credential lookup or HTTP 1ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > routes a real plan invocation through the project-wide reserved-key check 22ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > marks a generic reserved-key credential unavailable in the shared preflight resolver 1ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > blocks direct-key reuse and a configured Meta key alias through doctor validation 1ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects a malformed Meta apiKeyEnv without echoing it or attempting inference 0ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > reports a generic provider using the reserved key as not ready in doctor without inference 50ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > preserves unrelated provider credentials and requests through the existing generic path 34ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > makes doctor readiness fail when Baseten credentials are missing without making inference calls 86ms
+stdout | tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > does not let Core retry a transient Baseten failure beyond the provider policy
+≡ƒôï [2026-10-31T12:12:13.685Z] [INFO] [baseten-test-agent] Starting task: baseten-test-task
+≡ƒôï [2026-10-31T12:12:13.685Z] [INFO] [baseten-test-agent] Branch: local | Model: baseten/meta-models/muse-spark-open-1026
+≡ƒôï [2026-10-31T12:12:13.685Z] [INFO] [baseten-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > does not let Core retry a transient Baseten failure beyond the provider policy
+Γ¥î [2026-10-31T12:12:13.695Z] [ERROR] [baseten-test-agent] Agent error: Error: baseten is temporarily unavailable (HTTP 503).
+Provider: baseten | Model: meta-models/muse-spark-open-1026 | This is a provider outage, not an auth issue.
+    at OpenAIProvider.generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/backends/openai-provider.ts:253:15)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:14)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/backends/baseten-api-provider-boundary.test.ts:354:20
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > uses the structured tool-call shape with the fixed hackathon reasoning and output budget 9ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > makes one HTTP attempt on status 429 6ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > makes one HTTP attempt on status 503 5ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > does not let Core retry a transient Baseten failure beyond the provider policy 15ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > rejects redirects before another host receives a credential-bearing request 6ms
+ Γ£ô tests/backends/baseten-api-provider-boundary.test.ts > Baseten exact opt-in provider policy (loopback/injected transport only) > propagates caller cancellation to the injected transport 2ms
+ Γ£ô tests/backends/openai-provider-local-tool-call.test.ts > OpenAI-compatible loopback mock tool request > local model omits tool_choice, bounds output, and parses the returned tool call 42ms
+ Γ£ô tests/backends/openai-provider-local-tool-call.test.ts > OpenAI-compatible loopback mock tool request > Meta Muse Spark protocol shape omits tool_choice, bounds output, and parses the returned tool call 8ms
+ Γ£ô tests/backends/openai-provider-local-tool-call.test.ts > OpenAI-compatible loopback mock tool request > rejects a successful HTTP response with no usable choices 8ms
+ Γ£ô tests/backends/openai-provider-local-tool-call.test.ts > OpenAI-compatible loopback mock tool request > preserves provider identity when provider confirms the requested ID 6ms
+ Γ£ô tests/backends/openai-provider-local-tool-call.test.ts > OpenAI-compatible loopback mock tool request > preserves provider identity when provider reports a different served ID 4ms
+ Γ£ô tests/backends/openai-provider-local-tool-call.test.ts > OpenAI-compatible loopback mock tool request > preserves provider identity when provider omits its ID 5ms
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized run_command calls
+≡ƒôï [2026-10-31T12:12:14.833Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.833Z] [INFO] [budget-test-agent] Branch: local | Model: mock/budget-test-model
+≡ƒôï [2026-10-31T12:12:14.833Z] [INFO] [budget-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized run_command calls
+≡ƒöì [2026-10-31T12:12:14.834Z] [DEBUG] [budget-test-agent] Iteration 1/1: 2 tokens, 0ms (total: 2)
+≡ƒôï [2026-10-31T12:12:14.834Z] [INFO] [budget-test-agent] Tool: run_command({"command":"echo executed > blocked-command.txt","path":"blocked.txt","content":"blocked"})
+ΓÜá∩╕Å [2026-10-31T12:12:14.844Z] [WARN] [budget-test-agent] Max iterations (1) reached with no file changes
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized write_file calls
+≡ƒôï [2026-10-31T12:12:14.848Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.848Z] [INFO] [budget-test-agent] Branch: local | Model: mock/budget-test-model
+≡ƒôï [2026-10-31T12:12:14.848Z] [INFO] [budget-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized write_file calls
+≡ƒöì [2026-10-31T12:12:14.848Z] [DEBUG] [budget-test-agent] Iteration 1/1: 2 tokens, 0ms (total: 2)
+≡ƒôï [2026-10-31T12:12:14.848Z] [INFO] [budget-test-agent] Tool: write_file({"command":"echo executed > blocked-command.txt","path":"blocked.txt","content":"blocked"})
+ΓÜá∩╕Å [2026-10-31T12:12:14.852Z] [WARN] [budget-test-agent] Max iterations (1) reached with no file changes
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized git_commit calls
+≡ƒôï [2026-10-31T12:12:14.854Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.854Z] [INFO] [budget-test-agent] Branch: local | Model: mock/budget-test-model
+≡ƒôï [2026-10-31T12:12:14.854Z] [INFO] [budget-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized git_commit calls
+≡ƒöì [2026-10-31T12:12:14.854Z] [DEBUG] [budget-test-agent] Iteration 1/1: 2 tokens, 0ms (total: 2)
+≡ƒôï [2026-10-31T12:12:14.854Z] [INFO] [budget-test-agent] Tool: git_commit({"command":"echo executed > blocked-command.txt","path":"blocked.txt","content":"blocked"})
+ΓÜá∩╕Å [2026-10-31T12:12:14.859Z] [WARN] [budget-test-agent] Max iterations (1) reached with no file changes
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > enforces a hard generation ceiling even after a successful mutation earns an adaptive iteration
+≡ƒôï [2026-10-31T12:12:14.861Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.861Z] [INFO] [budget-test-agent] Branch: local | Model: mock/budget-test-model
+≡ƒôï [2026-10-31T12:12:14.861Z] [INFO] [budget-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > enforces a hard generation ceiling even after a successful mutation earns an adaptive iteration
+≡ƒöì [2026-10-31T12:12:14.861Z] [DEBUG] [budget-test-agent] Iteration 1/1: 2 tokens, 0ms (total: 2)
+≡ƒôï [2026-10-31T12:12:14.861Z] [INFO] [budget-test-agent] Tool: write_file({"command":"echo executed > blocked-command.txt","path":"blocked.txt","content":"blocked"})
+≡ƒöì [2026-10-31T12:12:14.863Z] [DEBUG] [budget-test-agent] Productive mutation. Budget extended to 2
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > enforces a hard generation ceiling even after a successful mutation earns an adaptive iteration
+Γ¥î [2026-10-31T12:12:14.870Z] [ERROR] [budget-test-agent] Agent error: Error: Maximum model generation attempts (1) reached.
+    at generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:259:13)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:20)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:30)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/core/agent-runner-budget.test.ts:66:20
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+≡ƒöì [2026-10-31T12:12:14.870Z] [DEBUG] [budget-test-agent] Released 1 file lock(s)
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > counts transient retries toward the same hard generation ceiling
+≡ƒôï [2026-10-31T12:12:14.872Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.872Z] [INFO] [budget-test-agent] Branch: local | Model: mock/budget-test-model
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > counts transient retries toward the same hard generation ceiling
+ΓÜá∩╕Å [2026-10-31T12:12:14.872Z] [WARN] [budget-test-agent] Transient error (attempt 1/6): 503 service unavailable. Retrying in 3s...
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > counts transient retries toward the same hard generation ceiling
+ΓÜá∩╕Å [2026-10-31T12:12:17.872Z] [WARN] [budget-test-agent] Transient error (attempt 2/6): 503 service unavailable. Retrying in 6s...
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > counts transient retries toward the same hard generation ceiling
+Γ¥î [2026-10-31T12:12:23.872Z] [ERROR] [budget-test-agent] Agent error: Error: Maximum model generation attempts (2) reached.
+    at generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:259:13)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:20)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:24)
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not exceed a provider-owned zero retry ceiling when caller config is undefined
+≡ƒôï [2026-10-31T12:12:14.877Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.877Z] [INFO] [budget-test-agent] Branch: local | Model: meta/muse-spark-1.3
+≡ƒôï [2026-10-31T12:12:14.877Z] [INFO] [budget-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not exceed a provider-owned zero retry ceiling when caller config is undefined
+Γ¥î [2026-10-31T12:12:14.877Z] [ERROR] [budget-test-agent] Agent error: Error: 503 service unavailable
+    at Object.<anonymous> (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/core/agent-runner-budget.test.ts:101:48)
+    at Object.Mock [as generate] (file:///C:/maos/node_modules/@vitest/spy/dist/index.js:332:34)
+    at generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:262:21)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:20)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:30)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/core/agent-runner-budget.test.ts:103:26
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:2027:60
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not exceed a provider-owned zero retry ceiling when caller config is 5
+≡ƒôï [2026-10-31T12:12:14.878Z] [INFO] [budget-test-agent] Starting task: budget-test-task
+≡ƒôï [2026-10-31T12:12:14.878Z] [INFO] [budget-test-agent] Branch: local | Model: meta/muse-spark-1.3
+≡ƒôï [2026-10-31T12:12:14.878Z] [INFO] [budget-test-agent] Budget warning: 0 iterations remaining. Nudging to finalize.
+
+stdout | tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not exceed a provider-owned zero retry ceiling when caller config is 5
+Γ¥î [2026-10-31T12:12:14.879Z] [ERROR] [budget-test-agent] Agent error: Error: 503 service unavailable
+    at Object.<anonymous> (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/core/agent-runner-budget.test.ts:101:48)
+    at Object.Mock [as generate] (file:///C:/maos/node_modules/@vitest/spy/dist/index.js:332:34)
+    at generate (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:262:21)
+    at retryOnTransient (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/context-manager.ts:206:20)
+    at runAgent (C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/src/core/agent-runner.ts:311:30)
+    at C:/Users/AMITAKSHYA SUTAR/.local/share/opencode/worktree/327f80/opencode-tree-1/tests/core/agent-runner-budget.test.ts:103:26
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:2027:60
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/maos/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized run_command calls 17ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized write_file calls 7ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not grant adaptive iterations for unauthorized git_commit calls 6ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > enforces a hard generation ceiling even after a successful mutation earns an adaptive iteration 11ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > counts transient retries toward the same hard generation ceiling 4ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not exceed a provider-owned zero retry ceiling when caller config is undefined 2ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > does not exceed a provider-owned zero retry ceiling when caller config is 5 1ms
+ Γ£ô tests/core/agent-runner-budget.test.ts > agent generation and adaptive iteration budgets > holds queued whole-task retries for runtimes with an explicit zero retry cap 16ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06) > prepare A, select B, resolve A: no stale review, storage, navigation or error 3ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06) > prepare A, select B, start B, finish A: B stays busy until B finishes 0ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06) > file A then sample: no request for A runs under the sample identity 1ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06) > sample then a new file: requests and results bind to that file 56ms
+ Γ£ô tests/gui/telemetry-review-coordinator.test.ts > telemetry review coordinator lifetimes (COMPLETION-FIX-06) > stale reconnect and stale analysis results stay ignored 1ms
+ Γ£ô tests/industrial/telemetry-analysis.test.ts > Industrial local telemetry analysis > analyzes the bundled 500-row synthetic CSV against demo thresholds 6ms
+ Γ£ô tests/industrial/telemetry-analysis.test.ts > Industrial local telemetry analysis > supports quoted CSV fields and rejects missing or malformed values 2ms
+ Γ£ô tests/industrial/telemetry-analysis.test.ts > Industrial local telemetry analysis > stores a local receipt that CLI verification can deterministically replay 25ms
+ Γ£ô tests/industrial/telemetry-analysis.test.ts > Industrial local telemetry analysis > rejects an analysis after its demonstration ruleset changes 15ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > detaches every review field on source change, including the saved review run 2ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > keys file and bundled-sample sources distinctly and stably 1ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > rejects an older in-flight response after a source change 0ms
+ Γ£ô tests/gui/telemetry-review-state.test.ts > telemetry source-bound review state (COMPLETION-FIX-04 finding 2) > keeps historical reviews out of a newly selected source 0ms
+
+ Test Files  8 passed (8)
+      Tests  94 passed (94)
+   Start at  17:42:07
+   Duration  8.48s (transform 1.89s, setup 0ms, import 4.76s, tests 2.32s, environment 1ms)
+

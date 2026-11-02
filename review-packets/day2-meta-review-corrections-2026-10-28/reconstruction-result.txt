@@ -1,0 +1,15 @@
+Reproducibility result
+
+The rejected Day 2 parent was reconstructed in a fresh temporary clone of C:\maos at 239a0042b08a3960d3c89f890f01ab194ff82f1f. The historical day2-meta-repl.patch passed git apply --check and applied. All 15 parent-manifest files match after the declared CRLF-to-LF normalization; 9 also match raw bytes and 6 differ only by line-ending bytes.
+
+The 21-path correction-only.patch passed git apply --check and applied to that reconstructed parent. The 27-path complete-post-checkpoint.patch passed git apply --check and applied to a separate clean clone at the declared base. Both temporary working-tree path sets exactly equal the complete manifest; neither index had staged paths.
+
+Source-hash verification:
+- Current repository files: raw 27/27; LF-normalized 27/27.
+- Complete packet reconstruction: raw 18/27; LF-normalized 27/27.
+- Correction-applied cumulative reconstruction: raw 18/27; LF-normalized 27/27.
+- The 9 raw mismatches are line-ending-only: src/api/openapi-spec.ts, src/api/router.ts, src/backends/factory.ts, src/cli/index.ts, src/cli/plan.ts, src/core/agent-runner.ts, src/core/orchestrator.ts, src/domain/schemas.ts, src/service/index.ts.
+- Exact resulting path-set check passed for both reconstructions. Added-line whitespace scan found 0 issues in either patch.
+
+The isolated reconstruction used local shared clones and temporary files only. No package was installed, no persistent service or model was launched, and test traffic stayed on loopback mock servers; no external provider request was made. Exact historical-parent application and path verification are retained in parent-replay-proof.txt. Full candidate JSON details are in source-verification-output.json; apply commands/results are in source-verification-command-and-exit.txt and packet-generation-output.json.
+

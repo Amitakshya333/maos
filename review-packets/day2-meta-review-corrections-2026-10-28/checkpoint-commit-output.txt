@@ -1,0 +1,10 @@
+[main 189e786] Enforce Meta provider and Industrial agent limits
+ 27 files changed, 2168 insertions(+), 101 deletions(-)
+ create mode 100644 docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+ create mode 100644 src/backends/meta-api-policy.ts
+ create mode 100644 src/industrial/industrial-repl.ts
+ create mode 100644 tests/backends/meta-api-provider-boundary.test.ts
+ create mode 100644 tests/cli/meta-provider-entrypoints.test.ts
+ create mode 100644 tests/core/agent-runner-budget.test.ts
+ create mode 100644 tests/industrial/industrial-repl.test.ts
+ create mode 100644 tests/industrial/meta-model-api-contract.test.ts

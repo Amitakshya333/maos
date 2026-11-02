@@ -1,0 +1,11 @@
+COMMAND=npm exec -- vitest run tests/industrial/f10-05-deterministic-reset.test.ts tests/industrial/analysis-agent-auth-http.test.ts tests/industrial/judged-run-lock.test.ts tests/industrial/f10-06-judged-run.test.ts tests/f3-05-artifact-store.test.ts tests/industrial/f6-02-generate-docx.test.ts tests/industrial/f7-03-workflow-planning.test.ts tests/checkpoint.test.ts tests/queue.test.ts tests/gui/ui1-10-evidence-retention.test.ts tests/industrial/f9-08-interruption-atomic-cleanup.test.ts tests/industrial/f9-09-disconnected-full-rehearsal.test.ts tests/industrial/gate-g9-sovereignty-gate.test.ts tests/industrial/analysis-agent-contract.test.ts tests/industrial/analysis-agent-service.test.ts tests/f3-07-verifier-idempotency.test.ts tests/f3-03-rest-contract.test.ts tests/gui/ui1-02-api-clients.test.ts tests/industrial/telemetry-analysis.test.ts
+
+ RUN  v4.1.11 C:/maos
+
+
+ Test Files  19 passed (19)
+      Tests  378 passed (378)
+   Start at  13:11:01
+   Duration  86.63s (transform 2.64s, setup 0ms, import 12.33s, tests 71.30s, environment 2ms)
+
+EXIT_CODE=0

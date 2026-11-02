@@ -1,0 +1,17 @@
+﻿{
+    "checkedAt":  "2026-10-29T14:49:42.5953773+05:30",
+    "sourceRevision":  "27dd1711f47e6278a1b84a6089e900dbe79f1459",
+    "bundleSha256":  "1f333348e92ea988e8fa9ef3be37dd362e69e6d1ab380d3e653f731240b8b61b",
+    "installRoot":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed app retry with spaces",
+    "installExitCode":  0,
+    "nodeVersion":  "v24.11.0",
+    "npmVersion":  "11.6.1",
+    "sensitiveEnvironmentNamesRemoved":  3,
+    "npmCacheInitiallyEmpty":  true,
+    "electronCacheInitiallyEmpty":  true,
+    "npmCacheFileCountAfterInstall":  176,
+    "electronCacheFileCountAfterInstall":  0,
+    "electronExe":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\installed app retry with spaces\\app\\desktop\\node_modules\\electron\\dist\\electron.exe",
+    "electronPresent":  true,
+    "userDataRoot":  "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\isolated localappdata retry with spaces"
+}

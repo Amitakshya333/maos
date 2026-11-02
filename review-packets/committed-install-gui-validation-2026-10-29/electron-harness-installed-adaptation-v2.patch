@@ -1,0 +1,205 @@
+warning: in the working copy of 'review-packets\committed-install-gui-validation-2026-10-29\desktop-agent-deliverable-rehearsal-installed-v2.cjs', CRLF will be replaced by LF the next time Git touches it
+diff --git "a/C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\clean committed source final with spaces\\tests\\release\\desktop-agent-deliverable-rehearsal.cjs" "b/review-packets\\committed-install-gui-validation-2026-10-29\\desktop-agent-deliverable-rehearsal-installed-v2.cjs"
+index cd97144..c4146e7 100644
+--- "a/C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\M27-7d2e\\clean committed source final with spaces\\tests\\release\\desktop-agent-deliverable-rehearsal.cjs"	
++++ "b/review-packets\\committed-install-gui-validation-2026-10-29\\desktop-agent-deliverable-rehearsal-installed-v2.cjs"
+@@ -186,6 +186,8 @@ async function run() {
+   const tempParent = fs.realpathSync(os.tmpdir());
+   const workRoot = fs.mkdtempSync(path.join(tempParent, 'maos-electron-agent-'));
+   const projectRoot = path.join(workRoot, 'project');
++  const userDataPath = path.join(workRoot, 'electron-user-data');
++  fs.mkdirSync(userDataPath, { recursive: true });
+   const selectedFilePath = path.join(projectRoot, 'held-out', 'shift-end-pressure-ripple.csv');
+   const projectId = 'maos-industrial-demo';
+   const syntheticCsv = [
+@@ -200,10 +202,10 @@ async function run() {
+     peakTemperature: 101,
+     verdict: 'CRITICAL',
+   };
+-  const enginePath = path.join(packageRoot, 'rust', 'target', 'release', 'maos-engine.exe');
++  const enginePath = process.env.MAOS_TEST_RUST_ENGINE || path.join(packageRoot, 'rust', 'target', 'release', 'maos-engine.exe');
+   assert(fs.existsSync(enginePath), `Separate Rust engine prerequisite is missing: ${enginePath}`);
+   const mock = await startMockInference();
+-  const uiPort = await reservePort();
++  let uiPort = await reservePort();
+   let app;
+   let apiOrigin;
+   let uiOrigin;
+@@ -262,13 +264,13 @@ async function run() {
+ 
+     app = await electron.launch({
+       executablePath: require('electron'),
+-      args: [path.join(packageRoot, 'desktop', 'main.cjs'), '--project-root', projectRoot, '--allow-temp', '--ui-port', String(uiPort)],
++      args: [path.join(packageRoot, 'desktop', 'main.cjs'), '--project-root', projectRoot, '--allow-temp', '--ui-port', String(uiPort), '--user-data-dir', userDataPath],
+       timeout: 60_000,
+     });
+     const electronProcess = app.process();
+     electronProcess.stdout?.on('data', (chunk) => mainLogs.push(String(chunk)));
+     electronProcess.stderr?.on('data', (chunk) => mainLogs.push(String(chunk)));
+-    const page = await app.firstWindow();
++    let page = await app.firstWindow();
+     page.setDefaultTimeout(20_000);
+     page.setDefaultNavigationTimeout(20_000);
+     page.on('request', (request) => {
+@@ -326,14 +328,13 @@ async function run() {
+     assert.equal(identity.host, '127.0.0.1');
+     assert.equal(identity.servicePort, Number(new URL(apiOrigin).port));
+     assert.equal(identity.projectRootHash, sha256(projectRoot.toLowerCase()));
+-    const eventSocket = sockets.map((value) => new URL(value)).find((url) => url.pathname === '/api/v1/events');
++    let eventSocket = sockets.map((value) => new URL(value)).find((url) => url.pathname === '/api/v1/events');
+     assert(eventSocket, 'The renderer did not connect its authenticated event stream.');
+     assert.equal(eventSocket.searchParams.get('projectId'), projectId);
+     assert(!eventSocket.href.includes(token), 'The token appeared in the event stream URL.');
+ 
+-    const fileInput = page.getByLabel('Choose telemetry CSV from this device');
+     const chooseSource = async () => {
+-      await fileInput.setInputFiles(selectedFilePath);
++      await page.getByLabel('Choose telemetry CSV from this device').setInputFiles(selectedFilePath);
+       await page.getByLabel('Request about selected CSV').fill('Compare these shift-end readings with the demonstration limits. Report measured values only.');
+     };
+     const agentResponse = () => page.waitForResponse((responseValue) =>
+@@ -442,8 +443,114 @@ async function run() {
+     await reviewCard(staleAnalysis.evidence.analysisId).getByRole('button', { name: 'Review & Approve' }).waitFor();
+     await page.getByTestId('activity-btn-cockpit').click();
+     await page.getByText(new RegExp(`Saved analysis review · run ${staleRun.runId}`), { exact: false }).waitFor();
++    const oldSessionToken = token;
++    const oldApiOrigin = apiOrigin;
++    const oldUiOrigin = uiOrigin;
++    const oldServiceInstanceId = identity.serviceInstanceId;
++    const oldServicePort = identity.servicePort;
++    await app.close();
++    app = undefined;
++    const restartOldServiceStopped = await fetch(`${oldApiOrigin}/api/v1/service/identity`, { signal: AbortSignal.timeout(1500) }).then(() => false).catch(() => true);
++    const restartOldUiStopped = await fetch(`${oldUiOrigin}/`, { signal: AbortSignal.timeout(1500) }).then(() => false).catch(() => true);
++    assert(restartOldServiceStopped && restartOldUiStopped, 'The first Electron process left a project listener running.');
++
++    token = undefined;
++    apiOrigin = undefined;
++    uiOrigin = undefined;
++    identity = undefined;
++    eventSocket = undefined;
++    currentStage = 'process-restart';
++    app = await electron.launch({
++      executablePath: require('electron'),
++      args: [path.join(packageRoot, 'desktop', 'main.cjs'), '--project-root', projectRoot, '--allow-temp', '--ui-port', String(uiPort), '--user-data-dir', userDataPath],
++      timeout: 60_000,
++    });
++    const restartedElectronProcess = app.process();
++    restartedElectronProcess.stdout?.on('data', (chunk) => mainLogs.push(String(chunk)));
++    restartedElectronProcess.stderr?.on('data', (chunk) => mainLogs.push(String(chunk)));
++    page = await app.firstWindow();
++    page.setDefaultTimeout(20_000);
++    page.setDefaultNavigationTimeout(20_000);
++    page.on('request', (request) => {
++      requests.push((async () => {
++        const headers = await request.allHeaders();
++        const url = new URL(request.url());
++        diagnosticRequests.push({ path: url.pathname, method: request.method() });
++        if (headers['x-project-root']) assert.equal(path.resolve(headers['x-project-root']), projectRoot, 'Renderer sent a different project root after restart.');
++        if (!token && headers.authorization?.startsWith('Bearer ')) {
++          token = headers.authorization.slice('Bearer '.length);
++          apiOrigin = url.origin;
++        }
++        return {
++          path: url.pathname,
++          method: request.method(),
++          hasSession: Boolean(headers.authorization?.startsWith('Bearer ')),
++          projectRootMatched: headers['x-project-root'] ? path.resolve(headers['x-project-root']) === projectRoot : false,
++          projectIdMatched: headers['x-project-id'] === projectId,
++        };
++      })().catch(() => undefined));
++    });
++    page.on('response', (responseValue) => {
++      const url = new URL(responseValue.url());
++      if (url.pathname.startsWith('/api/')) diagnosticResponses.push({ path: url.pathname, status: responseValue.status() });
++    });
++    page.on('requestfailed', (request) => {
++      const url = new URL(request.url());
++      if (url.pathname.startsWith('/api/')) diagnosticFailures.push({ path: url.pathname, failure: request.failure()?.errorText || 'unknown' });
++    });
++    page.on('websocket', (socket) => sockets.push(socket.url()));
++    page.on('pageerror', (error) => { pageErrors.push(error.message); diagnosticPageErrors.push(error.message); });
++    currentStage = 'restart-wait-for-renderer';
++    await page.locator('main[role="main"]').waitFor();
++    const restartOnboarding = page.getByRole('button', { name: /Skip \(Use Developer\)/ });
++    if (await restartOnboarding.isVisible().catch(() => false)) await restartOnboarding.click();
++    uiOrigin = new URL(page.url()).origin;
++    assert.equal(uiOrigin, `http://127.0.0.1:${uiPort}`, 'Restarted Electron loaded a different renderer origin.');
++    await page.getByRole('tabpanel', { name: 'Agent Cockpit View', exact: true }).waitFor();
++    await page.waitForFunction(() => document.body.innerText.includes('API: HEALTHY'));
++    await page.waitForFunction(() => document.body.innerText.includes('LIVE STREAM'));
++    await Promise.all(requests);
++    assert.match(token || '', /^[0-9a-f]{64}$/i, 'Restarted launcher did not issue a renderer session through private IPC.');
++    assert.notEqual(token, oldSessionToken, 'Restart reused the prior launcher session token.');
++    const restartedIdentityResponse = await fetch(`${apiOrigin}/api/v1/service/identity`, {
++      headers: { Authorization: `Bearer ${token}`, Origin: uiOrigin, 'X-Project-Root': projectRoot, 'X-Project-ID': projectId },
++    });
++    const restartedIdentityPayload = await restartedIdentityResponse.json();
++    identity = restartedIdentityPayload.data;
++    assert.equal(restartedIdentityResponse.status, 200);
++    assert.equal(path.resolve(identity.projectRoot), projectRoot);
++    assert.notEqual(identity.serviceInstanceId, oldServiceInstanceId);
++    assert.equal(identity.servicePort, Number(new URL(apiOrigin).port));
++    const restartedEventSocket = sockets.map((value) => new URL(value)).filter((url) => url.pathname === '/api/v1/events').at(-1);
++    assert(restartedEventSocket, 'The restarted renderer did not reconnect its event stream.');
++    assert.equal(restartedEventSocket.searchParams.get('projectId'), projectId);
++    assert(!restartedEventSocket.href.includes(token));
++    eventSocket = restartedEventSocket;
++    const oldSessionResponse = await fetch(`${apiOrigin}/api/v1/service/identity`, {
++      headers: { Authorization: `Bearer ${oldSessionToken}`, Origin: uiOrigin, 'X-Project-Root': projectRoot, 'X-Project-ID': projectId },
++    });
++    assert.equal(oldSessionResponse.status, 401, 'A token from the stopped process was accepted by the restarted host.');
++    await page.getByTestId('activity-btn-approvals').click();
++    await page.getByRole('button', { name: 'Refresh approvals' }).waitFor();
++    await reviewCard(staleAnalysis.evidence.analysisId).getByRole('button', { name: 'Review & Approve' }).waitFor();
++    await page.getByTestId('activity-btn-cockpit').click();
++    await page.getByText(new RegExp(`Saved analysis review · run ${staleRun.runId}`), { exact: false }).waitFor();
+     await page.getByRole('button', { name: 'Resume in Approvals' }).click();
+     await reviewCard(staleAnalysis.evidence.analysisId).getByRole('button', { name: 'Review & Approve' }).waitFor();
++    const processRestartResume = {
++      processRestarted: true,
++      oldServiceStopped: restartOldServiceStopped,
++      oldUiStopped: restartOldUiStopped,
++      newSessionIssued: token !== oldSessionToken,
++      oldSessionRejected: oldSessionResponse.status === 401,
++      pendingRunResumed: true,
++      pendingRunId: staleRun.runId,
++      oldServiceInstanceId,
++      newServiceInstanceId: identity.serviceInstanceId,
++      oldServicePort,
++      newServicePort: identity.servicePort,
++      userDataPath,
++    };
+ 
+     const invalidStartMissing = await postJson(apiOrigin, uiOrigin, projectRoot, projectId, '/api/v1/industrial/judged-runs', { analysisId: staleAnalysis.evidence.analysisId }, { token: null });
+     const invalidStartToken = await postJson(apiOrigin, uiOrigin, projectRoot, projectId, '/api/v1/industrial/judged-runs', { analysisId: staleAnalysis.evidence.analysisId }, { token: '0'.repeat(64) });
+@@ -551,9 +658,13 @@ async function run() {
+       cookies: document.cookie,
+     }));
+     assert(!storageState.url.includes(token));
++    assert(!storageState.url.includes(oldSessionToken));
+     assert(!JSON.stringify(storageState.local).includes(token));
++    assert(!JSON.stringify(storageState.local).includes(oldSessionToken));
+     assert(!JSON.stringify(storageState.session).includes(token));
++    assert(!JSON.stringify(storageState.session).includes(oldSessionToken));
+     assert(!storageState.cookies.includes(token));
++    assert(!storageState.cookies.includes(oldSessionToken));
+     assert.equal(new URL(page.url()).origin, uiOrigin);
+     assert(!eventSocket.href.includes(token));
+     assert.equal(pageErrors.length, 0, `Renderer page errors: ${pageErrors.join(' | ')}`);
+@@ -568,6 +679,7 @@ async function run() {
+     mockStopped = true;
+     const combinedLogs = mainLogs.join('');
+     assert(!combinedLogs.includes(token), 'Launcher token appeared in captured Electron stdout/stderr.');
++    assert(!combinedLogs.includes(oldSessionToken), 'Previous launcher token appeared in captured Electron stdout/stderr.');
+ 
+     const report = {
+       status: 'PASS',
+@@ -610,6 +722,7 @@ async function run() {
+       },
+       privacy: { tokenInUrl: false, tokenInPersistentStorage: false, tokenInCookies: false, tokenInCapturedElectronLogs: false },
+       processCleanup: { electronClosed: true, projectServiceStopped: serviceStopped, uiServerStopped: uiStopped, mockStopped },
++      processRestartResume,
+       rustPrerequisite: { version: engineManifest.engineVersion, protocolVersion: engineManifest.protocolVersion, capturedBinarySha256: engineManifest.executableHash, trustManifestComparison: 'not performed' },
+       evidencePath,
+     };

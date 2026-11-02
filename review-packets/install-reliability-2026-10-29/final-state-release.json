@@ -1,0 +1,22 @@
+{
+  "repository": "C:\\maos",
+  "branch": "main",
+  "head": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "expectedHead": "189e786ff0431b02b95ca618bb4791a5ad7b0215",
+  "indexEmpty": true,
+  "indexDiffExitCode": 0,
+  "scopeCount": 15,
+  "sourceHashesMatchManifest": true,
+  "patchSha256": "f2edd4658fcdba9716050d2a377ed941498300177656f3ff91a77e45fdd4b3e5",
+  "manifestSha256": "771081758b5747aeabd21f040ac98d75ecaea7c18db794883acefa9570955e75",
+  "patchApplyCheckExitCode": 0,
+  "patchApplyExitCode": 0,
+  "patchPathsMatch": true,
+  "lfNormalizedEqualCount": 15,
+  "rawByteEqualCount": 2,
+  "bundleSha256": "1c6fcb695b495d5d79d3a22f2fb1ba56ec49183ae2ae7d30fa5fe439d676d36f",
+  "engineTreeMatches": true,
+  "engineBinaryMatchesManifest": true,
+  "taskProcessCount": 0,
+  "taskProcesses": []
+}

@@ -1,0 +1,11 @@
+{
+  "command": "node -e require(electron) from installed app\\desktop",
+  "exitCode": 0,
+  "stdout": "{\"runtimePath\":\"C:\\\\Users\\\\AMITAKSHYA SUTAR\\\\AppData\\\\Local\\\\Temp\\\\M28-d526-07a65542cbdb4439a949f8ef1ee78981\\\\installed app with spaces\\\\app\\\\desktop\\\\node_modules\\\\electron\\\\dist\\\\electron.exe\",\"packageVersion\":\"45.0.0\",\"exists\":true}\n",
+  "stderr": null,
+  "fileVersion": "45.0.0",
+  "productVersion": "45.0.0",
+  "executableBytes": 249797632,
+  "directElectronExeVersionProbeExitCode": 1,
+  "directProbeNote": "electron.exe --version returned no output and exit 1; actual app launch was verified by the Electron rehearsal."
+}

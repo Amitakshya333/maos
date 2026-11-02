@@ -1,0 +1,11 @@
+{
+  "cwd": "C:/clean/core-b2-02",
+  "executable": "git.exe",
+  "args": [
+    "fetch",
+    "origin",
+    "refs/tags/event-core-2cfdf9b"
+  ],
+  "startedAt": "2026-10-31T15:58:32.441Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

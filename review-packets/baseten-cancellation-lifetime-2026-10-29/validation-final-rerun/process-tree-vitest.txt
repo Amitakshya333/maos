@@ -1,0 +1,14 @@
+COMMAND: node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/industrial/baseten-pilot-process-tree.test.ts
+POWERSHELLS: suite dynamically detected and exercised installed Windows PowerShell 5.1 and PowerShell 7
+
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-bb871cb191184b5de1-correction-20261029/repo
+
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  23:26:54
+   Duration  17.41s (transform 38ms, setup 0ms, import 1.21s, tests 15.94s, environment 0ms)
+
+
+EXIT_CODE=0

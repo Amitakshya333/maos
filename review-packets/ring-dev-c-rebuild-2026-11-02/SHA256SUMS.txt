@@ -1,0 +1,4 @@
+8af6990aabc894d8548edc4e6b249ed89313b6b9085afb6947b6c8f844c81547 *candidate.patch
+cea72739b5301e23d1e97ddb47295bd01b15d52b854ffcdb50fb0ae312455296 *run-log.md
+base = 6e9bca363fbf84576e4a2d607f694cdea9966470 Add Ring overlay and workspace surface
+files = candidate.patch run-log.md SHA256SUMS.txt

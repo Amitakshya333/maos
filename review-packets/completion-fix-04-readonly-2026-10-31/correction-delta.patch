@@ -1,0 +1,444 @@
+diff --git a/src/core/agent-runner.ts b/src/core/agent-runner.ts
+index 597c257..d1579ea 100644
+--- a/src/core/agent-runner.ts
++++ b/src/core/agent-runner.ts
+@@ -224,14 +224,31 @@ export async function runAgent(
+ 
+   // Effective max = base + bonus for productive agents
+   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
+-  // Read-only agents are offered no mutating tools. A legitimate read-only
+-  // task must still close with task_complete; an empty files_changed list is
+-  // valid for them. Only the stop-nudge wording is affected; mutating agents
+-  // keep the existing reminder verbatim.
+-  const MUTATING_AGENT_TOOLS = new Set(['write_file', 'git_commit', 'run_command']);
+-  const offeredTools = agent.allowedTools ?? [];
+-  const readOnlyAgent = offeredTools.length > 0 &&
+-    !offeredTools.some((tool) => MUTATING_AGENT_TOOLS.has(tool));
++  // Completion-reminder classification (COMPLETION-FIX-04 finding 1).
++  // Uses the effective authorized tool definitions after filtering — the same
++  // set offered to the model via getToolsForAgent — not the raw allow-list.
++  // Only positively known project-file-non-mutating tools qualify; anything
++  // else (file generators, executors, mutators, memory/coordination tools,
++  // external services, or names dropped by filtering) keeps the existing
++  // reminder. analyze_telemetry_csv persists receipts only under .maos/
++  // evidence storage (excluded from change snapshots); it cannot mutate
++  // project files, so files_changed: [] stays correct for it. Unrestricted
++  // agents (no allow-list) always keep the existing reminder.
++  const KNOWN_READONLY_TOOLS = new Set([
++    'analyze_telemetry_csv',
++    'check_compliance',
++    'ingest_document',
++    'list_dir',
++    'read_file',
++    'search_code',
++    'task_complete',
++  ]);
++  const effectiveToolNames = getToolsForAgent(agent.allowedTools, agent.id).map(
++    (tool) => tool.function.name,
++  );
++  const readOnlyAgent =
++    effectiveToolNames.length > 0 &&
++    effectiveToolNames.every((name) => KNOWN_READONLY_TOOLS.has(name));
+   const providerRetryCeiling = provider.maxApplicationRetries;
+   const maxProviderRetries = providerRetryCeiling === undefined
+     ? options.maxProviderRetries ?? 3
+diff --git a/src/gui/src/components/TelemetryReviewPanel.tsx b/src/gui/src/components/TelemetryReviewPanel.tsx
+index c838826..c95badf 100644
+--- a/src/gui/src/components/TelemetryReviewPanel.tsx
++++ b/src/gui/src/components/TelemetryReviewPanel.tsx
+@@ -1,6 +1,7 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import { apiAdapter } from '../api';
+ import type { IndustrialAnalysisAgentResponse, IndustrialTelemetryAnalysisResponse, JudgedRunResponse } from '../api/rest-client';
++import { buildSourceKey, clearedOnSourceChange, isCurrentResponse, shouldApplyReconnect } from './telemetryReviewState';
+ 
+ function fileAsBase64(file: File): Promise<string> {
+   return new Promise((resolve, reject) => {
+@@ -30,15 +31,36 @@ export const TelemetryReviewPanel: React.FC = () => {
+   const [reviewBusy, setReviewBusy] = useState(false);
+   const [reviewError, setReviewError] = useState<string | null>(null);
+   const agentController = useRef<AbortController | null>(null);
++  // Source binding (COMPLETION-FIX-04 finding 2): every source change bumps
++  // the sequence and detaches all review state, so a late async response for
++  // a previous source can never restore stale results. Refs (not state) hold
++  // the binding because guards must see the latest value inside async
++  // continuations.
++  const sourceKeyRef = useRef<string | null>(null);
++  const sourceSeq = useRef(0);
++  const bindSource = (key: string) => {
++    sourceSeq.current += 1;
++    sourceKeyRef.current = key;
++    const cleared = clearedOnSourceChange();
++    setAnalysis(cleared.analysis);
++    setAgentResult(cleared.agentResult);
++    setAgentPhase(cleared.agentPhase);
++    setAgentError(cleared.agentError);
++    setError(cleared.error);
++    setReviewRun(cleared.reviewRun);
++    setReviewError(cleared.reviewError);
++  };
+ 
+   useEffect(() => {
+     const runId = window.localStorage.getItem('maos:last-industrial-judged-run');
+     if (!runId?.startsWith('judged-run-agent-')) return;
+     let active = true;
+     void apiAdapter.getIndustrialJudgedRun(runId).then((run) => {
+-      if (active) setReviewRun(run);
++      if (!active || !shouldApplyReconnect(sourceKeyRef.current)) return;
++      setReviewRun(run);
+     }).catch(() => {
+-      if (active) setReviewError('Could not reconnect to the saved review run. Check the authenticated service and approvals queue.');
++      if (!active || !shouldApplyReconnect(sourceKeyRef.current)) return;
++      setReviewError('Could not reconnect to the saved review run. Check the authenticated service and approvals queue.');
+     });
+     return () => { active = false; };
+   }, []);
+@@ -46,11 +68,10 @@ export const TelemetryReviewPanel: React.FC = () => {
+   const runAnalysis = async (useSample: boolean) => {
+     setBusy(true);
+     setBusySource(useSample ? 'sample' : 'file');
+-    setError(null);
+-    setAnalysis(null);
+-    setAgentResult(null);
+-    setAgentPhase('idle');
+-    setAgentError(null);
++    if (useSample) bindSource(buildSourceKey({ kind: 'sample' }));
++    else if (selectedFile) bindSource(buildSourceKey({ kind: 'file', name: selectedFile.name, size: selectedFile.size, lastModified: selectedFile.lastModified }));
++    else { setBusy(false); setBusySource(null); return; }
++    const seq = sourceSeq.current;
+     try {
+       const response = useSample
+         ? await apiAdapter.analyzeIndustrialTelemetry({ useBundledSample: true })
+@@ -61,8 +82,10 @@ export const TelemetryReviewPanel: React.FC = () => {
+             })
+           : null;
+       if (!response) throw new Error('Choose a CSV file first, or use the bundled synthetic sample.');
++      if (!isCurrentResponse(seq, sourceSeq.current)) return;
+       setAnalysis(response);
+     } catch (err: unknown) {
++      if (!isCurrentResponse(seq, sourceSeq.current)) return;
+       setError((err as Error).message || 'Telemetry analysis failed.');
+     } finally {
+       setBusy(false);
+@@ -80,22 +103,25 @@ export const TelemetryReviewPanel: React.FC = () => {
+     setAnalysis(null);
+     setAgentError(null);
+     setAgentPhase('uploading');
++    const seq = sourceSeq.current;
++    const key = sourceKeyRef.current;
+     try {
+       const selectedReceipt = await apiAdapter.analyzeIndustrialTelemetry({
+         name: selectedFile.name,
+         contentBase64: await fileAsBase64(selectedFile),
+       }, { signal: controller.signal, timeoutMs: 30_000 });
+-      if (controller.signal.aborted) return;
++      if (controller.signal.aborted || !isCurrentResponse(seq, sourceSeq.current) || key !== sourceKeyRef.current) return;
+       setAnalysis(selectedReceipt);
+       setAgentPhase('requesting');
+       const result = await apiAdapter.analyzeIndustrialCsv({
+         request: agentRequest,
+         sourcePath: selectedReceipt.source.relativePath,
+       }, { signal: controller.signal, timeoutMs: 65_000 });
+-      if (controller.signal.aborted) return;
++      if (controller.signal.aborted || !isCurrentResponse(seq, sourceSeq.current) || key !== sourceKeyRef.current) return;
+       setAgentResult(result);
+       setAgentPhase('completed');
+     } catch (err: unknown) {
++      if (!isCurrentResponse(seq, sourceSeq.current) || key !== sourceKeyRef.current) return;
+       if (controller.signal.aborted) {
+         setAgentPhase('cancelled');
+         setAgentError('Cancelled. No successful model result was returned; retry to start a new run.');
+@@ -167,12 +193,21 @@ export const TelemetryReviewPanel: React.FC = () => {
+             type="file"
+             accept=".csv,text/csv"
+             onChange={(event) => {
+-              setSelectedFile(event.target.files?.[0] || null);
+-              setAnalysis(null);
+-              setAgentResult(null);
+-              setAgentPhase('idle');
+-              setAgentError(null);
+-              setError(null);
++              const file = event.target.files?.[0] || null;
++              setSelectedFile(file);
++              if (file) bindSource(buildSourceKey({ kind: 'file', name: file.name, size: file.size, lastModified: file.lastModified }));
++              else {
++                sourceSeq.current += 1;
++                sourceKeyRef.current = null;
++                const cleared = clearedOnSourceChange();
++                setAnalysis(cleared.analysis);
++                setAgentResult(cleared.agentResult);
++                setAgentPhase(cleared.agentPhase);
++                setAgentError(cleared.agentError);
++                setError(cleared.error);
++                setReviewRun(cleared.reviewRun);
++                setReviewError(cleared.reviewError);
++              }
+             }}
+             disabled={busy || agentPhase === 'uploading' || agentPhase === 'requesting'}
+             style={{ maxWidth: 230, fontSize: 11 }}
+diff --git a/src/gui/src/components/telemetryReviewState.ts b/src/gui/src/components/telemetryReviewState.ts
+new file mode 100644
+index 0000000..e662795
+--- /dev/null
++++ b/src/gui/src/components/telemetryReviewState.ts
+@@ -0,0 +1,57 @@
++/**
++ * Source-bound review state for the CSV telemetry panel (COMPLETION-FIX-04 finding 2).
++ *
++ * Pure helpers so the detach/staleness rules carry node-level regression coverage;
++ * TelemetryReviewPanel wires them to React state. No DOM or React dependency here.
++ */
++
++export type TelemetrySourceDescriptor =
++  | { kind: 'file'; name: string; size: number; lastModified: number }
++  | { kind: 'sample' };
++
++/** Opaque key identifying the currently selected telemetry source. */
++export function buildSourceKey(descriptor: TelemetrySourceDescriptor): string {
++  if (descriptor.kind === 'sample') return 'sample';
++  return `file:${descriptor.name}:${descriptor.size}:${descriptor.lastModified}`;
++}
++
++/** Every review field that must detach when the selected source changes. */
++export interface SourceChangeReset {
++  analysis: null;
++  agentResult: null;
++  agentPhase: 'idle';
++  agentError: null;
++  error: null;
++  reviewRun: null;
++  reviewError: null;
++}
++
++export function clearedOnSourceChange(): SourceChangeReset {
++  return {
++    analysis: null,
++    agentResult: null,
++    agentPhase: 'idle',
++    agentError: null,
++    error: null,
++    reviewRun: null,
++    reviewError: null,
++  };
++}
++
++/**
++ * Accept an asynchronous response only when its sequence still matches the
++ * current source sequence. A source change bumps the sequence, so an older
++ * in-flight response can never restore stale review state.
++ */
++export function isCurrentResponse(requestSeq: number, currentSeq: number): boolean {
++  return requestSeq === currentSeq;
++}
++
++/**
++ * A reconnected historical review may only populate the panel when no source
++ * is currently selected. Once a source is selected, history stays reachable
++ * through the Approvals queue/run views, never rebound to the new file.
++ */
++export function shouldApplyReconnect(selectedKey: string | null): boolean {
++  return selectedKey === null;
++}
+diff --git a/tests/gui/telemetry-review-state.test.ts b/tests/gui/telemetry-review-state.test.ts
+new file mode 100644
+index 0000000..a6fd5da
+--- /dev/null
++++ b/tests/gui/telemetry-review-state.test.ts
+@@ -0,0 +1,53 @@
++import { describe, expect, it } from 'vitest';
++import {
++  buildSourceKey,
++  clearedOnSourceChange,
++  isCurrentResponse,
++  shouldApplyReconnect,
++} from '../../src/gui/src/components/telemetryReviewState';
++
++describe('telemetry source-bound review state (COMPLETION-FIX-04 finding 2)', () => {
++  it('detaches every review field on source change, including the saved review run', () => {
++    const cleared = clearedOnSourceChange();
++
++    expect(cleared).toEqual({
++      analysis: null,
++      agentResult: null,
++      agentPhase: 'idle',
++      agentError: null,
++      error: null,
++      reviewRun: null,
++      reviewError: null,
++    });
++  });
++
++  it('keys file and bundled-sample sources distinctly and stably', () => {
++    const file = { kind: 'file', name: 'pilot.csv', size: 136, lastModified: 1793433790000 } as const;
++    const sample = { kind: 'sample' } as const;
++
++    expect(buildSourceKey(file)).toBe(buildSourceKey({ ...file }));
++    expect(buildSourceKey(file)).not.toBe(buildSourceKey(sample));
++    expect(buildSourceKey(file)).not.toBe(buildSourceKey({ ...file, size: 137 }));
++    expect(buildSourceKey(file)).not.toBe(buildSourceKey({ ...file, lastModified: 1793433790001 }));
++    expect(buildSourceKey({ ...file, name: 'other.csv' })).not.toBe(buildSourceKey(file));
++  });
++
++  it('rejects an older in-flight response after a source change', () => {
++    let seq = 0;
++    const beginRequest = () => ++seq;
++    const selectNewSource = () => ++seq;
++
++    const first = beginRequest();
++    selectNewSource();
++    const second = beginRequest();
++
++    expect(isCurrentResponse(first, seq)).toBe(false);
++    expect(isCurrentResponse(second, seq)).toBe(true);
++  });
++
++  it('keeps historical reviews out of a newly selected source', () => {
++    expect(shouldApplyReconnect(null)).toBe(true);
++    expect(shouldApplyReconnect('file:pilot.csv:136:1793433790000')).toBe(false);
++    expect(shouldApplyReconnect('sample')).toBe(false);
++  });
++});
+diff --git a/tests/industrial/read-only-completion.test.ts b/tests/industrial/read-only-completion.test.ts
+index a9b0264..528c4e1 100644
+--- a/tests/industrial/read-only-completion.test.ts
++++ b/tests/industrial/read-only-completion.test.ts
+@@ -141,6 +141,29 @@ function completeResponse(summary: string, filesChanged?: string[]): ProviderRes
+   };
+ }
+ 
++async function runStopNudge(allowedTools: string[] | undefined, agentId: string) {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-readonly-nudge-'));
++  projects.push(root);
++  const seenMessages: Array<any[]> = [];
++  const generate = vi.fn(async (messages: any[]) => {
++    seenMessages.push(messages);
++    if (seenMessages.length === 1) return textResponse('Plain summary without a completion call.');
++    return completeResponse('Work is done.', []);
++  });
++  const result = await runAgent(
++    { name: 'mock', model: 'stub-model', generate } as unknown as IProvider,
++    {
++      id: agentId, role: 'test worker', provider: 'mock', model: 'stub-model',
++      capabilities: [], scope: ['.'], ...(allowedTools === undefined ? {} : { allowedTools }), maxIterations: 4,
++    },
++    { id: `${agentId}-task`, description: 'Test a completion reminder.', branch: 'local' },
++    root, 0, undefined, undefined,
++    { allowPartialSuccess: false, maxProviderRetries: 0 },
++  );
++  const nudge = (seenMessages[1] as any[]).filter((message: any) => message.role === 'user').at(-1).content as string;
++  return { result, nudge, calls: generate.mock.calls.length };
++}
++
+ afterEach(async () => {
+   for (const name of environmentNames.splice(0)) delete process.env[name];
+   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
+@@ -151,55 +174,69 @@ afterEach(async () => {
+ });
+ 
+ describe('read-only completion at the root cause (mock only)', () => {
+-  it('reminds a read-only agent that an empty files_changed list is valid', async () => {
+-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-readonly-nudge-'));
+-    projects.push(root);
+-    const seenMessages: Array<any[]> = [];
+-    const generate = vi.fn(async (messages: any[]) => {
+-      seenMessages.push(messages);
+-      if (seenMessages.length === 1) return textResponse('Plain summary without a completion call.');
+-      return completeResponse('Read-only work is done.', []);
+-    });
+-    const result = await runAgent(
+-      { name: 'mock', model: 'stub-model', generate } as unknown as IProvider,
+-      {
+-        id: 'readonly-agent', role: 'read-only analyst', provider: 'mock', model: 'stub-model',
+-        capabilities: [], scope: ['.'], allowedTools: ['analyze_telemetry_csv', 'task_complete'], maxIterations: 4,
+-      },
+-      { id: 'readonly-task', description: 'Summarize without changing files.', branch: 'local' },
+-      root, 0, undefined, undefined,
+-      { allowPartialSuccess: false, maxProviderRetries: 0 },
+-    );
++  it('reminds the actual Industrial read-only tool set that an empty files_changed list is valid', async () => {
++    const { result, nudge, calls } = await runStopNudge(['analyze_telemetry_csv', 'task_complete'], 'readonly-agent');
+ 
+     expect(result.success).toBe(true);
+     expect(result.filesChanged).toEqual([]);
+-    expect(generate).toHaveBeenCalledTimes(2);
+-    const nudge = (seenMessages[1] as any[]).filter((message) => message.role === 'user').at(-1).content as string;
++    expect(calls).toBe(2);
+     expect(nudge).toContain('files_changed: []');
+   });
+ 
+   it('keeps the existing reminder verbatim for mutating agents', async () => {
+-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-mutating-nudge-'));
+-    projects.push(root);
+-    const seenMessages: Array<any[]> = [];
+-    const generate = vi.fn(async (messages: any[]) => {
+-      seenMessages.push(messages);
+-      if (seenMessages.length === 1) return textResponse('Plain summary without a completion call.');
+-      return completeResponse('Mutating work is done.', ['edited.txt']);
+-    });
+-    const result = await runAgent(
+-      { name: 'mock', model: 'stub-model', generate } as unknown as IProvider,
+-      {
+-        id: 'mutating-agent', role: 'coder', provider: 'mock', model: 'stub-model',
+-        capabilities: [], scope: ['.'], allowedTools: ['write_file', 'task_complete'], maxIterations: 4,
+-      },
+-      { id: 'mutating-task', description: 'Change a file.', branch: 'local' },
+-      root, 0, undefined, undefined,
+-      { allowPartialSuccess: false, maxProviderRetries: 0 },
+-    );
++    const { result, nudge } = await runStopNudge(['write_file', 'task_complete'], 'mutating-agent');
++
++    expect(result.success).toBe(true);
++    expect(nudge).toContain('the list of files you changed');
++    expect(nudge).not.toContain('files_changed: []');
++  });
++
++  it('keeps the existing reminder for a file-generating tool', async () => {
++    const { result, nudge, calls } = await runStopNudge(['generate_docx', 'task_complete'], 'report-agent');
++
++    expect(result.success).toBe(true);
++    expect(calls).toBe(2);
++    expect(nudge).toContain('the list of files you changed');
++    expect(nudge).not.toContain('files_changed: []');
++  });
++
++  it('does not assume an uncertain registry tool is read-only', async () => {
++    const { result, nudge, calls } = await runStopNudge(['read_file', 'share_knowledge', 'task_complete'], 'uncertain-agent');
++
++    expect(result.success).toBe(true);
++    expect(calls).toBe(2);
++    expect(nudge).toContain('the list of files you changed');
++    expect(nudge).not.toContain('files_changed: []');
++  });
++
++  it('ignores names dropped by tool filtering when classifying', async () => {
++    const { result, nudge, calls } = await runStopNudge(['read_file', 'not_a_real_tool', 'task_complete'], 'filtered-agent');
++
++    expect(result.success).toBe(true);
++    expect(calls).toBe(2);
++    expect(nudge).toContain('files_changed: []');
++  });
++
++  it('drops the industrial-forbidden executor from the effective set', async () => {
++    const previous = process.env.MAOS_PROFILE;
++    process.env.MAOS_PROFILE = 'industrial';
++    try {
++      const { result, nudge, calls } = await runStopNudge(['analyze_telemetry_csv', 'execute_python', 'task_complete'], 'industrial-agent');
++
++      expect(result.success).toBe(true);
++      expect(calls).toBe(2);
++      expect(nudge).toContain('files_changed: []');
++    } finally {
++      if (previous === undefined) delete process.env.MAOS_PROFILE;
++      else process.env.MAOS_PROFILE = previous;
++    }
++  });
++
++  it('keeps the existing reminder for unrestricted agents', async () => {
++    const { result, nudge, calls } = await runStopNudge(undefined, 'unrestricted-agent');
+ 
+     expect(result.success).toBe(true);
+-    const nudge = (seenMessages[1] as any[]).filter((message) => message.role === 'user').at(-1).content as string;
++    expect(calls).toBe(2);
+     expect(nudge).toContain('the list of files you changed');
+     expect(nudge).not.toContain('files_changed: []');
+   });

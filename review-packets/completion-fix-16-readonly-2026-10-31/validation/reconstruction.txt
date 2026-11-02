@@ -1,0 +1,35 @@
+reconstruction.txt — COMPLETION-FIX-16 isolated verification (deterministic, mock-only context)
+Generated 2026-10-31. The candidate lives in the isolated worktree
+C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-fix16-candidate,
+reconstructed from the FIX-14 complete patch; the FIX-14 candidate worktree
+and packet were not modified. Every command below ran with an explicit
+git -C target (no shell-directory ambiguity).
+
+1) Rejected (FIX-14) snapshot, fresh clean clone at 2cfdf9b:
+   git apply FIX-14 complete-correction.patch -> exit 0
+   git apply --check FIX-16 correction-delta.patch -> correction apply-check exit: 0
+
+2) Clean base reconstruction, fresh clean clone at 2cfdf9b:
+   git apply --check FIX-16 complete-correction.patch -> complete apply-check exit: 0
+   git apply FIX-16 complete-correction.patch -> exit 0
+   git hash-object (9 paths, in scope order):
+f8e876f9f9e95b491cd7aa1f0daa434a9657c365
+f31f415a99c13e670d7dc1ded7bef71e257542b9
+35302e85063cd53115a0b6d22bd102f74c569679
+528c4e1e2ed597556b95a2918cf1fd1549c9e7c5
+25a5f4b0e4ceb9debbaf0b16deadfeec337bbe05
+5a1812afe78a24bdb808eed8eae0e0fa366687e7
+a2d92841b0e1f9317a5b459e293ae9c3417ab15d
+2b006f409f8614bf227d0a8fc5e0820f76775924
+5f8f09396a5dc3581328ebf4e673e8e1aee58894
+   Result: all nine reconstructed blob hashes equal the candidate blob hashes.
+
+3) Regression mutation check (recorded during development): temporarily
+   restoring the buggy allocate-before-validate order in askAboutCsv made
+   the new deferred-race test fail (1 failed); the fixed order passes.
+   This was a local mutation sanity check, then reverted; it is not test
+   evidence in the validation logs.
+
+No hashes were hand-edited; source-hashes.json is generator output that
+refuses to write on any mismatch (blob/raw/LF per file, patch hashes,
+patch-vs-manifest path-set equality, reconstruction-log apply-check exits).

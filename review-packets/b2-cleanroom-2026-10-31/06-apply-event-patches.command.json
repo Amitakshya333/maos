@@ -1,0 +1,14 @@
+{
+  "cwd": "C:/maos/event-staging-2026-10-31",
+  "executable": "powershell.exe",
+  "args": [
+    "-NoProfile",
+    "-NonInteractive",
+    "-File",
+    "C:/maos/event-staging-2026-10-31/scripts/apply-event-patches.ps1",
+    "-CorePath",
+    "C:/clean/core"
+  ],
+  "startedAt": "2026-10-31T15:37:37.385Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

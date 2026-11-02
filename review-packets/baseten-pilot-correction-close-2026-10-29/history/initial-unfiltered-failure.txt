@@ -1,0 +1,43 @@
+COMMAND: node node_modules/vitest/vitest.mjs run --root . --config vitest.config.ts tests/industrial/meta-model-api-contract.test.ts
+MAOS_TEST_ENGINE_PATH: C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\baseten-gate-validation-2026-10-29\rust\target\release\maos-engine.exe
+ENGINE_SHA256: 3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-bb871cb191184b5de1-correction-20261029/repo
+
+ ❯ tests/industrial/meta-model-api-contract.test.ts (30 tests | 2 failed) 1716ms
+     × rejects Meta endpoint without opt-in without a request 39ms
+     × rejects remote endpoint without opt-in without a request 32ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects Meta endpoint without opt-in without a request
+ FAIL  tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > rejects remote endpoint without opt-in without a request
+AssertionError: expected IndustrialAnalysisAgentError: Invalid pro… { code: '…' } to match object { code: 'MODEL_ENDPOINT_BLOCKED' }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "MODEL_ENDPOINT_BLOCKED",
++ IndustrialAnalysisAgentError {
++   "code": "PROJECT_CONFIG_INVALID",
+  }
+
+ ❯ tests/industrial/meta-model-api-contract.test.ts:347:9
+    345|       await expect(createServiceContainer(project.root).industrialAnal…
+    346|         request: 'Analyze the selected CSV.', sourcePath: project.sour…
+    347|       })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>…
+       |         ^
+    348|       expect(outbound).toHaveLength(0);
+    349|       expect(mock.requests).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 28 passed (30)
+   Start at  22:36:06
+   Duration  5.17s (transform 2.32s, setup 0ms, import 3.19s, tests 1.72s, environment 0ms)
+
+PROCESS_EXIT_CODE=1

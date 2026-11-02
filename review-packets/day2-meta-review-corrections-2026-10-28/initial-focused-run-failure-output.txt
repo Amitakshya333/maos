@@ -1,0 +1,25 @@
+
+ RUN  v4.1.11 C:/maos
+
+··················································x·································································
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/industrial/meta-model-api-contract.test.ts > Meta Model API opt-in and OpenAI-compatible contract (loopback mock only) > blocks credential contamination in provider-controlled tool names before Core can log it
+Error: ENOENT: no such file or directory, open 'C:\Users\AMITAK~1\AppData\Local\Temp\maos-meta-contract-J4qMU4\.maos\logs\orchestrator.log'
+ ❯ tests/industrial/meta-model-api-contract.test.ts:298:23
+    296|         request: 'Review this selected synthetic bearing CSV.', source…
+    297|       })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>…
+    298|       const logs = fs.readFileSync(path.join(project.root, '.maos', 'l…
+       |                       ^
+    299|       expect(logs).not.toContain(apiKey);
+    300|       expect(consoleLog.mock.calls.flat().join('\n')).not.toContain(ap…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 115 passed (116)
+   Start at  23:22:19
+   Duration  30.03s (transform 2.10s, setup 0ms, import 7.70s, tests 20.81s, environment 1ms)
+

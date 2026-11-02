@@ -1,0 +1,9 @@
+{
+  "projectRoot": "C:\\Users\\AMITAKSHYA SUTAR\\AppData\\Local\\Temp\\maos-pilot-attempt-7 62cea6372f1e49c7abb56dd70a0580f8\\pilot temp\\maos-baseten-synthetic-pilot-6b17a74a207e47a2bd89648c4ca0dd8e\\project",
+  "sourceCsv": "synthetic/pilot.csv",
+  "samplePath": "demo/industrial/turbine_vibration_log.csv",
+  "sourceBytes": 136,
+  "sha256": "68bf1fd8a6d20fee0f40594abf47e3938e161c3ce90e6f0cb3b67feeab5cc2b7",
+  "copyMatches": true,
+  "createdAt": "2026-10-29T18:48:43.9597823Z"
+}

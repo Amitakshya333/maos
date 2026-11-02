@@ -1,0 +1,10 @@
+{
+  "command": "npm pack --ignore-scripts --json --pack-destination <candidate-artifacts>",
+  "exitCode": 0,
+  "packageExists": true,
+  "packageBytes": 1224049,
+  "packageSha256": "3e4f8ee275194ae1f408768e6d798d11ba1cedd8f18c9ffaae2f745154312afb",
+  "npmVersion": "11.6.1",
+  "updateNotifierOverride": "unset",
+  "sensitiveEnvironmentNamesRemoved": 3
+}

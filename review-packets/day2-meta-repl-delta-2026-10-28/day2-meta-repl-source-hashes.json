@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "baseRevision": "239a0042b08a3960d3c89f890f01ab194ff82f1f",
+  "sourceRoot": "C:\\maos",
+  "normalization": "sha256 is raw file bytes; lfNormalizedSha256 replaces each CRLF pair with LF.",
+  "files": [
+    {
+      "path": "docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md",
+      "sha256": "e6fcb1d83e55dfe48c7fc1d2ecf1cf6c097a5e2e0c5fb208ca2b8df54d651428",
+      "lfNormalizedSha256": "e6fcb1d83e55dfe48c7fc1d2ecf1cf6c097a5e2e0c5fb208ca2b8df54d651428"
+    },
+    {
+      "path": "src/api/openapi-spec.ts",
+      "sha256": "683b25f4a4aceb84c9645c5e906472308c6ba4fedac8124a524b730ad2cd395e",
+      "lfNormalizedSha256": "0d72c201f3a9436a56984ecad6912cd7f2a641325683f4048bd9ba8c406ee51b"
+    },
+    {
+      "path": "src/api/router.ts",
+      "sha256": "b55430829d13ebfd3f1178d33b5177ba15b622a752efb75854283bf97fec54b1",
+      "lfNormalizedSha256": "01881af4fc43e1f6f163310fc9e318d3060f6cc15f38ecca8c51ff0b01f68aec"
+    },
+    {
+      "path": "src/backends/openai-provider.ts",
+      "sha256": "9217b85dc4a29a5c32ad07d4ec7ed5e1b46e887bd785732b42b337b01cc26ec9",
+      "lfNormalizedSha256": "9217b85dc4a29a5c32ad07d4ec7ed5e1b46e887bd785732b42b337b01cc26ec9"
+    },
+    {
+      "path": "src/cli/index.ts",
+      "sha256": "10a668d08bdd8625e2bc2031e703ac2f0ff8a57f3326da4b0ff8660ba6d3e3e7",
+      "lfNormalizedSha256": "6b87874657f619f02c411814c0fed152f529dc640c3bd8aee8a515f752b2d887"
+    },
+    {
+      "path": "src/core/agent-runner.ts",
+      "sha256": "fa71aa7bc254cc199c700e7966784bcde4541fc01a6e4655d8157085e6d4c67b",
+      "lfNormalizedSha256": "ba6943f2466901416808bc1dfb0b30480ba68022bbac91f51925394a76197106"
+    },
+    {
+      "path": "src/domain/schemas.ts",
+      "sha256": "e3770484bbb3aa62d28eefa2f22b2ac5b65715416f780f09ae604eb0fec36384",
+      "lfNormalizedSha256": "ae1e630b728d171f18948136a3774c6678fe2f53ddf5717139a1f97c2853902d"
+    },
+    {
+      "path": "src/industrial/analysis-agent-service.ts",
+      "sha256": "4010258aa034472441e154668d51ed64f3066d3509cdc0fd1ce55eec07f04661",
+      "lfNormalizedSha256": "4010258aa034472441e154668d51ed64f3066d3509cdc0fd1ce55eec07f04661"
+    },
+    {
+      "path": "src/industrial/industrial-repl.ts",
+      "sha256": "648cd97786cd8a398e2b59e2bdcdc95716a79042e9df78452c68b6b3a0d2393d",
+      "lfNormalizedSha256": "648cd97786cd8a398e2b59e2bdcdc95716a79042e9df78452c68b6b3a0d2393d"
+    },
+    {
+      "path": "src/service/index.ts",
+      "sha256": "3189342aa22ce7a00f229f4181199812a8fd3fdacb83729ec68aebf5e6086e49",
+      "lfNormalizedSha256": "6f321a7d5bb651aca71ae4aaae48befbf59b43fe3c839b48644bcb1bed24daa9"
+    },
+    {
+      "path": "tests/backends/openai-provider-local-tool-call.test.ts",
+      "sha256": "517af4dcbc022f8631573b362602cb0e0623a42edbf37801d9d48fc416fdceef",
+      "lfNormalizedSha256": "517af4dcbc022f8631573b362602cb0e0623a42edbf37801d9d48fc416fdceef"
+    },
+    {
+      "path": "tests/industrial/analysis-agent-auth-http.test.ts",
+      "sha256": "283c775d42d2e7d0ce89d733b09c2d0e0c7d5e7e4b762b0b925043b56a867007",
+      "lfNormalizedSha256": "283c775d42d2e7d0ce89d733b09c2d0e0c7d5e7e4b762b0b925043b56a867007"
+    },
+    {
+      "path": "tests/industrial/analysis-agent-contract.test.ts",
+      "sha256": "f56e8bbe2518d80204e2119dd76b97e803ae4367ba174b1cde0e4199f14c817d",
+      "lfNormalizedSha256": "f56e8bbe2518d80204e2119dd76b97e803ae4367ba174b1cde0e4199f14c817d"
+    },
+    {
+      "path": "tests/industrial/industrial-repl.test.ts",
+      "sha256": "9191f612bbf484c86149a3133cc7ef93ab78fa49cd223e5d49adb8651d4a9806",
+      "lfNormalizedSha256": "9191f612bbf484c86149a3133cc7ef93ab78fa49cd223e5d49adb8651d4a9806"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "sha256": "4fd4e63b87c5c93d7aadf7f7073089961d121a1dc6d9b9280854d7b3c8073d4c",
+      "lfNormalizedSha256": "4fd4e63b87c5c93d7aadf7f7073089961d121a1dc6d9b9280854d7b3c8073d4c"
+    }
+  ]
+}

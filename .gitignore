@@ -57,3 +57,5 @@ artifacts/
 evidence/
 rust/target/
 rust/test.txt
+
+.worktrees/

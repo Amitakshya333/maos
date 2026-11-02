@@ -1,0 +1,24 @@
+COMMAND: powershell.exe -NoProfile -ExecutionPolicy Bypass -File Install-MaosIndustrial.ps1 -BundleRoot <extracted bundle> -InstallRoot <fresh empty destination>
+NPM_CONFIG_CACHE: <fresh isolated empty cache>
+
+> maosorch@0.3.0 prepare
+> node scripts/prepare-hooks.js
+
+
+added 77 packages in 8s
+npm notice
+npm notice New minor version of npm available! 11.6.1 -> 11.21.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.1
+npm notice To update run: npm install -g npm@11.21.1
+npm notice
+
+added 13 packages in 2s
+Pinned Electron install completed without its Windows runtime binary.
+At C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-install-clean-source-37609be196584def850343ff8a22565d\clean-instal
+l-smoke-b8e41d0717034b2bb1cdd49e1335f48a\bundle\Install-MaosIndustrial.ps1:84 char:66
++ ... pe Leaf)) { throw 'Pinned Electron install completed without its Wind ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Pinned Electron...runtime binary.:String) [], RuntimeException
+    + FullyQualifiedErrorId : Pinned Electron install completed without its Windows runtime binary.
+ 
+EXIT_CODE: 1

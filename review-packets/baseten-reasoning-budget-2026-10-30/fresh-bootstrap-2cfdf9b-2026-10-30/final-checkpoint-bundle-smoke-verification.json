@@ -1,0 +1,156 @@
+{
+  "repositoryRoot": "C:\\maos",
+  "branch": "main",
+  "head": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "parent": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "stagedPaths": [],
+  "committedPaths": [
+    "src/backends/openai-provider.ts",
+    "tests/backends/baseten-api-provider-boundary.test.ts",
+    "tests/backends/openai-provider-local-tool-call.test.ts",
+    "tests/industrial/meta-model-api-contract.test.ts"
+  ],
+  "sourceManifestPath": "review-packets/baseten-reasoning-budget-2026-10-30/source-hashes.json",
+  "sourceManifestSha256": "f40ddac78ad81e7d05797125e167ac8fa66357c771bf619b80fb8019b5d24476",
+  "sourceHashes": [
+    {
+      "path": "src/backends/openai-provider.ts",
+      "rawSha256": "fe1869d65dea2e25f837adb00f7064fa932ab199dfeda404020a76740aaa131d",
+      "lfSha256": "fe1869d65dea2e25f837adb00f7064fa932ab199dfeda404020a76740aaa131d",
+      "bytes": 12898
+    },
+    {
+      "path": "tests/backends/baseten-api-provider-boundary.test.ts",
+      "rawSha256": "83f04735bca824bf9ccdec0e7b9e817dee4fe00cae575f3224d45ee8a19c6d90",
+      "lfSha256": "83f04735bca824bf9ccdec0e7b9e817dee4fe00cae575f3224d45ee8a19c6d90",
+      "bytes": 21444
+    },
+    {
+      "path": "tests/backends/openai-provider-local-tool-call.test.ts",
+      "rawSha256": "51d268a63580bc824e20a0940e226d2d3182b17c9d9b9fc16af1734a82dacbfc",
+      "lfSha256": "51d268a63580bc824e20a0940e226d2d3182b17c9d9b9fc16af1734a82dacbfc",
+      "bytes": 5451
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "rawSha256": "2bfea2f691ba040396f5d64436adafb3d686f5adaad900eb21574f759d4261df",
+      "lfSha256": "2bfea2f691ba040396f5d64436adafb3d686f5adaad900eb21574f759d4261df",
+      "bytes": 37042
+    }
+  ],
+  "sourceDeltaSha256": "c916ddc30baf3b35c80fbe099fb97ee568431a6bc663cf612e3114f2f8f5bac1",
+  "package": {
+    "path": "retry3-native-tar-maosorch-0.3.0.tgz",
+    "bytes": 1233768,
+    "sha256": "591dff32c60a609349f9e9d33a74a3c4024c888302c0a207227aca0078f10225"
+  },
+  "bundle": {
+    "path": "retry3-native-tar-maos-industrial-windows-x64.zip",
+    "bytes": 1265935,
+    "sha256": "797b3f89d94b37f9ddb765e413679d4ae8335aad18e5feac2d8d481a65cd1c59",
+    "members": [
+      "Install-MaosIndustrial.ps1",
+      "bundle-manifest.json",
+      "maosorch.tgz",
+      "package-lock.json"
+    ],
+    "manifest": {
+      "schemaVersion": 1,
+      "sourceRevision": "2cfdf9b81f56eada7df2041625da18e44531151e",
+      "sourceDeltaSha256": "c916ddc30baf3b35c80fbe099fb97ee568431a6bc663cf612e3114f2f8f5bac1",
+      "package": {
+        "name": "maosorch",
+        "version": "0.3.0",
+        "sha256": "591dff32c60a609349f9e9d33a74a3c4024c888302c0a207227aca0078f10225",
+        "archive": "maosorch.tgz"
+      },
+      "applicationLock": {
+        "sha256": "5d9577c499c53d1e78457d00901d117f626fcb824ba76ef8e5fa76637d7eae27",
+        "path": "package-lock.json"
+      },
+      "desktopLock": {
+        "sha256": "722fbfd498cc282f06aacf92a6fc5a8021db20485a432dc418803feddd922a43",
+        "path": "package/desktop/package-lock.json"
+      },
+      "installer": {
+        "sha256": "df5bfdca073dcb89bd6b8f4b5995522135e586748bcbd4887dcbee6a2cbb38a1",
+        "path": "Install-MaosIndustrial.ps1"
+      }
+    }
+  },
+  "installExit": 0,
+  "installedLockSha256": "5d9577c499c53d1e78457d00901d117f626fcb824ba76ef8e5fa76637d7eae27",
+  "installedModules": [
+    {
+      "member": "package/dist/backends/openai-provider.js",
+      "sha256": "127d8597b674f65237d1fc5c5ff41ae4f802e4853dcd248a4d72670e0167eb52"
+    },
+    {
+      "member": "package/dist/service/index.js",
+      "sha256": "d8583c1ee39444fa681aca9cb7b30071a98ac1868de5b7c72ea1cfb92cbe2e3d"
+    }
+  ],
+  "installedSmokeExit": 0,
+  "installedSmokeCases": [
+    {
+      "name": "installed-successful-tool-round-trip",
+      "passed": true,
+      "generations": 2,
+      "telemetryExecutions": 1,
+      "reportAccepted": true,
+      "durationMs": 374
+    },
+    {
+      "name": "truncated-partial-tool-response",
+      "passed": true,
+      "generations": 1,
+      "partialToolIncluded": true,
+      "reportAccepted": false
+    },
+    {
+      "name": "empty-reasoning-only-response",
+      "passed": true,
+      "generations": 1,
+      "partialToolIncluded": false,
+      "reportAccepted": false
+    },
+    {
+      "name": "four-generation-ceiling-and-single-telemetry-tool",
+      "passed": true,
+      "generations": 4,
+      "telemetryExecutions": 1,
+      "unauthorizedCommandExecuted": false,
+      "reportAccepted": false
+    },
+    {
+      "name": "provider-error-no-retry",
+      "passed": true,
+      "httpAttempts": 1,
+      "reportAccepted": false
+    },
+    {
+      "name": "redirect-refused-before-destination",
+      "passed": true,
+      "sourceRequests": 1,
+      "redirectDestinationRequests": 0
+    },
+    {
+      "name": "overall-60-second-deadline",
+      "passed": true,
+      "generations": 1,
+      "durationMs": 60023,
+      "requestAborted": true
+    }
+  ],
+  "unrelatedWorkingTreeStatusNamesOnly": [
+    "M .maos/maos.config.json",
+    " M .maos/pool.json",
+    " M demo/industrial/MASTER_DEMO_PLAN.md",
+    " M demo/industrial/RECORDING_READINESS.md",
+    "?? HACKATHON_SUBMISSION.md",
+    "?? docs/MAOS_INDUSTRIAL_EXECUTION_CHECKLIST.md",
+    "?? docs/product/",
+    "?? review-packets/"
+  ],
+  "indexEmpty": true
+}

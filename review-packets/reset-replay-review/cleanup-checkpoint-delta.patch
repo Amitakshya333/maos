@@ -1,0 +1,940 @@
+diff --git a/src/cli/dashboard-template.ts b/src/cli/dashboard-template.ts
+index 310e460..a4b9b6c 100644
+--- a/src/cli/dashboard-template.ts
++++ b/src/cli/dashboard-template.ts
+@@ -1040,7 +1040,12 @@ async function runSovereignAudit() {
+   try {
+     const res = await fetch('/api/industrial/trigger', { method: 'POST' });
+     const data = await res.json();
+-    if (data.success) {
++    if (data.status === 'in_progress' || data.status === 'unavailable') {
++      const busy = data.status === 'in_progress';
++      if (toast) toast.innerHTML = (busy ? '⏳ T-07 analysis is already in progress: ' : '⚠️ T-07 analysis unavailable: ') + escapeHtml(data.message || data.error || data.status);
++      if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> RUN T-07 SAFETY AUDIT'; }
++      if (busy) setTimeout(refresh, 1000);
++    } else if (data.success) {
+       if (btn) btn.innerHTML = '<span>⚡</span> WAITING FOR REVIEW...';
+       if (toast) {
+         const runId = data.runId || (data.task && data.task.id) || 'UNKNOWN';
+diff --git a/src/cli/dashboard.ts b/src/cli/dashboard.ts
+index aba8884..b633b30 100644
+--- a/src/cli/dashboard.ts
++++ b/src/cli/dashboard.ts
+@@ -26,6 +26,7 @@ import type { WorkflowStage } from '../domain/schemas';
+ import { RestApiRouter } from '../api';
+ import { SECURITY_HEADERS, CONTENT_SECURITY_POLICY } from '../api/security-headers';
+ import { executeJudgedRun } from '../industrial/judged-run';
++import type { JudgedRunResult } from '../industrial/judged-run';
+ 
+ const PORT = 3847;
+ 
+@@ -174,6 +175,30 @@ export interface IndustrialTriggerResult {
+   };
+ }
+ 
++export function writeLegacyIndustrialTriggerResponse(
++  req: http.IncomingMessage,
++  res: http.ServerResponse,
++  result: JudgedRunResult,
++): void {
++  const errorCode = result.details?.executionErrorCode;
++  const busy = errorCode === 'JUDGED_RUN_BUSY';
++  const unavailable = errorCode === 'JUDGED_RUN_LOCK_UNAVAILABLE';
++  const waiting = result.approvalStatus === 'pending' && Boolean(result.details?.approvalId);
++  const status = busy ? 'in_progress'
++    : unavailable ? 'unavailable'
++      : waiting ? 'pending_approval'
++        : result.success ? 'completed' : 'failed';
++  res.writeHead(busy ? 409 : unavailable ? 503 : waiting ? 202 : result.success ? 200 : 422, getLegacyCorsHeaders(req));
++  res.end(JSON.stringify({
++    success: waiting || result.success,
++    runId: result.runId,
++    status,
++    verdict: busy || unavailable ? 'UNAVAILABLE' : result.overallVerdict,
++    details: result.details,
++    message: result.message,
++  }));
++}
++
+ export function handleIndustrialTrigger(
+   services: ServiceContainer,
+   cwd: string,
+@@ -291,19 +316,20 @@ export function runDashboard(): void {
+         demoName: 'safety-audit',
+         json: true,
+       }).then((result) => {
+-        const waiting = result.approvalStatus === 'pending' && Boolean(result.details?.approvalId);
+-        res.writeHead(waiting ? 202 : (result.success ? 200 : 422), getLegacyCorsHeaders(req));
++        writeLegacyIndustrialTriggerResponse(req, res, result);
++      }).catch((err: any) => {
++        const busy = err?.code === 'JUDGED_RUN_BUSY';
++        const unavailable = err?.code === 'JUDGED_RUN_LOCK_UNAVAILABLE';
++        res.writeHead(busy ? 409 : unavailable ? 503 : 500, getLegacyCorsHeaders(req));
+         res.end(JSON.stringify({
+-          success: waiting || result.success,
+-          runId: result.runId,
+-          status: waiting ? 'pending_approval' : (result.success ? 'completed' : 'failed'),
+-          verdict: result.overallVerdict,
+-          details: result.details,
+-          message: result.message,
++          success: false,
++          status: busy ? 'in_progress' : unavailable ? 'unavailable' : 'failed',
++          verdict: busy || unavailable ? 'UNAVAILABLE' : undefined,
++          code: err?.code,
++          details: err?.details,
++          error: err?.message || String(err),
++          message: err?.message || String(err),
+         }));
+-      }).catch((err: any) => {
+-        res.writeHead(500, getLegacyCorsHeaders(req));
+-        res.end(JSON.stringify({ success: false, error: err.message }));
+       });
+       return;
+     }
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index e84c620..91ff529 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -512,9 +512,14 @@ program
+       process.exit(1);
+     }
+ 
+-    const services = createServiceContainer(cwd);
+-    const result = services.task.clean();
+-    console.log(chalk.green(`✅ Cleaned: ${result.tasksRemoved} tasks removed, statuses reset, logs cleared.`));
++    try {
++      const services = createServiceContainer(cwd);
++      const result = services.task.clean();
++      console.log(chalk.green(`✅ Cleaned: ${result.tasksRemoved} tasks removed, statuses reset, logs cleared.`));
++    } catch (error: any) {
++      console.error(chalk.yellow(`⚠️  Clean refused: ${error.message || String(error)}`));
++      process.exitCode = 1;
++    }
+   });
+ 
+ // ─── maos industrial ──────────────────────────────────────────
+diff --git a/src/core/checkpoint.ts b/src/core/checkpoint.ts
+index 109ffa0..8812c69 100644
+--- a/src/core/checkpoint.ts
++++ b/src/core/checkpoint.ts
+@@ -23,7 +23,7 @@
+ 
+ import * as fs from 'fs';
+ import * as path from 'path';
+-import { getMaosRoot, getActiveDir, getPendingDir, getDoneDir } from '../utils/paths';
++import { getCheckpointsDir, getActiveDir, getPendingDir, getDoneDir } from '../utils/paths';
+ import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
+ 
+ // ---- Types ----
+@@ -77,18 +77,14 @@ export interface TaskCheckpoint {
+ 
+ // ---- Checkpoint Directory ----
+ 
+-function getCheckpointDir(projectRoot: string): string {
+-  return path.join(getMaosRoot(projectRoot), 'checkpoints');
+-}
+-
+ function getCheckpointPath(projectRoot: string, taskId: string): string {
+   // Sanitize task ID for filesystem
+   const safe = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+-  return path.join(getCheckpointDir(projectRoot), `${safe}.json`);
++  return path.join(getCheckpointsDir(projectRoot), `${safe}.json`);
+ }
+ 
+ function ensureCheckpointDir(projectRoot: string): void {
+-  const dir = getCheckpointDir(projectRoot);
++  const dir = getCheckpointsDir(projectRoot);
+   if (!fs.existsSync(dir)) {
+     fs.mkdirSync(dir, { recursive: true });
+   }
+@@ -148,7 +144,7 @@ function deleteCheckpointUnderProjectLock(projectRoot: string, taskId: string):
+  * List all checkpoint files.
+  */
+ export function listCheckpoints(projectRoot: string): TaskCheckpoint[] {
+-  const dir = getCheckpointDir(projectRoot);
++  const dir = getCheckpointsDir(projectRoot);
+   if (!fs.existsSync(dir)) return [];
+ 
+   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+diff --git a/src/industrial/atomic-cleanup-coordinator.ts b/src/industrial/atomic-cleanup-coordinator.ts
+index ca834e0..1abd35c 100644
+--- a/src/industrial/atomic-cleanup-coordinator.ts
++++ b/src/industrial/atomic-cleanup-coordinator.ts
+@@ -47,9 +47,8 @@ import type { Task, WorkflowStage } from '../domain/schemas';
+ import type { FirewallRestoreResult } from '../domain/firewall-policy';
+ import type { NetworkObservationTrace } from '../domain/network-monitor';
+ import { ContainerRunner } from './container-runner';
+-import { isProcessAlive } from './service-startup';
+ import { withJudgedRunOutputLock } from './judged-run-lock';
+-import { getLockPath } from './lifecycle';
++import { removeAbandonedLifecycleLockUnderProjectOutputLock } from './lifecycle';
+ 
+ export interface AtomicCleanupReport {
+   readonly timestamp: string;
+@@ -307,20 +306,22 @@ export class AtomicCleanupCoordinator {
+   }
+ 
+   /**
+-   * Purges orphan temporary files and releases dead lifecycle locks.
++   * Purges orphan temporary files and removes only confirmed abandoned lifecycle locks.
+    */
+-  public cleanupOrphanFiles(options?: { forceLockRelease?: boolean }): {
++  public cleanupOrphanFiles(): {
+     artifactsPurged: number;
+     bundlesPurged: number;
+     locksRemoved: number;
++    lifecycleLockStatus: 'absent' | 'removed' | 'live' | 'not_stale' | 'ambiguous';
+   } {
+-    return withJudgedRunOutputLock(this.projectRoot, () => this.cleanupOrphanFilesUnderProjectLock(options));
++    return withJudgedRunOutputLock(this.projectRoot, () => this.cleanupOrphanFilesUnderProjectLock());
+   }
+ 
+-  private cleanupOrphanFilesUnderProjectLock(options?: { forceLockRelease?: boolean }): {
++  private cleanupOrphanFilesUnderProjectLock(): {
+     artifactsPurged: number;
+     bundlesPurged: number;
+     locksRemoved: number;
++    lifecycleLockStatus: 'absent' | 'removed' | 'live' | 'not_stale' | 'ambiguous';
+   } {
+     let artifactsPurged = 0;
+     let bundlesPurged = 0;
+@@ -376,27 +377,11 @@ export class AtomicCleanupCoordinator {
+       } catch {}
+     }
+ 
+-    // 3. Stale lifecycle lock
+-    const lockPath = getLockPath(this.projectRoot);
+-    if (fs.existsSync(lockPath)) {
+-      try {
+-        const raw = fs.readFileSync(lockPath, 'utf8');
+-        const data = JSON.parse(raw);
+-        const ownerDead = typeof data.pid === 'number' ? !isProcessAlive(data.pid) : true;
+-        if (ownerDead || options?.forceLockRelease) {
+-          fs.unlinkSync(lockPath);
+-          locksRemoved++;
+-        }
+-      } catch {
+-        // Corrupt lock file -> remove
+-        try {
+-          fs.unlinkSync(lockPath);
+-          locksRemoved++;
+-        } catch {}
+-      }
+-    }
++    // The project-output guard serializes this check/unlink with lifecycle lock writers.
++    const lifecycleLockStatus = removeAbandonedLifecycleLockUnderProjectOutputLock(this.projectRoot);
++    if (lifecycleLockStatus === 'removed') locksRemoved++;
+ 
+-    return { artifactsPurged, bundlesPurged, locksRemoved };
++    return { artifactsPurged, bundlesPurged, locksRemoved, lifecycleLockStatus };
+   }
+ 
+   // ── Unified Atomic Cleanup Orchestrator ───────────────────────────────
+@@ -407,6 +392,7 @@ export class AtomicCleanupCoordinator {
+    */
+   public async executeAtomicCleanup(options: {
+     reason?: string;
++    /** Compatibility flag; it never overrides lifecycle-lock ownership. */
+     force?: boolean;
+   } = {}): Promise<AtomicCleanupReport> {
+     if (this.inProgressCleanup) {
+@@ -517,10 +503,20 @@ export class AtomicCleanupCoordinator {
+ 
+       // Step 6: Orphan files and locks
+       try {
+-        const orphanRes = this.cleanupOrphanFiles({ forceLockRelease: options.force });
++        const orphanRes = this.cleanupOrphanFiles();
+         orphanArtifactsPurgedCount = orphanRes.artifactsPurged;
+         orphanBundlesPurgedCount = orphanRes.bundlesPurged;
+         lifecycleLocksRemovedCount = orphanRes.locksRemoved;
++        if (['live', 'not_stale', 'ambiguous'].includes(orphanRes.lifecycleLockStatus)) {
++          errors.push({
++            subsystem: 'lifecycle_lock',
++            message: orphanRes.lifecycleLockStatus === 'live'
++              ? 'Lifecycle lock is owned by a live process; force cannot remove it.'
++              : orphanRes.lifecycleLockStatus === 'ambiguous'
++                ? 'Lifecycle lock ownership is ambiguous; left in place for manual inspection.'
++                : 'Lifecycle lock owner is not confirmed abandoned yet; left in place for retry.',
++          });
++        }
+       } catch (err: any) {
+         errors.push({ subsystem: 'orphan_files', message: err.message || String(err) });
+       }
+diff --git a/src/industrial/deterministic-reset.ts b/src/industrial/deterministic-reset.ts
+index ba0462f..dc60484 100644
+--- a/src/industrial/deterministic-reset.ts
++++ b/src/industrial/deterministic-reset.ts
+@@ -2,7 +2,7 @@
+  * F10-05: Deterministic Reset for Industrial Generated Test State
+  *
+  * Implements safe, allowlisted, dry-run-capable reset of confirmed generated state:
+- *   - queue: generated tasks, objectives, plans, and events (.maos/queue/**, .maos/plans/**, .maos/events/**)
++ *   - queue: generated tasks, objectives, plans, events, and checkpoints (.maos/queue/**, .maos/plans/**, .maos/events/**, .maos/checkpoints/**)
+  *   - output: generated artifacts (artifacts/generated/**, .maos/generated/**, demo/industrial/generated/**)
+  *   - index, sandbox, conversation: currently disabled until their writers share this reset guard
+  *
+@@ -24,6 +24,7 @@ import { withJudgedRunOutputLock } from './judged-run-lock';
+ import {
+   getActiveDir,
+   getCancelledDir,
++  getCheckpointsDir,
+   getDoneDir,
+   getEventsDir,
+   getFailedDir,
+@@ -208,6 +209,7 @@ export function discoverResetCandidates(
+       getRetryDir(normalizedRoot),
+       getFailedDir(normalizedRoot),
+       getCancelledDir(normalizedRoot),
++      getCheckpointsDir(normalizedRoot),
+       getObjectivesDir(normalizedRoot),
+       getPlansDir(normalizedRoot),
+       getEventsDir(normalizedRoot),
+@@ -412,7 +414,7 @@ export async function executeDeterministicReset(
+           scannedBytes: 0,
+           removedBytes: 0,
+           totalBytes: 0,
+-          message: `QUEUE_RESET_REFUSED: Active tasks or workflows must finish or be interrupted before reset: ${active.join(', ')}.`,
++          message: `QUEUE_RESET_REFUSED: Active queue entries or workflows remain (including interrupted entries whose worker exit is unconfirmed): ${active.join(', ')}. Stop the owning MAOS worker; after it exits, restart MAOS to recover orphaned work, then retry reset.`,
+           error: 'ACTIVE_QUEUE_WORK',
+         };
+       }
+diff --git a/src/industrial/lifecycle.ts b/src/industrial/lifecycle.ts
+index 0683ec8..1656010 100644
+--- a/src/industrial/lifecycle.ts
++++ b/src/industrial/lifecycle.ts
+@@ -33,6 +33,7 @@ import {
+   ServiceStartupError,
+ } from './service-startup';
+ import { validateAllStores, StoreStatus } from './offline-stores';
++import { withJudgedRunOutputLock } from './judged-run-lock';
+ 
+ // ── Exit Codes ─────────────────────────────────────────────────────
+ 
+@@ -143,86 +144,88 @@ export function getStatePath(projectRoot: string): string {
+ /**
+  * Acquire exclusive lifecycle lock using atomic file creation.
+  *
+- * Uses `fs.writeFileSync(path, data, { flag: 'wx' })` which atomically
+- * creates the file and fails with EEXIST if it already exists.
+- * This eliminates the check-then-write race condition.
++ * The shared project-output lock serializes create, reclamation, and release;
++ * exclusive file creation remains the final guard against duplicate owners.
+  *
+  * Stale locks are only removed when BOTH conditions are true:
+  *   1. Lock age exceeds LOCK_TIMEOUT_MS
+- *   2. The owning PID is no longer alive
++ *   2. The same-host owning PID is confirmed dead
+  *
+- * A long-running lifecycle command with a live PID will NOT have its
+- * lock stolen regardless of age.
++ * Malformed or foreign-host locks remain in place for manual inspection.
+  */
+ export function acquireLock(projectRoot: string): boolean {
+-  const lockPath = getLockPath(projectRoot);
+-  const lockDir = path.dirname(lockPath);
+-
+-  if (!fs.existsSync(lockDir)) {
+-    fs.mkdirSync(lockDir, { recursive: true });
++  try {
++    return withJudgedRunOutputLock(projectRoot, () => acquireLockUnderProjectLock(projectRoot));
++  } catch {
++    return false;
+   }
++}
+ 
+-  const lockContent: LockData = {
+-    pid: process.pid,
+-    timestamp: new Date().toISOString(),
+-    hostname: os.hostname(),
+-  };
++function isLockData(value: unknown): value is LockData {
++  if (!value || typeof value !== 'object') return false;
++  const data = value as Partial<LockData>;
++  return Number.isSafeInteger(data.pid) && Number(data.pid) > 0
++    && typeof data.timestamp === 'string' && Number.isFinite(Date.parse(data.timestamp))
++    && typeof data.hostname === 'string' && data.hostname.trim().length > 0;
++}
+ 
+-  // Try atomic exclusive create first
++function readLockData(lockPath: string): LockData | null {
+   try {
+-    fs.writeFileSync(lockPath, JSON.stringify(lockContent, null, 2) + '\n', {
+-      encoding: 'utf-8',
+-      flag: 'wx', // Exclusive create — fails with EEXIST if file exists
+-    });
+-    return true; // Lock acquired
+-  } catch (err: any) {
+-    if (err.code !== 'EEXIST') {
+-      // Unexpected error (permissions, disk full, etc.)
+-      return false;
+-    }
+-    // File exists — check if stale
++    if (!fs.lstatSync(lockPath).isFile()) return null;
++    const data: unknown = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
++    return isLockData(data) ? data : null;
++  } catch {
++    return null;
+   }
++}
++
++function ownerIsDefinitelyDead(data: LockData): boolean {
++  return data.hostname === os.hostname() && !isProcessAlive(data.pid);
++}
+ 
+-  // Lock file exists. Check if we can steal it.
++function writeExclusiveLock(lockPath: string, data: LockData): boolean {
+   try {
+-    const existingData: LockData = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+-    const lockAge = Date.now() - new Date(existingData.timestamp).getTime();
+-
+-    // Both conditions must be true to remove a stale lock:
+-    // 1. Age exceeds timeout
+-    // 2. Owning PID is dead
+-    const ownerDead = !isProcessAlive(existingData.pid);
+-
+-    if (lockAge >= LOCK_TIMEOUT_MS && ownerDead) {
+-      // Safe to remove stale lock — owner is dead
+-      try { fs.unlinkSync(lockPath); } catch { /* race: someone else removed it */ }
+-
+-      // Retry atomic create
+-      try {
+-        fs.writeFileSync(lockPath, JSON.stringify(lockContent, null, 2) + '\n', {
+-          encoding: 'utf-8',
+-          flag: 'wx',
+-        });
+-        return true;
+-      } catch {
+-        return false; // Another process grabbed it
+-      }
+-    }
++    fs.writeFileSync(lockPath, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf-8', flag: 'wx' });
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++function acquireLockUnderProjectLock(projectRoot: string): boolean {
++  const lockPath = getLockPath(projectRoot);
++  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
++  const lockContent: LockData = { pid: process.pid, timestamp: new Date().toISOString(), hostname: os.hostname() };
++  if (writeExclusiveLock(lockPath, lockContent)) return true;
+ 
+-    // Lock is held by a live process, or not old enough
++  const existingData = readLockData(lockPath);
++  if (!existingData || Date.now() - Date.parse(existingData.timestamp) < LOCK_TIMEOUT_MS || !ownerIsDefinitelyDead(existingData)) {
+     return false;
++  }
++
++  try {
++    fs.unlinkSync(lockPath);
+   } catch {
+-    // Corrupt lock file — attempt removal and retry
+-    try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
+-    try {
+-      fs.writeFileSync(lockPath, JSON.stringify(lockContent, null, 2) + '\n', {
+-        encoding: 'utf-8',
+-        flag: 'wx',
+-      });
+-      return true;
+-    } catch {
+-      return false;
+-    }
++    return false;
++  }
++  return writeExclusiveLock(lockPath, lockContent);
++}
++
++export type LifecycleLockCleanupStatus = 'absent' | 'removed' | 'live' | 'not_stale' | 'ambiguous';
++
++/** Caller must hold withJudgedRunOutputLock for this project. */
++export function removeAbandonedLifecycleLockUnderProjectOutputLock(projectRoot: string): LifecycleLockCleanupStatus {
++  const lockPath = getLockPath(projectRoot);
++  if (!fs.existsSync(lockPath)) return 'absent';
++  const data = readLockData(lockPath);
++  if (!data || data.hostname !== os.hostname()) return 'ambiguous';
++  if (isProcessAlive(data.pid)) return 'live';
++  if (Date.now() - Date.parse(data.timestamp) < LOCK_TIMEOUT_MS) return 'not_stale';
++  try {
++    fs.unlinkSync(lockPath);
++    return 'removed';
++  } catch {
++    return fs.existsSync(lockPath) ? 'ambiguous' : 'absent';
+   }
+ }
+ 
+@@ -230,22 +233,13 @@ export function acquireLock(projectRoot: string): boolean {
+  * Release lifecycle lock. Only removes if we own it.
+  */
+ export function releaseLock(projectRoot: string): void {
+-  const lockPath = getLockPath(projectRoot);
+   try {
+-    if (fs.existsSync(lockPath)) {
+-      // Verify we own the lock before removing
+-      try {
+-        const lockData: LockData = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+-        if (lockData.pid === process.pid) {
+-          fs.unlinkSync(lockPath);
+-        }
+-        // If not our PID, do NOT remove — another process owns it
+-      } catch {
+-        // Corrupt file — safe to remove
+-        fs.unlinkSync(lockPath);
+-      }
+-    }
+-  } catch { /* ignore */ }
++    withJudgedRunOutputLock(projectRoot, () => {
++      const lockPath = getLockPath(projectRoot);
++      const data = readLockData(lockPath);
++      if (data?.hostname === os.hostname() && data.pid === process.pid) fs.unlinkSync(lockPath);
++    });
++  } catch { /* Leave an unverifiable lock for explicit recovery. */ }
+ }
+ 
+ // ── State Management ───────────────────────────────────────────────
+diff --git a/src/industrial/service-startup.ts b/src/industrial/service-startup.ts
+index c682d2b..36ad3e4 100644
+--- a/src/industrial/service-startup.ts
++++ b/src/industrial/service-startup.ts
+@@ -329,8 +329,8 @@ export function isProcessAlive(pid: number): boolean {
+   try {
+     process.kill(pid, 0);
+     return true;
+-  } catch {
+-    return false;
++  } catch (error) {
++    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+   }
+ }
+ 
+diff --git a/src/service/task-service.ts b/src/service/task-service.ts
+index cb9979c..3ceb016 100644
+--- a/src/service/task-service.ts
++++ b/src/service/task-service.ts
+@@ -19,6 +19,7 @@ import {
+ } from '../core/queue';
+ import type { Task, QueueCounts, CreateTaskInput, TaskFilter, CleanResult } from '../domain/schemas';
+ import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
++import { getActiveDir, getCheckpointsDir } from '../utils/paths';
+ 
+ /**
+  * Convert a core TaskFile to a domain Task.
+@@ -194,9 +195,12 @@ export class TaskService {
+    */
+   clean(): CleanResult {
+     return withJudgedRunOutputLock(this.projectRoot, () => {
+-      const activeTasks = getActiveTasks(this.projectRoot).filter((task) => task.status === 'active');
+-      if (activeTasks.length > 0) {
+-        throw new Error(`QUEUE_CLEAN_REFUSED: ${activeTasks.length} active task(s) must finish or be interrupted before cleaning.`);
++      const activeDir = getActiveDir(this.projectRoot);
++      const activeEntries = fs.existsSync(activeDir)
++        ? fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))
++        : [];
++      if (activeEntries.length > 0) {
++        throw new Error(`QUEUE_CLEAN_REFUSED: ${activeEntries.length} active queue entr${activeEntries.length === 1 ? 'y remains' : 'ies remain'} (including interrupted entries whose worker exit is unconfirmed). Stop the owning MAOS worker; after it exits, restart MAOS to recover the orphaned queue entry, then retry clean.`);
+       }
+       const maosDir = path.join(this.projectRoot, '.maos');
+       if (!fs.existsSync(maosDir)) return { tasksRemoved: 0, statusesReset: false, logsCleared: false };
+@@ -216,7 +220,7 @@ export class TaskService {
+       }
+ 
+       // Clear checkpoints
+-      const checkpointDir = path.join(maosDir, 'checkpoints');
++      const checkpointDir = getCheckpointsDir(this.projectRoot);
+       if (fs.existsSync(checkpointDir)) {
+         for (const file of fs.readdirSync(checkpointDir)) {
+           fs.unlinkSync(path.join(checkpointDir, file));
+diff --git a/tests/f2-08-lifecycle.test.ts b/tests/f2-08-lifecycle.test.ts
+index 07ea3a1..00b403e 100644
+--- a/tests/f2-08-lifecycle.test.ts
++++ b/tests/f2-08-lifecycle.test.ts
+@@ -447,7 +447,7 @@ describe('F2-08: Idempotent Lifecycle Scripts', () => {
+       fs.writeFileSync(lockPath, JSON.stringify({
+         pid: 999999, // dead PID
+         timestamp: new Date(Date.now() - 60_000).toISOString(), // 60s ago
+-        hostname: 'test',
++        hostname: os.hostname(),
+       }), 'utf-8');
+ 
+       expect(acquireLock(PROJECT_ROOT)).toBe(true);
+diff --git a/tests/industrial/f10-02-dashboard-trigger.test.ts b/tests/industrial/f10-02-dashboard-trigger.test.ts
+index bb34c9f..5ff54d6 100644
+--- a/tests/industrial/f10-02-dashboard-trigger.test.ts
++++ b/tests/industrial/f10-02-dashboard-trigger.test.ts
+@@ -1,20 +1,24 @@
+-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
++import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+ import * as fs from 'fs';
++import * as os from 'os';
+ import * as path from 'path';
+ import * as http from 'http';
+ import { createServiceContainer } from '../../src/service';
+-import { handleIndustrialTrigger, IndustrialTriggerResult } from '../../src/cli/dashboard';
++import { handleIndustrialTrigger, IndustrialTriggerResult, writeLegacyIndustrialTriggerResponse } from '../../src/cli/dashboard';
++import type { JudgedRunResult } from '../../src/industrial/judged-run';
+ 
+ describe('F10-02: Typed Dashboard Workflow Trigger', () => {
+-  const testRoot = path.resolve(__dirname, '../../.maos/test-temp-f10-02-' + Date.now());
++  let testRoot: string;
+ 
+   beforeEach(() => {
++    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-temp-f10-02-'));
+     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'pending'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'active'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'done'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'queue', 'objectives'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'audit'), { recursive: true });
+     fs.mkdirSync(path.join(testRoot, '.maos', 'events'), { recursive: true });
++    fs.writeFileSync(path.join(testRoot, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f10-02-dashboard-test' }));
+   });
+ 
+   afterEach(() => {
+@@ -137,6 +141,63 @@ describe('F10-02: Typed Dashboard Workflow Trigger', () => {
+     });
+   });
+ 
++  describe('legacy T-07 contention response', () => {
++    it.each([
++      ['JUDGED_RUN_BUSY', 409, 'in_progress'],
++      ['JUDGED_RUN_LOCK_UNAVAILABLE', 503, 'unavailable'],
++    ] as const)('preserves %s as unavailable/in-progress', (code, statusCode, status) => {
++      const details = { executionErrorCode: code, coordination: 'unavailable' };
++      const result = {
++        success: false,
++        exitCode: 9,
++        message: `${code}: retry later`,
++        runId: 'judged-run-unavailable',
++        durationMs: 1,
++        stagesCompleted: [],
++        boundaryVerified: true,
++        policyVerified: true,
++        overallVerdict: 'UNAVAILABLE',
++        approvalStatus: 'pending',
++        auditVerified: false,
++        details,
++      } as JudgedRunResult;
++      const response = { writeHead: vi.fn(), end: vi.fn() } as any;
++
++      writeLegacyIndustrialTriggerResponse({ headers: {} } as any, response, result);
++
++      expect(response.writeHead).toHaveBeenCalledWith(statusCode, expect.any(Object));
++      expect(JSON.parse(response.end.mock.calls[0][0])).toMatchObject({
++        success: false,
++        status,
++        verdict: 'UNAVAILABLE',
++        details,
++        message: `${code}: retry later`,
++      });
++    });
++
++    it('preserves a genuine engineering FAIL', () => {
++      const result = {
++        success: true,
++        exitCode: 0,
++        message: 'Analysis completed with engineering FAIL.',
++        runId: 'judged-run-fail',
++        durationMs: 1,
++        stagesCompleted: ['analysis'],
++        boundaryVerified: true,
++        policyVerified: true,
++        overallVerdict: 'FAIL',
++        approvalStatus: 'approved',
++        auditVerified: true,
++      } as JudgedRunResult;
++      const response = { writeHead: vi.fn(), end: vi.fn() } as any;
++
++      writeLegacyIndustrialTriggerResponse({ headers: {} } as any, response, result);
++
++      expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
++      expect(JSON.parse(response.end.mock.calls[0][0])).toMatchObject({ success: true, status: 'completed', verdict: 'FAIL' });
++    });
++  });
++
+   describe('Static code verification for negative requirements', () => {
+     it('verifies src/cli/dashboard.ts does not directly import core/queue createTask', () => {
+       const content = fs.readFileSync(path.resolve(__dirname, '../../src/cli/dashboard.ts'), 'utf8');
+diff --git a/tests/industrial/f10-05-deterministic-reset.test.ts b/tests/industrial/f10-05-deterministic-reset.test.ts
+index 401287b..5acb8e8 100644
+--- a/tests/industrial/f10-05-deterministic-reset.test.ts
++++ b/tests/industrial/f10-05-deterministic-reset.test.ts
+@@ -19,6 +19,8 @@ import {
+ } from '../../src/industrial/industrial-cli';
+ import { withJudgedRunOutputLock } from '../../src/industrial/judged-run-lock';
+ import { createServiceContainer } from '../../src/service';
++import { createTask as createCoreTask } from '../../src/core/queue';
++import { loadCheckpoint, recoverOrphanedTasks, saveCheckpoint } from '../../src/core/checkpoint';
+ 
+ const PROJECT_ROOT = path.resolve(__dirname, '../..');
+ const CANARY_PATH = path.resolve(PROJECT_ROOT, 'rust', 'test.txt');
+@@ -381,6 +383,82 @@ describe('F10-05: Deterministic Reset for Industrial Generated Test State', () =
+       services.task.interruptTask(task.id, 'test cleanup');
+     });
+ 
++    it('queue reset clears old checkpoints before a reused task ID can be recovered', async () => {
++      const services = createServiceContainer(testRoot);
++      const taskId = 'task-reset-checkpoint-reuse';
++      const oldTask = createCoreTask({ id: taskId, description: 'old attempt with saved progress', agent: 'analyst_agent', cwd: testRoot });
++      saveCheckpoint(testRoot, {
++        taskId,
++        agentId: 'analyst_agent',
++        iteration: 8,
++        maxIterations: 10,
++        progressPct: 0.9,
++        totalTokens: 900,
++        filesChanged: ['old-attempt-output.ts'],
++        lastToolCalls: [{ name: 'write_file', summary: 'old attempt output' }],
++        wasProductive: true,
++        idleCount: 0,
++        costUSD: 0.01,
++        savedAt: Date.now(),
++        startedAt: Date.now() - 1000,
++        progressSummary: 'Old attempt made progress before the queue reset.',
++        retryCount: 0,
++      });
++      expect(fs.existsSync(oldTask.filePath)).toBe(true);
++      expect(loadCheckpoint(testRoot, taskId)?.progressPct).toBe(0.9);
++
++      const reset = await executeDeterministicReset({ projectRoot: testRoot, categories: ['queue'], dryRun: false, confirmed: true });
++      expect(reset.success).toBe(true);
++      expect(reset.removedFiles.map((file) => file.relativePath)).toContain(`.maos/checkpoints/${taskId}.json`);
++      expect(loadCheckpoint(testRoot, taskId)).toBeNull();
++
++      const newAttempt = createCoreTask({ id: taskId, description: 'new attempt before its first checkpoint', agent: 'analyst_agent', cwd: testRoot });
++      services.task.moveToActive(newAttempt);
++      expect(services.task.interruptTask(taskId, 'simulated crash before replacement checkpoint')?.status).toBe('interrupted');
++      const recovery = recoverOrphanedTasks(testRoot);
++      expect(recovery.markedDone).toBe(0);
++      expect(recovery.recovered).toBe(1);
++      expect(recovery.details[0]).toMatchObject({ taskId, action: 'requeued' });
++      expect(fs.existsSync(path.join(testRoot, '.maos', 'queue', 'active', `${taskId}.md`))).toBe(false);
++      expect(fs.existsSync(path.join(testRoot, '.maos', 'queue', 'pending', `${taskId}.md`))).toBe(true);
++      expect(loadCheckpoint(testRoot, taskId)).toBeNull();
++    });
++
++    it('refuses queue reset after TaskService interrupt until worker exit is established', async () => {
++      const services = createServiceContainer(testRoot);
++      const task = services.task.createTask({ description: 'interrupt marker does not prove worker exit' });
++      services.task.moveToActive({ id: task.id, filePath: task.filePath!, status: 'pending' } as any);
++      saveCheckpoint(testRoot, {
++        taskId: task.id,
++        agentId: task.agent,
++        iteration: 2,
++        maxIterations: 10,
++        progressPct: 0.2,
++        totalTokens: 100,
++        filesChanged: ['in-progress.ts'],
++        lastToolCalls: [],
++        wasProductive: true,
++        idleCount: 0,
++        costUSD: 0,
++        savedAt: Date.now(),
++        startedAt: Date.now() - 1000,
++        progressSummary: 'Task was interrupted while worker ownership is unknown.',
++        retryCount: 0,
++      });
++      expect(services.task.interruptTask(task.id, 'test interruption')?.status).toBe('interrupted');
++
++      const reset = await executeDeterministicReset({ projectRoot: testRoot, categories: ['queue'], dryRun: false, confirmed: true });
++      expect(reset.success).toBe(false);
++      expect(reset.error).toBe('ACTIVE_QUEUE_WORK');
++      expect(reset.message).toContain('worker exit is unconfirmed');
++      const activeTaskPath = path.join(testRoot, '.maos', 'queue', 'active', path.basename(task.filePath!));
++      expect(fs.existsSync(activeTaskPath)).toBe(true);
++      expect(loadCheckpoint(testRoot, task.id)).not.toBeNull();
++      expect(() => services.task.clean()).toThrow('worker exit is unconfirmed');
++      expect(fs.existsSync(activeTaskPath)).toBe(true);
++      expect(loadCheckpoint(testRoot, task.id)).not.toBeNull();
++    });
++
+     it('reports scanned and actually removed bytes separately when candidates disappear', async () => {
+       fs.unlinkSync(path.join(testRoot, 'artifacts', 'generated', 'report-run-A.docx'));
+       fs.unlinkSync(path.join(testRoot, 'demo', 'industrial', 'generated', 'output.md'));
+diff --git a/tests/industrial/f9-08-interruption-atomic-cleanup.test.ts b/tests/industrial/f9-08-interruption-atomic-cleanup.test.ts
+index 5bf9ad0..ed21cc7 100644
+--- a/tests/industrial/f9-08-interruption-atomic-cleanup.test.ts
++++ b/tests/industrial/f9-08-interruption-atomic-cleanup.test.ts
+@@ -46,12 +46,13 @@
+  *     - Verifies rust/test.txt SHA-256 remains strictly untouched.
+  */
+ 
+-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
++import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+ import * as fs from 'fs';
+ import * as path from 'path';
+ import * as os from 'os';
+ import * as crypto from 'crypto';
+ import * as http from 'http';
++import { spawnSync } from 'node:child_process';
+ 
+ import {
+   createServiceContainer,
+@@ -82,7 +83,8 @@ import {
+   MockSocketObserver,
+ } from '../../src/industrial/network';
+ import { ContainerRunner } from '../../src/industrial/container-runner';
+-import { getLockPath } from '../../src/industrial/lifecycle';
++import { acquireLock, getLockPath, LIFECYCLE_EXIT, releaseLock, runLifecycleCommand } from '../../src/industrial/lifecycle';
++import { isProcessAlive } from '../../src/industrial/service-startup';
+ 
+ describe('F9-08: Interruption and Atomic Cleanup', () => {
+   const TEST_PROJECT_ROOT = path.resolve(__dirname, '../../');
+@@ -273,6 +275,13 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
+     });
+ 
+     afterEach(() => {
++      // These isolated service tests create no worker process; discard fixture entries before cleaning.
++      const activeDir = path.join(testTempDir, '.maos', 'queue', 'active');
++      if (fs.existsSync(activeDir)) {
++        for (const file of fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))) {
++          fs.unlinkSync(path.join(activeDir, file));
++        }
++      }
+       taskService.clean();
+     });
+ 
+@@ -358,6 +367,13 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
+     });
+ 
+     afterEach(() => {
++      // No agent worker runs in these fixtures; remove their simulated active entries after assertions.
++      const activeDir = path.join(testTempDir, '.maos', 'queue', 'active');
++      if (fs.existsSync(activeDir)) {
++        for (const file of fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))) {
++          fs.unlinkSync(path.join(activeDir, file));
++        }
++      }
+       taskService.clean();
+     });
+ 
+@@ -665,7 +681,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
+         JSON.stringify({
+           pid: 99999999, // definitely dead PID
+           timestamp: new Date(Date.now() - 60000).toISOString(),
+-          hostname: 'test-host',
++          hostname: os.hostname(),
+         }),
+       );
+ 
+@@ -693,29 +709,90 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
+       expect(fs.existsSync(lockPath)).toBe(false);
+     });
+ 
+-    it('preserves live lifecycle lock unless forced', () => {
++    it('forced cleanup preserves a live owner and another lifecycle command cannot enter', async () => {
++      const lockPath = getLockPath(testTempDir);
++      expect(acquireLock(testTempDir)).toBe(true);
++      const coordinator = new AtomicCleanupCoordinator(testTempDir);
++      try {
++        expect(isProcessAlive(process.pid)).toBe(true);
++        const orphanResult = coordinator.cleanupOrphanFiles();
++        expect(orphanResult.lifecycleLockStatus).toBe('live');
++        expect(orphanResult.locksRemoved).toBe(0);
++        expect(fs.existsSync(lockPath)).toBe(true);
++
++        const cleanup = await coordinator.executeAtomicCleanup({ reason: 'forced-live-lock-regression', force: true });
++        expect(cleanup.success).toBe(false);
++        expect(cleanup.errors).toContainEqual(expect.objectContaining({
++          subsystem: 'lifecycle_lock',
++          message: expect.stringContaining('force cannot remove it'),
++        }));
++        expect(isProcessAlive(process.pid)).toBe(true);
++        expect(fs.existsSync(lockPath)).toBe(true);
++
++        const lifecycleModule = path.join(TEST_PROJECT_ROOT, 'src', 'industrial', 'lifecycle.ts');
++        const script = [
++          "const fs = require('node:fs');",
++          "const ts = require('typescript');",
++          "require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);",
++          "const { runLifecycleCommand, LIFECYCLE_EXIT } = require(process.argv[1]);",
++          "const result = runLifecycleCommand(process.argv[2], 'install', undefined, { stateOnly: true });",
++          "process.stdout.write(String(result.exitCode));",
++          "process.exitCode = result.exitCode === LIFECYCLE_EXIT.LOCK_HELD ? 0 : 1;",
++        ].join('\n');
++        const child = spawnSync(process.execPath, ['-e', script, lifecycleModule, testTempDir], { cwd: TEST_PROJECT_ROOT, encoding: 'utf8', timeout: 15_000 });
++        expect(child.status).toBe(0);
++        expect(child.stdout).toBe(String(LIFECYCLE_EXIT.LOCK_HELD));
++        expect(fs.existsSync(lockPath)).toBe(true);
++      } finally {
++        releaseLock(testTempDir);
++      }
++      expect(fs.existsSync(lockPath)).toBe(false);
++    });
++
++    it('removes only a stale same-host lock whose owner is confirmed dead', () => {
+       const lockPath = getLockPath(testTempDir);
+       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+-      fs.writeFileSync(
+-        lockPath,
+-        JSON.stringify({
+-          pid: process.pid, // current process -> ALIVE
+-          timestamp: new Date().toISOString(),
+-          hostname: 'test-host',
+-        }),
+-      );
++      const exited = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
++      const deadPid = Number(exited.stdout);
++      expect(exited.status).toBe(0);
++      expect(isProcessAlive(deadPid)).toBe(false);
++      fs.writeFileSync(lockPath, JSON.stringify({
++        pid: deadPid,
++        timestamp: new Date(Date.now() - 60_000).toISOString(),
++        hostname: os.hostname(),
++      }));
++      expect(isProcessAlive(2147483647)).toBe(false);
++      const result = new AtomicCleanupCoordinator(testTempDir).cleanupOrphanFiles();
++      expect(result.lifecycleLockStatus).toBe('removed');
++      expect(result.locksRemoved).toBe(1);
++      expect(fs.existsSync(lockPath)).toBe(false);
++    });
+ 
+-      const coordinator = new AtomicCleanupCoordinator(testTempDir);
++    it('treats an unverified process-liveness result as possibly alive', () => {
++      const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
++        throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
++      });
++      try {
++        expect(isProcessAlive(process.pid)).toBe(true);
++      } finally {
++        kill.mockRestore();
++      }
++    });
+ 
+-      // Normal sweep preserves live lock
+-      const res1 = coordinator.cleanupOrphanFiles();
+-      expect(res1.locksRemoved).toBe(0);
++    it.each([
++      ['foreign host', JSON.stringify({ pid: process.pid, timestamp: new Date(Date.now() - 60_000).toISOString(), hostname: 'unknown-host' })],
++      ['malformed record', '{not-json'],
++    ])('leaves %s ownership ambiguity blocked', (_label, contents) => {
++      const lockPath = getLockPath(testTempDir);
++      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
++      fs.writeFileSync(lockPath, contents);
++      const result = new AtomicCleanupCoordinator(testTempDir).cleanupOrphanFiles();
++      expect(result.lifecycleLockStatus).toBe('ambiguous');
++      expect(result.locksRemoved).toBe(0);
+       expect(fs.existsSync(lockPath)).toBe(true);
+-
+-      // Forced sweep removes it
+-      const res2 = coordinator.cleanupOrphanFiles({ forceLockRelease: true });
+-      expect(res2.locksRemoved).toBe(1);
+-      expect(fs.existsSync(lockPath)).toBe(false);
++      expect(runLifecycleCommand(testTempDir, 'install', undefined, { stateOnly: true }).exitCode).toBe(LIFECYCLE_EXIT.LOCK_HELD);
++      // This malformed/foreign lock belongs only to this temporary regression fixture.
++      fs.unlinkSync(lockPath);
+     });
+   });
+ 
+@@ -730,6 +807,13 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
+     });
+ 
+     afterEach(() => {
++      // No agent worker runs in these fixtures; remove their simulated active entries after assertions.
++      const activeDir = path.join(testTempDir, '.maos', 'queue', 'active');
++      if (fs.existsSync(activeDir)) {
++        for (const file of fs.readdirSync(activeDir).filter((name) => !name.startsWith('.'))) {
++          fs.unlinkSync(path.join(activeDir, file));
++        }
++      }
+       services.task.clean();
+     });
+ 

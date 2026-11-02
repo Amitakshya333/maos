@@ -1,0 +1,22 @@
+{
+  "sourceCommit": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "sourceDeltaSha256": "d3eb82e46a242ff63aae6323c84820a3a1ff000fdd990bf7e23717b103c8b059",
+  "nodeVersion": "v24.11.0",
+  "npmVersion": "11.6.1",
+  "buildPowerShellVersion": "7.6.9",
+  "hooksDisabledForBuildInstallOnly": true,
+  "noAmbientNpmConfigOrCredentials": true,
+  "isolatedNpmCache": "C:\\Users\\AMITAK~1\\AppData\\Local\\Temp\\maos-f201cfe-build-isolation-20261029\\npm-cache",
+  "npmCiExitCode": 0,
+  "buildExitCode": 0,
+  "packExitCode": 0,
+  "bundleBuildExitCode": 0,
+  "packagePath": "C:\\maos\\review-packets\\baseten-cancellation-lifetime-final-2026-10-29\\candidate-artifacts-f201cfe\\maosorch-0.3.0.tgz",
+  "packageBytes": 1233574,
+  "packageSha256": "2b9992e47e75cdfb91a23144d3c7460ae4fade01cddcbeddd56c7eb5d92f783f",
+  "bundlePath": "C:\\maos\\review-packets\\baseten-cancellation-lifetime-final-2026-10-29\\candidate-artifacts-f201cfe\\maos-industrial-bootstrap-windows-x64-commit-f201cfe-2026-10-29.zip",
+  "bundleBytes": 1265742,
+  "bundleSha256": "8ce5da16d81a788fd8c8596c445c95df8227aa551595171d95da75817273572c",
+  "sourceTrackedChangesAfterBuild": 0,
+  "sourceIndexChangesAfterBuild": 0
+}

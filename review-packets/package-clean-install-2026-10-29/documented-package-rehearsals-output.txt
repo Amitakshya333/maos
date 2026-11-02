@@ -1,0 +1,12 @@
+Browser rehearsal 2 (rules) failed:
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+request.allHeaders: Target page, context or browser has been closed
+    at <isolated-source>\tests\release\desktop-browser-rehearsal.cjs:174:39
+    at _Page.<anonymous> (<isolated-source>\tests\release\desktop-browser-rehearsal.cjs:180:9) {
+  log: []
+}
+
+Node.js v24.11.0

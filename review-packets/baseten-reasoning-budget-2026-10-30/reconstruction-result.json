@@ -1,0 +1,45 @@
+{
+  "baseCommit": "f201cfe38bf3a741b5d8c6b37793cc3c112c43a9",
+  "patchSha256": "d503ddd0e0ca42a2f3e1d77d41fe50953d747bd81e35092797dd0989f0397541",
+  "applyCheckExitCode": 0,
+  "applyExitCode": 0,
+  "rawEqualCount": 0,
+  "lfEqualCount": 5,
+  "files": [
+    {
+      "path": "src/backends/openai-provider.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "rawSha256": "a0ba3e42b1ff28aee54fe81d6bef3d954e894cf65427ea27ad93dbde02f405fa",
+      "lfSha256": "fe1869d65dea2e25f837adb00f7064fa932ab199dfeda404020a76740aaa131d"
+    },
+    {
+      "path": "tests/backends/baseten-api-provider-boundary.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "rawSha256": "871b045456ae9bc608c14de0bdd8bc09bde2471c78fb915275284df1fb265b13",
+      "lfSha256": "83f04735bca824bf9ccdec0e7b9e817dee4fe00cae575f3224d45ee8a19c6d90"
+    },
+    {
+      "path": "tests/backends/openai-provider-local-tool-call.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "rawSha256": "287a1f7575415d7d51ea2e8c1bc3b161a5a2c861e4fdd656c6377565893de48c",
+      "lfSha256": "51d268a63580bc824e20a0940e226d2d3182b17c9d9b9fc16af1734a82dacbfc"
+    },
+    {
+      "path": "tests/industrial/meta-model-api-contract.test.ts",
+      "rawEqual": false,
+      "lfEqual": true,
+      "rawSha256": "62a16eb9bf18819f8980dc5b6c14b907e262b241a0b1db3f0ff889d4dd2445ab",
+      "lfSha256": "2bfea2f691ba040396f5d64436adafb3d686f5adaad900eb21574f759d4261df"
+    },
+    {
+      "path": "review-packets/baseten-reasoning-budget-2026-10-30/BASETEN_HACKATHON_PILOT_OWNER_DECISION.md",
+      "rawEqual": false,
+      "lfEqual": true,
+      "rawSha256": "d633af6652c6d67571ca714e58304b2884862a6a6240597ca6e1e0128da82b58",
+      "lfSha256": "78b4bf0e0b745793f7b19055ec4995d5d51a80c472967e887b765fd99564eda0"
+    }
+  ]
+}

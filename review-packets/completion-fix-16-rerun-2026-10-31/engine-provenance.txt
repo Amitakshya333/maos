@@ -1,0 +1,6 @@
+$env:MAOS_TEST_ENGINE_PATH = C:\maos\rust\target\release\maos-engine.exe
+SHA256=B62C128A0101558662C8972DF1E867B8F5C5537E7D84003BA6E804FC4EFCC605
+Length=472064
+LastWriteTimeUtc=2026-09-27T18:44:29.5504563Z
+.gitignore:58:rust/target/	rust/target/release/maos-engine.exe
+Note: untracked build output of the main checkout (see check-ignore line above). No source/build provenance claimed beyond identity + ignored status.

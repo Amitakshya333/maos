@@ -1,0 +1,15 @@
+{
+  "cwd": "C:/clean/demo-b2-02",
+  "executable": "node.exe",
+  "args": [
+    "C:/clean/core-b2-02/dist/industrial/entrypoint.js",
+    "run",
+    "--project-root",
+    "C:/clean/demo-b2-02",
+    "--auto-approve",
+    "--yes",
+    "--json"
+  ],
+  "startedAt": "2026-10-31T16:04:21.927Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

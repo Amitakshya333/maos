@@ -1,0 +1,1572 @@
+diff --git a/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md b/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+index ac1b8e9..61f322a 100644
+--- a/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
++++ b/docs/MAOS_INDUSTRIAL_OPERATOR_GUIDE.md
+@@ -54,11 +54,11 @@ The CLI prints the registered DOCX path and SHA-256; use `maos-industrial open <
+ 
+ ## Runtime and inference status
+ 
+-The bounded analysis path allows at most four model iterations, one telemetry-analysis tool call, 256 output tokens per model response, zero automatic provider retries, and a 60-second overall deadline. Cancellation is propagated to the configured provider. A local mock transport is used in automated contract tests; those tests do not establish compatibility or quality for a live model. Hosted Meta inference remains disabled until endpoint/model terms, data handling, account billing behavior, and owner authorization are confirmed.
++The bounded analysis path allows at most four model-generation attempts in total (including retries and completion nudges), one telemetry-analysis tool execution, 256 output tokens per model response, zero automatic provider retries, and a 60-second overall deadline. Cancellation is propagated to the configured provider. A local mock transport is used in automated contract tests; those tests do not establish compatibility or quality for a live model. Hosted Meta inference remains disabled until endpoint/model terms, data handling, account billing behavior, and owner authorization are confirmed. When Meta is selected, the runtime also disables whole-task retries in the MAOS orchestrator; an operator may start a fresh task explicitly after reviewing the failure.
+ 
+ ### Explicit Meta Model API opt-in
+ 
+-The only supported hosted configuration is `https://api.meta.ai/v1` with `muse-spark-1.3`. It stays disabled unless the selected provider entry sets `metaApiEnabled` to `true`; set `apiKeyEnv` to the name of an environment variable holding the key. The key is never read from project config. Muse temperature is omitted unless explicitly set to a number from 0 through 2; each response is capped at 256 output tokens, requests have a 60-second deadline and the SDK performs zero retries. Do not enable this configuration or make hosted requests until the owner confirms the terms, data handling and no-overage account gate.
++The shared OpenAI-compatible provider constructor enforces the only supported hosted configuration: `https://api.meta.ai/v1` with `muse-spark-1.3`. It stays disabled unless the selected provider entry sets `metaApiEnabled` to `true`; set `apiKeyEnv` to the name of an environment variable holding the key. The key is read only from that named variable, never from project config or the credential store. Muse temperature is omitted unless explicitly set to a number from 0 through 2; each response is capped at 256 output tokens, requests have a 60-second deadline, redirects are rejected, and SDK, Core request, and orchestrator whole-task automatic retries are disabled. Exact occurrences of the configured key are redacted from completion prose and provider identity. A completion tool argument containing the key is rejected before tool execution. This protects the configured key only; MAOS does not detect arbitrary secrets or transformed encodings. Do not enable this configuration or make hosted requests until the owner confirms the terms, data handling and no-overage account gate.
+ 
+ This uses Meta's documented Chat Completions tool-call shape. The API currently accepts `max_tokens` as a deprecated alias for `max_completion_tokens`; MAOS keeps `max_tokens` for the bounded request. See the [Chat Completions quickstart](https://dev.meta.ai/docs/cookbook/quickstart-chat-completions), [tool/function calling guide](https://dev.meta.ai/docs/cookbook/tool-function-calling), and [Chat Completions protocol](https://dev.meta.ai/docs/protocols/chat-completions).
+ 
+diff --git a/src/backends/api-runtime.ts b/src/backends/api-runtime.ts
+index 4107f5b..f8689eb 100644
+--- a/src/backends/api-runtime.ts
++++ b/src/backends/api-runtime.ts
+@@ -42,6 +42,7 @@ export class ApiRuntime implements IRuntime {
+   readonly type = 'api' as const;
+   readonly name: string;
+   readonly model: string;
++  readonly maxTaskRetries?: number;
+ 
+   constructor(
+     private config: ApiRuntimeConfig,
+@@ -49,6 +50,7 @@ export class ApiRuntime implements IRuntime {
+   ) {
+     this.name = config.provider.name;
+     this.model = config.provider.model;
++    this.maxTaskRetries = config.provider.maxApplicationRetries;
+   }
+ 
+   async execute(task: RuntimeTask): Promise<RuntimeResult> {
+diff --git a/src/backends/factory.ts b/src/backends/factory.ts
+index fb26279..74c1112 100644
+--- a/src/backends/factory.ts
++++ b/src/backends/factory.ts
+@@ -7,6 +7,7 @@ import { IRuntime, AgentRuntimeConfig } from './runtime';
+ import { ApiRuntime } from './api-runtime';
+ import { CliRuntime } from './cli-runtime';
+ import { MessageBus } from '../core/message-bus';
++import { isMetaApiConfigCandidate, MetaApiPolicyError, resolveMetaApiPolicy } from './meta-api-policy';
+ 
+ /**
+  * Known provider base URLs.
+@@ -129,6 +130,31 @@ function createProvider(
+ ): IProvider {
+   const name = providerName.toLowerCase();
+   const baseURL = config.baseURL || KNOWN_BASE_URLS[name] || undefined;
++  const metaCandidate = isMetaApiConfigCandidate({ providerName: name, baseURL, metaApiEnabled: config.metaApiEnabled });
++
++  // Apply the Meta policy before credential resolution or plugin construction.
++  if (metaCandidate) {
++    if (name === 'anthropic' || name === 'gemini' || name === 'google') {
++      throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'The Meta Model API requires the OpenAI-compatible Chat Completions provider.');
++    }
++    if (sovereignLocal) enforceLoopbackOnly(name, baseURL);
++    if (!(name in KNOWN_BASE_URLS) && name !== 'meta') {
++      const { getPluginRegistry } = require('./plugin-registry');
++      if (getPluginRegistry().hasProvider(name)) {
++        throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'The Meta Model API requires the built-in OpenAI-compatible provider.');
++      }
++    }
++    return new OpenAIProvider({
++      name,
++      apiKey: '',
++      model,
++      baseURL,
++      metaApiEnabled: config.metaApiEnabled,
++      apiKeyEnv: config.apiKeyEnv,
++      temperature: config.temperature,
++    });
++  }
++
+   // Local runtimes are loopback services, even when the provider has a custom
+   // name (for example huggingface-local). They must not require a cloud key.
+   // The loopback check also keeps doctor/provider-direct probes consistent with
+@@ -348,6 +374,27 @@ export class RuntimeFactory {
+         continue;
+       }
+ 
++      if (isMetaApiConfigCandidate({ providerName, baseURL: providerConfig.baseURL, metaApiEnabled: providerConfig.metaApiEnabled })) {
++        try {
++          const meta = resolveMetaApiPolicy({
++            providerName,
++            baseURL: providerConfig.baseURL,
++            model: agent.model || '',
++            metaApiEnabled: providerConfig.metaApiEnabled,
++            apiKeyEnv: providerConfig.apiKeyEnv,
++            temperature: providerConfig.temperature,
++          });
++          if (meta && isPlaceholder(meta.apiKey)) {
++            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'placeholder', message: 'The configured Meta environment variable contains a placeholder key.', source: 'environment' });
++          } else {
++            results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'ok', message: `Meta API key loaded from ${providerConfig.apiKeyEnv}.`, source: 'environment' });
++          }
++        } catch (err: any) {
++          results.push({ agentId: agent.id, provider: providerName, runtimeType, status: 'missing', message: err.message });
++        }
++        continue;
++      }
++
+       // Local runtimes use loopback services and never require a cloud key.
+       // Keep the provider-name check for backwards-compatible keyless providers
+       // used by API-configured agents as well.
+@@ -443,7 +490,12 @@ export class RuntimeFactory {
+ // Used by decomposer/plan.ts which needs raw IProvider.generate() access.
+ 
+ export function createProviderDirect(providerName: string, config: ProviderConfig, model: string): IProvider {
+-  return createProvider(providerName, config, model);
++  if (isMetaApiConfigCandidate({ providerName, baseURL: config.baseURL, metaApiEnabled: config.metaApiEnabled })) {
++    return createProvider(providerName, config, model);
++  }
++  const { resolveCredential } = require('../core/credentials');
++  const resolved = resolveCredential(providerName, config.apiKey);
++  return createProvider(providerName, resolved ? { ...config, apiKey: resolved.key } : config, model);
+ }
+ 
+ // ---- Backward Compatibility ----
+diff --git a/src/backends/meta-api-policy.ts b/src/backends/meta-api-policy.ts
+new file mode 100644
+index e69de29..492e859 100644
+--- /dev/null
++++ b/src/backends/meta-api-policy.ts
+@@ -0,0 +1,61 @@
++export const META_API_BASE_URL = 'https://api.meta.ai/v1';
++export const META_API_MODEL = 'muse-spark-1.3';
++
++export class MetaApiPolicyError extends Error {
++  constructor(public readonly code: 'META_API_OPT_IN_REQUIRED' | 'META_API_CONFIGURATION_INVALID' | 'MODEL_CREDENTIAL_MISSING', message: string) {
++    super(message);
++    this.name = 'MetaApiPolicyError';
++  }
++}
++
++export interface MetaApiProviderConfig {
++  providerName?: string;
++  baseURL?: string;
++  effectiveBaseURL?: string;
++  model: string;
++  metaApiEnabled?: boolean;
++  apiKeyEnv?: string;
++  temperature?: number | null;
++}
++
++export function isMetaApiConfigCandidate(config: Pick<MetaApiProviderConfig, 'providerName' | 'baseURL' | 'effectiveBaseURL' | 'metaApiEnabled'>): boolean {
++  if (config.metaApiEnabled === true || config.providerName?.toLowerCase() === 'meta') return true;
++  for (const baseURL of [config.baseURL, config.effectiveBaseURL]) {
++    try {
++      if (new URL(baseURL || '').hostname.toLowerCase() === 'api.meta.ai') return true;
++    } catch {
++      continue;
++    }
++  }
++  return false;
++}
++
++export function resolveMetaApiPolicy(config: MetaApiProviderConfig): { apiKey: string; apiKeyEnv: string; temperature: number | null } | undefined {
++  if (!isMetaApiConfigCandidate(config)) return undefined;
++
++  if (config.metaApiEnabled !== true) {
++    throw new MetaApiPolicyError('META_API_OPT_IN_REQUIRED', 'Meta Model API use requires providers.<name>.metaApiEnabled=true.');
++  }
++  if (config.baseURL !== META_API_BASE_URL || config.model !== META_API_MODEL) {
++    throw new MetaApiPolicyError(
++      'META_API_CONFIGURATION_INVALID',
++      `Meta Model API is limited to ${META_API_BASE_URL} and model ${META_API_MODEL}.`,
++    );
++  }
++  if (typeof config.apiKeyEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.apiKeyEnv)) {
++    throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'Set providers.<name>.apiKeyEnv to the environment variable that holds the Meta API key.');
++  }
++  if (config.temperature !== undefined && config.temperature !== null &&
++      (typeof config.temperature !== 'number' || !Number.isFinite(config.temperature) || config.temperature < 0 || config.temperature > 2)) {
++    throw new MetaApiPolicyError('META_API_CONFIGURATION_INVALID', 'Meta provider temperature must be a number from 0 to 2 when configured.');
++  }
++
++  const apiKey = process.env[config.apiKeyEnv];
++  if (!apiKey?.trim()) {
++    throw new MetaApiPolicyError(
++      'MODEL_CREDENTIAL_MISSING',
++      `The configured environment variable ${config.apiKeyEnv} is empty. Set it before using the Meta Model API.`,
++    );
++  }
++  return { apiKey, apiKeyEnv: config.apiKeyEnv, temperature: config.temperature ?? null };
++}
+diff --git a/src/backends/openai-provider.ts b/src/backends/openai-provider.ts
+index 66d7e1e..6fd11d2 100644
+--- a/src/backends/openai-provider.ts
++++ b/src/backends/openai-provider.ts
+@@ -1,5 +1,6 @@
+ import OpenAI from 'openai';
+ import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderRequestOptions, ProviderResponse } from './provider';
++import { resolveMetaApiPolicy } from './meta-api-policy';
+ 
+ /**
+  * OpenAI-Compatible Provider Adapter
+@@ -23,9 +24,13 @@ import { IProvider, ChatMessage, ToolDef, ToolCall, ProviderRequestOptions, Prov
+ export class OpenAIProvider implements IProvider {
+   readonly name: string;
+   readonly model: string;
++  readonly baseURL?: string;
++  readonly isMetaApi: boolean;
++  readonly maxApplicationRetries?: number;
+ 
+   private client: OpenAI;
+   private readonly apiKey: string;
++  private readonly credentialForRedaction: string;
+   private readonly temperature: number | null;
+   private readonly maxOutputTokens?: number;
+ 
+@@ -39,19 +44,46 @@ export class OpenAIProvider implements IProvider {
+     temperature?: number | null;
+     maxOutputTokens?: number;
+     fetch?: typeof globalThis.fetch;
++    metaApiEnabled?: boolean;
++    apiKeyEnv?: string;
+   }) {
++    const baseURL = opts.baseURL || process.env.OPENAI_BASE_URL;
++    const metaPolicy = resolveMetaApiPolicy({
++      providerName: opts.name,
++      baseURL: opts.baseURL,
++      effectiveBaseURL: baseURL,
++      model: opts.model,
++      metaApiEnabled: opts.metaApiEnabled,
++      apiKeyEnv: opts.apiKeyEnv,
++      temperature: opts.temperature,
++    });
+     this.name = opts.name;
+     this.model = opts.model;
+-    this.apiKey = opts.apiKey;
+-    this.temperature = Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
+-    this.maxOutputTokens = opts.maxOutputTokens;
++    this.baseURL = baseURL;
++    this.isMetaApi = Boolean(metaPolicy);
++    this.maxApplicationRetries = metaPolicy ? 0 : undefined;
++    this.apiKey = metaPolicy?.apiKey ?? opts.apiKey;
++    this.credentialForRedaction = ['local', 'local-only', 'not-needed'].includes(this.apiKey) ? '' : this.apiKey;
++    if (this.credentialForRedaction && this.model.includes(this.credentialForRedaction)) {
++      throw new Error('The configured model identifier must not contain the API credential.');
++    }
++    this.temperature = metaPolicy
++      ? metaPolicy.temperature
++      : Object.prototype.hasOwnProperty.call(opts, 'temperature') ? opts.temperature ?? null : 0.2;
++    this.maxOutputTokens = metaPolicy ? 256 : opts.maxOutputTokens;
++
++    const fetchImpl = opts.fetch ?? globalThis.fetch;
+ 
+     this.client = new OpenAI({
+-      apiKey: opts.apiKey,
+-      baseURL: opts.baseURL,
+-      timeout: opts.timeout || 180_000, // 3 min default timeout
+-      maxRetries: opts.maxRetries ?? 2,
+-      fetch: opts.fetch,
++      apiKey: this.apiKey,
++      baseURL,
++      timeout: metaPolicy ? 60_000 : opts.timeout || 180_000, // Meta's policy owns its fixed deadline.
++      maxRetries: metaPolicy ? 0 : opts.maxRetries ?? 2,
++      // SDK debug parsing can observe raw provider bodies before this adapter sanitizes them.
++      logLevel: 'off',
++      fetch: metaPolicy
++        ? (input, init) => fetchImpl(input, { ...init, redirect: 'error' })
++        : opts.fetch,
+     });
+   }
+ 
+@@ -148,16 +180,30 @@ export class OpenAIProvider implements IProvider {
+       else if (rawFinish === 'tool_calls') finishReason = 'tool_calls';
+       else if (rawFinish === 'length') finishReason = 'length';
+ 
++      const content = this.redactOutput(message.content) as ProviderResponse['content'];
++      const providerModel = typeof response.model === 'string' && response.model.trim() ? response.model : undefined;
++      const safeReportedModel = providerModel && !this.containsCredential(providerModel) ? providerModel : undefined;
++      if (this.containsCredential(JSON.stringify(rawToolCalls)) || rawToolCalls.some((tc) => {
++        if (typeof tc?.function?.arguments !== 'string') return false;
++        try {
++          return this.containsCredential(JSON.stringify(JSON.parse(tc.function.arguments)));
++        } catch {
++          return false;
++        }
++      })) {
++        throw new Error('PROVIDER_CREDENTIAL_CONTAMINATION: configured credential found in provider tool-call metadata; execution was blocked.');
++      }
++
+       return {
+-        content: message.content,
++        content,
+         toolCalls,
+         usage: {
+           promptTokens: response.usage?.prompt_tokens ?? 0,
+           completionTokens: response.usage?.completion_tokens ?? 0,
+           totalTokens: response.usage?.total_tokens ?? 0,
+         },
+-        model: response.model || this.model,
+-        reportedModel: typeof response.model === 'string' && response.model.trim() ? response.model : undefined,
++        model: safeReportedModel || this.model,
++        reportedModel: safeReportedModel,
+         latencyMs,
+         finishReason,
+       };
+@@ -207,7 +253,20 @@ export class OpenAIProvider implements IProvider {
+   }
+ 
+   private redact(value: string): string {
+-    return this.apiKey ? value.split(this.apiKey).join('[REDACTED]') : value;
++    return this.credentialForRedaction ? value.split(this.credentialForRedaction).join('[REDACTED]') : value;
++  }
++
++  private containsCredential(value: string): boolean {
++    return Boolean(this.credentialForRedaction && value.includes(this.credentialForRedaction));
++  }
++
++  private redactOutput(value: unknown): unknown {
++    if (typeof value === 'string') return this.redact(value);
++    if (Array.isArray(value)) return value.map((item) => this.redactOutput(item));
++    if (value && typeof value === 'object') {
++      return Object.fromEntries(Object.entries(value).map(([key, item]) => [this.redact(key), this.redactOutput(item)]));
++    }
++    return value;
+   }
+ 
+   /**
+diff --git a/src/backends/provider.ts b/src/backends/provider.ts
+index 407f053..b9dada6 100644
+--- a/src/backends/provider.ts
++++ b/src/backends/provider.ts
+@@ -82,6 +82,9 @@ export interface IProvider {
+   /** Model identifier (e.g., "gpt-5.4", "deepseek-coder-v3") */
+   readonly model: string;
+ 
++  /** Provider-owned ceiling for Core's transient request retries. */
++  readonly maxApplicationRetries?: number;
++
+   /**
+    * Send a chat completion request with optional tool definitions.
+    * Returns the model's response including any tool calls.
+@@ -97,8 +100,12 @@ export interface IProvider {
+ 
+ export interface ProviderConfig {
+   apiKey?: string;
++  /** Meta Model API keys are read only from this explicitly named environment variable. */
++  apiKeyEnv?: string;
+   baseURL?: string;
+   costPerMillionTokens?: number;
++  metaApiEnabled?: boolean;
++  temperature?: number;
+ }
+ 
+ // ─── Cost Calculation Helper ──────────────────────────────────
+diff --git a/src/backends/runtime.ts b/src/backends/runtime.ts
+index 9b86028..af2be86 100644
+--- a/src/backends/runtime.ts
++++ b/src/backends/runtime.ts
+@@ -130,6 +130,9 @@ export interface IRuntime {
+   /** Model or CLI identifier (e.g., "gpt-5.4", "copilot", "codex") */
+   readonly model: string;
+ 
++  /** Maximum whole-task retries allowed by the orchestrator, when provider policy constrains them. */
++  readonly maxTaskRetries?: number;
++
+   /**
+    * Execute a task and return the result.
+    * This is the ONLY method the orchestrator calls.
+diff --git a/src/cli/doctor.ts b/src/cli/doctor.ts
+index 9faec7c..ae228f2 100644
+--- a/src/cli/doctor.ts
++++ b/src/cli/doctor.ts
+@@ -359,10 +359,7 @@ async function pingProvider(
+     const model = agent?.model || 'gpt-4o-mini';
+ 
+     const { createProviderDirect } = await import('../backends/factory');
+-    const { resolveCredential } = require('../core/credentials');
+-    const resolved = resolveCredential(providerName, providerConfig.apiKey);
+-    const enrichedConfig = resolved ? { ...providerConfig, apiKey: resolved.key } : providerConfig;
+-    const provider = createProviderDirect(providerName, enrichedConfig, model);
++    const provider = createProviderDirect(providerName, providerConfig, model);
+ 
+     const startMs = Date.now();
+     await provider.generate([{ role: 'user', content: 'Say OK' }]);
+diff --git a/src/cli/plan.ts b/src/cli/plan.ts
+index ba490b6..1656e04 100644
+--- a/src/cli/plan.ts
++++ b/src/cli/plan.ts
+@@ -171,10 +171,7 @@ export async function runPlan(goal: string, options: PlanOptions): Promise<void>
+   // Create provider — resolve key from credential store first
+   let provider;
+   try {
+-    const { resolveCredential } = require('../core/credentials');
+-    const resolved = resolveCredential(providerName, providerConfig.apiKey);
+-    const enrichedConfig = resolved ? { ...providerConfig, apiKey: resolved.key } : providerConfig;
+-    provider = createProviderDirect(providerName, enrichedConfig, plannerAgent?.model || '');
++    provider = createProviderDirect(providerName, providerConfig, plannerAgent?.model || '');
+   } catch (err: any) {
+     console.log(chalk.red(`❌ Failed to create provider: ${err.message}`));
+     process.exit(1);
+diff --git a/src/core/agent-runner.ts b/src/core/agent-runner.ts
+index 65f3e8d..4252567 100644
+--- a/src/core/agent-runner.ts
++++ b/src/core/agent-runner.ts
+@@ -42,6 +42,8 @@ export interface AgentRunOptions {
+   allowPartialSuccess?: boolean;
+   deadlineAt?: number;
+   toolCallLimits?: Readonly<Record<string, number>>;
++  /** Hard ceiling for provider.generate calls, including retries and adaptive iterations. */
++  maxGenerationAttempts?: number;
+ }
+ 
+ /**
+@@ -171,6 +173,7 @@ export async function runAgent(
+   let lastSnapshot = snapshotFilesystem(projectRoot);
+   let hadMutatingToolCall = false;
+   let bonusIterationsGranted = 0;
++  let generationAttempts = 0;
+   let nudgeSent = false;
+   const initialSnapshot = lastSnapshot;
+   const toolCallCounts = new Map<string, number>();
+@@ -221,8 +224,16 @@ export async function runAgent(
+ 
+   // Effective max = base + bonus for productive agents
+   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
++  const providerRetryCeiling = provider.maxApplicationRetries;
++  const maxProviderRetries = providerRetryCeiling === undefined
++    ? options.maxProviderRetries ?? 3
++    : Math.min(options.maxProviderRetries ?? providerRetryCeiling, providerRetryCeiling);
+   const generate = () => {
+     assertActive();
++    if (options.maxGenerationAttempts !== undefined && generationAttempts >= options.maxGenerationAttempts) {
++      throw new Error(`Maximum model generation attempts (${options.maxGenerationAttempts}) reached.`);
++    }
++    generationAttempts++;
+     return provider.generate(
+       messages,
+       filterTools(AGENT_TOOLS, agent.allowedTools, agent.id),
+@@ -274,7 +285,7 @@ export async function runAgent(
+       // Call the model (with retry for transient errors including 504)
+       const response = await retryOnTransient(
+         generate,
+-        options.maxProviderRetries ?? 3,
++        maxProviderRetries,
+         logger,
+         agent.id,
+       );
+@@ -308,7 +319,7 @@ export async function runAgent(
+ 
+           const retryResponse = await retryOnTransient(
+             generate,
+-            options.maxProviderRetries ?? 1,
++            maxProviderRetries,
+             logger,
+             agent.id,
+           );
+@@ -384,30 +395,29 @@ export async function runAgent(
+         onProgress?.(iterations, `tool:${toolName}`);
+         logger.info(agent.id, `Tool: ${toolName}(${JSON.stringify(args).substring(0, 100)})`);
+ 
+-        // Track mutating tool calls as progress signals (for bonus iterations)
+-        if (toolName === 'write_file' || toolName === 'run_command' || toolName === 'git_commit') {
++        const { result, isComplete: done } = executeLimitedTool(toolName, args);
++        const authorized = !agent.allowedTools?.length || agent.allowedTools.includes(toolName);
++        const mutationSucceeded = toolName === 'write_file'
++          ? result.startsWith('Written: ')
++          : toolName === 'git_commit'
++            ? result.startsWith('Committed: ')
++            : toolName === 'run_command'
++              ? /^Command: [\s\S]*\nExit: 0\n/.test(result)
++              : false;
++        if (authorized && mutationSucceeded) {
+           hadMutatingToolCall = true;
+-          // Emit TASK_PROGRESS so HealthMonitor counts this as an implicit heartbeat
+           try {
+             getMessageBus().emit(
+-              createEvent(
+-                'TASK_PROGRESS',
+-                agent.id,
+-                {
+-                  tool: toolName,
+-                  iteration: iterations,
+-                  file: args.path || args.command || undefined,
+-                },
+-                task.id,
+-                'api',
+-              ),
++              createEvent('TASK_PROGRESS', agent.id, {
++                tool: toolName,
++                iteration: iterations,
++                file: args.path || args.command || undefined,
++              }, task.id, 'api'),
+             );
+           } catch {
+             /* non-fatal */
+           }
+         }
+-
+-        const { result, isComplete: done } = executeLimitedTool(toolName, args);
+         onToolResult?.(toolName, result);
+ 
+         // Truncate huge tool results to prevent context bloat
+diff --git a/src/core/orchestrator.ts b/src/core/orchestrator.ts
+index e914882..7928115 100644
+--- a/src/core/orchestrator.ts
++++ b/src/core/orchestrator.ts
+@@ -405,6 +405,9 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
+         '  Run: maos configure\n',
+     );
+   }
++  const noAutomaticRetryAgentIds = new Set(
++    [...runtimeMap.entries()].filter(([, runtime]) => runtime.maxTaskRetries === 0).map(([agentId]) => agentId),
++  );
+ 
+   // Create the router (with telemetry feedback for adaptive scoring)
+   const router = createRouter(config.routing, cwd);
+@@ -753,7 +756,7 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
+         // Instead of permanently failing, try to enqueue for retry with backoff.
+         const retryPolicy = {
+           ...DEFAULT_RETRY_POLICY,
+-          maxRetries: (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
++          maxRetries: runtime.maxTaskRetries ?? (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
+         };
+         const retryRecord = enqueueRetry(
+           activeTask,
+@@ -871,7 +874,18 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
+ 
+       // Enqueue crashed tasks for retry too
+       try {
+-        enqueueRetry(activeTask, taskContent, err.message, [], 0, DEFAULT_RETRY_POLICY, cwd);
++        enqueueRetry(
++          activeTask,
++          taskContent,
++          err.message,
++          [],
++          0,
++          {
++            ...DEFAULT_RETRY_POLICY,
++            maxRetries: runtime.maxTaskRetries ?? (agentDef as any).maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
++          },
++          cwd,
++        );
+       } catch (retryErr: any) {
+         logger.error('ORCHESTRATOR', `Failed to enqueue crashed task ${task.id} for retry: ${retryErr.message}`);
+       }
+@@ -937,7 +951,7 @@ export async function startOrchestrator(options: OrchestratorOptions = {}): Prom
+     try {
+       // ---- RETRY QUEUE DRAIN ----
+       // Check if any retry-eligible tasks are ready to be re-queued.
+-      const requeued = drainRetryQueue(cwd);
++      const requeued = drainRetryQueue(cwd, noAutomaticRetryAgentIds);
+       if (requeued > 0) {
+         logger.info('RETRY', `${requeued} task(s) moved from retry queue back to pending`);
+       }
+diff --git a/src/core/retry-queue.ts b/src/core/retry-queue.ts
+index 4379443..f223631 100644
+--- a/src/core/retry-queue.ts
++++ b/src/core/retry-queue.ts
+@@ -300,11 +300,11 @@ function deadLetterUnderProjectLock(taskFile: TaskFile, taskContent: string, err
+  *
+  * Returns the number of tasks moved to pending.
+  */
+-export function drainRetryQueue(cwd?: string): number {
+-  return withJudgedRunOutputLock(cwd || process.cwd(), () => drainRetryQueueUnderProjectLock(cwd));
++export function drainRetryQueue(cwd?: string, excludedAgentIds?: ReadonlySet<string>): number {
++  return withJudgedRunOutputLock(cwd || process.cwd(), () => drainRetryQueueUnderProjectLock(cwd, excludedAgentIds));
+ }
+ 
+-function drainRetryQueueUnderProjectLock(cwd?: string): number {
++function drainRetryQueueUnderProjectLock(cwd?: string, excludedAgentIds?: ReadonlySet<string>): number {
+   ensureRetryDirs(cwd);
+   const retryDir = getRetryDir(cwd);
+   const pendingDir = getPendingDir(cwd);
+@@ -325,6 +325,7 @@ function drainRetryQueueUnderProjectLock(cwd?: string): number {
+     .filter((r): r is RetryRecord => r !== null);
+ 
+   for (const record of records) {
++    if (excludedAgentIds?.has(record.agentId)) continue;
+     if (now < record.retryAfterMs) continue; // Not ready yet
+ 
+     const safe = record.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+diff --git a/src/industrial/analysis-agent-service.ts b/src/industrial/analysis-agent-service.ts
+index 303b139..5013a2d 100644
+--- a/src/industrial/analysis-agent-service.ts
++++ b/src/industrial/analysis-agent-service.ts
+@@ -2,6 +2,8 @@ import * as fs from 'fs';
+ import * as path from 'path';
+ import { createHash, randomUUID } from 'crypto';
+ import type { IProvider } from '../backends/provider';
++import { OpenAIProvider } from '../backends/openai-provider';
++import { MetaApiPolicyError } from '../backends/meta-api-policy';
+ import { runAgent } from '../core/agent-runner';
+ import type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
+ import type { AuditService } from '../service/audit-service';
+@@ -30,7 +32,6 @@ export interface IndustrialAnalysisAgentOptions {
+ export interface IndustrialAnalysisAgentRuntime {
+   provider?: IProvider;
+   modelEndpoint?: string;
+-  allowMetaApi?: boolean;
+ }
+ 
+ export class IndustrialAnalysisAgentService {
+@@ -101,12 +102,17 @@ export class IndustrialAnalysisAgentService {
+     };
+     let provider = this.provider;
+     let modelEndpoint = this.modelEndpoint;
+-    let allowMetaApi = false;
+     if (this.resolveRuntime) {
+       try {
+-        ({ provider, modelEndpoint, allowMetaApi = false } = this.resolveRuntime());
++        ({ provider, modelEndpoint } = this.resolveRuntime());
+       } catch (error) {
+         if (error instanceof IndustrialAnalysisAgentError) throw error;
++        if (error instanceof MetaApiPolicyError) {
++          const code = error.code === 'META_API_OPT_IN_REQUIRED'
++            ? 'MODEL_ENDPOINT_BLOCKED'
++            : error.code === 'MODEL_CREDENTIAL_MISSING' ? error.code : 'PROJECT_CONFIG_INVALID';
++          throw new IndustrialAnalysisAgentError(code, error.message);
++        }
+         const detail = error instanceof Error ? error.message : String(error);
+         throw new IndustrialAnalysisAgentError(
+           'PROJECT_CONFIG_INVALID',
+@@ -153,18 +159,12 @@ export class IndustrialAnalysisAgentService {
+     } catch {
+       throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The configured model endpoint URL is invalid.');
+     }
+-    const metaEndpointAllowed = allowMetaApi === true &&
+-      modelEndpoint === 'https://api.meta.ai/v1' &&
+-      provider.model === 'muse-spark-1.3' &&
+-      modelUrl.protocol === 'https:' &&
+-      modelUrl.hostname === 'api.meta.ai' &&
+-      modelUrl.pathname === '/v1' &&
+-      !modelUrl.port && !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
++    const metaEndpointAllowed = provider instanceof OpenAIProvider && provider.isMetaApi && provider.baseURL === modelEndpoint;
+     const loopbackEndpointAllowed = modelUrl.protocol === 'http:' &&
+       ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) &&
+       !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
+     if (!metaEndpointAllowed && !loopbackEndpointAllowed) {
+-      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or the explicitly enabled exact Meta URL/model pair is allowed.');
++      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or a provider approved by the shared Meta API policy is allowed.');
+     }
+     // The one explicit hosted exception is config-bound to Meta's exact HTTPS URL and model.
+     if (this.endpointAllowlist && !metaEndpointAllowed) {
+@@ -212,6 +212,7 @@ export class IndustrialAnalysisAgentService {
+         deadlineAt: options.deadlineAt,
+         maxTokens: 256,
+         maxProviderRetries: 0,
++        maxGenerationAttempts: 4,
+         allowPartialSuccess: false,
+         toolCallLimits: { analyze_telemetry_csv: 1 },
+       },
+@@ -223,7 +224,15 @@ export class IndustrialAnalysisAgentService {
+     if (options.signal?.aborted || run.error === 'ABORTED') {
+       throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+     }
+-    if (!run.success) throw new IndustrialAnalysisAgentError('AGENT_EXECUTION_FAILED', run.error || run.summary);
++    if (!run.success) {
++      if (run.error?.includes('PROVIDER_CREDENTIAL_CONTAMINATION')) {
++        throw new IndustrialAnalysisAgentError(
++          'PROVIDER_CREDENTIAL_CONTAMINATION',
++          'The provider response contained the configured credential in tool-call metadata. Execution was blocked and no report was accepted.',
++        );
++      }
++      throw new IndustrialAnalysisAgentError('AGENT_EXECUTION_FAILED', run.error || run.summary);
++    }
+     if (toolResults.length !== 1) {
+       throw new IndustrialAnalysisAgentError('ANALYSIS_TOOL_NOT_USED', 'The model did not request exactly one allowed telemetry analysis tool call.');
+     }
+diff --git a/src/service/index.ts b/src/service/index.ts
+index 8f59357..27baf13 100644
+--- a/src/service/index.ts
++++ b/src/service/index.ts
+@@ -307,47 +307,23 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
+       if (typeof analysisModel?.provider !== 'string' || !analysisModel.provider.trim() || typeof analysisModel.model !== 'string' || !analysisModel.model.trim()) return {};
+       const providerConfig = projectConfig.providers[analysisModel.provider];
+       if (!providerConfig || typeof providerConfig !== 'object' || typeof providerConfig.baseURL !== 'string' || !providerConfig.baseURL.trim()) return {};
+-      const metaApiEnabled = providerConfig.metaApiEnabled === true;
+-      if (metaApiEnabled && (providerConfig.baseURL !== 'https://api.meta.ai/v1' || analysisModel.model !== 'muse-spark-1.3')) {
+-        throw new IndustrialAnalysisAgentError(
+-          'PROJECT_CONFIG_INVALID',
+-          'Meta Model API opt-in is limited to baseURL "https://api.meta.ai/v1" and model "muse-spark-1.3".',
+-        );
+-      }
+       const timeout = analysisModel.timeoutMs ?? 60_000;
+       if (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout <= 0) {
+         throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'ANALYST_AGENT.timeoutMs must be a positive number.');
+       }
+-      if (metaApiEnabled && providerConfig.temperature !== undefined &&
+-          (typeof providerConfig.temperature !== 'number' || !Number.isFinite(providerConfig.temperature) || providerConfig.temperature < 0 || providerConfig.temperature > 2)) {
+-        throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'Meta provider temperature must be a number from 0 to 2 when configured.');
+-      }
+-      let apiKey = 'local-only';
+-      if (metaApiEnabled) {
+-        if (typeof providerConfig.apiKeyEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(providerConfig.apiKeyEnv)) {
+-          throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'Set providers.<name>.apiKeyEnv to the environment variable name that holds the Meta API key.');
+-        }
+-        apiKey = process.env[providerConfig.apiKeyEnv] || '';
+-        if (!apiKey.trim()) {
+-          throw new IndustrialAnalysisAgentError('MODEL_CREDENTIAL_MISSING', `The configured environment variable ${providerConfig.apiKeyEnv} is empty. Set it before running Industrial analysis.`);
+-        }
+-      }
+       return {
+         provider: new OpenAIProvider({
+           name: analysisModel.provider,
+-          apiKey,
++          apiKey: 'local-only',
++          apiKeyEnv: providerConfig.apiKeyEnv,
++          metaApiEnabled: providerConfig.metaApiEnabled,
+           baseURL: providerConfig.baseURL,
+           model: analysisModel.model,
+-          timeout: metaApiEnabled ? 60_000 : timeout,
++          timeout,
+           maxRetries: 0,
+-          ...(metaApiEnabled ? {
+-            temperature: typeof providerConfig.temperature === 'number' ? providerConfig.temperature : null,
+-            maxOutputTokens: 256,
+-            fetch: (input, init) => fetch(input, { ...init, redirect: 'error' }),
+-          } : {}),
++          ...(typeof providerConfig.temperature === 'number' ? { temperature: providerConfig.temperature } : {}),
+         }),
+         modelEndpoint: providerConfig.baseURL,
+-        allowMetaApi: metaApiEnabled,
+       };
+     },
+   );
+diff --git a/tests/backends/meta-api-provider-boundary.test.ts b/tests/backends/meta-api-provider-boundary.test.ts
+new file mode 100644
+index e69de29..6b67de6 100644
+--- /dev/null
++++ b/tests/backends/meta-api-provider-boundary.test.ts
+@@ -0,0 +1,159 @@
++import * as http from 'node:http';
++import type { AddressInfo } from 'node:net';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { createProviderDirect, RuntimeFactory } from '../../src/backends/factory';
++import { OpenAIProvider } from '../../src/backends/openai-provider';
++import { ApiRuntime } from '../../src/backends/api-runtime';
++import { MessageBus } from '../../src/core/message-bus';
++import { MetaApiPolicyError } from '../../src/backends/meta-api-policy';
++
++const META_URL = 'https://api.meta.ai/v1';
++const MODEL = 'muse-spark-1.3';
++const servers: http.Server[] = [];
++const environmentNames: string[] = [];
++
++async function listen(handler: http.RequestListener): Promise<{ server: http.Server; url: string; requests: http.IncomingMessage[] }> {
++  const requests: http.IncomingMessage[] = [];
++  const server = http.createServer((request, response) => {
++    requests.push(request);
++    handler(request, response);
++  });
++  servers.push(server);
++  await new Promise<void>((resolve, reject) => {
++    server.once('error', reject);
++    server.listen(0, '127.0.0.1', resolve);
++  });
++  return { server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests };
++}
++
++function metaConfig(overrides: Record<string, unknown> = {}) {
++  const envName = `MAOS_META_BOUNDARY_${Math.random().toString(36).slice(2).toUpperCase()}`;
++  environmentNames.push(envName);
++  return {
++    baseURL: META_URL,
++    apiKey: 'synthetic-config-key-must-not-be-used',
++    apiKeyEnv: envName,
++    metaApiEnabled: true,
++    ...overrides,
++  };
++}
++
++afterEach(async () => {
++  for (const name of environmentNames.splice(0)) delete process.env[name];
++  vi.unstubAllGlobals();
++  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
++    server.closeAllConnections();
++    server.close(() => resolve());
++  })));
++});
++
++describe('shared Meta provider construction policy', () => {
++  it.each([
++    ['direct constructor without opt-in', () => new OpenAIProvider({ name: 'meta', apiKey: 'synthetic-key', baseURL: META_URL, model: MODEL })],
++    ['disabled opt-in', () => createProviderDirect('meta', metaConfig({ metaApiEnabled: false }), MODEL)],
++    ['hostile endpoint', () => createProviderDirect('meta', metaConfig({ baseURL: 'https://attacker.invalid/v1' }), MODEL)],
++    ['wrong model', () => createProviderDirect('meta', metaConfig(), 'muse-spark-other')],
++  ])('rejects %s before transport or credential fallback', (_label, construct) => {
++    const fetchMock = vi.fn(async () => { throw new Error('unexpected network request'); });
++    vi.stubGlobal('fetch', fetchMock);
++    expect(construct).toThrow(MetaApiPolicyError);
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it('rejects the SDK-level OPENAI_BASE_URL Meta override on direct construction', () => {
++    const previous = process.env.OPENAI_BASE_URL;
++    process.env.OPENAI_BASE_URL = META_URL;
++    const fetchMock = vi.fn(async () => { throw new Error('unexpected network request'); });
++    vi.stubGlobal('fetch', fetchMock);
++    try {
++      expect(() => new OpenAIProvider({ name: 'openai', apiKey: 'synthetic-key', model: MODEL })).toThrow(MetaApiPolicyError);
++      expect(fetchMock).not.toHaveBeenCalled();
++    } finally {
++      if (previous === undefined) delete process.env.OPENAI_BASE_URL;
++      else process.env.OPENAI_BASE_URL = previous;
++    }
++  });
++
++  it('requires the approved Meta endpoint to be explicit in provider configuration', () => {
++    const previous = process.env.OPENAI_BASE_URL;
++    process.env.OPENAI_BASE_URL = META_URL;
++    try {
++      expect(() => new OpenAIProvider({
++        name: 'meta', apiKey: 'synthetic-key', model: MODEL, metaApiEnabled: true, apiKeyEnv: 'MAOS_META_NOT_CONFIGURED',
++      })).toThrow(MetaApiPolicyError);
++    } finally {
++      if (previous === undefined) delete process.env.OPENAI_BASE_URL;
++      else process.env.OPENAI_BASE_URL = previous;
++    }
++  });
++
++  it('uses only the named environment key and rejects before network when it is missing', () => {
++    const config = metaConfig();
++    expect(() => createProviderDirect('meta', config, MODEL)).toThrow(/environment variable/);
++    expect(() => new OpenAIProvider({ name: 'meta', apiKey: 'synthetic-config-key-must-not-be-used', baseURL: META_URL, model: MODEL, metaApiEnabled: true, apiKeyEnv: config.apiKeyEnv as string })).toThrow(/environment variable/);
++  });
++
++  it('sets the provider-owned Core retry ceiling to zero for Meta', () => {
++    const config = metaConfig();
++    process.env[config.apiKeyEnv as string] = 'synthetic-meta-key-not-real';
++    const provider = createProviderDirect('meta', config, MODEL) as OpenAIProvider;
++    expect(provider.maxApplicationRetries).toBe(0);
++    const runtime = RuntimeFactory.create(
++      { id: 'planner', role: 'planner', provider: 'meta', model: MODEL, capabilities: [] },
++      { meta: config as any },
++      new MessageBus(),
++    ) as ApiRuntime;
++    expect(runtime.maxTaskRetries).toBe(0);
++  });
++
++  it('applies the shared guard to RuntimeFactory and doctor credential validation', () => {
++    const config = metaConfig({ baseURL: 'https://attacker.invalid/v1' });
++    expect(() => RuntimeFactory.create(
++      { id: 'planner', role: 'planner', provider: 'meta', model: MODEL, capabilities: [] },
++      { meta: config as any },
++      new MessageBus(),
++    )).toThrow(MetaApiPolicyError);
++    expect(RuntimeFactory.validateCredentials(
++      [{ id: 'planner', role: 'planner', provider: 'meta', model: MODEL, capabilities: [] }],
++      { meta: config as any },
++    )[0]).toMatchObject({ status: 'missing' });
++  });
++
++  it('rejects the Meta endpoint when another provider factory is selected', () => {
++    const fetchMock = vi.fn(async () => { throw new Error('unexpected network request'); });
++    vi.stubGlobal('fetch', fetchMock);
++    expect(() => RuntimeFactory.create(
++      { id: 'planner', role: 'planner', provider: 'anthropic', model: MODEL, capabilities: [] },
++      { anthropic: { baseURL: META_URL, apiKey: 'synthetic-key', metaApiEnabled: true } as any },
++      new MessageBus(),
++    )).toThrow(MetaApiPolicyError);
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it('rejects redirects before the redirected host receives a request', async () => {
++    const redirectTarget = await listen((_request, response) => response.writeHead(200).end('{"choices":[]}'));
++    const primary = await listen((_request, response) => {
++      response.writeHead(302, { Location: `http://localhost:${new URL(redirectTarget.url).port}/v1/chat/completions` }).end();
++    });
++    const originalFetch = globalThis.fetch.bind(globalThis);
++    const redirects: Array<RequestRedirect | undefined> = [];
++    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
++      if (String(input).startsWith(META_URL)) {
++        redirects.push(init?.redirect);
++        return originalFetch(primary.url + '/v1/chat/completions', init);
++      }
++      return originalFetch(input, init);
++    });
++
++    const config = metaConfig();
++    const apiKey = 'synthetic-meta-key-not-real';
++    process.env[config.apiKeyEnv as string] = apiKey;
++    const provider = createProviderDirect('meta', config, MODEL);
++    await expect(provider.generate([{ role: 'user', content: 'bounded synthetic request' }])).rejects.toThrow();
++
++    expect(primary.requests).toHaveLength(1);
++    expect(primary.requests[0].headers.authorization).toBe(`Bearer ${apiKey}`);
++    expect(redirectTarget.requests).toHaveLength(0);
++    expect(redirects).toEqual(['error']);
++  });
++});
+diff --git a/tests/cli/meta-provider-entrypoints.test.ts b/tests/cli/meta-provider-entrypoints.test.ts
+new file mode 100644
+index e69de29..55fb15c 100644
+--- /dev/null
++++ b/tests/cli/meta-provider-entrypoints.test.ts
+@@ -0,0 +1,116 @@
++import * as fs from 'node:fs';
++import * as http from 'node:http';
++import * as os from 'node:os';
++import * as path from 'node:path';
++import type { AddressInfo } from 'node:net';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { runDoctor } from '../../src/cli/doctor';
++import { runPlan } from '../../src/cli/plan';
++
++const META_URL = 'https://api.meta.ai/v1';
++const MODEL = 'muse-spark-1.3';
++const roots: string[] = [];
++const envNames: string[] = [];
++const servers: http.Server[] = [];
++
++function createProject(configOverrides: Record<string, unknown> = {}) {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-meta-cli-'));
++  roots.push(root);
++  const envName = `MAOS_META_CLI_${Math.random().toString(36).slice(2).toUpperCase()}`;
++  envNames.push(envName);
++  fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({
++    schemaVersion: 1,
++    projectName: 'meta-cli-test',
++    providers: { meta: { baseURL: META_URL, apiKey: 'synthetic-config-secret-not-real', apiKeyEnv: envName, ...configOverrides } },
++    agents: [{ id: 'PLANNER', role: 'planner', provider: 'meta', model: MODEL, capabilities: [], scope: ['.'] }],
++    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: 'meta' },
++  }));
++  return { root, envName };
++}
++
++async function startMock() {
++  const headers: http.IncomingHttpHeaders[] = [];
++  const server = http.createServer((request, response) => {
++    headers.push(request.headers);
++    request.resume();
++    request.on('end', () => response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
++      id: 'mock-doctor-completion', object: 'chat.completion', created: 1, model: MODEL,
++      choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
++      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
++    })));
++  });
++  servers.push(server);
++  await new Promise<void>((resolve, reject) => {
++    server.once('error', reject);
++    server.listen(0, '127.0.0.1', resolve);
++  });
++  return { server, headers, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
++}
++
++const originalCwds: string[] = [];
++
++afterEach(async () => {
++  const previous = originalCwds.pop();
++  if (previous) process.chdir(previous);
++  for (const name of envNames.splice(0)) delete process.env[name];
++  vi.restoreAllMocks();
++  vi.unstubAllGlobals();
++  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
++    server.closeAllConnections();
++    server.close(() => resolve());
++  })));
++  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
++});
++
++describe('Meta provider policy through plan and doctor entrypoints', () => {
++  it('rejects disabled Meta opt-in in plan before resolving its config key or making a request', async () => {
++    const project = createProject({ metaApiEnabled: false });
++    originalCwds.push(process.cwd());
++    process.chdir(project.root);
++    const requests = vi.fn(async () => new Response());
++    vi.stubGlobal('fetch', requests);
++    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
++    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('plan-exit'); }) as any);
++
++    await expect(runPlan('synthetic planning request', {})).rejects.toThrow('plan-exit');
++
++    expect(exit).toHaveBeenCalledWith(1);
++    expect(log.mock.calls.flat().join('\n')).toContain('metaApiEnabled=true');
++    expect(requests).not.toHaveBeenCalled();
++  });
++
++  it('blocks doctor ping when opt-in is missing even if a config key is present', async () => {
++    const project = createProject({ metaApiEnabled: undefined });
++    originalCwds.push(process.cwd());
++    process.chdir(project.root);
++    const requests = vi.fn(async () => new Response());
++    vi.stubGlobal('fetch', requests);
++    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
++
++    await runDoctor();
++
++    expect(log.mock.calls.flat().join('\n')).toContain('metaApiEnabled=true');
++    expect(requests).not.toHaveBeenCalled();
++  });
++
++  it('routes an opted-in doctor ping through the central provider policy using only the named environment key', async () => {
++    const project = createProject({ metaApiEnabled: true });
++    const key = 'synthetic-doctor-key-not-real';
++    process.env[project.envName] = key;
++    originalCwds.push(process.cwd());
++    process.chdir(project.root);
++    const mock = await startMock();
++    const nativeFetch = globalThis.fetch.bind(globalThis);
++    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
++      if (String(input).startsWith(META_URL)) return nativeFetch(`${mock.url}/v1/chat/completions`, init);
++      return nativeFetch(input, init);
++    });
++    vi.spyOn(console, 'log').mockImplementation(() => {});
++
++    await runDoctor();
++
++    expect(mock.headers).toHaveLength(1);
++    expect(mock.headers[0].authorization).toBe(`Bearer ${key}`);
++  });
++});
+diff --git a/tests/core/agent-runner-budget.test.ts b/tests/core/agent-runner-budget.test.ts
+new file mode 100644
+index e69de29..8e474e9 100644
+--- /dev/null
++++ b/tests/core/agent-runner-budget.test.ts
+@@ -0,0 +1,130 @@
++import * as fs from 'node:fs';
++import * as os from 'node:os';
++import * as path from 'node:path';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import type { IProvider, ProviderResponse } from '../../src/backends/provider';
++import { runAgent } from '../../src/core/agent-runner';
++import { enqueueRetry, drainRetryQueue, getRetryQueueStatus } from '../../src/core/retry-queue';
++import type { TaskFile } from '../../src/core/queue';
++
++const roots: string[] = [];
++
++function makeRoot(): string {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-agent-budget-'));
++  roots.push(root);
++  return root;
++}
++
++function toolResponse(name: string): ProviderResponse {
++  return {
++    content: null,
++    toolCalls: [{ id: `call-${name}`, type: 'function', function: { name, arguments: JSON.stringify({ command: 'echo executed > blocked-command.txt', path: 'blocked.txt', content: 'blocked' }) } }],
++    usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
++    model: 'budget-test-model',
++    latencyMs: 0,
++    finishReason: 'tool_calls',
++  };
++}
++
++function baseAgent(allowedTools: string[], maxIterations = 1) {
++  return {
++    id: 'budget-test-agent', role: 'test worker', provider: 'mock', model: 'budget-test-model',
++    capabilities: [], scope: ['*'], allowedTools, maxIterations,
++  };
++}
++
++function task() {
++  return { id: 'budget-test-task', description: 'Test a bounded agent run.', branch: 'local' };
++}
++
++afterEach(() => {
++  vi.useRealTimers();
++  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
++});
++
++describe('agent generation and adaptive iteration budgets', () => {
++  it.each(['run_command', 'write_file', 'git_commit'])('does not grant adaptive iterations for unauthorized %s calls', async (toolName) => {
++    const root = makeRoot();
++    const generate = vi.fn(async () => toolResponse(toolName));
++    const result = await runAgent(
++      { name: 'mock', model: 'budget-test-model', generate } as unknown as IProvider,
++      baseAgent(['task_complete']), task(), root, 0,
++      undefined, undefined,
++      { allowPartialSuccess: false, maxProviderRetries: 0 },
++    );
++
++    expect(generate).toHaveBeenCalledTimes(1);
++    expect(result.success).toBe(false);
++    expect(fs.existsSync(path.join(root, 'blocked.txt'))).toBe(false);
++    expect(fs.existsSync(path.join(root, 'blocked-command.txt'))).toBe(false);
++    expect(fs.existsSync(path.join(root, '.git'))).toBe(false);
++  });
++
++  it('enforces a hard generation ceiling even after a successful mutation earns an adaptive iteration', async () => {
++    const root = makeRoot();
++    const generate = vi.fn(async () => toolResponse('write_file'));
++    const result = await runAgent(
++      { name: 'mock', model: 'budget-test-model', generate } as unknown as IProvider,
++      baseAgent(['write_file'], 1), task(), root, 0,
++      undefined, undefined,
++      { allowPartialSuccess: false, maxProviderRetries: 0, maxGenerationAttempts: 1 },
++    );
++
++    expect(generate).toHaveBeenCalledTimes(1);
++    expect(result.success).toBe(false);
++    expect(result.error).toContain('Maximum model generation attempts (1) reached.');
++  });
++
++  it('counts transient retries toward the same hard generation ceiling', async () => {
++    const root = makeRoot();
++    let calls = 0;
++    const provider = {
++      name: 'mock', model: 'budget-test-model',
++      async generate() { calls++; throw new Error('503 service unavailable'); },
++    } as unknown as IProvider;
++    vi.useFakeTimers();
++    const pending = runAgent(
++      provider, baseAgent(['task_complete'], 20), task(), root, 0,
++      undefined, undefined,
++      { allowPartialSuccess: false, maxProviderRetries: 5, maxGenerationAttempts: 2 },
++    );
++    await vi.advanceTimersByTimeAsync(9_000);
++    const result = await pending;
++
++    expect(calls).toBe(2);
++    expect(result.success).toBe(false);
++    expect(result.error).toContain('Maximum model generation attempts (2) reached.');
++  });
++
++  it.each([undefined, 5])('does not exceed a provider-owned zero retry ceiling when caller config is %s', async (requestedRetries) => {
++    const root = makeRoot();
++    const generate = vi.fn(async () => { throw new Error('503 service unavailable'); });
++    const provider = { name: 'meta', model: 'muse-spark-1.3', maxApplicationRetries: 0, generate } as unknown as IProvider;
++    const result = await runAgent(
++      provider, baseAgent(['task_complete'], 1), task(), root, 0,
++      undefined, undefined,
++      { allowPartialSuccess: false, ...(requestedRetries === undefined ? {} : { maxProviderRetries: requestedRetries }) },
++    );
++
++    expect(generate).toHaveBeenCalledTimes(1);
++    expect(result.success).toBe(false);
++    expect(result.error).toContain('503 service unavailable');
++  });
++
++  it('holds queued whole-task retries for runtimes with an explicit zero retry cap', () => {
++    const root = makeRoot();
++    fs.mkdirSync(path.join(root, '.maos', 'queue', 'pending'), { recursive: true });
++    const taskFile = {
++      id: 'meta-retry-task', agent: 'META_AGENT', filePath: path.join(root, '.maos', 'queue', 'active', 'meta-retry-task.md'),
++    } as TaskFile;
++    const queued = enqueueRetry(taskFile, 'synthetic task', '503 provider unavailable', [], 0, {
++      maxRetries: 2, initialDelayMs: 0, backoffMultiplier: 2,
++    }, root);
++
++    expect(queued).not.toBeNull();
++    expect(drainRetryQueue(root, new Set(['META_AGENT']))).toBe(0);
++    expect(getRetryQueueStatus(root)).toHaveLength(1);
++    expect(drainRetryQueue(root)).toBe(1);
++    expect(getRetryQueueStatus(root)).toHaveLength(0);
++  });
++});
+diff --git a/tests/industrial/analysis-agent-auth-http.test.ts b/tests/industrial/analysis-agent-auth-http.test.ts
+index fb40a5c..8770133 100644
+--- a/tests/industrial/analysis-agent-auth-http.test.ts
++++ b/tests/industrial/analysis-agent-auth-http.test.ts
+@@ -21,6 +21,7 @@ import { withJudgedRunOutputLock } from '../../src/industrial/judged-run-lock';
+ 
+ const REPO_ROOT = path.resolve(__dirname, '../..');
+ const ALLOWED_ORIGIN = 'http://127.0.0.1:41731';
++const META_API_URL = 'https://api.meta.ai/v1';
+ const CSV = [
+   'timestamp,vibration_rms_mm_s,bearing_temperature_c',
+   '2026-04-01T08:00:00Z,2.1,70',
+@@ -34,6 +35,10 @@ interface ModelBehavior {
+   hangSecond?: boolean;
+   toolName?: string;
+   toolArguments?: (body: any) => string;
++  firstContent?: string;
++  secondContent?: string;
++  secondToolArguments?: (body: any) => string;
++  reportedModel?: string;
+ }
+ 
+ interface MockInference {
+@@ -51,6 +56,7 @@ interface AgentSystem {
+   baseURL: string;
+   token: string;
+   model: MockInference;
++  apiKeyEnv?: string;
+ }
+ 
+ function mockAudit(system: AgentSystem) {
+@@ -176,18 +182,19 @@ function makeAuditRecord(params: AuditEventParams, sequence: number): AuditRecor
+ 
+ const systems: AgentSystem[] = [];
+ const extraDirectories: string[] = [];
++const environmentNames: string[] = [];
+ 
+-function toolCompletion(toolName: string, argumentsJson: string) {
++function toolCompletion(toolName: string, argumentsJson: string, options: { content?: string | null; model?: string } = {}) {
+   return {
+     id: 'chatcmpl-agent-http',
+     object: 'chat.completion',
+     created: 1,
+-    model: 'mock-returned-model-v2',
++    model: options.model || 'mock-returned-model-v2',
+     choices: [{
+       index: 0,
+       message: {
+         role: 'assistant',
+-        content: null,
++        content: options.content ?? null,
+         tool_calls: [{
+           id: 'call-agent-http',
+           type: 'function',
+@@ -263,15 +270,23 @@ async function createMockInference(): Promise<MockInference> {
+         if (isFirst) {
+           const args = behavior.toolArguments?.(body) ?? JSON.stringify({ sourcePath: findSelectedPath(body) });
+           res.writeHead(200, { 'Content-Type': 'application/json' });
+-          res.end(JSON.stringify(toolCompletion(behavior.toolName || 'analyze_telemetry_csv', args)));
++          res.end(JSON.stringify(toolCompletion(behavior.toolName || 'analyze_telemetry_csv', args, {
++            content: behavior.firstContent,
++            model: behavior.reportedModel,
++          })));
+           return;
+         }
+         const toolMessage = [...body.messages].reverse().find((message: any) => message.role === 'tool');
+         let result: any;
+         try { result = toolMessage ? JSON.parse(toolMessage.content) : undefined; } catch { result = undefined; }
+-        const summary = `The sample has ${result?.result?.rowsAnalyzed ?? 0} rows; receipt ${result?.analysisId ?? 'telemetry-0000000000-deadbeef'}.`;
++        const summary = behavior.secondToolArguments?.(body) ?? JSON.stringify({
++          summary: `The sample has ${result?.result?.rowsAnalyzed ?? 0} rows; receipt ${result?.analysisId ?? 'telemetry-0000000000-deadbeef'}.`,
++        });
+         res.writeHead(200, { 'Content-Type': 'application/json' });
+-        res.end(JSON.stringify(toolCompletion('task_complete', JSON.stringify({ summary }))));
++        res.end(JSON.stringify(toolCompletion('task_complete', summary, {
++          content: behavior.secondContent,
++          model: behavior.reportedModel,
++        })));
+       }
+     }, delayMs);
+     res.once('close', () => clearTimeout(timer));
+@@ -286,10 +301,15 @@ async function createMockInference(): Promise<MockInference> {
+   return model;
+ }
+ 
+-async function createSystem(options: { modelTimeoutMs?: number } = {}): Promise<AgentSystem> {
++async function createSystem(options: { modelTimeoutMs?: number; providerApiKey?: string } = {}): Promise<AgentSystem> {
+   const model = await createMockInference();
+   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-agent-auth-http-'));
+-  systems.push({ root, host: null as any, baseURL: '', token: '', model });
++  const apiKeyEnv = options.providerApiKey ? `MAOS_AUTH_HTTP_META_${Math.random().toString(36).slice(2).toUpperCase()}` : undefined;
++  if (apiKeyEnv) {
++    environmentNames.push(apiKeyEnv);
++    process.env[apiKeyEnv] = options.providerApiKey;
++  }
++  systems.push({ root, host: null as any, baseURL: '', token: '', model, apiKeyEnv });
+   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
+   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
+   fs.copyFileSync(path.join(REPO_ROOT, 'demo', 'industrial', 'safety_thresholds.json'), path.join(root, 'demo', 'industrial', 'safety_thresholds.json'));
+@@ -299,9 +319,11 @@ async function createSystem(options: { modelTimeoutMs?: number } = {}): Promise<
+     schemaVersion: 1,
+     projectName: 'agent-auth-http-test',
+     routingMode: 'auto',
+-    providers: { mock: { apiKey: 'local-test-only', baseURL: model.baseURL, costPerMillionTokens: 0 } },
+-    agents: [{ id: 'ANALYST_AGENT', role: 'test analyst', provider: 'mock', model: 'configured-mock-model-v1', timeoutMs: options.modelTimeoutMs ?? 2000, capabilities: ['analysis'], scope: ['.'] }],
+-    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: 'mock' },
++    providers: apiKeyEnv
++      ? { meta: { baseURL: 'https://api.meta.ai/v1', metaApiEnabled: true, apiKeyEnv, costPerMillionTokens: 0 } }
++      : { mock: { apiKey: 'local-test-only', baseURL: model.baseURL, costPerMillionTokens: 0 } },
++    agents: [{ id: 'ANALYST_AGENT', role: 'test analyst', provider: apiKeyEnv ? 'meta' : 'mock', model: apiKeyEnv ? 'muse-spark-1.3' : 'configured-mock-model-v1', timeoutMs: options.modelTimeoutMs ?? 2000, capabilities: ['analysis'], scope: ['.'] }],
++    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: apiKeyEnv ? 'meta' : 'mock' },
+   }, null, 2));
+ 
+   const modelPort = Number(new URL(model.baseURL).port);
+@@ -351,6 +373,14 @@ async function post(system: AgentSystem, route: string, body: unknown, headers:
+   return { status: response.status, payload };
+ }
+ 
++function installMetaApiBridge(system: AgentSystem) {
++  const originalFetch = globalThis.fetch.bind(globalThis);
++  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
++    if (String(input).startsWith(META_API_URL)) return originalFetch(`${system.model.baseURL}/chat/completions`, init);
++    return originalFetch(input, init);
++  });
++}
++
+ async function prepareReview(system: AgentSystem) {
+   const analysis = await post(system, '/api/v1/industrial/analysis-agent', {
+     request: 'Review the selected synthetic CSV against the demonstration rules.',
+@@ -441,6 +471,8 @@ afterEach(async () => {
+     fs.rmSync(system.root, { recursive: true, force: true });
+   }
+   for (const directory of extraDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
++  for (const name of environmentNames.splice(0)) delete process.env[name];
++  vi.unstubAllGlobals();
+ });
+ 
+ describe('authenticated Industrial analysis agent HTTP integration', () => {
+@@ -653,6 +685,65 @@ describe('authenticated Industrial analysis agent HTTP integration', () => {
+     expect(result.payload.data.evidence.source.selectedPath).toBe('other.csv');
+   });
+ 
++  it('keeps a synthetic configured credential out of successful HTTP output, persisted evidence, reports, audits and logs', async () => {
++    const secret = 'synthetic-http-output-credential-not-real';
++    const system = await createSystem({ providerApiKey: secret });
++    system.model.behavior = {
++      firstContent: `Diagnostic prose ${secret}`,
++      secondContent: `Final prose ${secret}`,
++      reportedModel: secret,
++    };
++    installMetaApiBridge(system);
++    fs.mkdirSync(path.join(system.root, '.maos', 'logs'), { recursive: true });
++    const audit = mockAudit(system);
++    const response = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.', sourcePath: 'selected.csv',
++    });
++
++    expect(response.status).toBe(200);
++    expect(JSON.stringify(response.payload)).not.toContain(secret);
++    expect(response.payload.data.reportedModel).toBeNull();
++    expect(response.payload.data.requestedModel).toBe('muse-spark-1.3');
++    const report = fs.readFileSync(path.join(system.root, response.payload.data.reportPath), 'utf8');
++    const receipt = fs.readFileSync(path.join(system.root, response.payload.data.evidence.receiptPath), 'utf8');
++    const logs = fs.existsSync(path.join(system.root, '.maos', 'logs', 'orchestrator.log'))
++      ? fs.readFileSync(path.join(system.root, '.maos', 'logs', 'orchestrator.log'), 'utf8')
++      : '';
++    expect(report).not.toContain(secret);
++    expect(receipt).not.toContain(secret);
++    expect(JSON.stringify(audit.events)).not.toContain(secret);
++    expect(logs).not.toContain(secret);
++    expect(system.model.requests[1].messages.find((message: any) => message.role === 'assistant')?.content).toContain('[REDACTED]');
++  });
++
++  it('rejects credential-contaminated completion arguments with a sanitized API error and no accepted report', async () => {
++    const secret = 'synthetic-http-tool-argument-credential-not-real';
++    const system = await createSystem({ providerApiKey: secret });
++    system.model.behavior = {
++      secondToolArguments(body) {
++        const tool = [...body.messages].reverse().find((message: any) => message.role === 'tool');
++        const evidence = tool ? JSON.parse(tool.content) : {};
++        return JSON.stringify({ summary: `Receipt ${evidence.analysisId}; ${secret}` });
++      },
++      reportedModel: secret,
++    };
++    installMetaApiBridge(system);
++    fs.mkdirSync(path.join(system.root, '.maos', 'logs'), { recursive: true });
++    const audit = mockAudit(system);
++    const response = await post(system, '/api/v1/industrial/analysis-agent', {
++      request: 'Review the selected synthetic CSV.', sourcePath: 'selected.csv',
++    });
++
++    expect(response.status).toBe(422);
++    expect(JSON.stringify(response.payload)).not.toContain(secret);
++    expect(response.payload.error.code).toBe('PROVIDER_CREDENTIAL_CONTAMINATION');
++    const reportDirectory = path.join(system.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports');
++    expect(fs.existsSync(reportDirectory)).toBe(false);
++    expect(audit.events.some((event) => event.data.event === 'INDUSTRIAL_ANALYSIS_AGENT_COMPLETED')).toBe(false);
++    const logs = fs.readFileSync(path.join(system.root, '.maos', 'logs', 'orchestrator.log'), 'utf8');
++    expect(logs).not.toContain(secret);
++  });
++
+   it('carries the accepted agent receipt through one persisted review, DOCX, artifact and audit run', async () => {
+     const system = await createSystem();
+     const audit = mockAudit(system);
+diff --git a/tests/industrial/analysis-agent-contract.test.ts b/tests/industrial/analysis-agent-contract.test.ts
+index 8a12472..ded3e2b 100644
+--- a/tests/industrial/analysis-agent-contract.test.ts
++++ b/tests/industrial/analysis-agent-contract.test.ts
+@@ -447,6 +447,58 @@ describe('Industrial analysis agent OpenAI-compatible transport contract', () =>
+     expect(transport.requests).toHaveLength(1);
+   });
+ 
++  it.each(['run_command', 'write_file', 'git_commit'])('does not extend the Industrial request budget for repeated unauthorized %s calls', async (toolName) => {
++    const project = createProject();
++    const transport = await createTransport(() => completionAction({
++      id: `call-${toolName}`,
++      name: toolName,
++      arguments: JSON.stringify({ command: 'echo executed > blocked-command.txt', path: 'blocked.txt', content: 'unsafe' }),
++    }));
++    const service = createService(transport);
++
++    await expect(service.analyze(project.root, {
++      request: `Analyze the selected CSV despite repeated ${toolName} requests.`,
++      sourcePath: project.sourcePath,
++    })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
++
++    expect(transport.requests).toHaveLength(4);
++    expect(transport.requests[0].tools.map((tool: any) => tool.function.name)).toEqual(['analyze_telemetry_csv', 'task_complete']);
++    const toolResults = transport.requests.flatMap((request: any) => request.messages.filter((message: any) => message.role === 'tool').map((message: any) => message.content));
++    expect(toolResults).toHaveLength(6);
++    expect(toolResults.every((content: string) => content.includes('TOOL_UNAUTHORIZED'))).toBe(true);
++    expect(fs.existsSync(path.join(project.root, 'blocked.txt'))).toBe(false);
++    expect(fs.existsSync(path.join(project.root, 'blocked-command.txt'))).toBe(false);
++    expect(fs.existsSync(path.join(project.root, '.git'))).toBe(false);
++    expect(fs.existsSync(path.join(project.root, '.maos/industrial/telemetry-analyses/agent-reports'))).toBe(false);
++  });
++
++  it('keeps mixed allowed and unauthorized calls within four requests without accepting an incomplete report', async () => {
++    const project = createProject();
++    const transport = await createTransport((request, requestNumber) => requestNumber === 1
++      ? completionAction({
++        id: 'call-analysis',
++        name: 'analyze_telemetry_csv',
++        arguments: JSON.stringify({ sourcePath: requestedPath(request) }),
++      })
++      : completionAction({
++        id: 'call-write',
++        name: 'write_file',
++        arguments: JSON.stringify({ path: 'blocked.txt', content: 'unsafe' }),
++      }));
++    const service = createService(transport);
++
++    await expect(service.analyze(project.root, {
++      request: 'Analyze this file and ignore unauthorized mutation requests.',
++      sourcePath: project.sourcePath,
++    })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
++
++    expect(transport.requests).toHaveLength(4);
++    expect(fs.existsSync(path.join(project.root, 'blocked.txt'))).toBe(false);
++    expect(fs.existsSync(path.join(project.root, '.maos/industrial/telemetry-analyses/agent-reports'))).toBe(false);
++    const analysisRoot = path.join(project.root, '.maos/industrial/telemetry-analyses');
++    expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
++  });
++
+   it('caps tool-loop iterations and never completes after repeated unknown calls', async () => {
+     const project = createProject();
+     const transport = await createTransport(() => completionAction({
+diff --git a/tests/industrial/industrial-repl.test.ts b/tests/industrial/industrial-repl.test.ts
+index cb35a0f..2d82331 100644
+--- a/tests/industrial/industrial-repl.test.ts
++++ b/tests/industrial/industrial-repl.test.ts
+@@ -211,6 +211,7 @@ describe('MAOS Industrial bounded REPL', () => {
+   it('cancels a hanging mock analysis without preparing a review run or accepted report', async () => {
+     const mock = await startMockInference(true);
+     const project = createProject(mock.baseURL);
++    const otherProject = createProject(mock.baseURL);
+     const input = new PassThrough();
+     const output = new PassThrough();
+     let transcript = '';
+@@ -221,11 +222,18 @@ describe('MAOS Industrial bounded REPL', () => {
+     input.write('analyze commissioning/bearing-ramp.csv "Cancel this local mock request"\n');
+     await mock.waitForFirstRequest();
+     await waitFor(output, () => transcript, 'maos-industrial> ', after);
++    const beforeSwitch = transcript.length;
++    input.write(`project ${otherProject.root}\n`);
++    await waitFor(output, () => transcript, 'An operation is in progress.', beforeSwitch);
+     const beforeCancel = transcript.length;
+     input.write('cancel\n');
+     await waitFor(output, () => transcript, 'Cancellation requested', beforeCancel);
+     await waitFor(output, () => transcript, 'AGENT_CANCELLED', beforeCancel);
+     await waitFor(output, () => transcript, 'maos-industrial> ', transcript.length);
++    const beforeProjectCheck = transcript.length;
++    input.write('project\n');
++    await waitFor(output, () => transcript, `Active project: ${project.root}`, beforeProjectCheck);
++    expect(transcript.slice(beforeSwitch)).not.toContain(otherProject.root);
+     input.write('exit\n');
+     input.end();
+     await repl;
+diff --git a/tests/industrial/meta-model-api-contract.test.ts b/tests/industrial/meta-model-api-contract.test.ts
+index 23dd361..090b742 100644
+--- a/tests/industrial/meta-model-api-contract.test.ts
++++ b/tests/industrial/meta-model-api-contract.test.ts
+@@ -18,17 +18,17 @@ const MODEL = 'muse-spark-1.3';
+ 
+ type Action = { status?: number; body?: unknown; hang?: boolean };
+ 
+-function completion(toolName: string, args: string, options: { omitModel?: boolean } = {}) {
++function completion(toolName: string, args: string, options: { omitModel?: boolean; model?: string; content?: string | null } = {}) {
+   return {
+     id: 'chatcmpl-meta-contract',
+     object: 'chat.completion',
+     created: 1,
+-    ...(options.omitModel ? {} : { model: MODEL }),
++    ...(options.omitModel ? {} : { model: options.model || MODEL }),
+     choices: [{
+       index: 0,
+       message: {
+         role: 'assistant',
+-        content: null,
++        content: options.content ?? null,
+         tool_calls: [{ id: 'call-meta-tool', type: 'function', function: { name: toolName, arguments: args } }],
+       },
+       finish_reason: 'tool_calls',
+@@ -213,6 +213,100 @@ describe('Meta Model API opt-in and OpenAI-compatible contract (loopback mock on
+     }
+   });
+ 
++  it('redacts successful prose and provider model identity before service output, report, audit and logs', async () => {
++    const apiKey = 'synthetic-success-secret-not-a-real-key';
++    const mock = await startServer((body, _request) => {
++      const count = mock.requests.length;
++      if (count === 1) return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' }), { model: apiKey, content: `Synthetic note: ${apiKey}` }) };
++      const tool = body.messages.find((message: any) => message.role === 'tool');
++      const evidence = JSON.parse(tool.content);
++      return { body: completion('task_complete', JSON.stringify({ summary: `Replay receipt ${evidence.analysisId}.` }), { model: apiKey, content: `Additional prose ${apiKey}` }) };
++    });
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = apiKey;
++    fs.mkdirSync(path.join(project.root, '.maos', 'logs'), { recursive: true });
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
++    try {
++      const result = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      });
++      const report = fs.readFileSync(path.join(project.root, result.reportPath), 'utf8');
++      const receipt = fs.readFileSync(path.join(project.root, result.evidence.receiptPath), 'utf8');
++      const audit = JSON.stringify(createServiceContainer(project.root).audit.getRecords());
++      const logs = fs.readFileSync(path.join(project.root, '.maos', 'logs', 'orchestrator.log'), 'utf8');
++      const publicOutput = JSON.stringify({ result, report, receipt, audit, logs, console: consoleLog.mock.calls });
++
++      expect(result.reportedModel).toBeNull();
++      expect(result.requestedModel).toBe(MODEL);
++      expect(publicOutput).not.toContain(apiKey);
++      const secondRequest = mock.requests[1].body;
++      const priorAssistant = secondRequest.messages.find((message: any) => message.role === 'assistant');
++      expect(priorAssistant.content).toContain('[REDACTED]');
++      expect(priorAssistant.content).not.toContain(apiKey);
++      expect(JSON.parse(report).explanation.status).toBe('unverified');
++    } finally {
++      restoreFetch();
++      consoleLog.mockRestore();
++    }
++  });
++
++  it('blocks task_complete arguments whose JSON-decoded content contains the configured key', async () => {
++    const apiKey = 'synthetic-argument-secret-not-a-real-key';
++    const mock = await startServer((body, _request) => {
++      const count = mock.requests.length;
++      if (count === 1) return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' })) };
++      const tool = body.messages.find((message: any) => message.role === 'tool');
++      const evidence = JSON.parse(tool.content);
++      const escapedKey = [...apiKey].map((character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`).join('');
++      return { body: completion('task_complete', `{"summary":"Receipt ${evidence.analysisId}; ${escapedKey}"}`) };
++    });
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = apiKey;
++    fs.mkdirSync(path.join(project.root, '.maos', 'logs'), { recursive: true });
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'PROVIDER_CREDENTIAL_CONTAMINATION' });
++      const reports = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses', 'agent-reports');
++      const logs = fs.readFileSync(path.join(project.root, '.maos', 'logs', 'orchestrator.log'), 'utf8');
++      expect(fs.existsSync(reports)).toBe(false);
++      expect(logs).not.toContain(apiKey);
++      expect(consoleLog.mock.calls.flat().join('\n')).not.toContain(apiKey);
++      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords())).not.toContain(apiKey);
++    } finally {
++      restoreFetch();
++      consoleLog.mockRestore();
++    }
++  });
++
++  it('blocks credential contamination in provider-controlled tool names before Core can log it', async () => {
++    const apiKey = 'synthetic-tool-name-secret-not-a-real-key';
++    const mock = await startServer(() => ({ body: completion(apiKey, '{}') }));
++    const project = makeProject({ baseURL: META_URL });
++    process.env[project.keyEnv] = apiKey;
++    fs.mkdirSync(path.join(project.root, '.maos', 'logs'), { recursive: true });
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installMetaFetchBridge(mock.baseURL, outbound);
++    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'PROVIDER_CREDENTIAL_CONTAMINATION' });
++      const logs = fs.readFileSync(path.join(project.root, '.maos', 'logs', 'orchestrator.log'), 'utf8');
++      expect(logs).not.toContain(apiKey);
++      expect(consoleLog.mock.calls.flat().join('\n')).not.toContain(apiKey);
++      expect(mock.requests).toHaveLength(1);
++    } finally {
++      restoreFetch();
++      consoleLog.mockRestore();
++    }
++  });
++
+   it.each([
+     ['other host', 'https://example.invalid/v1', MODEL, true, 'PROJECT_CONFIG_INVALID'],
+     ['other model', META_URL, 'muse-spark-1.3-contributor', true, 'PROJECT_CONFIG_INVALID'],

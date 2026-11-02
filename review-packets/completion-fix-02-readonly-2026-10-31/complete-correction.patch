@@ -1,0 +1,396 @@
+diff --git a/src/core/agent-runner.ts b/src/core/agent-runner.ts
+index 4252567..597c257 100644
+--- a/src/core/agent-runner.ts
++++ b/src/core/agent-runner.ts
+@@ -224,6 +224,14 @@ export async function runAgent(
+ 
+   // Effective max = base + bonus for productive agents
+   const getEffectiveMax = () => agent.maxIterations + bonusIterationsGranted;
++  // Read-only agents are offered no mutating tools. A legitimate read-only
++  // task must still close with task_complete; an empty files_changed list is
++  // valid for them. Only the stop-nudge wording is affected; mutating agents
++  // keep the existing reminder verbatim.
++  const MUTATING_AGENT_TOOLS = new Set(['write_file', 'git_commit', 'run_command']);
++  const offeredTools = agent.allowedTools ?? [];
++  const readOnlyAgent = offeredTools.length > 0 &&
++    !offeredTools.some((tool) => MUTATING_AGENT_TOOLS.has(tool));
+   const providerRetryCeiling = provider.maxApplicationRetries;
+   const maxProviderRetries = providerRetryCeiling === undefined
+     ? options.maxProviderRetries ?? 3
+@@ -313,8 +321,9 @@ export async function runAgent(
+           logger.warn(agent.id, 'Model stopped without calling task_complete -- nudging to finalize');
+           messages.push({
+             role: 'user',
+-            content:
+-              'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
++            content: readOnlyAgent
++              ? 'You stopped without calling task_complete. This task requires no file changes: call task_complete now with a summary of what you accomplished and files_changed: [] (an empty list is valid for read-only work; the field may also be omitted). Do not start new work.'
++              : 'You stopped without calling task_complete. Please call task_complete now with a summary of what you accomplished and the list of files you changed. If you cannot complete the task, still call task_complete with a partial summary.',
+           });
+ 
+           const retryResponse = await retryOnTransient(
+diff --git a/src/gui/src/components/TelemetryReviewPanel.tsx b/src/gui/src/components/TelemetryReviewPanel.tsx
+index ca45b41..c838826 100644
+--- a/src/gui/src/components/TelemetryReviewPanel.tsx
++++ b/src/gui/src/components/TelemetryReviewPanel.tsx
+@@ -232,7 +232,7 @@ export const TelemetryReviewPanel: React.FC = () => {
+ 
+       {agentPhase !== 'idle' && (
+         <div role="status" aria-live="polite" style={{ marginTop: 10, color: agentPhase === 'failed' || agentPhase === 'cancelled' ? '#ff7b72' : '#8b949e', fontSize: 11 }}>
+-          Request: {agentPhase} · Tool execution: {agentResult ? 'completed' : agentPhase === 'requesting' ? 'awaiting model tool call' : agentPhase === 'failed' || agentPhase === 'cancelled' ? 'not confirmed' : 'not started'}
++          Request: {agentPhase} · {agentResult ? 'Tool execution: completed' : agentPhase === 'requesting' ? 'Tool execution: awaiting model tool call' : agentPhase === 'failed' ? 'Agent completion: failed · report not accepted' : agentPhase === 'cancelled' ? 'Agent completion: not completed · report not accepted' : 'Tool execution: not started'}
+         </div>
+       )}
+       {agentError && <div role="alert" style={{ marginTop: 8, color: '#ff7b72', fontSize: 11 }}>{agentError}</div>}
+@@ -290,6 +290,11 @@ export const TelemetryReviewPanel: React.FC = () => {
+             <span style={{ color: '#8b949e', fontSize: 11 }}>{analysis.result.rowsAnalyzed} rows · {analysis.source.kind === 'bundled-synthetic-sample' ? 'bundled synthetic data' : analysis.source.kind === 'project-local-file' ? 'project-local file' : 'device upload'}</span>
+             <code style={{ color: '#c9d1d9', fontSize: 11 }}>ID {analysis.analysisId}</code>
+           </div>
++          {agentPhase === 'failed' && (
++            <div role="status" style={{ marginTop: 10, border: '1px solid #da3633', borderRadius: 6, padding: '9px 11px', fontSize: 11, color: '#ff7b72' }}>
++              Agent completion failed — no agent report was accepted and no model explanation is shown. The result above is the deterministic local telemetry analysis (upload receipt <code>{analysis.analysisId}</code>), replayable from the CLI below — not an accepted agent report.
++            </div>
++          )}
+ 
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 8, marginTop: 12 }}>
+             {[
+diff --git a/tests/industrial/read-only-completion.test.ts b/tests/industrial/read-only-completion.test.ts
+new file mode 100644
+index 0000000..a9b0264
+--- /dev/null
++++ b/tests/industrial/read-only-completion.test.ts
+@@ -0,0 +1,334 @@
++import * as fs from 'node:fs';
++import * as http from 'node:http';
++import * as os from 'node:os';
++import * as path from 'node:path';
++import type { AddressInfo } from 'node:net';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import type { IProvider, ProviderResponse } from '../../src/backends/provider';
++import { BASETEN_API_BASE_URL, BASETEN_API_KEY_ENV, BASETEN_API_MODEL } from '../../src/backends/meta-api-policy';
++import { runAgent } from '../../src/core/agent-runner';
++import { IndustrialAnalysisAgentError } from '../../src/industrial/analysis-agent-service';
++import { verifyTelemetryAnalysis } from '../../src/industrial/telemetry-analysis';
++import { createServiceContainer } from '../../src/service';
++
++const projects: string[] = [];
++const servers: http.Server[] = [];
++const environmentNames: string[] = [];
++const repoRoot = path.resolve(__dirname, '../..');
++
++type Action = { status?: number; body?: unknown; hang?: boolean };
++
++function completion(toolName: string, args: string, options: {
++  model?: string;
++  content?: string | null;
++  finishReason?: string;
++  omitToolCalls?: boolean;
++} = {}) {
++  return {
++    id: 'chatcmpl-readonly-completion',
++    object: 'chat.completion',
++    created: 1,
++    model: options.model || BASETEN_API_MODEL,
++    choices: [{
++      index: 0,
++      message: {
++        role: 'assistant',
++        content: options.content ?? null,
++        ...(options.omitToolCalls ? {} : { tool_calls: [{ id: `call-${toolName}-${Date.now()}`, type: 'function', function: { name: toolName, arguments: args } }] }),
++      },
++      finish_reason: options.finishReason ?? 'tool_calls',
++    }],
++    usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
++  };
++}
++
++async function startServer(handler: (body: any, request: http.IncomingMessage) => Action | Promise<Action>) {
++  const requests: Array<{ body: any; headers: http.IncomingHttpHeaders; url: string }> = [];
++  const server = http.createServer((req, res) => {
++    const chunks: Buffer[] = [];
++    req.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
++    req.on('end', async () => {
++      let body: any;
++      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = undefined; }
++      requests.push({ body, headers: req.headers, url: req.url || '' });
++      try {
++        const action = await handler(body, req);
++        if (action.hang || res.destroyed) return;
++        res.writeHead(action.status || 200, { 'content-type': 'application/json' });
++        res.end(JSON.stringify(action.body));
++      } catch {
++        if (!res.destroyed) res.writeHead(500).end();
++      }
++    });
++  });
++  servers.push(server);
++  await new Promise<void>((resolve, reject) => {
++    server.once('error', reject);
++    server.listen(0, '127.0.0.1', resolve);
++  });
++  const port = (server.address() as AddressInfo).port;
++  return { server, requests, baseURL: `http://127.0.0.1:${port}/v1` };
++}
++
++function makeProject() {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-readonly-completion-'));
++  projects.push(root);
++  const engineSource = process.env.MAOS_TEST_ENGINE_PATH;
++  if (engineSource) {
++    const enginePath = path.join(root, 'rust', 'target', 'release', `maos-engine${process.platform === 'win32' ? '.exe' : ''}`);
++    fs.mkdirSync(path.dirname(enginePath), { recursive: true });
++    fs.copyFileSync(engineSource, enginePath);
++  }
++  const keyEnv = BASETEN_API_KEY_ENV;
++  environmentNames.push(keyEnv);
++  fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
++  fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
++  fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', 'safety_thresholds.json'), path.join(root, 'demo', 'industrial', 'safety_thresholds.json'));
++  fs.mkdirSync(path.join(root, 'commissioning'), { recursive: true });
++  fs.writeFileSync(path.join(root, 'commissioning', 'bearing-ramp.csv'), [
++    'sample_time,vibration_rms_mm_s,bearing_temperature_c',
++    '2026-02-11T08:00:00Z,1.2,70',
++    '2026-02-11T08:01:00Z,4.8,88',
++    '2026-02-11T08:02:00Z,8.2,96',
++  ].join('\n'));
++  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({
++    schemaVersion: 1,
++    projectName: 'baseten-readonly-completion-test',
++    providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } },
++    agents: [{
++      id: 'ANALYST_AGENT', role: 'test analyst', provider: 'baseten', model: BASETEN_API_MODEL,
++      timeoutMs: 7_000, capabilities: ['analysis'], scope: ['.'],
++    }],
++    routing: { strategy: 'capability_score', costWeight: 0, capabilityWeight: 1, maxParallelAgents: 1, fallbackProvider: 'baseten' },
++  }, null, 2));
++  return { root, keyEnv, sourcePath: 'commissioning/bearing-ramp.csv' };
++}
++
++function installBasetenFetchBridge(targetBaseURL: string, requests: Array<{ url: string; init?: RequestInit }>) {
++  const originalFetch = globalThis.fetch;
++  const nativeFetch = originalFetch.bind(globalThis);
++  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
++    const targetUrl = String(input);
++    requests.push({ url: targetUrl, init });
++    if (!targetUrl.startsWith(`${BASETEN_API_BASE_URL}/chat/completions`)) throw new Error('Unexpected hosted-provider request URL.');
++    return nativeFetch(`${targetBaseURL}/chat/completions`, { ...init, redirect: 'error' });
++  }) as typeof globalThis.fetch;
++  return () => { globalThis.fetch = originalFetch; };
++}
++
++function textResponse(content: string): ProviderResponse {
++  return {
++    content,
++    toolCalls: [],
++    usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
++    model: 'stub-model',
++    latencyMs: 0,
++    finishReason: 'stop',
++  };
++}
++
++function completeResponse(summary: string, filesChanged?: string[]): ProviderResponse {
++  return {
++    content: null,
++    toolCalls: [{
++      id: 'call-task-complete', type: 'function',
++      function: { name: 'task_complete', arguments: JSON.stringify(filesChanged === undefined ? { summary } : { summary, files_changed: filesChanged }) },
++    }],
++    usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
++    model: 'stub-model',
++    latencyMs: 0,
++    finishReason: 'tool_calls',
++  };
++}
++
++afterEach(async () => {
++  for (const name of environmentNames.splice(0)) delete process.env[name];
++  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
++    server.closeAllConnections();
++    server.close(() => resolve());
++  })));
++  for (const root of projects.splice(0)) fs.rmSync(root, { recursive: true, force: true });
++});
++
++describe('read-only completion at the root cause (mock only)', () => {
++  it('reminds a read-only agent that an empty files_changed list is valid', async () => {
++    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-readonly-nudge-'));
++    projects.push(root);
++    const seenMessages: Array<any[]> = [];
++    const generate = vi.fn(async (messages: any[]) => {
++      seenMessages.push(messages);
++      if (seenMessages.length === 1) return textResponse('Plain summary without a completion call.');
++      return completeResponse('Read-only work is done.', []);
++    });
++    const result = await runAgent(
++      { name: 'mock', model: 'stub-model', generate } as unknown as IProvider,
++      {
++        id: 'readonly-agent', role: 'read-only analyst', provider: 'mock', model: 'stub-model',
++        capabilities: [], scope: ['.'], allowedTools: ['analyze_telemetry_csv', 'task_complete'], maxIterations: 4,
++      },
++      { id: 'readonly-task', description: 'Summarize without changing files.', branch: 'local' },
++      root, 0, undefined, undefined,
++      { allowPartialSuccess: false, maxProviderRetries: 0 },
++    );
++
++    expect(result.success).toBe(true);
++    expect(result.filesChanged).toEqual([]);
++    expect(generate).toHaveBeenCalledTimes(2);
++    const nudge = (seenMessages[1] as any[]).filter((message) => message.role === 'user').at(-1).content as string;
++    expect(nudge).toContain('files_changed: []');
++  });
++
++  it('keeps the existing reminder verbatim for mutating agents', async () => {
++    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-mutating-nudge-'));
++    projects.push(root);
++    const seenMessages: Array<any[]> = [];
++    const generate = vi.fn(async (messages: any[]) => {
++      seenMessages.push(messages);
++      if (seenMessages.length === 1) return textResponse('Plain summary without a completion call.');
++      return completeResponse('Mutating work is done.', ['edited.txt']);
++    });
++    const result = await runAgent(
++      { name: 'mock', model: 'stub-model', generate } as unknown as IProvider,
++      {
++        id: 'mutating-agent', role: 'coder', provider: 'mock', model: 'stub-model',
++        capabilities: [], scope: ['.'], allowedTools: ['write_file', 'task_complete'], maxIterations: 4,
++      },
++      { id: 'mutating-task', description: 'Change a file.', branch: 'local' },
++      root, 0, undefined, undefined,
++      { allowPartialSuccess: false, maxProviderRetries: 0 },
++    );
++
++    expect(result.success).toBe(true);
++    const nudge = (seenMessages[1] as any[]).filter((message) => message.role === 'user').at(-1).content as string;
++    expect(nudge).toContain('the list of files you changed');
++    expect(nudge).not.toContain('files_changed: []');
++  });
++
++  it('recovers the observed live sequence: tool success, plain text, then read-only completion', async () => {
++    const mock = await startServer((body) => {
++      const requestNumber = mock.requests.length;
++      if (requestNumber === 1) {
++        return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' })) };
++      }
++      if (requestNumber === 2) {
++        return { body: completion('unused', '{}', { omitToolCalls: true, finishReason: 'stop', content: 'The readings cross the demo limits.' }) };
++      }
++      const tool = body.messages.find((message: any) => message.role === 'tool');
++      const evidence = JSON.parse(tool.content);
++      return { body: completion('task_complete', JSON.stringify({ summary: `Replay receipt ${evidence.analysisId}. No files changed.` })) };
++    });
++    const project = makeProject();
++    process.env[project.keyEnv] = 'synthetic-baseten-readonly-key-not-real';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installBasetenFetchBridge(mock.baseURL, outbound);
++    try {
++      const result = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV without changing files.', sourcePath: project.sourcePath,
++      });
++
++      expect(mock.requests).toHaveLength(3);
++      expect(mock.requests.length).toBeLessThanOrEqual(4);
++      expect(mock.requests.every((request) => request.body.max_tokens === 1500 && request.body.reasoning_effort === 'low')).toBe(true);
++      const nudge = (mock.requests[2].body.messages as any[]).filter((message) => message.role === 'user').at(-1).content as string;
++      expect(nudge).toContain('files_changed: []');
++      expect(result.evidence.verification.valid).toBe(true);
++      expect(result.explanation).toContain(result.evidence.analysisId);
++      const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
++      expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
++      expect(fs.readdirSync(path.join(analysisRoot, 'agent-reports'))).toHaveLength(1);
++      const report = JSON.parse(fs.readFileSync(path.join(project.root, result.reportPath), 'utf8'));
++      expect(report.acceptance).toBe('accepted');
++      expect(report.explanation.status).toBe('unverified');
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('lets continued omission of completion terminate within the hard budget', async () => {
++    const mock = await startServer((body) => {
++      const requestNumber = mock.requests.length;
++      if (requestNumber === 1) {
++        return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' })) };
++      }
++      return { body: completion('unused', '{}', { omitToolCalls: true, finishReason: 'stop', content: 'Still only prose, no completion call.' }) };
++    });
++    const project = makeProject();
++    process.env[project.keyEnv] = 'synthetic-baseten-omission-key-not-real';
++    const outbound: Array<{ url: string; init?: RequestInit }> = [];
++    const restoreFetch = installBasetenFetchBridge(mock.baseURL, outbound);
++    try {
++      const failure = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      }).then(
++        () => { throw new Error('Expected continued omission to fail closed.'); },
++        (error: Error) => error,
++      );
++
++      expect(failure).toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED', message: expect.stringContaining('MAX_ITERATIONS') });
++      expect(mock.requests.length).toBeLessThanOrEqual(4);
++      expect(mock.requests.every((request) => request.body.max_tokens === 1500 && request.body.reasoning_effort === 'low')).toBe(true);
++      const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
++      expect(fs.readdirSync(analysisRoot).filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
++      expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
++      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords())).not.toContain('INDUSTRIAL_ANALYSIS_AGENT_COMPLETED');
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('shows receipt success separately from agent failure instead of fabricating success', async () => {
++    const mock = await startServer((body) => {
++      const requestNumber = mock.requests.length;
++      if (requestNumber === 1) {
++        return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' })) };
++      }
++      return { body: completion('unused', '{}', { omitToolCalls: true, finishReason: 'stop', content: 'Prose without a completion call.' }) };
++    });
++    const project = makeProject();
++    process.env[project.keyEnv] = 'synthetic-baseten-separate-states-key-not-real';
++    const restoreFetch = installBasetenFetchBridge(mock.baseURL, []);
++    try {
++      const failure = await createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      }).then(
++        () => { throw new Error('Expected the agent run to fail.'); },
++        (error: Error) => error,
++      );
++
++      expect(failure).toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'AGENT_EXECUTION_FAILED' });
++      const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
++      const receiptFile = fs.readdirSync(analysisRoot).find((entry) => entry.endsWith('.json'));
++      expect(receiptFile).toBeDefined();
++      const receipt = JSON.parse(fs.readFileSync(path.join(analysisRoot, receiptFile!), 'utf8'));
++      const verification = verifyTelemetryAnalysis(project.root, receipt.analysisId);
++      expect(verification).toMatchObject({ valid: true, sourceHashMatched: true, rulesetHashMatched: true, recomputationMatched: true });
++      expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
++      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords())).not.toContain('INDUSTRIAL_ANALYSIS_AGENT_COMPLETED');
++    } finally {
++      restoreFetch();
++    }
++  });
++
++  it('does not accept arbitrary model prose as completed', async () => {
++    const mock = await startServer((body) => {
++      const requestNumber = mock.requests.length;
++      if (requestNumber === 1) {
++        return { body: completion('analyze_telemetry_csv', JSON.stringify({ sourcePath: 'commissioning/bearing-ramp.csv' })) };
++      }
++      return { body: completion('task_complete', JSON.stringify({ summary: 'Everything looks critical, trust this prose.' })) };
++    });
++    const project = makeProject();
++    process.env[project.keyEnv] = 'synthetic-baseten-prose-key-not-real';
++    const restoreFetch = installBasetenFetchBridge(mock.baseURL, []);
++    try {
++      await expect(createServiceContainer(project.root).industrialAnalysisAgent.analyze(project.root, {
++        request: 'Review this selected synthetic bearing CSV.', sourcePath: project.sourcePath,
++      })).rejects.toMatchObject<Partial<IndustrialAnalysisAgentError>>({ code: 'EVIDENCE_REFERENCE_REQUIRED' });
++      const analysisRoot = path.join(project.root, '.maos', 'industrial', 'telemetry-analyses');
++      expect(fs.existsSync(path.join(analysisRoot, 'agent-reports'))).toBe(false);
++      expect(JSON.stringify(createServiceContainer(project.root).audit.getRecords())).not.toContain('INDUSTRIAL_ANALYSIS_AGENT_COMPLETED');
++    } finally {
++      restoreFetch();
++    }
++  });
++});

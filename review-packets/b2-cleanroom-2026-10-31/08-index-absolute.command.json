@@ -1,0 +1,12 @@
+{
+  "cwd": "C:/clean/core",
+  "executable": "git.exe",
+  "args": [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "index"
+  ],
+  "startedAt": "2026-10-31T15:38:03.262Z",
+  "environment": "OS/tool PATH only; isolated HOME/Git/npm; Cargo offline; no provider credentials inherited"
+}

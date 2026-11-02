@@ -1,0 +1,11 @@
+{
+  "patchPath": "C:\\maos\\artifacts\\verification\\agent-gui-2026-10-27\\reset-replay-canonical.patch",
+  "patchBytes": 553378,
+  "patchSha256": "a80046ad68246c14c15adef5117437488317869a86220c9ef44ab5c082bedf65",
+  "manifestPath": "C:\\maos\\artifacts\\verification\\agent-gui-2026-10-27\\reset-replay-source-hashes.json",
+  "scopeCount": 72,
+  "trackedCount": 50,
+  "addedCount": 22,
+  "manifestSha256": "fa817d567cd039768bfed2517d853ffc18270155b2a2c342ac114b19a7b3f825"
+}
+EXIT_CODE=0

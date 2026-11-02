@@ -1,0 +1,9 @@
+ M src/core/agent-runner.ts
+ M src/gui/src/api/rest-client.ts
+ M src/gui/src/components/TelemetryReviewPanel.tsx
+?? src/gui/src/components/telemetryReviewCoordinator.ts
+?? src/gui/src/components/telemetryReviewState.ts
+?? tests/gui/rest-client-abort.test.ts
+?? tests/gui/telemetry-review-coordinator.test.ts
+?? tests/gui/telemetry-review-state.test.ts
+?? tests/industrial/read-only-completion.test.ts

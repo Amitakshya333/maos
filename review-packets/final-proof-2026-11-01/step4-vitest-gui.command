@@ -1,0 +1,1 @@
+cd C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-taskE-20261101-123901\core; npx vitest run tests/gui/ui1-25-truthful-readiness.test.ts tests/gui/telemetry-review-state.test.ts tests/gui/telemetry-review-coordinator.test.ts tests/gui/rest-client-abort.test.ts tests/gui/ui1-02-api-clients.test.ts

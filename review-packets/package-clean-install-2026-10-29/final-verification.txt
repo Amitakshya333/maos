@@ -1,0 +1,17 @@
+Repository: C:\maos
+Branch: main
+HEAD: 189e786ff0431b02b95ca618bb4791a5ad7b0215
+Index empty: True
+Isolated source checkout HEAD: 189e786ff0431b02b95ca618bb4791a5ad7b0215
+Isolated source tracked tree clean: True
+Isolated source index empty: True
+Package SHA-256: 1dfcb0edd2de9f17b1a8bc499b223b03a821ace69585dea44073b71775097aa6
+Package size bytes: 1217278
+Installed package absent after uninstall: True
+maos-industrial shim absent after uninstall: True
+Attempt 12 evidence status: PASS
+Attempt 12 privacy checks all false: True
+Attempt 12 process cleanup reported: {"electronClosed":true,"projectServiceStopped":true,"uiServerStopped":true,"mockStopped":true}
+Current test-owned Node/Electron/CMD process count: 0
+Sanitized evidence contains no validation-root path: True
+FINAL_VERIFICATION: True

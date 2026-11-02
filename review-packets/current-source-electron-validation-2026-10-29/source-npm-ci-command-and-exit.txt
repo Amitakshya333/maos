@@ -1,0 +1,3 @@
+COMMAND: npm ci --prefix <temp>/source --no-audit --no-fund --include=dev
+SOURCE_COMMIT: 189e786ff0431b02b95ca618bb4791a5ad7b0215
+EXIT_CODE: 0

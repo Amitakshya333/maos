@@ -1,0 +1,12 @@
+{
+  "packageName": "maosorch",
+  "packageVersion": "0.3.0",
+  "applicationLockSha256": "5d9577c499c53d1e78457d00901d117f626fcb824ba76ef8e5fa76637d7eae27",
+  "applicationLockMatchesManifest": true,
+  "providerBundleExists": true,
+  "serviceContainerBundleExists": true,
+  "electronExeExists": true,
+  "bundleSha256": "797b3f89d94b37f9ddb765e413679d4ae8335aad18e5feac2d8d481a65cd1c59",
+  "sourceRevision": "2cfdf9b81f56eada7df2041625da18e44531151e",
+  "sourceDeltaSha256": "c916ddc30baf3b35c80fbe099fb97ee568431a6bc663cf612e3114f2f8f5bac1"
+}

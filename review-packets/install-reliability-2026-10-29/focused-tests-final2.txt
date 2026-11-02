@@ -1,0 +1,11 @@
+COMMAND: node_modules/.bin/vitest.cmd run tests/cli/doctor.test.ts tests/cli/meta-provider-entrypoints.test.ts tests/industrial/package-runtime-assets.test.ts
+EXIT_CODE: 0
+
+ RUN  v4.1.11 C:/Users/AMITAKSHYA SUTAR/AppData/Local/Temp/maos-install-reliability-1ca70dbb9f03455cbb4af596caa7a149/source
+
+
+ Test Files  3 passed (3)
+      Tests  18 passed (18)
+   Start at  02:31:16
+   Duration  11.41s (transform 2.33s, setup 0ms, import 4.83s, tests 5.79s, environment 0ms)
+

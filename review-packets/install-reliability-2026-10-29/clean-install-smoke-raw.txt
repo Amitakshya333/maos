@@ -1,0 +1,24 @@
+
+> maosorch@0.3.0 prepare
+> husky
+
+'husky' is not recognized as an internal or external command,
+operable program or batch file.
+npm error code 1
+npm error path C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-clean-install-36409511aaf448fb956688984e6c6822\empty-install-destination\app
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c husky
+npm notice
+npm notice New minor version of npm available! 11.6.1 -> 11.21.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.1
+npm notice To update run: npm install -g npm@11.21.1
+npm notice
+npm error A complete log of this run can be found in: C:\Users\AMITAK~1\AppData\Local\Temp\maos-clean-install-36409511aaf448fb956688984e6c6822\empty-npm-cache\_logs\2026-10-28T20_59_56_082Z-debug-0.log
+Pinned application dependency install failed (exit 1).
+At C:\Users\AMITAKSHYA SUTAR\AppData\Local\Temp\maos-clean-install-36409511aaf448fb956688984e6c6822\installer-bundle\In
+stall-MaosIndustrial.ps1:74 char:30
++ ... DE -ne 0) { throw "Pinned application dependency install failed (exit ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Pinned applicat...ailed (exit 1).:String) [], RuntimeException
+    + FullyQualifiedErrorId : Pinned application dependency install failed (exit 1).
+ 

@@ -1,0 +1,11 @@
+
+> maosorch@0.3.0 prepare
+> husky
+
+HUSKY=0 skip install
+added 252 packages in 14s
+npm notice
+npm notice New minor version of npm available! 11.6.1 -> 11.21.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.1
+npm notice To update run: npm install -g npm@11.21.1
+npm notice

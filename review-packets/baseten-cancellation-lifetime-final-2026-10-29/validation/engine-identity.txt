@@ -1,0 +1,3 @@
+ENGINE_PATH=C:\Users\AMITAKSHYA SUTAR\.codex\worktrees\baseten-gate-validation-2026-10-29\rust\target\release\maos-engine.exe
+ENGINE_BYTES=472064
+ENGINE_SHA256=3dc07f0a5b097867e5e9b150d54e6490898b7465dcfe654a6e490d9c9b6da2a2

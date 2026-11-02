@@ -1,0 +1,28 @@
+{
+  "message": "Judged run completed with verdict FAIL. All 6 stages verified.",
+  "success": true,
+  "runId": "judged-run-1793215649111-7ad1d4",
+  "durationMs": 616,
+  "stagesCompleted": [
+    "PREFLIGHT",
+    "POLICY",
+    "SERVICES",
+    "INGEST",
+    "ANALYZE",
+    "APPROVAL",
+    "DAG",
+    "VERIFY",
+    "AUDIT_EXPORT"
+  ],
+  "overallVerdict": "FAIL",
+  "approvalStatus": "approved",
+  "deliverablePath": "artifacts/generated/turbine_safety_approval_note.docx",
+  "deliverableSha256": "3ef74c23c917e21046946acdcd835be2b369e871ee284f8c3542bbdc40f2176c",
+  "auditVerified": true,
+  "auditExportPath": "artifacts/generated/judged-run-1793215649111-7ad1d4-audit-export.json",
+  "auditExportSha256": "abdf1a076097103ecd34239d899794fa02f1fa80b64bf12d8aa334300104099c",
+  "details": {
+    "anomalyCount": 4,
+    "overallRms": 2.637109971161612
+  }
+}

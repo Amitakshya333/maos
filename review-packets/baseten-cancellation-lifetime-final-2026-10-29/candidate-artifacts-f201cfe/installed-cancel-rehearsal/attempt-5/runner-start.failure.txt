@@ -1,0 +1,4 @@
+Command: pwsh -NoLogo -NoProfile -File run-installed-pilot-rehearsal.ps1 -Mode cancel
+Result: exit 1 before application launch
+Error: AllocConsole failed at runner initialization; no mock request or launcher was started.
+Harness note: Direct exec inherited a console configuration that made GetConsoleWindow return zero while AllocConsole failed. Production package was not involved.

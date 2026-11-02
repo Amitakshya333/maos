@@ -1,0 +1,55 @@
+# Baseline Test Run Results
+Directory: C:\\clean\\core-b2-02
+Vitest Exit Code: 1
+Total Test Files: 17 (5 passed, 12 failed)
+Total Tests: 490
+Passed: 444
+Failed: 46
+
+## Failing Test Names (46):
+tests/f5-05-kb-search.test.ts > F5-05: Register search_knowledge_base Tool & Service 16. Canary File Protection Invariant preserves rust/test.txt SHA-256 integrity
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 1. Launcher Startup Performance (Budget: < 2,000 ms) measures 3 consecutive runs and verifies all are under budget
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 2. Project Service Startup Performance (Budget: < 3,000 ms) measures 3 consecutive startup/shutdown cycles and verifies all are under budget
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 3. Model Manager Lease & Resolution (Budget: < 15,000 ms) measures 3 consecutive model registry listing and lease lookups
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 4. Rust Engine CSV Parse (Budget: < 100 ms) measures 3 consecutive sensor CSV parse calls across 500 rows
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 5. Rust Engine Threshold Evaluation (Budget: < 50 ms) measures 3 consecutive threshold evaluations
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 6. Rust Engine Hash & Chain Verification (Budget: < 200 ms) measures 3 consecutive hash-chain evaluations
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 7. Printed-Text OCR per Page (Budget: < 5,000 ms) measures 3 consecutive single-page OCR extractions
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 8. Knowledge-Base Retrieval (Budget: < 2,000 ms) measures 3 consecutive top-5 search queries
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 9. Text / Task Inference Route (Budget: < 15,000 ms) measures 3 consecutive inference executions
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 10. Sandbox RMS Calculation & Trace (Budget: < 30,000 ms) measures 3 consecutive RMS calculation trace evaluations
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 11. Office Deliverables Generation (Budget: < 3,000 ms each) measures 3 consecutive DOCX generations
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 11. Office Deliverables Generation (Budget: < 3,000 ms each) measures 3 consecutive XLSX generations
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 11. Office Deliverables Generation (Budget: < 3,000 ms each) measures 3 consecutive PPTX generations
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 12. GUI Shell Rendering Performance (Budgets: < 3,000 ms first paint, < 5,000 ms interactive) measures 3 consecutive renders of the shell components
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 13. Total Judged D7 Operator Journey (Budget: < 900,000 ms / 15 min) executes 3 complete runs of the full judged operator journey and checks each against 15 min budget
+tests/industrial/f11-02-cold-warm-performance.test.ts > F11-02: Cold/Warm Performance Suite 14. Negative Anti-Averaging Invariant strictly rejects hidden averaging: a single budget violation must fail validation regardless of average
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 1. Missing or Tampered Rust Executable fails closed when Rust executable does not exist
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 1. Missing or Tampered Rust Executable fails closed when Rust executable hash is tampered
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 2. Missing or Tampered Model Registry rejects unverified or nonexistent model IDs
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 3. Corrupt Knowledge-Base Index fails closed and refuses to fabricate citations when index is unbuilt or corrupt
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 4. OCR / VLM Timeout & Corrupted Input fails safely and cleanly when given corrupted PDF bytes
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 4. OCR / VLM Timeout & Corrupted Input cleans up scratch artifacts on OCR failure without leaving orphan temp files
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 5. No Route / Unsupported Capability returns UNSUPPORTED or CLARIFICATION_REQUIRED instead of hallucinating execution steps
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 5. No Route / Unsupported Capability demands structured clarification when user intent is ambiguous or vague
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 6. Sandbox Execution Failure & Safety Rejection propagates nonzero exit codes or fails closed when runner is unavailable, never fabricating success
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 6. Sandbox Execution Failure & Safety Rejection rejects forbidden host executor requests in industrial mode
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 7. Path Traversal & Unauthorized Scope Escape fails closed when attempting path traversal outside project root
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 7. Path Traversal & Unauthorized Scope Escape rejects unapproved overwrite of finalized artifacts
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 8. Loopback Port Collision & Port Hijack Defense detects occupied loopback port and fails closed without hijacking
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 8. Loopback Port Collision & Port Hijack Defense ephemeral port 0 safely finds an unoccupied port without collision
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 9. Event Sequence Gap & Replay Defense detects sequence gaps in event stream and avoids inventing completions
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 10. Service Crash Recovery & Atomic Cleanup transitions active tasks to INTERRUPTED and cleans temporary artifacts on emergency teardown
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 11. Firewall Interruption & Boundary Violation halts industrial preflight with PREFLIGHT_BLOCKED when firewall is inactive
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 12. Negative Invariants: Anti-False-Success, Anti-Data-Mixing, Anti-Unbounded-Retry strictly forbids false success: errors never report ok: true or status: completed
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 12. Negative Invariants: Anti-False-Success, Anti-Data-Mixing, Anti-Unbounded-Retry strictly limits retries: non-retryable errors are dead-lettered immediately
+tests/industrial/f11-03-failure-matrix.test.ts > F11-03: System Failure Matrix & Safe Recovery 12. Negative Invariants: Anti-False-Success, Anti-Data-Mixing, Anti-Unbounded-Retry strictly bounds maximum retry count to prevent infinite retry loops
+tests/industrial/f4-03-ocr-document-tool.test.ts > F4-03: Register ocr_document Tool Invariant Protection strictly preserves rust/test.txt SHA-256 hash invariant
+tests/industrial/f4-05-analyze-image-tool.test.ts > F4-05: Register analyze_image Tool 10. Invariant Integrity preserves rust/test.txt SHA-256 integrity strictly
+tests/industrial/f6-04-generate-pptx.test.ts > F6-04: generate_pptx Tool guarantees rust/test.txt canary file hash remains strictly intact
+tests/industrial/f6-05-template-output-safety.test.ts > F6-05: Template and Output Safety 7. Invariants and Canary File Integrity guarantees rust/test.txt canary file hash remains strictly intact
+tests/industrial/f7-04-tool-approval-planning.test.ts > F7-04: Tool and Approval Planning Engine 7. Integration & Parity verifies rust/test.txt SHA-256 canary is unmodified
+tests/industrial/f8-03-execute-code-sandbox-tool.test.ts > MAOS Industrial — execute_code_sandbox Tool Test Suite (F8-03) Tier 7: Protected Invariants preserves canary file rust/test.txt SHA-256 hash strictly
+tests/industrial/f8-04-sandbox-adversarial.test.ts > MAOS Industrial — Sandbox Adversarial Test Suite (F8-04) Tier 10: Lifecycle Cleanup & Protected Invariants V10.3: strictly preserves canary file rust/test.txt SHA-256 hash
+tests/industrial/f8-07-host-executor-disabled.test.ts > F8-07: Disable Host Executor in Industrial Mode 9. Invariants & Cryptographic Integrity verifies rust/test.txt canary SHA-256 hash is strictly preserved
+tests/industrial/g5-knowledge-grounding-gate.test.ts > Gate G5: Knowledge Grounding Readiness Verification 6. Protected File Invariant preserves rust/test.txt SHA-256 integrity

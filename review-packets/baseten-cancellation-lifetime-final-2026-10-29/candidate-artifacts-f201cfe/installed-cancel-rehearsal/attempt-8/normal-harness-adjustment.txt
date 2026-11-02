@@ -1,0 +1,4 @@
+attempt-8 harness addendum
+Normal mode snapshots task-owned descendants before waiting, so the successful exit cleanup check is non-vacuous.
+Current runner SHA-256: 48ddd5b1341dab84760249785e853c057d31ee39b5345ab15f45336df49db2ba
+No production package file changed.
