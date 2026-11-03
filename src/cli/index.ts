@@ -44,9 +44,10 @@ import {
 import { runIndustrialRepl } from '../industrial/industrial-repl';
 import { runIndustrialTui } from '../industrial/industrial-tui';
 import { RING_CLI_EXIT, runRingHeadless, runRingRepl } from '../industrial/ring-cli';
+import { runRingDemo, setupRingDemoPack, ringDemoNextCommand } from '../industrial/ring-demo';
 import { createServiceContainer } from '../service';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const invokedAsIndustrial =
   path.basename(process.argv[1] || '').toLowerCase() === 'maos-industrial' ||
   /[\\/]industrial[\\/]entrypoint\.(js|ts)$/i.test(process.argv[1] || '');
@@ -559,8 +560,23 @@ industrial
   .option('--thread <id>', 'Run inside an existing thread (headless only)')
   .option('--yes-to <scope>', "Only 'none' is accepted; there is no --yes for consequential tools")
   .option('--json', 'Headless: print wire events as JSONL')
+  .option('--demo', 'First-run: copy the bundled synthetic demo pack to ~/maos-industrial-demo and run the brief there')
+  .option('--force', 'With --demo/--prompt: recreate the demo target instead of failing when non-empty')
+  .option('--demo-dir <path>', 'Override the demo target directory (default: ~/maos-industrial-demo)')
   .action(async (opts) => {
     try {
+      if (opts.demo) {
+        if (opts.prompt || opts.thread || opts.yesTo) {
+          console.error(chalk.red('Error: --demo cannot be combined with -p/--thread/--yes-to.'));
+          process.exit(RING_CLI_EXIT.FAILED);
+        }
+        const result = await runRingDemo({
+          targetDir: opts.demoDir,
+          force: opts.force === true,
+          json: opts.json,
+        });
+        process.exit(result.exitCode);
+      }
       if (opts.prompt) {
         const result = await runRingHeadless({
           projectRoot: process.cwd(),
@@ -579,6 +595,26 @@ industrial
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(chalk.red(`Error: ${message}`));
+      process.exit(RING_CLI_EXIT.FAILED);
+    }
+  });
+
+industrial
+  .command('setup-demo')
+  .description('Copy the bundled synthetic demo pack to ~/maos-industrial-demo (no API keys written)')
+  .option('--force', 'Recreate the demo target instead of failing when non-empty')
+  .option('--demo-dir <path>', 'Override the demo target directory (default: ~/maos-industrial-demo)')
+  .action(async (opts) => {
+    try {
+      const setup = setupRingDemoPack({
+        targetDir: opts.demoDir,
+        force: opts.force === true,
+      });
+      console.log(chalk.green('Demo pack ready at ' + setup.targetDir));
+      console.log('Next: ' + ringDemoNextCommand(setup.targetDir));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red('Error: ' + message));
       process.exit(RING_CLI_EXIT.FAILED);
     }
   });

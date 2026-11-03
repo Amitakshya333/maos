@@ -740,7 +740,7 @@ export function getLandingHTML(): string {
 
 <!-- Footer -->
 <footer class="footer">
-  <p>MAOS v0.3.0 © <a href="https://github.com/Amitakshya333">Amitakshya Sutar</a></p>
+  <p>MAOS v0.4.0 © <a href="https://github.com/Amitakshya333">Amitakshya Sutar</a></p>
   <p style="margin-top: 8px;">Multi-Agent Orchestrator System — <a href="https://github.com/Amitakshya333/maos">GitHub</a> · <a href="https://www.npmjs.com/package/maosorch">npm</a></p>
 </footer>
 

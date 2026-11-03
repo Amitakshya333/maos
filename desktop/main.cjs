@@ -8,7 +8,22 @@ const { randomBytes } = require('node:crypto');
 const { URL } = require('node:url');
 const ringOverlay = require('./ring-overlay-host.cjs');
 
-const packageRoot = path.resolve(__dirname, '..');
+// TASK RELEASE-GUI-01: packaged-app path fix. When running from source,
+// __dirname is desktop/ and the backend lives at repo root. When packaged
+// (app.isPackaged), backend/gui/profile/demo/engine files ship under
+// process.resourcesPath. Dev behavior is unchanged.
+function resolvePackageRoot() {
+  try {
+    if (process.versions.electron && require('electron').app.isPackaged) {
+      return process.resourcesPath;
+    }
+  } catch {
+    // Electron unavailable (unit tests) - fall through to source layout.
+  }
+  return path.resolve(__dirname, '..');
+}
+
+const packageRoot = resolvePackageRoot();
 
 function findNodeExecutable() {
   const configured = process.env.MAOS_NODE_EXECUTABLE;

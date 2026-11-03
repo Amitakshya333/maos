@@ -1,0 +1,45 @@
+appId: org.maos.industrial
+productName: MAOS Industrial
+copyright: Copyright (c) MAOS
+# Unsigned: no certificate. Do NOT sign (no cert available for this task).
+# asar off: backend entrypoint.js is spawned as a child node process and
+# reads dist/ + demo/profiles from disk; keep files as plain files.
+asar: false
+electronVersion: 45.0.0
+extraMetadata:
+  main: desktop/main.cjs
+directories:
+  app: .
+  buildResources: build
+  output: dist-installer
+files:
+  - desktop/main.cjs
+  - desktop/preload.cjs
+  - desktop/ring-overlay-host.cjs
+  - dist/**/*
+  - '!dist/**/*.d.ts'
+  - '!dist/**/*.d.ts.map'
+  - profiles/industrial/maos.config.json
+  - profiles/industrial/pool.json
+  - demo/industrial/RUNBOOK.md
+  - demo/industrial/PRESENTATION_SCRIPT.md
+  - demo/industrial/safety_thresholds.json
+  - demo/industrial/turbine_vibration_log.csv
+  - demo/industrial/maintenance_report.txt
+  - demo/industrial/turbine_inspection_scan.pdf
+  - rust/target/release/maos-engine.exe
+  - package.json
+extraResources: []
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: MAOS Industrial
+portable:
+  artifactName: ${productName}-${version}-portable.exe

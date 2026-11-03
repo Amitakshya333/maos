@@ -125,24 +125,24 @@ export function generateReleaseSbom(
   const launcherPath = fs.existsSync(path.join(absRoot, 'dist', 'cli', 'index.js'))
     ? 'dist/cli/index.js'
     : 'src/cli/index.ts';
-  registerFile('launcher-cli', 'launcher', 'MAOS Orchestrator CLI', '0.3.0', launcherPath, 'MIT', true);
+  registerFile('launcher-cli', 'launcher', 'MAOS Orchestrator CLI', '0.4.0', launcherPath, 'MIT', true);
 
   // 2. Project Service
   const servicePath = fs.existsSync(path.join(absRoot, 'dist', 'service', 'index.js'))
     ? 'dist/service/index.js'
     : 'src/service/index.ts';
-  registerFile('project-service-core', 'project-service', 'MAOS Project Service Runtime', '0.3.0', servicePath, 'MIT', false);
+  registerFile('project-service-core', 'project-service', 'MAOS Project Service Runtime', '0.4.0', servicePath, 'MIT', false);
 
   const serviceHostPath = fs.existsSync(path.join(absRoot, 'dist', 'service', 'project-service', 'host.js'))
     ? 'dist/service/project-service/host.js'
     : 'src/service/project-service/host.ts';
-  registerFile('project-service-host', 'project-service', 'MAOS Project Service Host', '0.3.0', serviceHostPath, 'MIT', false);
+  registerFile('project-service-host', 'project-service', 'MAOS Project Service Host', '0.4.0', serviceHostPath, 'MIT', false);
 
   // 3. Model Manager
   const modelMgrPath = fs.existsSync(path.join(absRoot, 'dist', 'service', 'model-manager', 'model-manager.js'))
     ? 'dist/service/model-manager/model-manager.js'
     : 'src/service/model-manager/model-manager.ts';
-  registerFile('model-manager-core', 'model-manager', 'MAOS Model Manager & Residency Service', '0.3.0', modelMgrPath, 'MIT', false);
+  registerFile('model-manager-core', 'model-manager', 'MAOS Model Manager & Residency Service', '0.4.0', modelMgrPath, 'MIT', false);
 
   // 4. Rust Engine Binary
   const rustExt = process.platform === 'win32' ? '.exe' : '';
@@ -194,7 +194,7 @@ export function generateReleaseSbom(
   }
 
   // 8. GUI Assets
-  registerFile('gui-index-html', 'gui-assets', 'MAOS React GUI Shell Index', '0.3.0', 'dist/gui/index.html', 'MIT', false);
+  registerFile('gui-index-html', 'gui-assets', 'MAOS React GUI Shell Index', '0.4.0', 'dist/gui/index.html', 'MIT', false);
 
   // Index GUI bundle assets
   const distAssetsDir = path.join(absRoot, 'dist', 'gui', 'assets');
@@ -207,7 +207,7 @@ export function generateReleaseSbom(
         `gui-bundle-${assetFile}`,
         'gui-assets',
         `MAOS GUI Bundle ${assetType} (${assetFile})`,
-        '0.3.0',
+        '0.4.0',
         `dist/gui/assets/${assetFile}`,
         'MIT',
         false,
@@ -224,7 +224,7 @@ export function generateReleaseSbom(
     schemaVersion: 1,
     spdxVersion: 'SPDX-2.3',
     releaseName: 'MAOS Industrial Edition',
-    releaseVersion: '0.3.0',
+    releaseVersion: '0.4.0',
     rootLicense: 'MIT',
     generatedAt,
     components,

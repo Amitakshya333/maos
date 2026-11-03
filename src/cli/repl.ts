@@ -20,7 +20,7 @@ import { MemoryStore } from '../core/context-memory';
 import { TaskService } from '../service/task-service';
 import { resolveProjectGitContext } from '../utils/project-git-context';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 // ── Helpers ──────────────────────────────────────────────────
 

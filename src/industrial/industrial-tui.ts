@@ -3,7 +3,7 @@
  * TASK RING-TUI-LAYOUT-01: centered-stage layout grammar (rendering only).
  *
  * Home screen: the CEO-designed ASCII banner (byte-identical, never edited),
- * `MAOS Industrial · v0.3.0` + the tagline, an operator input card styled after
+ * `MAOS Industrial · v0.4.0` + the tagline, an operator input card styled after
  * `src/cli/repl.ts` (rounded border, status badges), a Systems panel whose
  * values are read from the real health/boundary/audit/telemetry paths (never
  * hardcoded verdicts), a slash-command hint row, and a pinned status bar.
@@ -38,7 +38,7 @@ import { createServiceContainer } from '../service';
 import type { ServiceContainer } from '../service';
 import { analyzeTelemetryCsv, loadTelemetryDemoThresholds } from './telemetry-analysis';
 
-export const INDUSTRIAL_TUI_VERSION = '0.3.0';
+export const INDUSTRIAL_TUI_VERSION = '0.4.0';
 
 // -- CEO banner (byte-identical - NEVER edit). The CEO designed this
 // -- ASCII banner himself. Asserted byte-for-byte in tests.

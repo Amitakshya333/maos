@@ -265,7 +265,7 @@ describe('F11-04: Full Quality & Security Suite', () => {
       const pkgPath = path.join(PROJECT_ROOT, 'package.json');
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
       expect(pkg.license).toBe('MIT');
-      expect(pkg.version).toBe('0.3.0');
+      expect(pkg.version).toBe('0.4.0');
     });
 
     it('root LICENSE file exists and specifies MIT license', () => {

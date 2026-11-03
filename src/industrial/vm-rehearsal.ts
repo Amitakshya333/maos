@@ -357,7 +357,7 @@ export function verifyServiceIdentities(
   const start = Date.now();
 
   clearManifests();
-  registerManifest(createLauncherManifest('0.3.0'));
+  registerManifest(createLauncherManifest('0.4.0'));
   if (rustEngineHash) {
     registerManifest(createRustEngineManifest('0.1.0', rustEngineHash));
   }

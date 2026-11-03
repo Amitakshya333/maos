@@ -593,7 +593,7 @@ export function getDashboardHTML(): string {
   <div class="brand-group">
     <div class="brand-box">M</div>
     <div class="brand-title">MAOS // INDUSTRIAL MISSION CONTROL</div>
-    <span class="tag-mono">v0.3.0</span>
+    <span class="tag-mono">v0.4.0</span>
   </div>
 
   <div class="header-pills">

@@ -1,6 +1,6 @@
 {
   "name": "maosorch",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Multi-Agent Orchestrator System — docker-compose for AI coding agents",
   "main": "./dist/cli/index.js",
   "types": "./dist/cli/index.d.ts",
@@ -26,7 +26,12 @@
     "LICENSE",
     "HACKATHON_SUBMISSION.md",
     "!**/__pycache__/**",
-    "!**/*.pyc"
+    "!**/*.pyc",
+    "demo/industrial/sop_turbine_vibration_monitoring.md",
+    "demo/industrial/pump_p12_vibration_log.csv",
+    "demo/industrial/sop_pump_p12_monitoring.md",
+    "demo/industrial/maintenance_report_p12.txt",
+    "demo/industrial/pump_p12_inspection_scan.png"
   ],
   "engines": {
     "node": ">=20.0.0"

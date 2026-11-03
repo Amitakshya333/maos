@@ -1,6 +1,6 @@
 {
   "name": "maos-industrial-desktop-shell-tools",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Pinned Electron and Playwright tools for the MAOS desktop shell",
   "dependencies": {

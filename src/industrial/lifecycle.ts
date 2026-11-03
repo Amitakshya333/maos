@@ -435,7 +435,7 @@ export function lifecycleInstall(
     pids: {},
     lastCommand: 'install',
     lastCommandTimestamp: new Date().toISOString(),
-    version: '0.3.0',
+    version: '0.4.0',
     installHash,
   };
   writeState(projectRoot, newState);
@@ -446,7 +446,7 @@ export function lifecycleInstall(
     success: true,
     idempotentSkip: false,
     message: 'Installed successfully',
-    detail: { installHash: installHash.substring(0, 16), version: '0.3.0' },
+    detail: { installHash: installHash.substring(0, 16), version: '0.4.0' },
     timestamp: new Date().toISOString(),
     durationMs: Date.now() - start,
   };
