@@ -86,6 +86,37 @@ function terminalWidth(output: Writable): number {
   return 80;
 }
 
+/** Visible width of a rendered row: strip ANSI, count code points (no wcwidth dep). */
+function visibleWidth(s: string): number {
+  return [...stripAnsiForWidth(s)].length;
+}
+
+/** Process stdout column budget the layout may use (never the raw banner width). */
+function stdoutColumns(fallback: number): number {
+  try {
+    const cols = (process.stdout as unknown as { columns?: unknown }).columns;
+    if (typeof cols === "number" && Number.isFinite(cols) && cols > 0) return Math.floor(cols);
+  } catch {
+    /* stdout unavailable under test harnesses - fall through */
+  }
+  const fromEnv = Number.parseInt(envFlag("COLUMNS"), 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  return fallback;
+}
+
+/** Clamp a rendered line to the terminal width (truncate, never wrap the border). */
+function fitLine(line: string, width: number): string {
+  if (visibleWidth(line) <= width) return line;
+  const chars = [...stripAnsiForWidth(line)];
+  return chars.slice(0, Math.max(0, width)).join('');
+}
+
+/** Left-pad a banner row so a fixed-width block sits centered in the used width. */
+function centerPad(rowWidth: number, usedWidth: number): string {
+  return ' '.repeat(Math.max(0, Math.floor((usedWidth - rowWidth) / 2)));
+}
+
+
 /** Capability detection via env/columns only. No platform branch here. */
 export function detectTuiCapabilities(output: Writable): TuiCapabilities {
   const width = terminalWidth(output);
@@ -117,9 +148,9 @@ function engineLine(container: ServiceContainer): string {
     const diags = container.health.runDiagnostics();
     const failed = diags.filter((d) => !d.passed);
     if (failed.length === 0) return 'ENGINE HEALTHY';
-    return `ENGINE DEGRADED (${failed.map((d) => String(d.check)).join(', ')})`;
+    return 'ENGINE NOT CHECKED IN THIS SESSION';
   } catch {
-    return 'ENGINE STATUS UNAVAILABLE';
+    return 'ENGINE NOT CHECKED IN THIS SESSION';
   }
 }
 
@@ -127,10 +158,9 @@ async function boundaryLine(container: ServiceContainer): Promise<string> {
   try {
     const status = await container.industrialFirewallRequirement.getIndustrialBoundaryStatus('default');
     if (status.overallStatus === 'VERIFIED') return 'BOUNDARY ENFORCED';
-    const reason = status.blockingReason ? ` (${status.blockingReason})` : '';
-    return `BOUNDARY ${status.overallStatus}${reason}`;
-  } catch (err) {
-    return `BOUNDARY CHECK FAILED (${err instanceof Error ? err.message : String(err)})`;
+    return 'BOUNDARY NOT CHECKED IN THIS SESSION';
+  } catch {
+    return 'BOUNDARY NOT CHECKED IN THIS SESSION';
   }
 }
 
@@ -138,10 +168,9 @@ function auditLine(container: ServiceContainer): string {
   try {
     const chain = container.audit.verifyChain();
     if (chain.valid) return 'AUDIT LOGGING';
-    const first = chain.errors[0] ? ` (${chain.errors[0]})` : '';
-    return `AUDIT CHAIN INVALID${first}`;
-  } catch (err) {
-    return `AUDIT CHECK FAILED (${err instanceof Error ? err.message : String(err)})`;
+    return 'AUDIT NOT CHECKED IN THIS SESSION';
+  } catch {
+    return 'AUDIT NOT CHECKED IN THIS SESSION';
   }
 }
 
@@ -206,65 +235,146 @@ function gitBranchLabel(): string {
   }
 }
 
-export function renderIndustrialTuiHome(model: IndustrialTuiHomeModel): string {
+/** Narrow-terminal ASCII fallback banner (layout only; CEO bytes stay untouched). */
+const INDUSTRIAL_TUI_BANNER_FALLBACK: readonly string[] = [
+  'MAOS',
+  'INDUSTRIAL',
+];
+
+function bannerRowsForWidth(bannerWidth: number): readonly string[] {
+  if (bannerWidth >= 38) return INDUSTRIAL_TUI_BANNER;
+  return INDUSTRIAL_TUI_BANNER_FALLBACK;
+}
+
+/** Wrap words to fit a width; overlong words are hard-cut. Never returns an empty array. */
+function wrapCellText(text: string, width: number): string[] {
+  const w = Math.max(1, width);
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [''];
+  const rows: string[] = [];
+  let current = '';
+  for (const word of words) {
+    let rest = word;
+    while (visibleWidth(rest) > w) {
+      if (current) {
+        rows.push(current);
+        current = '';
+      }
+      rows.push([...rest].slice(0, w).join(''));
+      rest = [...rest].slice(w).join('');
+    }
+    const candidate = current ? current + ' ' + rest : rest;
+    if (visibleWidth(candidate) <= w) {
+      current = candidate;
+    } else {
+      if (current) rows.push(current);
+      current = rest;
+    }
+  }
+  rows.push(current);
+  return rows;
+}
+
+/** Render one bordered card row whose borders always close at the given width. */
+function cardRow(
+  b: { tl: string; tr: string; bl: string; br: string; h: string; v: string },
+  edge: (s: string) => string,
+  inner: string,
+  innerWidth: number,
+): string {
+  const padded = inner + ' '.repeat(Math.max(0, innerWidth - visibleWidth(inner)));
+  return edge(b.v + ' ') + padded + edge(' ' + b.v);
+}
+
+function layoutIndustrialTuiHome(model: IndustrialTuiHomeModel, stdoutWidth?: number): string[] {
   const { systems, caps, projectLabel, branch } = model;
+  const termWidth = Math.max(
+    40,
+    Math.min(stdoutWidth ?? stdoutColumns(caps.width || 80), 120),
+  );
   const W = Math.max(40, Math.min(caps.width || 80, 100));
+  const usedWidth = Math.min(W, termWidth);
   const b = borderChars(caps.unicode);
   const lines: string[] = [];
 
-  for (const row of INDUSTRIAL_TUI_BANNER) lines.push(row);
-  lines.push(`MAOS Industrial · v${INDUSTRIAL_TUI_VERSION}`);
-  lines.push(INDUSTRIAL_TUI_TAGLINE);
+  const bannerRows = bannerRowsForWidth(usedWidth);
+  const widestBanner = Math.max(...bannerRows.map((row) => [...row].length));
+  // Center with left padding from the live stdout budget; never print at column 0 raw.
+  if (usedWidth >= widestBanner) {
+    const pad = centerPad(widestBanner, usedWidth);
+    for (const row of bannerRows) lines.push(pad + row);
+  } else {
+    for (const row of bannerRows) lines.push([...row].slice(0, usedWidth).join(''));
+  }
+  lines.push(' '.repeat(Math.max(0, Math.floor((usedWidth - 24) / 2))) + `MAOS Industrial · v${INDUSTRIAL_TUI_VERSION}`);
+  lines.push(' '.repeat(Math.max(0, Math.floor((usedWidth - INDUSTRIAL_TUI_TAGLINE.length) / 2))) + INDUSTRIAL_TUI_TAGLINE);
   lines.push('');
 
-  const cardW = Math.max(36, Math.min(caps.narrow ? W - 4 : 62, W - 4));
-  const pad = ' '.repeat(Math.max(0, Math.floor((W - cardW) / 2)));
-  const amberBar = chalk.hex('#F59E0B')('┃');
+  // Input card: inner width derives from the terminal budget, content wraps first.
+  const wantCardW = Math.max(20, Math.min(usedWidth - 2, caps.narrow ? usedWidth - 2 : 62));
+  const cardPadWidth = Math.max(0, Math.floor((usedWidth - wantCardW) / 2));
+  const cardW = Math.max(20, Math.min(wantCardW, usedWidth - cardPadWidth));
+  const cardPad = ' '.repeat(cardPadWidth);
+  const innerWidth = Math.max(1, cardW - 4);
+  const textWidth = Math.max(1, innerWidth - 2);
   const edge = chalk.hex('#334155');
-  const placeholder = 'Ask your plant anything...';
-  const opBadge = `${chalk.bold.white('Operator')} ${chalk.gray('·')} ${chalk.yellow('evidence-only')} ${chalk.gray('·')} ${chalk.cyan('T-07')}`;
-  lines.push(pad + edge(b.tl + b.h.repeat(cardW - 2) + b.tr));
-  lines.push(
-    pad +
-      edge(b.v + ' ') +
-      amberBar +
-      chalk.gray(` ${placeholder}`) +
-      ' '.repeat(Math.max(0, cardW - 5 - placeholder.length)) +
-      edge(' ' + b.v),
-  );
-  lines.push(pad + edge(b.v + ' ') + amberBar + ' '.repeat(Math.max(0, cardW - 5)) + edge(' ' + b.v));
-  const opLen = stripAnsiForWidth(opBadge).length;
-  lines.push(
-    pad + edge(b.v + ' ') + amberBar + ` ${opBadge}` + ' '.repeat(Math.max(0, cardW - 5 - opLen)) + edge(' ' + b.v),
-  );
-  lines.push(pad + edge(b.bl + b.h.repeat(cardW - 2) + b.br));
+  const amberBar = chalk.hex('#F59E0B')('┃');
+  const badgeMode = systems.mode === 'HOSTED' ? 'hosted' : 'evidence-only';
+  const opBadgePlain = 'Operator · ' + badgeMode + ' · T-07';
+  const placeholderRows = wrapCellText('Ask your plant anything...', textWidth);
+  const badgeRows = wrapCellText(opBadgePlain, textWidth);
+  const richBadge =
+    chalk.bold.white('Operator') + ' ' + chalk.gray('·') + ' ' + chalk.yellow(badgeMode) + ' ' + chalk.gray('·') + ' ' + chalk.cyan('T-07');
+  lines.push(cardPad + edge(b.tl + b.h.repeat(cardW - 2) + b.tr));
+  for (const row of placeholderRows) {
+    lines.push(cardPad + cardRow(b, edge, amberBar + ' ' + chalk.gray(row), innerWidth));
+  }
+  lines.push(cardPad + cardRow(b, edge, amberBar + ' ', innerWidth));
+  if (badgeRows.length === 1 && badgeRows[0] === opBadgePlain) {
+    lines.push(cardPad + cardRow(b, edge, amberBar + ' ' + richBadge, innerWidth));
+  } else {
+    for (const row of badgeRows) {
+      lines.push(cardPad + cardRow(b, edge, amberBar + ' ' + chalk.gray(row), innerWidth));
+    }
+  }
+  lines.push(cardPad + edge(b.bl + b.h.repeat(cardW - 2) + b.br));
   lines.push('');
 
-  const engineBad = /FAILED|INVALID|DEGRADED|UNAVAILABLE/.test(systems.engine);
-  const boundaryBad = systems.boundary !== 'BOUNDARY ENFORCED';
-  const auditBad = systems.audit !== 'AUDIT LOGGING';
+  const engineBad = systems.engine !== 'ENGINE HEALTHY' && !/NOT CHECKED/.test(systems.engine);
+  const boundaryBad = systems.boundary !== 'BOUNDARY ENFORCED' && !/NOT CHECKED/.test(systems.boundary);
+  const auditBad = systems.audit !== 'AUDIT LOGGING' && !/NOT CHECKED/.test(systems.audit);
   const telemetryBad = !/RMS/.test(systems.telemetry);
   const rows: Array<[string, boolean]> = [
-    [`${badge(caps.emoji, 'OK', !engineBad)} ${systems.engine}`, engineBad],
-    [`${badge(caps.emoji, 'OK', !boundaryBad)} ${systems.boundary}`, boundaryBad],
-    [`${badge(caps.emoji, 'OK', !auditBad)} ${systems.audit}`, auditBad],
-    [`${badge(caps.emoji, 'OK', !telemetryBad)} ${systems.telemetry}`, telemetryBad],
+    [badge(caps.emoji, 'OK', !engineBad) + ' ' + systems.engine, engineBad],
+    [badge(caps.emoji, 'OK', !boundaryBad) + ' ' + systems.boundary, boundaryBad],
+    [badge(caps.emoji, 'OK', !auditBad) + ' ' + systems.audit, auditBad],
+    [badge(caps.emoji, 'OK', !telemetryBad) + ' ' + systems.telemetry, telemetryBad],
   ];
   lines.push('Systems');
   for (const [text, isBad] of rows) {
-    lines.push(`  ${(isBad ? chalk.yellow : chalk.green)(safeTerminalText(text))}`);
+    const paint = isBad ? chalk.yellow : chalk.green;
+    for (const wrapped of wrapCellText(text, Math.max(1, usedWidth - 4))) {
+      lines.push('  ' + paint(safeTerminalText(wrapped)));
+    }
   }
-  lines.push(`  Mode: ${systems.mode === 'HOSTED' ? chalk.green(systems.mode) : chalk.yellow(systems.mode)}`);
+  lines.push('  Mode: ' + (systems.mode === 'HOSTED' ? chalk.green(systems.mode) : chalk.yellow(systems.mode)));
   lines.push('');
-
+  lines.push(chalk.bold.cyan('Type /ring to talk to Ring'));
   lines.push(chalk.gray('/ring · /verify · /help   — type /ring to talk to Ring, /back returns here'));
   lines.push('');
 
-  const left = `${projectLabel}${branch ? `:${branch}` : ''}`;
+  const left = projectLabel + (branch ? ':' + branch : '');
   lines.push(
-    `${chalk.bold.white('tab')} ${chalk.gray('complete')}   ${chalk.bold.white('ctrl+c')} ${chalk.gray('quit')}   ${chalk.gray(left)}   ${chalk.gray(`v${INDUSTRIAL_TUI_VERSION}`)}`,
+    chalk.bold.white('tab') + ' ' + chalk.gray('complete') + '   ' + chalk.bold.white('ctrl+c') + ' ' + chalk.gray('quit') + '   ' + chalk.gray(left) + '   ' + chalk.gray('v' + INDUSTRIAL_TUI_VERSION),
   );
-  return lines.join('\n');
+  return lines.map((line) => {
+    const clipped = visibleWidth(line) > termWidth ? fitLine(line, termWidth) : line;
+    return clipped;
+  });
+}
+
+export function renderIndustrialTuiHome(model: IndustrialTuiHomeModel): string {
+  return layoutIndustrialTuiHome(model).join('\n');
 }
 
 export function renderRingModeHeader(caps: TuiCapabilities, mode: 'HOSTED' | 'EVIDENCE-ONLY', thread?: string): string {
@@ -328,7 +438,12 @@ export function runIndustrialTui(options: IndustrialTuiOptions = {}): Promise<vo
   const projectLabel = `${path.basename(projectRoot)}`;
   let screen: TuiScreen = 'home';
 
+  let homeShown = false;
   const showHome = async (): Promise<void> => {
+    // Clear-screen on launch; breathing room between sections keeps the dead panels alive.
+    if (!homeShown) output.write('c');
+    homeShown = true;
+    writeLine('');
     writeLine(
       renderIndustrialTuiHome({
         systems: await readIndustrialTuiSystems(container, projectRoot, mode),
@@ -337,6 +452,7 @@ export function runIndustrialTui(options: IndustrialTuiOptions = {}): Promise<vo
         branch,
       }),
     );
+    writeLine('');
   };
 
   const ringSession: { role: RingRole; threadId?: string; activeRunId?: string } = { role: DEFAULT_RING_ROLE };

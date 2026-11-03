@@ -317,6 +317,64 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
     expect(RING_CLI_EXIT.AWAITING_APPROVAL).toBe(3);
   });
 
+  // TASK RING-TUI-FIX-01: the four CEO defects, pinned as regression tests.
+  it('banner is centered with left padding and never printed at column 0 raw', () => {
+    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY ENFORCED', audit: 'AUDIT LOGGING', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
+    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100 }, projectLabel: 'demo-plant', branch: 'main' });
+    const rows = home.split('\n');
+    for (let i = 0; i < CEO_BANNER.length; i++) {
+      const row = rows[i];
+      expect(row.length).toBeGreaterThan(CEO_BANNER[i].length);
+      expect(row.startsWith(' ')).toBe(true);
+      expect(row).toContain(CEO_BANNER[i]);
+    }
+  });
+
+  it('home render at narrow 80 cols keeps every line within bounds', () => {
+    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY ENFORCED', audit: 'AUDIT LOGGING', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
+    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 80 }, projectLabel: 'demo-plant', branch: 'main' });
+    const rows = home.split('\n');
+    const strip = (v: string): string => v.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
+    for (const row of rows) expect(strip(row).length).toBeLessThanOrEqual(80);
+    for (const row of CEO_BANNER) expect(home).toContain(row);
+  });
+
+  it('input card borders always close at 80 cols (rounded corners present)', () => {
+    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY NOT CHECKED IN THIS SESSION', audit: 'AUDIT NOT CHECKED IN THIS SESSION', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
+    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 80 }, projectLabel: 'demo-plant', branch: 'main' });
+    const strip = (v: string): string => v.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
+    const rows = home.split('\n').map(strip);
+    for (const row of rows) expect(row.length).toBeLessThanOrEqual(80);
+    const top = rows.find((r) => r.includes('╭') && r.includes('╮'));
+    const bottom = rows.find((r) => r.includes('╰') && r.includes('╯'));
+    expect(top).toBeDefined();
+    expect(bottom).toBeDefined();
+    const tops = rows.filter((r) => r.includes('╭'));
+    const bottoms = rows.filter((r) => r.includes('╰'));
+    expect(tops).toHaveLength(1);
+    expect(bottoms).toHaveLength(1);
+    expect(rows.filter((r) => r.includes('│')).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('Systems panel sanitizes firewall/audit failures (no raw adapter text)', async () => {
+    const container = createServiceContainer(root);
+    const systems = await readIndustrialTuiSystems(container, root, 'evidence-only');
+    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100 }, projectLabel: 'demo-plant', branch: 'main' });
+    for (const leak of ['firewall', 'Firewall', 'ENOENT', 'inactive', 'BLOCKED (', 'CHECK FAILED', 'CHAIN INVALID']) {
+      expect(home).not.toContain(leak);
+    }
+    expect(home).toContain('Systems');
+    expect(home).toContain('T-07 CRITICAL RMS 2.637');
+  });
+
+  it('dead layout is alive: breathing room, invitation copy, live status footer', () => {
+    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY ENFORCED', audit: 'AUDIT LOGGING', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
+    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100 }, projectLabel: 'demo-plant', branch: 'main' });
+    expect(home).toContain('Type /ring to talk to Ring');
+    expect(home).toContain('demo-plant:main');
+    expect(home).toContain('v' + INDUSTRIAL_TUI_VERSION);
+    expect(home).toContain('\n\n');
+  });
   it('detectTuiCapabilities degrades without crashing', () => {
     const narrow = new PassThrough() as PassThrough & { columns?: number };
     narrow.columns = 60;
