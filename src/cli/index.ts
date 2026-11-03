@@ -42,6 +42,7 @@ import {
   runIndustrialOpen,
 } from '../industrial/industrial-cli';
 import { runIndustrialRepl } from '../industrial/industrial-repl';
+import { runIndustrialTui } from '../industrial/industrial-tui';
 import { RING_CLI_EXIT, runRingHeadless, runRingRepl } from '../industrial/ring-cli';
 import { createServiceContainer } from '../service';
 
@@ -536,8 +537,8 @@ const industrial = standaloneIndustrialProgram ||
   program.command('industrial').description('MAOS Industrial commands: offline bundle, rehearsal, and evidence verification');
 
 industrial
-  .description('MAOS Industrial commands and local operator REPL')
-  .action(() => runIndustrialRepl());
+  .description('MAOS Industrial home screen (Ring TUI; /ring for Ring, /verify for checks)')
+  .action(() => runIndustrialTui());
 
 industrial
   .command('repl')
