@@ -1,11 +1,14 @@
 /**
  * TASK RING-TUI-01: MAOS Industrial home TUI + embedded Ring `/ring` mode.
+ * TASK RING-TUI-LAYOUT-01: centered-stage layout grammar (rendering only).
  *
  * Home screen: the CEO-designed ASCII banner (byte-identical, never edited),
  * `MAOS Industrial · v0.3.0` + the tagline, an operator input card styled after
  * `src/cli/repl.ts` (rounded border, status badges), a Systems panel whose
  * values are read from the real health/boundary/audit/telemetry paths (never
- * hardcoded verdicts), a slash-command hint row, and a pinned footer.
+ * hardcoded verdicts), a slash-command hint row, and a pinned status bar.
+ * Stage: ~90% of terminal width, max 100 cols, min margin 2; below 80 cols
+ * full-width with 1-col margins. Ring accent: amber #F59E0B (plant-floor).
  */
 
 import * as fs from 'node:fs';
@@ -66,6 +69,8 @@ export interface TuiCapabilities {
   readonly color: boolean;
   readonly narrow: boolean;
   readonly width: number;
+  /** Terminal rows when known (TTY stdout.rows); 0 = unknown (piped/tests). */
+  readonly height: number;
 }
 
 function envFlag(name: string): string {
@@ -74,6 +79,32 @@ function envFlag(name: string): string {
   } catch {
     return '';
   }
+}
+
+function terminalHeight(output: Writable): number {
+  const fromOutput = (output as Writable & { rows?: unknown }).rows;
+  if (typeof fromOutput === 'number' && Number.isFinite(fromOutput) && fromOutput > 0) {
+    return Math.floor(fromOutput);
+  }
+  try {
+    const rows = (process.stdout as unknown as { rows?: unknown }).rows;
+    if (typeof rows === 'number' && Number.isFinite(rows) && rows > 0) return Math.floor(rows);
+  } catch {
+    /* stdout unavailable under test harnesses */
+  }
+  return 0;
+}
+
+/**
+ * Centered stage geometry (RING-TUI-LAYOUT-01 rule 1 + 7).
+ * >= 80 cols: stage = clamp(round(0.9 * width), 40, 100), centered, margin >= 2.
+ * < 80 cols: full-width stage with 1-col margins. Pad is the left offset.
+ */
+export function stageWidth(termWidth: number): { stage: number; pad: number } {
+  const w = Math.max(1, Math.floor(termWidth) || 80);
+  if (w < 80) return { stage: Math.max(1, w - 2), pad: 1 };
+  const stage = Math.min(100, Math.max(40, Math.round(w * 0.9)));
+  return { stage, pad: Math.max(2, Math.floor((w - stage) / 2)) };
 }
 
 function terminalWidth(output: Writable): number {
@@ -132,6 +163,7 @@ export function detectTuiCapabilities(output: Writable): TuiCapabilities {
     color: !noColor,
     narrow: width < 80,
     width,
+    height: terminalHeight(output),
   };
 }
 
@@ -218,7 +250,20 @@ export interface IndustrialTuiHomeModel {
   caps: TuiCapabilities;
   projectLabel: string;
   branch: string;
+  /** Status-bar role segment. Default: operator. */
+  role?: string;
+  /** Terminal rows when known; enables the pinned-footer filler. Default 0. */
+  height?: number;
+  /** False once a run has produced transcript; hides the ghost rows. Default true. */
+  empty?: boolean;
 }
+
+/** Empty-state ghost rows (rule 6): plant-floor invitations, never dead space. */
+export const INDUSTRIAL_TUI_SUGGESTIONS: readonly string[] = [
+  'Check T-07 vibration and tell me if it is safe to keep running',
+  '/handover — shift handover brief for the next crew',
+  '/sop T-07 — pull the standard procedure for this turbine',
+];
 
 function gitBranchLabel(): string {
   try {
@@ -275,6 +320,18 @@ function wrapCellText(text: string, width: number): string[] {
   return rows;
 }
 
+/** Bordered stage row without the amber bar: borders close at `outerWidth`. */
+function plainRow(
+  b: { tl: string; tr: string; bl: string; br: string; h: string; v: string },
+  edge: (s: string) => string,
+  inner: string,
+  outerWidth: number,
+): string {
+  const innerWidth = Math.max(1, outerWidth - 4);
+  const padded = inner + ' '.repeat(Math.max(0, innerWidth - visibleWidth(inner)));
+  return edge(b.v + ' ') + padded + edge(' ' + b.v);
+}
+
 /** Render one bordered card row whose borders always close at the given width. */
 function cardRow(
   b: { tl: string; tr: string; bl: string; br: string; h: string; v: string },
@@ -288,127 +345,183 @@ function cardRow(
 
 function layoutIndustrialTuiHome(model: IndustrialTuiHomeModel, stdoutWidth?: number): string[] {
   const { systems, caps, projectLabel, branch } = model;
-  const termWidth = Math.max(
-    40,
-    Math.min(stdoutWidth ?? stdoutColumns(caps.width || 80), 120),
-  );
-  const W = Math.max(40, Math.min(caps.width || 80, 100));
-  const usedWidth = Math.min(W, termWidth);
+  const role = model.role || 'operator';
+  const termWidth = Math.max(20, Math.floor(stdoutWidth ?? caps.width ?? 80) || 80);
+  const height = Math.max(0, Math.floor(model.height ?? caps.height ?? 0) || 0);
+  const { stage, pad } = stageWidth(termWidth);
+  const P = ' '.repeat(pad);
   const b = borderChars(caps.unicode);
+  const slate = chalk.hex('#64748B');
+  const dimEdge = chalk.hex('#334155');
+  const amber = chalk.hex('#F59E0B');
+  const amberBar = amber('\u2503');
   const lines: string[] = [];
+  const push = (line = ''): void => {
+    lines.push(line === '' ? '' : P + line);
+  };
 
-  const bannerRows = bannerRowsForWidth(usedWidth);
+  // Banner (display) \u2014 centered in the stage; CEO bytes untouched.
+  const bannerRows = bannerRowsForWidth(stage);
   const widestBanner = Math.max(...bannerRows.map((row) => [...row].length));
-  // Center with left padding from the live stdout budget; never print at column 0 raw.
-  if (usedWidth >= widestBanner) {
-    const pad = centerPad(widestBanner, usedWidth);
-    for (const row of bannerRows) lines.push(pad + row);
+  if (stage >= widestBanner) {
+    const bannerPad = centerPad(widestBanner, stage);
+    for (const row of bannerRows) push(bannerPad + row);
   } else {
-    for (const row of bannerRows) lines.push([...row].slice(0, usedWidth).join(''));
+    for (const row of bannerRows) push([...row].slice(0, stage).join(''));
   }
-  lines.push(' '.repeat(Math.max(0, Math.floor((usedWidth - 24) / 2))) + `MAOS Industrial · v${INDUSTRIAL_TUI_VERSION}`);
-  lines.push(' '.repeat(Math.max(0, Math.floor((usedWidth - INDUSTRIAL_TUI_TAGLINE.length) / 2))) + INDUSTRIAL_TUI_TAGLINE);
-  lines.push('');
+  // Quiet subline: nameplate + tagline, centered, slate/dim.
+  const nameplate = `MAOS Industrial \u00b7 v${INDUSTRIAL_TUI_VERSION}`;
+  push(' '.repeat(Math.max(0, Math.floor((stage - visibleWidth(nameplate)) / 2))) + slate(nameplate));
+  push(
+    ' '.repeat(Math.max(0, Math.floor((stage - INDUSTRIAL_TUI_TAGLINE.length) / 2))) +
+      chalk.gray(INDUSTRIAL_TUI_TAGLINE),
+  );
+  push('');
 
-  // Input card: inner width derives from the terminal budget, content wraps first.
-  const wantCardW = Math.max(20, Math.min(usedWidth - 2, caps.narrow ? usedWidth - 2 : 62));
-  const cardPadWidth = Math.max(0, Math.floor((usedWidth - wantCardW) / 2));
-  const cardW = Math.max(20, Math.min(wantCardW, usedWidth - cardPadWidth));
-  const cardPad = ' '.repeat(cardPadWidth);
+  // Input card: full stage width, blank inside top+bottom (vertical centering
+  // in its region), amber accent for Ring/operator, neutral slate at home.
+  const cardW = stage;
   const innerWidth = Math.max(1, cardW - 4);
   const textWidth = Math.max(1, innerWidth - 2);
-  const edge = chalk.hex('#334155');
-  const amberBar = chalk.hex('#F59E0B')('┃');
+  const homeNeutral = role !== 'operator';
+  const edge = homeNeutral ? dimEdge : amber;
   const badgeMode = systems.mode === 'HOSTED' ? 'hosted' : 'evidence-only';
-  const opBadgePlain = 'Operator · ' + badgeMode + ' · T-07';
+  const opBadgePlain = 'Operator \u00b7 ' + badgeMode + ' \u00b7 T-07';
   const placeholderRows = wrapCellText('Ask your plant anything...', textWidth);
   const badgeRows = wrapCellText(opBadgePlain, textWidth);
   const richBadge =
-    chalk.bold.white('Operator') + ' ' + chalk.gray('·') + ' ' + chalk.yellow(badgeMode) + ' ' + chalk.gray('·') + ' ' + chalk.cyan('T-07');
-  lines.push(cardPad + edge(b.tl + b.h.repeat(cardW - 2) + b.tr));
+    chalk.bold.white('Operator') + ' ' + chalk.gray('\u00b7') + ' ' + chalk.yellow(badgeMode) + ' ' + chalk.gray('\u00b7') + ' ' + chalk.cyan('T-07');
+  push(edge(b.tl + b.h.repeat(Math.max(0, cardW - 2)) + b.tr));
+  push(cardRow(b, edge, amberBar + ' ', innerWidth));
   for (const row of placeholderRows) {
-    lines.push(cardPad + cardRow(b, edge, amberBar + ' ' + chalk.gray(row), innerWidth));
+    push(cardRow(b, edge, amberBar + ' ' + chalk.gray(row), innerWidth));
   }
-  lines.push(cardPad + cardRow(b, edge, amberBar + ' ', innerWidth));
-  if (badgeRows.length === 1 && badgeRows[0] === opBadgePlain) {
-    lines.push(cardPad + cardRow(b, edge, amberBar + ' ' + richBadge, innerWidth));
-  } else {
-    for (const row of badgeRows) {
-      lines.push(cardPad + cardRow(b, edge, amberBar + ' ' + chalk.gray(row), innerWidth));
+  // Empty state: ghost suggestions replace dead space inside the card area.
+  if (model.empty !== false) {
+    push(cardRow(b, edge, amberBar + ' ', innerWidth));
+    push(cardRow(b, edge, amberBar + ' ' + slate('Try one of these:'), innerWidth));
+    for (const suggestion of INDUSTRIAL_TUI_SUGGESTIONS) {
+      for (const row of wrapCellText(suggestion, Math.max(1, textWidth - 3))) {
+        push(cardRow(b, edge, amberBar + ' ' + chalk.gray('  ' + row), innerWidth));
+      }
     }
   }
-  lines.push(cardPad + edge(b.bl + b.h.repeat(cardW - 2) + b.br));
-  lines.push('');
+  push(cardRow(b, edge, amberBar + ' ', innerWidth));
+  if (badgeRows.length === 1 && badgeRows[0] === opBadgePlain) {
+    push(cardRow(b, edge, amberBar + ' ' + richBadge, innerWidth));
+  } else {
+    for (const row of badgeRows) {
+      push(cardRow(b, edge, amberBar + ' ' + chalk.gray(row), innerWidth));
+    }
+  }
+  push(cardRow(b, edge, amberBar + ' ', innerWidth));
+  push(edge(b.bl + b.h.repeat(Math.max(0, cardW - 2)) + b.br));
+  push('');
 
+  // Systems: small-caps dim header, contained in a bordered stage panel.
   const engineBad = systems.engine !== 'ENGINE HEALTHY' && !/NOT CHECKED/.test(systems.engine);
   const boundaryBad = systems.boundary !== 'BOUNDARY ENFORCED' && !/NOT CHECKED/.test(systems.boundary);
   const auditBad = systems.audit !== 'AUDIT LOGGING' && !/NOT CHECKED/.test(systems.audit);
   const telemetryBad = !/RMS/.test(systems.telemetry);
-  const rows: Array<[string, boolean]> = [
+  const sysRows: Array<[string, boolean]> = [
     [badge(caps.emoji, 'OK', !engineBad) + ' ' + systems.engine, engineBad],
     [badge(caps.emoji, 'OK', !boundaryBad) + ' ' + systems.boundary, boundaryBad],
     [badge(caps.emoji, 'OK', !auditBad) + ' ' + systems.audit, auditBad],
     [badge(caps.emoji, 'OK', !telemetryBad) + ' ' + systems.telemetry, telemetryBad],
   ];
-  lines.push('Systems');
-  for (const [text, isBad] of rows) {
+  push(slate('SYSTEMS'));
+  push(dimEdge(b.tl + b.h.repeat(Math.max(0, cardW - 2)) + b.tr));
+  for (const [text, isBad] of sysRows) {
     const paint = isBad ? chalk.yellow : chalk.green;
-    for (const wrapped of wrapCellText(text, Math.max(1, usedWidth - 4))) {
-      lines.push('  ' + paint(safeTerminalText(wrapped)));
+    for (const wrapped of wrapCellText(safeTerminalText(text), Math.max(1, innerWidth))) {
+      push(plainRow(b, dimEdge, paint(wrapped), cardW));
     }
   }
-  lines.push('  Mode: ' + (systems.mode === 'HOSTED' ? chalk.green(systems.mode) : chalk.yellow(systems.mode)));
-  lines.push('');
-  lines.push(chalk.bold.cyan('Type /ring to talk to Ring'));
-  lines.push(chalk.gray('/ring · /verify · /help   — type /ring to talk to Ring, /back returns here'));
-  lines.push('');
-
-  const left = projectLabel + (branch ? ':' + branch : '');
-  lines.push(
-    chalk.bold.white('tab') + ' ' + chalk.gray('complete') + '   ' + chalk.bold.white('ctrl+c') + ' ' + chalk.gray('quit') + '   ' + chalk.gray(left) + '   ' + chalk.gray('v' + INDUSTRIAL_TUI_VERSION),
+  const modeText = 'Mode: ' + systems.mode;
+  push(
+    plainRow(b, dimEdge, systems.mode === 'HOSTED' ? chalk.green(modeText) : chalk.yellow(modeText), cardW),
   );
-  return lines.map((line) => {
-    const clipped = visibleWidth(line) > termWidth ? fitLine(line, termWidth) : line;
-    return clipped;
-  });
+  push(dimEdge(b.bl + b.h.repeat(Math.max(0, cardW - 2)) + b.br));
+  push('');
+
+  // Invitation: amber = Ring identity, used sparingly.
+  push(amber('Type /ring to talk to Ring'));
+  push(chalk.gray('/ring \u00b7 /verify \u00b7 /help   \u2014 type /ring to talk to Ring, /back returns here'));
+  push('');
+
+  // Status bar: pinned last, stage width, inverse + dim (smallest type).
+  // Narrow degradation drops tab-complete, then role, then version; the
+  // project:branch and ctrl+c hint always survive so the bar never clips blind.
+  const left = projectLabel + (branch ? ':' + branch : '');
+  const barCandidates = [
+    `${left} \u00b7 ${badgeMode} \u00b7 ${role} \u00b7 v${INDUSTRIAL_TUI_VERSION} \u00b7 ctrl+c quit \u00b7 tab complete`,
+    `${left} \u00b7 ${badgeMode} \u00b7 ${role} \u00b7 v${INDUSTRIAL_TUI_VERSION} \u00b7 ctrl+c quit`,
+    `${left} \u00b7 ${badgeMode} \u00b7 v${INDUSTRIAL_TUI_VERSION} \u00b7 ctrl+c quit`,
+    `${left} \u00b7 ${badgeMode} \u00b7 ctrl+c quit`,
+    `${left} \u00b7 ctrl+c quit`,
+  ];
+  const barPlain = barCandidates.find((c) => visibleWidth(c) <= stage) ?? barCandidates[barCandidates.length - 1];
+  const barBody = fitLine(barPlain, stage);
+  const barStyled = chalk.inverse(' ' + barBody.padEnd(Math.max(0, stage - 1)));
+  // Pinned footer: filler only when the terminal height is known (real TTY).
+  if (height > 0) {
+    const filler = Math.max(0, height - lines.length - 1);
+    for (let i = 0; i < filler; i++) lines.push('');
+  }
+  lines.push(P + barStyled);
+  return lines.map((line) => (visibleWidth(line) > termWidth ? fitLine(line, termWidth) : line));
 }
 
 export function renderIndustrialTuiHome(model: IndustrialTuiHomeModel): string {
   return layoutIndustrialTuiHome(model).join('\n');
 }
 
+/** Stage geometry, exported for layout assertions. */
+export { stageWidth as industrialTuiStageWidth };
+
 export function renderRingModeHeader(caps: TuiCapabilities, mode: 'HOSTED' | 'EVIDENCE-ONLY', thread?: string): string {
   const b = borderChars(caps.unicode);
-  const width = Math.max(36, Math.min(caps.narrow ? caps.width - 2 : 64, caps.width - 2));
+  const { stage, pad } = stageWidth(caps.width || 80);
+  const P = ' '.repeat(pad);
+  const edge = chalk.hex('#F59E0B');
   const title = `${chalk.bold.hex('#F59E0B')('RING')} ${mode === 'HOSTED' ? chalk.green(mode) : chalk.yellow(mode)}`;
-  const stripped = stripAnsiForWidth(title).length;
   const threadLine = thread
     ? chalk.gray(`thread ${safeTerminalText(thread)} · /back returns home`)
     : chalk.gray('/back returns home · /help commands');
-  const top = chalk.hex('#F59E0B')(b.tl + b.h.repeat(width - 2) + b.tr);
-  const bottom = chalk.hex('#F59E0B')(b.bl + b.h.repeat(width - 2) + b.br);
-  return [top, ` ${title}` + ' '.repeat(Math.max(0, width - 3 - stripped)), ` ${threadLine}`, bottom].join('\n');
+  const top = P + edge(b.tl + b.h.repeat(Math.max(0, stage - 2)) + b.tr);
+  const bottom = P + edge(b.bl + b.h.repeat(Math.max(0, stage - 2)) + b.br);
+  return [top, P + plainRow(b, edge, title, stage), P + plainRow(b, edge, threadLine, stage), bottom].join('\n');
 }
 
 /** Impossible-to-miss approval card. The `[y/N]` question below still defaults to No. */
-export function renderIndustrialTuiApprovalCard(event: { tool?: unknown; approvalId?: unknown }): string {
+export function renderIndustrialTuiApprovalCard(
+  event: { tool?: unknown; approvalId?: unknown },
+  caps?: TuiCapabilities,
+): string {
   const tool = typeof event.tool === 'string' && event.tool ? event.tool : 'tool';
   const approvalId = typeof event.approvalId === 'string' ? event.approvalId : '';
-  const bar = '='.repeat(56);
-  const title = `APPROVAL NEEDED: ${safeTerminalText(tool)}`;
-  const warnLine = 'Reply y to approve, anything else denies. Default is No.';
-  const top = chalk.yellow(`+${bar}+`);
-  const bottom = chalk.yellow(`+${bar}+`);
-  const row = (text: string): string => chalk.yellow('| ') + chalk.bold(text) + chalk.yellow(' |');
-  return [
-    top,
-    row(title),
-    approvalId ? chalk.yellow('| ') + chalk.gray(`approval ${safeTerminalText(approvalId)}`) + chalk.yellow(' |') : '',
-    row(warnLine),
-    bottom,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const width = caps?.width || 80;
+  const { stage, pad } = stageWidth(width);
+  const P = ' '.repeat(pad);
+  const b = borderChars(caps?.unicode ?? true);
+  const edge = chalk.yellow;
+  const innerWidth = Math.max(1, stage - 4);
+  const rows: string[] = [P + edge(b.tl + '='.repeat(Math.max(0, stage - 2)) + b.tr)];
+  const pushRow = (styled: string, plain: string): void => {
+    for (const wrapped of wrapCellText(plain, innerWidth)) {
+      const styledWrapped = wrapped === plain ? styled : wrapped;
+      const padded = styledWrapped + ' '.repeat(Math.max(0, innerWidth - visibleWidth(styledWrapped)));
+      rows.push(P + edge(b.v + ' ') + padded + edge(' ' + b.v));
+    }
+  };
+  pushRow(chalk.bold(`APPROVAL NEEDED: ${safeTerminalText(tool)}`), `APPROVAL NEEDED: ${safeTerminalText(tool)}`);
+  if (approvalId) pushRow(chalk.gray(`approval ${safeTerminalText(approvalId)}`), `approval ${safeTerminalText(approvalId)}`);
+  pushRow(
+    chalk.bold('Reply y to approve, anything else denies. Default is No.'),
+    'Reply y to approve, anything else denies. Default is No.',
+  );
+  rows.push(P + edge(b.bl + '='.repeat(Math.max(0, stage - 2)) + b.br));
+  return rows.join('\n');
 }
 
 type TuiScreen = 'home' | 'ring';
@@ -450,6 +563,8 @@ export function runIndustrialTui(options: IndustrialTuiOptions = {}): Promise<vo
         caps,
         projectLabel,
         branch,
+        role: ringSession.role,
+        height: caps.height,
       }),
     );
     writeLine('');
@@ -534,7 +649,7 @@ export function runIndustrialTui(options: IndustrialTuiOptions = {}): Promise<vo
         return;
       }
       if (event.type === 'approval.pending') {
-        writeLine(renderIndustrialTuiApprovalCard({ tool: event.tool, approvalId: event.approvalId }));
+        writeLine(renderIndustrialTuiApprovalCard({ tool: event.tool, approvalId: event.approvalId }, caps));
         return;
       }
       if (event.type === 'artifact.created' && event.artifact && typeof event.artifact.path === 'string') {
@@ -580,7 +695,7 @@ export function runIndustrialTui(options: IndustrialTuiOptions = {}): Promise<vo
             writeLine(chalk.red('Run is awaiting approval with no pending approval.'));
             return RING_CLI_EXIT.FAILED;
           }
-          writeLine(renderIndustrialTuiApprovalCard({ tool: pending.toolName, approvalId: pending.approvalId }));
+          writeLine(renderIndustrialTuiApprovalCard({ tool: pending.toolName, approvalId: pending.approvalId }, caps));
           const answer = await askApproval('Approve "' + pending.toolName + ' - ' + pending.summary + '"? [y/N]');
           recordApprovalAudit({
             event: 'RING_CLI_APPROVAL_PROMPT',
