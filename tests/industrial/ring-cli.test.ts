@@ -330,8 +330,8 @@ describe('TASK DEV-A-CLI-01: Ring CLI (evidence-only)', () => {
     });
     const readText = (): string => transcript;
     await waitForText(output, readText, 'ring> ');
-    const at = await sendCommand(input, output, readText, '/report turbine vibration', 'artifact: ');
-    const absMatch = transcript.slice(at).match(/artifact: ([^\r\n]+)/)?.[1];
+    const at = await sendCommand(input, output, readText, '/report turbine vibration', 'Artifact:');
+    const absMatch = transcript.slice(at).match(/Artifact: ([^\r\n]+)/)?.[1];
     expect(absMatch).toBeTruthy();
     expect(path.isAbsolute((absMatch as string).trim())).toBe(true);
     input.write('exit\n');
