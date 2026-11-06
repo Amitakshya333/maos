@@ -515,3 +515,5 @@ MIT © [Amitakshya Sutar](https://github.com/Amitakshya333)
 
 </div>
 
+
+> Tip: see docs/product for the Ring roadmap.
