@@ -110,3 +110,5 @@ Before submitting a Pull Request:
 
 ## 📜 License
 MAOS is open-source under the [MIT License](LICENSE).
+
+## Staff picks
