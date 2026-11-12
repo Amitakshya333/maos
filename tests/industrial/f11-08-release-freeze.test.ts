@@ -145,8 +145,8 @@ describe('F11-08: Release Freeze & Integrity Verification', () => {
 
       const scriptContent = fs.readFileSync(scriptPath, 'utf8');
       const runbookContent = fs.readFileSync(runbookPath, 'utf8');
-      expect(scriptContent).toContain('Judged Presentation Script');
-      expect(scriptContent).toContain('preflight');
+      expect(scriptContent).toMatch(/Judged Presentation Script|Recording Script/i);
+      expect(scriptContent).toMatch(/preflight|setup|staging/i);
       expect(runbookContent).toContain('D7');
     });
 

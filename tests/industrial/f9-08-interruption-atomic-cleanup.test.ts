@@ -70,27 +70,24 @@ import {
   AtomicCleanupCoordinator,
   AtomicCleanupReport,
 } from '../../src/service';
-import {
-  createIndustrialEndpointPolicy,
-} from '../../src/domain/endpoint-allowlist';
-import {
-  computeCanonicalSnapshotHash,
-} from '../../src/domain/firewall-policy';
-import {
-  MockFirewallAdapter,
-} from '../../src/industrial/firewall';
-import {
-  MockSocketObserver,
-} from '../../src/industrial/network';
+import { createIndustrialEndpointPolicy } from '../../src/domain/endpoint-allowlist';
+import { computeCanonicalSnapshotHash } from '../../src/domain/firewall-policy';
+import { MockFirewallAdapter } from '../../src/industrial/firewall';
+import { MockSocketObserver } from '../../src/industrial/network';
 import { ContainerRunner } from '../../src/industrial/container-runner';
-import { acquireLock, getLockPath, LIFECYCLE_EXIT, releaseLock, runLifecycleCommand } from '../../src/industrial/lifecycle';
+import {
+  acquireLock,
+  getLockPath,
+  LIFECYCLE_EXIT,
+  releaseLock,
+  runLifecycleCommand,
+} from '../../src/industrial/lifecycle';
 import { isProcessAlive } from '../../src/industrial/service-startup';
 
 describe('F9-08: Interruption and Atomic Cleanup', () => {
   const TEST_PROJECT_ROOT = path.resolve(__dirname, '../../');
   const CANARY_PATH = path.join(TEST_PROJECT_ROOT, 'rust/test.txt');
-  const EXPECTED_CANARY_SHA256 =
-    '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
+  const EXPECTED_CANARY_SHA256 = '1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435';
 
   let testTempDir: string;
 
@@ -100,7 +97,34 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
   beforeAll(async () => {
     testTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-temp-f908-'));
     fs.mkdirSync(path.join(testTempDir, '.maos'), { recursive: true });
-    fs.writeFileSync(path.join(testTempDir, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'f9-08-test' }));
+    fs.writeFileSync(
+      path.join(testTempDir, '.maos', 'maos.config.json'),
+      JSON.stringify({ schemaVersion: 1, projectName: 'f9-08-test' }),
+    );
+
+    // Setup mock text snapshot directory & manifest so lease tests run offline without external weights
+    const textSnapshotRelativePath =
+      'models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1';
+    const textSnapshotDir = path.join(testTempDir, 'offline-stores', 'model-snapshot', textSnapshotRelativePath);
+    fs.mkdirSync(textSnapshotDir, { recursive: true });
+    const textConfig = Buffer.from('{"model_type":"qwen2"}', 'utf8');
+    fs.writeFileSync(path.join(textSnapshotDir, 'config.json'), textConfig);
+    fs.writeFileSync(
+      path.join(testTempDir, 'model-snapshot-manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        model: 'Qwen/Qwen2.5-3B-Instruct',
+        revision: 'aa8e72537993ba99e69dfaafa59ed015b17504d1',
+        snapshotRelativePath: textSnapshotRelativePath,
+        files: [
+          {
+            path: 'config.json',
+            size: textConfig.length,
+            sha256: crypto.createHash('sha256').update(textConfig).digest('hex'),
+          },
+        ],
+      }),
+    );
 
     // Start a mock HTTP server to simulate slow / responsive local model server endpoints
     mockHttpServer = http.createServer((req, res) => {
@@ -190,9 +214,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
 
       // Verify audit trail
       const events = audit.getRecords({ limit: 10 });
-      const cancelEvent = events.find(
-        (e) => (e.data as any).event === 'CHAT_INFERENCE_INTERRUPTED',
-      );
+      const cancelEvent = events.find((e) => (e.data as any).event === 'CHAT_INFERENCE_INTERRUPTED');
       expect(cancelEvent).toBeDefined();
       expect((cancelEvent?.data as any).reason).toBe('CLIENT_ABORTED');
     });
@@ -227,9 +249,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
 
       // Verify audit trail
       const events = audit.getRecords({ limit: 10 });
-      const cancelEvent = events.find(
-        (e) => (e.data as any).event === 'CHAT_INFERENCE_INTERRUPTED',
-      );
+      const cancelEvent = events.find((e) => (e.data as any).event === 'CHAT_INFERENCE_INTERRUPTED');
       expect(cancelEvent).toBeDefined();
       expect((cancelEvent?.data as any).reason).toBe('CLIENT_ABORTED');
     });
@@ -256,9 +276,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
       expect(caughtError.code).toBe('MODEL_INFERENCE_TIMEOUT');
 
       const events = audit.getRecords({ limit: 10 });
-      const failEvent = events.find(
-        (e) => (e.data as any).event === 'CHAT_INFERENCE_FAILED',
-      );
+      const failEvent = events.find((e) => (e.data as any).event === 'CHAT_INFERENCE_FAILED');
       expect(failEvent).toBeDefined();
       expect((failEvent?.data as any).error).toBe('TIMEOUT');
     });
@@ -398,11 +416,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
       fs.writeFileSync(objStorePath, JSON.stringify(rawObj, null, 2));
 
       // Interrupt objective
-      const interruptedObj = workflowService.interruptObjective(
-        obj.id,
-        'Operator cancelled run',
-        taskService,
-      );
+      const interruptedObj = workflowService.interruptObjective(obj.id, 'Operator cancelled run', taskService);
 
       expect(interruptedObj).toBeDefined();
       expect(interruptedObj?.status).toBe('failed');
@@ -453,9 +467,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
         runner.cleanupContainerSync('nonexistent-test-container-' + Date.now());
       }).not.toThrow();
 
-      await expect(
-        runner.cleanupContainer('nonexistent-test-container-' + Date.now()),
-      ).resolves.toBeUndefined();
+      await expect(runner.cleanupContainer('nonexistent-test-container-' + Date.now())).resolves.toBeUndefined();
     });
 
     it('coordinator tracks and cleans up registered containers and staging dirs', () => {
@@ -587,11 +599,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
         evidenceDir: path.join(testTempDir, '.maos', 'network-evidence'),
       });
 
-      await monitor.startObservation(
-        'obs-interruption-test',
-        'test-project',
-        { sampleIntervalMs: 50 },
-      );
+      await monitor.startObservation('obs-interruption-test', 'test-project', { sampleIntervalMs: 50 });
 
       expect(monitor.isObservationActive('obs-interruption-test')).toBe(true);
       expect(monitor.listActiveObservations()).toContain('obs-interruption-test');
@@ -603,12 +611,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
       expect(monitor.listActiveObservations().length).toBe(0);
 
       // Verify persisted trace file
-      const traceFile = path.join(
-        testTempDir,
-        '.maos',
-        'network-evidence',
-        'obs-interruption-test.json',
-      );
+      const traceFile = path.join(testTempDir, '.maos', 'network-evidence', 'obs-interruption-test.json');
       expect(fs.existsSync(traceFile)).toBe(true);
       const parsedTrace = JSON.parse(fs.readFileSync(traceFile, 'utf8'));
       expect(parsedTrace.traceHash).toBeDefined();
@@ -621,7 +624,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
   describe('7. Model Lease Reclamation', () => {
     it('releases all active model leases and resets lease count to zero', () => {
       const audit = new AuditService(testTempDir);
-      const modelService = new ModelService(TEST_PROJECT_ROOT, undefined, audit);
+      const modelService = new ModelService(testTempDir, undefined, audit);
 
       const lease1 = modelService.acquireLease({
         modelId: 'Qwen/Qwen2.5-3B-Instruct',
@@ -637,7 +640,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
       expect(modelService.getLease(lease1.id)).toBeDefined();
       expect(modelService.getLease(lease2.id)).toBeDefined();
 
-      const coordinator = new AtomicCleanupCoordinator(TEST_PROJECT_ROOT, {
+      const coordinator = new AtomicCleanupCoordinator(testTempDir, {
         modelService,
       });
 
@@ -722,10 +725,12 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
 
         const cleanup = await coordinator.executeAtomicCleanup({ reason: 'forced-live-lock-regression', force: true });
         expect(cleanup.success).toBe(false);
-        expect(cleanup.errors).toContainEqual(expect.objectContaining({
-          subsystem: 'lifecycle_lock',
-          message: expect.stringContaining('force cannot remove it'),
-        }));
+        expect(cleanup.errors).toContainEqual(
+          expect.objectContaining({
+            subsystem: 'lifecycle_lock',
+            message: expect.stringContaining('force cannot remove it'),
+          }),
+        );
         expect(isProcessAlive(process.pid)).toBe(true);
         expect(fs.existsSync(lockPath)).toBe(true);
 
@@ -734,12 +739,16 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
           "const fs = require('node:fs');",
           "const ts = require('typescript');",
           "require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);",
-          "const { runLifecycleCommand, LIFECYCLE_EXIT } = require(process.argv[1]);",
+          'const { runLifecycleCommand, LIFECYCLE_EXIT } = require(process.argv[1]);',
           "const result = runLifecycleCommand(process.argv[2], 'install', undefined, { stateOnly: true });",
-          "process.stdout.write(String(result.exitCode));",
-          "process.exitCode = result.exitCode === LIFECYCLE_EXIT.LOCK_HELD ? 0 : 1;",
+          'process.stdout.write(String(result.exitCode));',
+          'process.exitCode = result.exitCode === LIFECYCLE_EXIT.LOCK_HELD ? 0 : 1;',
         ].join('\n');
-        const child = spawnSync(process.execPath, ['-e', script, lifecycleModule, testTempDir], { cwd: TEST_PROJECT_ROOT, encoding: 'utf8', timeout: 15_000 });
+        const child = spawnSync(process.execPath, ['-e', script, lifecycleModule, testTempDir], {
+          cwd: TEST_PROJECT_ROOT,
+          encoding: 'utf8',
+          timeout: 15_000,
+        });
         expect(child.status).toBe(0);
         expect(child.stdout).toBe(String(LIFECYCLE_EXIT.LOCK_HELD));
         expect(fs.existsSync(lockPath)).toBe(true);
@@ -752,15 +761,20 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
     it('removes only a stale same-host lock whose owner is confirmed dead', () => {
       const lockPath = getLockPath(testTempDir);
       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-      const exited = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+      const exited = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {
+        encoding: 'utf8',
+      });
       const deadPid = Number(exited.stdout);
       expect(exited.status).toBe(0);
       expect(isProcessAlive(deadPid)).toBe(false);
-      fs.writeFileSync(lockPath, JSON.stringify({
-        pid: deadPid,
-        timestamp: new Date(Date.now() - 60_000).toISOString(),
-        hostname: os.hostname(),
-      }));
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({
+          pid: deadPid,
+          timestamp: new Date(Date.now() - 60_000).toISOString(),
+          hostname: os.hostname(),
+        }),
+      );
       expect(isProcessAlive(2147483647)).toBe(false);
       const result = new AtomicCleanupCoordinator(testTempDir).cleanupOrphanFiles();
       expect(result.lifecycleLockStatus).toBe('removed');
@@ -780,7 +794,14 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
     });
 
     it.each([
-      ['foreign host', JSON.stringify({ pid: process.pid, timestamp: new Date(Date.now() - 60_000).toISOString(), hostname: 'unknown-host' })],
+      [
+        'foreign host',
+        JSON.stringify({
+          pid: process.pid,
+          timestamp: new Date(Date.now() - 60_000).toISOString(),
+          hostname: 'unknown-host',
+        }),
+      ],
       ['malformed record', '{not-json'],
     ])('leaves %s ownership ambiguity blocked', (_label, contents) => {
       const lockPath = getLockPath(testTempDir);
@@ -790,7 +811,9 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
       expect(result.lifecycleLockStatus).toBe('ambiguous');
       expect(result.locksRemoved).toBe(0);
       expect(fs.existsSync(lockPath)).toBe(true);
-      expect(runLifecycleCommand(testTempDir, 'install', undefined, { stateOnly: true }).exitCode).toBe(LIFECYCLE_EXIT.LOCK_HELD);
+      expect(runLifecycleCommand(testTempDir, 'install', undefined, { stateOnly: true }).exitCode).toBe(
+        LIFECYCLE_EXIT.LOCK_HELD,
+      );
       // This malformed/foreign lock belongs only to this temporary regression fixture.
       fs.unlinkSync(lockPath);
     });
@@ -869,9 +892,7 @@ describe('F9-08: Interruption and Atomic Cleanup', () => {
 
       // Verify audit record
       const events = services.audit.getRecords({ limit: 10 });
-      const auditEvt = events.find(
-        (e) => (e.data as any).event === 'ATOMIC_CLEANUP_COMPLETED',
-      );
+      const auditEvt = events.find((e) => (e.data as any).event === 'ATOMIC_CLEANUP_COMPLETED');
       expect(auditEvt).toBeDefined();
       expect((auditEvt?.data as any).success).toBe(true);
       expect((auditEvt?.data as any).reason).toBe('SIGINT received from operator');

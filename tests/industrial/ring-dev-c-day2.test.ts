@@ -14,10 +14,7 @@ import * as oss from 'os';
 import * as pathh from 'path';
 import { RingAgentService } from '../../src/service/ring-agent-service';
 import { AuditService } from '../../src/service/audit-service';
-import {
-  carriesRawCsvRows,
-  isRestartAuthorizationRequest,
-} from '../../src/service/ring-safety';
+import { carriesRawCsvRows, isRestartAuthorizationRequest } from '../../src/service/ring-safety';
 import { runRingSkillWorkflow } from '../../src/service/ring-skill-workflows';
 
 function makeTempRoot(): string {
@@ -68,9 +65,7 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
   });
 
   it('P-12 answers: handover routes pump telemetry through existing tools', () => {
-    const out = runRingSkillWorkflow(
-      { skillName: 'handover', arg: 'P-12', projectRoot: root, runId: 'ring-eval-p12' },
-    );
+    const out = runRingSkillWorkflow({ skillName: 'handover', arg: 'P-12', projectRoot: root, runId: 'ring-eval-p12' });
     expect(out.audit.event).toBe('RING_SKILL_RUN');
     expect(out.body).toContain('P-12');
     expect(out.telemetry?.csvPath).toBe('pump_p12_vibration_log.csv');
@@ -83,14 +78,15 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
   });
 
   it('P-12 SOP: /sop P-12 resolves the pump SOP; unknown equipment is refused honestly', () => {
-    const pump = runRingSkillWorkflow(
-      { skillName: 'sop', arg: 'P-12', projectRoot: root, runId: 'ring-eval-sop-p12' },
-    );
+    const pump = runRingSkillWorkflow({ skillName: 'sop', arg: 'P-12', projectRoot: root, runId: 'ring-eval-sop-p12' });
     expect(pump.body).toContain('sop_pump_p12_monitoring.md');
     expect(pump.evidence.map((e) => e.path)).toContain('sop_pump_p12_monitoring.md');
-    const unknown = runRingSkillWorkflow(
-      { skillName: 'sop', arg: 'P-99', projectRoot: root, runId: 'ring-eval-sop-unknown' },
-    );
+    const unknown = runRingSkillWorkflow({
+      skillName: 'sop',
+      arg: 'P-99',
+      projectRoot: root,
+      runId: 'ring-eval-sop-unknown',
+    });
     expect(unknown.body).toContain("I don't have an SOP");
     expect(unknown.body).toContain('sop_pump_p12_monitoring.md');
     expect(unknown.body).toContain('sop_turbine_vibration_monitoring.md');
@@ -110,14 +106,20 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
     delete process.env.BASETEN_API_KEY;
     const svcMod = await import('../../src/service');
     const services = svcMod.createServiceContainer(root);
-    const registry = (services.ringAgent as unknown as { registry: { get(n: string): unknown; execute(n: string, c: never, a: never): Promise<Record<string, unknown>> } }).registry;
+    const registry = (
+      services.ringAgent as unknown as {
+        registry: { get(n: string): unknown; execute(n: string, c: never, a: never): Promise<Record<string, unknown>> };
+      }
+    ).registry;
     expect(registry.get('inspect_image')).toBeTruthy();
     const imgOut = await registry.execute(
       'inspect_image',
       { projectRoot: root, evidenceRoot: root, runId: 'ring-eval-img', runContext: {} } as never,
       { path: 'demo/industrial/images/pump_p12_photo.png' } as never,
     );
-    expect(String(imgOut.message || imgOut.error || '')).toMatch(/unavailable|snapshot manifest missing|Runtime downloads are prohibited/i);
+    expect(String(imgOut.message || imgOut.error || '')).toMatch(
+      /unavailable|snapshot manifest missing|Runtime downloads are prohibited/i,
+    );
     expect(JSON.stringify(imgOut)).not.toContain('observationType');
     const ocrOut = await registry.execute(
       'ocr_document',
@@ -255,15 +257,87 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
     expect(text).toContain('run.started');
     expect(text).toContain('tool.result');
     expect(text).toContain('run.completed');
-    let verifyOutcome: string;
+    // Engine-coupled assertion note: the thread/message flow above runs
+    // analyze_telemetry through the registry, which appends ZERO audit
+    // records. So the audit log here stays empty in BOTH environments; only
+    // the verification path differs by engine presence:
+    //  - engine binary present  -> Rust verifies the empty chain (valid: true)
+    //  - engine binary missing   -> verifyChain() throws missing_binary.
+    // Both are correct behavior, so assert both branches explicitly instead
+    // of assuming the engine is always missing (false on CI after
+    // cargo build --release, which drops the binary at the repo-root
+    // fallback path resolved via process.cwd()).
+    const records = services.audit.getRecords();
+    expect(Array.isArray(records)).toBe(true);
+    expect(records.length).toBe(0);
+    const auditChainFile = pathh.join(root, '.maos', 'audit', 'audit-chain.jsonl');
+    expect(fss.existsSync(auditChainFile)).toBe(false);
+    // Capture the outcome WITHOUT catching assertion failures: only the
+    // engine-missing throw is an acceptable throw here.
+    let emptyOutcome: { valid: boolean; recordCount: number; errors: string[] } | { thrown: string };
     try {
-      const v = services.audit.verifyChain() as { valid: boolean };
-      verifyOutcome = v.valid ? 'valid' : 'invalid-empty-log';
+      emptyOutcome = services.audit.verifyChain() as { valid: boolean; recordCount: number; errors: string[] };
     } catch (err) {
-      verifyOutcome = String((err as Error).message || err);
+      emptyOutcome = { thrown: String((err as Error).message || err) };
     }
-    expect(verifyOutcome).toMatch(/invalid-empty-log|Engine executable not found|missing_binary/i);
-    expect(Array.isArray(services.audit.getRecords())).toBe(true);
+    if ('thrown' in emptyOutcome) {
+      // Engine absent: the ONLY acceptable throw is fail-closed missing_binary.
+      expect(emptyOutcome.thrown).toMatch(/Engine executable not found|missing_binary/i);
+    } else {
+      // Engine present: empty log + consistent head anchor verifies valid.
+      expect(emptyOutcome.recordCount).toBe(0);
+      expect(emptyOutcome.valid).toBe(true);
+      expect(emptyOutcome.errors).toEqual([]);
+    }
+    // (a) Non-empty round-trip, strict per environment. Engine present:
+    // appending one real record verifies valid with recordCount 1 (proves
+    // the audit path works end to end). Engine absent: the append itself
+    // fails closed with missing_binary and writes nothing.
+    let appendOutcome: string;
+    try {
+      const rec = services.audit.recordAuditEvent({
+        category: 'tool',
+        source: 'day2-engine-asserts',
+        data: { event: 'DAY2_AUDIT_ROUNDTRIP', runId },
+      });
+      appendOutcome = 'appended:' + String(rec.sequence);
+    } catch (err) {
+      appendOutcome = String((err as Error).message || err);
+    }
+    if (appendOutcome.indexOf('appended:') === 0) {
+      expect(appendOutcome).toBe('appended:0');
+      const after = services.audit.verifyChain() as { valid: boolean; recordCount: number; errors: string[] };
+      expect(after.valid).toBe(true);
+      expect(after.recordCount).toBe(1);
+      expect(after.errors).toEqual([]);
+      expect(fss.existsSync(auditChainFile)).toBe(true);
+    } else {
+      expect(appendOutcome).toMatch(/Engine executable not found|missing_binary/i);
+      expect(fss.existsSync(auditChainFile)).toBe(false);
+    }
+    // Fail-closed proof on a FRESH untouched root: an empty audit log must
+    // either verify (head anchor matches, engine present) or throw the
+    // missing-binary error (engine absent). It must NEVER report valid with
+    // errors, and must never silently pass a non-empty log.
+    const freshRoot = makeTempRoot();
+    try {
+      const freshAudit = new AuditService(freshRoot);
+      expect(freshAudit.getRecords().length).toBe(0);
+      try {
+        const fresh = freshAudit.verifyChain() as { valid: boolean; recordCount: number; errors: string[] };
+        expect(fresh.recordCount).toBe(0);
+        expect(fresh.valid).toBe(true);
+        expect(fresh.errors).toEqual([]);
+      } catch (err) {
+        expect(String((err as Error).message || err)).toMatch(/Engine executable not found|missing_binary/i);
+      }
+    } finally {
+      try {
+        fss.rmSync(freshRoot, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+    }
   });
 
   it('P-12 safety certification is refused without tools or files', async () => {

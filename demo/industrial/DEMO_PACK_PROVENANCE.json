@@ -184,8 +184,8 @@
       "relativePath": "demo/industrial/RUNBOOK.md",
       "category": "runbook",
       "mimeType": "text/markdown",
-      "sha256": "57d50213302f6991a9f3cab6cdb645888e40e6409b196f9fc3d8f5d0e3903426",
-      "byteSize": 12215,
+      "sha256": "f7a5be591e43bf8a27134be61cf0f3fe21c17364780e7b7481d0f6ae7cb1ebfe",
+      "byteSize": 17564,
       "license": "MIT",
       "demoScenarios": [
         "D1",
@@ -204,8 +204,8 @@
       "relativePath": "demo/industrial/PRESENTATION_SCRIPT.md",
       "category": "runbook",
       "mimeType": "text/markdown",
-      "sha256": "f9dccb9656915cde85ded7feb900095df36179dc43553c0d9d447c299b74333c",
-      "byteSize": 6374,
+      "sha256": "616691980b8fc4bb6103a61cc6b84e2115b0e4b8839e220d9474a12a4f102dc8",
+      "byteSize": 9397,
       "license": "MIT",
       "demoScenarios": [
         "D1",

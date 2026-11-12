@@ -81,6 +81,7 @@ const PINNED_DIGEST = 'sha256:ceba1e7f48ac10413f0a75f53c062b917b10c6ba0457f1f67e
 function isDockerRunning(): boolean {
   try {
     execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+    execSync('docker image inspect maos-sandbox-runner:0.3.0-industrial', { stdio: 'ignore', timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -130,11 +131,9 @@ describe('MAOS Industrial — Container Runner Test Suite (F8-02)', () => {
     });
 
     it('creates ContainerRunnerError with typed code and detail', () => {
-      const err = new ContainerRunnerError(
-        CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
-        'Agent not allowed',
-        { agentId: 'malicious' },
-      );
+      const err = new ContainerRunnerError(CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT, 'Agent not allowed', {
+        agentId: 'malicious',
+      });
       expect(err.name).toBe('ContainerRunnerError');
       expect(err.code).toBe('UNAUTHORIZED_AGENT');
       expect(err.message).toContain('[UNAUTHORIZED_AGENT]');
@@ -257,17 +256,13 @@ describe('MAOS Industrial — Container Runner Test Suite (F8-02)', () => {
     });
 
     it('blocks Docker socket paths and root escapes in assertSafeWorkspaceMount', () => {
-      expect(() =>
-        assertSafeWorkspaceMount('/var/run/docker.sock', PROJECT_ROOT),
-      ).toThrow(ContainerRunnerError);
+      expect(() => assertSafeWorkspaceMount('/var/run/docker.sock', PROJECT_ROOT)).toThrow(ContainerRunnerError);
 
-      expect(() =>
-        assertSafeWorkspaceMount('//./pipe/docker_engine', PROJECT_ROOT),
-      ).toThrow(ContainerRunnerError);
+      expect(() => assertSafeWorkspaceMount('//./pipe/docker_engine', PROJECT_ROOT)).toThrow(ContainerRunnerError);
 
-      expect(() =>
-        assertSafeWorkspaceMount(path.resolve(PROJECT_ROOT, '..', 'external'), PROJECT_ROOT),
-      ).toThrow(ContainerRunnerError);
+      expect(() => assertSafeWorkspaceMount(path.resolve(PROJECT_ROOT, '..', 'external'), PROJECT_ROOT)).toThrow(
+        ContainerRunnerError,
+      );
 
       const safePath = assertSafeWorkspaceMount(path.join(PROJECT_ROOT, '.maos'), PROJECT_ROOT);
       expect(safePath).toBe(path.resolve(PROJECT_ROOT, '.maos'));
@@ -311,18 +306,12 @@ describe('MAOS Industrial — Container Runner Test Suite (F8-02)', () => {
     });
 
     it('rejects host executor in industrial mode (HOST_EXECUTOR_FORBIDDEN_IN_INDUSTRIAL)', async () => {
-      await expect(
-        runnerService.execute(
-          { script: 'print(1)' },
-          { executorType: 'host' },
-        ),
-      ).rejects.toThrow(ContainerRunnerError);
+      await expect(runnerService.execute({ script: 'print(1)' }, { executorType: 'host' })).rejects.toThrow(
+        ContainerRunnerError,
+      );
 
       try {
-        await runnerService.execute(
-          { script: 'print(1)' },
-          { executorType: 'host' },
-        );
+        await runnerService.execute({ script: 'print(1)' }, { executorType: 'host' });
       } catch (err: any) {
         expect(err.code).toBe(CONTAINER_RUNNER_ERROR_CODES.HOST_EXECUTOR_FORBIDDEN_IN_INDUSTRIAL);
       }

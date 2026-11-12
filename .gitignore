@@ -56,6 +56,5 @@ artifacts/
 !artifacts/verification/**
 evidence/
 rust/target/
-rust/test.txt
 
 .worktrees/

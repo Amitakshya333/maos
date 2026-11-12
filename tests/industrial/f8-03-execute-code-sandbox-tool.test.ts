@@ -62,14 +62,8 @@ import {
   ContainerRunnerError,
   validateSandboxRunInput,
 } from '../../src/domain/sandbox-run';
-import {
-  ToolApprovalPlanner,
-  ToolPreExecutionContext,
-} from '../../src/industrial/tool-approval-planner';
-import {
-  WorkflowPlan,
-  WorkflowPlanStep,
-} from '../../src/domain/workflow-plan';
+import { ToolApprovalPlanner, ToolPreExecutionContext } from '../../src/industrial/tool-approval-planner';
+import { WorkflowPlan, WorkflowPlanStep } from '../../src/domain/workflow-plan';
 import {
   createServiceContainer,
   SandboxRunnerService,
@@ -85,6 +79,7 @@ const CANARY_EXPECTED_HASH = '1392245502333919f23e58b8f544f12470db3829aabd5336a0
 function isDockerRunning(): boolean {
   try {
     execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+    execSync('docker image inspect maos-sandbox-runner:0.3.0-industrial', { stdio: 'ignore', timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -671,15 +666,11 @@ describe('MAOS Industrial — execute_code_sandbox Tool Test Suite (F8-03)', () 
         agentId: 'coder_agent',
       };
 
-      const result = executeCodeSandboxTool(
-        { script: 'print("LIVE_TOOL_EXECUTION_SUCCESS")' },
-        context,
-        {
-          sandboxRunner: runnerService,
-          audit: auditService,
-          idempotency: idempotencyStore,
-        },
-      );
+      const result = executeCodeSandboxTool({ script: 'print("LIVE_TOOL_EXECUTION_SUCCESS")' }, context, {
+        sandboxRunner: runnerService,
+        audit: auditService,
+        idempotency: idempotencyStore,
+      });
 
       expect(result.ok).toBe(true);
       expect(result.exitCode).toBe(0);
@@ -808,15 +799,11 @@ print(f"MEAN={mean:.1f}|Z0={z_scores[0]:.2f}")
         agentId: 'coder_agent',
       };
 
-      const result = executeCodeSandboxTool(
-        { script: 'raise ValueError("Custom calculation error")' },
-        context,
-        {
-          sandboxRunner: runnerService,
-          audit: auditService,
-          idempotency: idempotencyStore,
-        },
-      );
+      const result = executeCodeSandboxTool({ script: 'raise ValueError("Custom calculation error")' }, context, {
+        sandboxRunner: runnerService,
+        audit: auditService,
+        idempotency: idempotencyStore,
+      });
 
       expect(result.ok).toBe(false);
       expect(result.status).toBe('FAILED');
@@ -882,15 +869,11 @@ print(f"MEAN={mean:.1f}|Z0={z_scores[0]:.2f}")
         agentId: 'coder_agent',
       };
 
-      const result = executeCodeSandboxTool(
-        { script: 'print("CLEANUP_CHECK")' },
-        context,
-        {
-          sandboxRunner: runnerService,
-          audit: auditService,
-          idempotency: idempotencyStore,
-        },
-      );
+      const result = executeCodeSandboxTool({ script: 'print("CLEANUP_CHECK")' }, context, {
+        sandboxRunner: runnerService,
+        audit: auditService,
+        idempotency: idempotencyStore,
+      });
 
       expect(result.ok).toBe(true);
       const containerName = result.containerName;

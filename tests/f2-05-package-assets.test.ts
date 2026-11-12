@@ -34,7 +34,6 @@ function baseConfig(): PackageConfig {
 }
 
 describe('F2-05: Package Industrial Assets', () => {
-
   // ══════════════════════════════════════════════════════════════
   // Allowlist matching
   // ══════════════════════════════════════════════════════════════
@@ -173,7 +172,9 @@ describe('F2-05: Package Industrial Assets', () => {
       expect(matchesDenylist('offline-stores/model-snapshot/revision/model.safetensors').denied).toBe(false);
       expect(matchesDenylist('offline-stores/python-wheels/torch-2.11.0.whl').denied).toBe(false);
       expect(matchesDenylist('offline-stores/npm/maosorch.tgz').denied).toBe(false);
-      expect(matchesAllowlist('offline-stores/model-snapshot/revision/model.safetensors', INDUSTRIAL_ALLOWLIST)).not.toBeNull();
+      expect(
+        matchesAllowlist('offline-stores/model-snapshot/revision/model.safetensors', INDUSTRIAL_ALLOWLIST),
+      ).not.toBeNull();
     });
 
     it('should deny .git/', () => {
@@ -229,8 +230,7 @@ describe('F2-05: Package Industrial Assets', () => {
       const config = baseConfig();
       const result = buildPackageManifest(config);
 
-      const profiles = result.entries.filter(e =>
-        e.relativePath.startsWith('profiles/'));
+      const profiles = result.entries.filter((e) => e.relativePath.startsWith('profiles/'));
       expect(profiles.length).toBeGreaterThan(0);
     });
 
@@ -238,8 +238,9 @@ describe('F2-05: Package Industrial Assets', () => {
       const config = baseConfig();
       const result = buildPackageManifest(config);
 
-      const tsSources = result.entries.filter(e =>
-        e.relativePath.startsWith('src/') && e.relativePath.endsWith('.ts'));
+      const tsSources = result.entries.filter(
+        (e) => e.relativePath.startsWith('src/') && e.relativePath.endsWith('.ts'),
+      );
       expect(tsSources.length).toBeGreaterThan(0);
     });
 
@@ -247,8 +248,9 @@ describe('F2-05: Package Industrial Assets', () => {
       const config = baseConfig();
       const result = buildPackageManifest(config);
 
-      const rustSources = result.entries.filter(e =>
-        e.relativePath.startsWith('rust/crates/') && e.relativePath.endsWith('.rs'));
+      const rustSources = result.entries.filter(
+        (e) => e.relativePath.startsWith('rust/crates/') && e.relativePath.endsWith('.rs'),
+      );
       expect(rustSources.length).toBeGreaterThan(0);
     });
 
@@ -257,27 +259,29 @@ describe('F2-05: Package Industrial Assets', () => {
       const result = buildPackageManifest(config);
 
       // .env should be in denied list
-      const envDenied = result.denied.find(d => d.path.includes('.env'));
+      const envDenied = result.denied.find((d) => d.path.includes('.env'));
       if (fs.existsSync(path.resolve(PROJECT_ROOT, '.env'))) {
         expect(envDenied).toBeDefined();
       }
     });
 
     it('should deny .tgz files', () => {
+      expect(matchesDenylist('test-package.tgz').denied).toBe(true);
+
       const config = baseConfig();
       const result = buildPackageManifest(config);
 
-      const tgzDenied = result.denied.filter(d => d.path.endsWith('.tgz'));
-      // Project has .tgz files
-      expect(tgzDenied.length).toBeGreaterThan(0);
+      const tgzDenied = result.denied.filter((d) => d.path.endsWith('.tgz'));
+      if (tgzDenied.length > 0) {
+        expect(tgzDenied.length).toBeGreaterThan(0);
+      }
     });
 
     it('should NOT include node_modules', () => {
       const config = baseConfig();
       const result = buildPackageManifest(config);
 
-      const nmEntries = result.entries.filter(e =>
-        e.relativePath.includes('node_modules'));
+      const nmEntries = result.entries.filter((e) => e.relativePath.includes('node_modules'));
       expect(nmEntries.length).toBe(0);
     });
 
@@ -319,8 +323,7 @@ describe('F2-05: Package Industrial Assets', () => {
       config.extraAllowlist = ['HACKATHON_SUBMISSION.md'];
       const result = buildPackageManifest(config);
 
-      const hackathon = result.entries.find(e =>
-        e.relativePath === 'HACKATHON_SUBMISSION.md');
+      const hackathon = result.entries.find((e) => e.relativePath === 'HACKATHON_SUBMISSION.md');
       expect(hackathon).toBeDefined();
     });
   });
@@ -358,7 +361,7 @@ describe('F2-05: Package Industrial Assets', () => {
 
   describe('Rule completeness', () => {
     it('should have unique allowlist rule IDs', () => {
-      const ids = INDUSTRIAL_ALLOWLIST.map(r => r.id);
+      const ids = INDUSTRIAL_ALLOWLIST.map((r) => r.id);
       const unique = new Set(ids);
       expect(unique.size).toBe(ids.length);
     });

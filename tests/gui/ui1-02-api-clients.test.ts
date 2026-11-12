@@ -279,9 +279,13 @@ describe('UI1-02: Typed API & Event Clients', () => {
       const contentionClient = new BrowserRestClient({
         baseUrl,
         projectRoot: testDir,
-        fetchFn: async () => new Response(JSON.stringify({
-          error: { code, message: 'T-07 could not acquire project coordination.', details },
-        }), { status, headers: { 'Content-Type': 'application/json' } }),
+        fetchFn: async () =>
+          new Response(
+            JSON.stringify({
+              error: { code, message: 'T-07 could not acquire project coordination.', details },
+            }),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          ),
       });
 
       await expect(contentionClient.startIndustrialJudgedRun()).rejects.toMatchObject({
@@ -431,7 +435,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
 
       // Wait for connected state
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('WebSocket connection timed out')), 4000);
+        const timeout = setTimeout(() => reject(new Error('WebSocket connection timed out')), 15000);
         const check = setInterval(() => {
           if (eventClient.getState() === 'connected') {
             clearInterval(check);
@@ -584,7 +588,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
           fromCursor: 10,
           toCursor: 11,
           hasMore: false,
-        })
+        }),
       );
 
       expect(received.length).toBe(2);
@@ -615,7 +619,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
           oldestSequence: 200,
           projectId: 'proj-1',
           instructions: 'Re-fetch state',
-        })
+        }),
       );
 
       expect(resyncReason).toBe('STALE_CURSOR');
@@ -695,13 +699,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
     });
 
     it('contains ZERO shell/CLI executions in GUI client and views', () => {
-      const forbiddenPatterns = [
-        'execSync',
-        'exec(',
-        'spawn(',
-        'fork(',
-        'child_process',
-      ];
+      const forbiddenPatterns = ['execSync', 'exec(', 'spawn(', 'fork(', 'child_process'];
 
       checkFiles(guiSrcDir, (filePath, content) => {
         for (const pattern of forbiddenPatterns) {

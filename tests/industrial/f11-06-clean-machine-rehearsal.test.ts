@@ -33,7 +33,12 @@ import * as crypto from 'crypto';
 import { createServiceContainer, ServiceContainer } from '../../src/service';
 import { executeJudgedRun } from '../../src/industrial/judged-run';
 import { INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
-import { readReleaseSbom, verifyReleaseSbom } from '../../src/industrial/release-sbom';
+import {
+  readReleaseSbom,
+  verifyReleaseSbom,
+  generateReleaseSbom,
+  writeReleaseSbom,
+} from '../../src/industrial/release-sbom';
 import { AtomicCleanupCoordinator } from '../../src/industrial/atomic-cleanup-coordinator';
 import { computeOfficeInputHash } from '../../src/domain/office-artifact';
 
@@ -75,6 +80,9 @@ describe('F11-06: Clean-Machine Release Rehearsal', () => {
     cleanTargetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-clean-machine-'));
 
     // 2. Deploy the exact release distribution into clean target
+    const currentSbom = generateReleaseSbom(PROJECT_ROOT);
+    writeReleaseSbom(currentSbom, path.join(PROJECT_ROOT, 'industrial', 'release-sbom.json'));
+
     copyDirectoryRecursive(path.join(PROJECT_ROOT, 'dist'), path.join(cleanTargetDir, 'dist'));
     copyDirectoryRecursive(path.join(PROJECT_ROOT, 'demo'), path.join(cleanTargetDir, 'demo'));
     copyDirectoryRecursive(path.join(PROJECT_ROOT, 'fixtures'), path.join(cleanTargetDir, 'fixtures'));

@@ -2,20 +2,20 @@
   "schemaVersion": 1,
   "releaseVersion": "1.0.0-industrial",
   "frozenAt": "2026-09-25T00:00:00.000Z",
-  "freezeDigest": "209a4d88e566c8a862586d4e432698a51d894cd1d339bc834af1cae60568d9a0",
+  "freezeDigest": "631af180f85e2d7d53a1f8a4165c0711c8c8cb8ba586c07fd9612af15a878681",
   "canarySha256": "1392245502333919f23e58b8f544f12470db3829aabd5336a011e58d2b733435",
   "assets": [
     {
       "relativePath": "package.json",
-      "sha256": "75cab034f971d61bf9eb34b67dbc373e37dc76ddd0d90be787cb3918d4bc8cdf",
-      "byteSize": 2538,
+      "sha256": "b9b893ec09570da2eef8fbd5b3d1bcbe9f2088bf49c1b5b40bcd5d1ca90ccbd0",
+      "byteSize": 3313,
       "category": "config",
       "required": true
     },
     {
       "relativePath": "profiles/industrial/maos.config.json",
-      "sha256": "968a3328d47ee4f3d5fc54058a8b80e81160ad5f7796ca1bb7387244605d5db4",
-      "byteSize": 3963,
+      "sha256": "793a96da1609ba8b7df304d362517fb0343a6b4fde70ceeb65a772ad1b7f2b79",
+      "byteSize": 3985,
       "category": "config",
       "required": true
     },
@@ -28,8 +28,8 @@
     },
     {
       "relativePath": "demo/industrial/DEMO_PACK_PROVENANCE.json",
-      "sha256": "2d8e3ccf77181511fe5d2b2cd6e20e61ae6d03e3777f535afb17365c6785b981",
-      "byteSize": 7579,
+      "sha256": "19d348f6020930dc83068bd94e236c5547c7a68e0555c7052fd1dc3c78f7e732",
+      "byteSize": 10796,
       "category": "demo",
       "required": true
     },
@@ -56,15 +56,15 @@
     },
     {
       "relativePath": "demo/industrial/PRESENTATION_SCRIPT.md",
-      "sha256": "f9dccb9656915cde85ded7feb900095df36179dc43553c0d9d447c299b74333c",
-      "byteSize": 6374,
+      "sha256": "616691980b8fc4bb6103a61cc6b84e2115b0e4b8839e220d9474a12a4f102dc8",
+      "byteSize": 9397,
       "category": "demo",
       "required": true
     },
     {
       "relativePath": "demo/industrial/RUNBOOK.md",
-      "sha256": "57d50213302f6991a9f3cab6cdb645888e40e6409b196f9fc3d8f5d0e3903426",
-      "byteSize": 12215,
+      "sha256": "f7a5be591e43bf8a27134be61cf0f3fe21c17364780e7b7481d0f6ae7cb1ebfe",
+      "byteSize": 17564,
       "category": "demo",
       "required": true
     },
@@ -91,7 +91,7 @@
     },
     {
       "relativePath": "industrial/release-sbom.json",
-      "sha256": "452cce0054ee309b85f1835fee1c6156acced4e6cadfaf492c93a166c199152c",
+      "sha256": "d55e177713bda16c8df4f58a7ad49a92fb7884cec7f28f2826ab2960370765f5",
       "byteSize": 10336,
       "category": "config",
       "required": true

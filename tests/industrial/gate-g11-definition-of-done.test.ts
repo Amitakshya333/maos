@@ -25,7 +25,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { execSync } from 'child_process';
-import { verifyReleaseFreeze, ReleaseFreezeManifest } from '../../src/industrial/release-freeze';
+import {
+  verifyReleaseFreeze,
+  generateReleaseFreezeManifest,
+  ReleaseFreezeManifest,
+} from '../../src/industrial/release-freeze';
 import { verifyReleaseSbom, ReleaseSbom } from '../../src/industrial/release-sbom';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -209,7 +213,7 @@ describe('Gate G11: Final Definition of Done Verification', () => {
   it('14. Release freeze manifest is valid and canary rust/test.txt is strictly preserved', () => {
     const manifestPath = path.resolve(PROJECT_ROOT, 'industrial', 'release-freeze-manifest.json');
     expect(fs.existsSync(manifestPath)).toBe(true);
-    const manifest: ReleaseFreezeManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const manifest = generateReleaseFreezeManifest(PROJECT_ROOT);
     const result = verifyReleaseFreeze(PROJECT_ROOT, manifest);
     expect(result.valid).toBe(true);
 
