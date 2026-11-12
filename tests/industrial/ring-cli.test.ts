@@ -72,19 +72,11 @@ function makeServices(root: string, providerFactory?: () => IProvider) {
   return { ringAgent, ringThread, audit };
 }
 
-function waitForText(
-  output: PassThrough,
-  readText: () => string,
-  text: string,
-  after = 0,
-): Promise<void> {
+function waitForText(output: PassThrough, readText: () => string, text: string, after = 0): Promise<void> {
   if (readText().slice(after).includes(text)) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
-      () =>
-        finish(
-          new Error(`Timed out waiting for CLI output: ${text}\n${readText()}`),
-        ),
+      () => finish(new Error(`Timed out waiting for CLI output: ${text}\n${readText()}`)),
       15000,
     );
     const onData = (): void => {
@@ -100,9 +92,7 @@ function waitForText(
   });
 }
 
-function hostedMockProvider(
-  onGenerate?: (turn: number) => ProviderResponse,
-): () => IProvider {
+function hostedMockProvider(onGenerate?: (turn: number) => ProviderResponse): () => IProvider {
   let turn = 0;
   const provider: IProvider = {
     name: 'fake-ring-cli-loopback',
@@ -170,7 +160,7 @@ function seedEngine(root: string): void {
   const exe = process.platform === 'win32' ? 'maos-engine.exe' : 'maos-engine';
   const candidates = [
     path.resolve(__dirname, '../../rust/target/release', exe),
-    `C:/maos/rust/target/release/${exe}`,
+    path.resolve(process.cwd(), 'rust/target/release', exe),
   ];
   const found = candidates.find((c) => {
     try {
@@ -272,9 +262,7 @@ describe('TASK DEV-A-CLI-01: Ring CLI (evidence-only)', () => {
     await sendCommand(input, output, readText, '/rca turbine vibration', 'ROOT-CAUSE');
 
     const refuseAt = await sendCommand(input, output, readText, 'Approve the turbine restart now', 'cannot approve');
-    expect(
-      isRingRefusalAnswer(transcript.slice(refuseAt)),
-    ).toBe(true);
+    expect(isRingRefusalAnswer(transcript.slice(refuseAt))).toBe(true);
 
     await sendCommand(input, output, readText, '/verify', 'Audit chain: valid');
 
@@ -481,7 +469,10 @@ describe('TASK DEV-A-CLI-01: Ring CLI (evidence-only)', () => {
 
   it('mocked hosted streaming: deltas arrive live, labelled fallback when silent', async () => {
     // Live deltas: streamed text prints as it arrives (no label).
-    const streamed = makeServices(root, streamingMockProvider(['Turbine ', 'T-07 CRITICAL.'], 'Turbine T-07 CRITICAL.'));
+    const streamed = makeServices(
+      root,
+      streamingMockProvider(['Turbine ', 'T-07 CRITICAL.'], 'Turbine T-07 CRITICAL.'),
+    );
     const input = new PassThrough();
     const output = new PassThrough();
     let transcript = '';

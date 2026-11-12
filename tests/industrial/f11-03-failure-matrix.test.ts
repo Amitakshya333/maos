@@ -26,15 +26,8 @@ import * as crypto from 'crypto';
 import * as zlib from 'zlib';
 
 import { createServiceContainer, ServiceContainer } from '../../src/service';
-import {
-  verifyExecutable,
-  getDefaultEnginePath,
-  EngineError,
-} from '../../src/industrial/rust-engine-bridge';
-import {
-  runIndustrialPreflight,
-  INDUSTRIAL_CLI_EXIT,
-} from '../../src/industrial/industrial-cli';
+import { verifyExecutable, getDefaultEnginePath, EngineError } from '../../src/industrial/rust-engine-bridge';
+import { runIndustrialPreflight, INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
 import { createProjectServiceHost, ProjectServiceHost } from '../../src/service/project-service/host';
 import { executeOcrDocumentTool } from '../../src/integrations/tools';
 import { OcrDocumentInput, OcrError } from '../../src/domain/ocr';
@@ -235,6 +228,7 @@ describe('F11-03: System Failure Matrix & Safe Recovery', () => {
       try {
         const { execSync } = require('child_process');
         execSync('docker info', { stdio: 'ignore', timeout: 3000 });
+        execSync('docker image inspect maos-sandbox-runner:0.3.0-industrial', { stdio: 'ignore' });
         dockerAlive = true;
       } catch {
         dockerAlive = false;

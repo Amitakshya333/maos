@@ -41,11 +41,7 @@ import {
   validateResolvedObservation,
   isKnownSafetyKey,
 } from '../../src/domain/conflict';
-import {
-  createServiceContainer,
-  ServiceContainer,
-  ConflictReviewService,
-} from '../../src/service';
+import { createServiceContainer, ServiceContainer, ConflictReviewService } from '../../src/service';
 
 describe('F4-06: OCR/VLM Conflict Review', () => {
   const TEST_TXT_INVARIANT = '1392245502333919F23E58B8F544F12470DB3829AABD5336A011E58D2B733435';
@@ -289,7 +285,7 @@ describe('F4-06: OCR/VLM Conflict Review', () => {
     it('classifies CONFIDENCE_DISAGREEMENT when confidence is low or delta is large', () => {
       // Delta >= 0.40
       const ocrObs = createOcrObs({ rawValue: '15.0 mm', confidence: 0.98 });
-      const visObs = createVisionObs({ rawValue: '15.0 mm', confidence: 0.50 });
+      const visObs = createVisionObs({ rawValue: '15.0 mm', confidence: 0.5 });
 
       const item = classifyObservationConflict('dimension_x', ocrObs, visObs);
       expect(item.classification).toBe('CONFIDENCE_DISAGREEMENT');
@@ -393,7 +389,7 @@ describe('F4-06: OCR/VLM Conflict Review', () => {
       const visObs = createVisionObs({
         key: 'pipe_diameter',
         rawValue: '50.8 mm',
-        confidence: 0.90,
+        confidence: 0.9,
       });
 
       report = await conflictService.compareAndPersist({
@@ -909,7 +905,7 @@ describe('F4-06: OCR/VLM Conflict Review', () => {
 
   describe('11. Protected Invariant', () => {
     it('preserves rust/test.txt SHA-256 hash across all operations', () => {
-      const testTxtPath = path.resolve('c:/maos/rust/test.txt');
+      const testTxtPath = path.resolve(__dirname, '../../rust/test.txt');
       expect(fs.existsSync(testTxtPath)).toBe(true);
       const content = fs.readFileSync(testTxtPath);
       const hash = crypto.createHash('sha256').update(content).digest('hex').toUpperCase();

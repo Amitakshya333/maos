@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "traceId": "F8-06-RMS-turbine-vibration",
+  "title": "Turbine Vibration RMS Calculation Trace",
+  "calculationType": "RMS",
+  "formula": "RMS = sqrt((x₁² + x₂² + ... + xₙ²) / n)",
+  "formulaLatex": "\\text{RMS} = \\sqrt{\\frac{1}{n}\\sum_{i=1}^n x_i^2}",
+  "provenance": {
+    "sourceFile": "demo/industrial/turbine_vibration_log.csv",
+    "sourceFileHash": "d2c310035a20066f71f0c367eacb9600ea8fa048821b8290335dc913b1b568a6",
+    "rowCount": 500,
+    "measurementField": "vibration_rms_mm_s",
+    "unit": "mm/s",
+    "generatedAt": "2026-09-23T19:33:32.629Z",
+    "agentId": "analyst_agent"
+  },
+  "intermediates": {
+    "sampleCount": 500,
+    "sumOfSquares": 3477.1744999999996,
+    "sumOfSquaresUnit": "(mm/s)²",
+    "meanSquare": 6.954349,
+    "meanSquareUnit": "(mm/s)²",
+    "unroundedResult": 2.637109971161612,
+    "roundingPolicy": "round_half_up",
+    "roundingDecimals": 5,
+    "roundedResult": 2.63711,
+    "finalUnit": "mm/s"
+  },
+  "thresholdEvaluation": {
+    "warningThreshold": 4.5,
+    "criticalThreshold": 7.1,
+    "unit": "mm/s",
+    "warningRowIds": [
+      121,
+      367
+    ],
+    "criticalRowIds": [
+      367
+    ],
+    "overallStatus": "CRITICAL"
+  },
+  "citations": [
+    {
+      "citationId": "ISO-10816-3",
+      "documentTitle": "Mechanical vibration — Evaluation of machine vibration by measurements on non-rotating parts — Part 3: Industrial machines",
+      "sectionOrPage": "Section 4.2: Vibration Velocity RMS Evaluation Zones",
+      "notes": "Prescribes 4.5 mm/s warning threshold (Zone C) and 7.1 mm/s critical limit (Zone D)."
+    }
+  ],
+  "traceHash": "c60689d778db972a892c0a3b04addf108f32279220b1ffe57ffdf973159b0d8d"
+}

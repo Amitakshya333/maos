@@ -51,9 +51,11 @@ __pycache__/
 !.maos/maos.config.json
 !.maos/pool.json
 offline-stores/
-artifacts/
+artifacts/*
 !artifacts/verification/
 !artifacts/verification/**
+!artifacts/calculation-traces/
+!artifacts/calculation-traces/**
 evidence/
 rust/target/
 

@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 function createTarHeader(name, size, mode = 0o644) {
   const buf = Buffer.alloc(512);
@@ -55,18 +56,32 @@ function createTarFileEntry(name, contentBuffer) {
   return Buffer.concat([header, contentBuffer, padding]);
 }
 
-function buildDockerArchive(outputPath) {
-  const configId = 'd82e85a083f2e6e3c1553c43717df398579978687ff024dc5dbb37494498ec51';
-  const layerId = '3a74b1e3e010839a9c148cf41f64f4345d65457ef4582bc0e50f3aa8f5664157';
-  const repoTag = 'maos-sandbox-runner:0.3.0-industrial';
+function buildDockerArchive(outputPath, options = {}) {
+  const hollow = options && options.hollow === true;
 
-  const manifest = [
-    {
-      Config: `${configId}.json`,
-      RepoTags: [repoTag],
-      Layers: [`${layerId}/layer.tar`],
-    },
-  ];
+  let layerTar;
+  if (hollow) {
+    layerTar = Buffer.alloc(1024); // Minimal valid empty tar (two 512-byte zero blocks)
+  } else {
+    const pyEntry = createTarFileEntry('bin/python3', Buffer.from('#!/usr/bin/env python3\nprint("sandbox python")\n', 'utf8'));
+    const wsEntry = createTarFileEntry('sandbox/workspace/', Buffer.alloc(0));
+    const npEntry = createTarFileEntry('lib/python3.11/site-packages/numpy/__init__.py', Buffer.from('# numpy\n', 'utf8'));
+    const layerEnd = Buffer.alloc(1024);
+    layerTar = Buffer.concat([pyEntry, wsEntry, npEntry, layerEnd]);
+  }
+
+  let layerId;
+  let configId;
+
+  if (hollow) {
+    // Intentional synthetic hash mismatches for negative rejection testing
+    configId = 'd82e85a083f2e6e3c1553c43717df398579978687ff024dc5dbb37494498ec51';
+    layerId = '3a74b1e3e010839a9c148cf41f64f4345d65457ef4582bc0e50f3aa8f5664157';
+  } else {
+    layerId = crypto.createHash('sha256').update(layerTar).digest('hex');
+  }
+
+  const repoTag = 'maos-sandbox-runner:0.3.0-industrial';
 
   const configJson = {
     architecture: 'amd64',
@@ -87,17 +102,28 @@ function buildDockerArchive(outputPath) {
     },
   };
 
+  const configBuffer = Buffer.from(JSON.stringify(configJson, null, 2), 'utf8');
+  if (!hollow) {
+    configId = crypto.createHash('sha256').update(configBuffer).digest('hex');
+  }
+
+  const manifest = [
+    {
+      Config: `${configId}.json`,
+      RepoTags: [repoTag],
+      Layers: [`${layerId}/layer.tar`],
+    },
+  ];
+
   const repositories = {
     'maos-sandbox-runner': {
       '0.3.0-industrial': layerId,
     },
   };
 
-  const layerTar = Buffer.alloc(1024); // Minimal valid empty tar (two 512-byte zero blocks)
-
   const entries = [
     createTarFileEntry('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8')),
-    createTarFileEntry(`${configId}.json`, Buffer.from(JSON.stringify(configJson, null, 2), 'utf8')),
+    createTarFileEntry(`${configId}.json`, configBuffer),
     createTarFileEntry('repositories', Buffer.from(JSON.stringify(repositories, null, 2), 'utf8')),
     createTarFileEntry(`${layerId}/VERSION`, Buffer.from('1.0\n', 'utf8')),
     createTarFileEntry(
