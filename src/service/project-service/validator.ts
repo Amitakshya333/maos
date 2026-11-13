@@ -144,7 +144,18 @@ export function validateProjectFolder(
   // Check if realpath differed from resolved path due to symlink escape
   if (!options.allowSymlinks) {
     const directResolved = path.resolve(rawPath);
-    if (directResolved.toLowerCase() !== canonicalPath.toLowerCase()) {
+    const isDarwinVarSymlink =
+      process.platform === 'darwin' &&
+      ((directResolved.startsWith('/var/') &&
+        canonicalPath.startsWith('/private/var/') &&
+        directResolved.slice(4) === canonicalPath.slice(12)) ||
+        (directResolved.startsWith('/tmp/') &&
+          canonicalPath.startsWith('/private/tmp/') &&
+          directResolved.slice(4) === canonicalPath.slice(12)) ||
+        (directResolved.startsWith('/etc/') &&
+          canonicalPath.startsWith('/private/etc/') &&
+          directResolved.slice(4) === canonicalPath.slice(12)));
+    if (!isDarwinVarSymlink && directResolved.toLowerCase() !== canonicalPath.toLowerCase()) {
       return {
         valid: false,
         code: 'SYMLINK_PROJECT_ROOT_FORBIDDEN',
@@ -155,13 +166,23 @@ export function validateProjectFolder(
 
   // 5. Unsafe temporary location check
   if (!options.allowTemp) {
-    const tempRoot = path.resolve(os.tmpdir()).toLowerCase();
+    const rawTempRoot = path.resolve(os.tmpdir()).toLowerCase();
+    let realTempRoot = rawTempRoot;
+    try {
+      realTempRoot = fs.realpathSync(rawTempRoot).toLowerCase();
+    } catch {}
+
     const resolvedLower = canonicalPath.toLowerCase();
-    if (resolvedLower === tempRoot || resolvedLower.startsWith(tempRoot + path.sep)) {
+    if (
+      resolvedLower === rawTempRoot ||
+      resolvedLower.startsWith(rawTempRoot + path.sep) ||
+      resolvedLower === realTempRoot ||
+      resolvedLower.startsWith(realTempRoot + path.sep)
+    ) {
       return {
         valid: false,
         code: 'UNSAFE_TEMP_PROJECT_ROOT',
-        message: `Project root '${canonicalPath}' is located inside the system temporary directory '${tempRoot}'. Opening projects in temporary directories is unsafe without explicit authorization.`,
+        message: `Project root '${canonicalPath}' is located inside the system temporary directory '${rawTempRoot}'. Opening projects in temporary directories is unsafe without explicit authorization.`,
       };
     }
   }
@@ -219,7 +240,12 @@ export function validateProjectFolder(
     const configLinkStat = fs.lstatSync(configPath);
     const canonicalConfigPath = fs.realpathSync(configPath);
     const configRelative = path.relative(maosDir, canonicalConfigPath);
-    if (configLinkStat.isSymbolicLink() || !configRelative || configRelative.startsWith('..') || path.isAbsolute(configRelative)) {
+    if (
+      configLinkStat.isSymbolicLink() ||
+      !configRelative ||
+      configRelative.startsWith('..') ||
+      path.isAbsolute(configRelative)
+    ) {
       return {
         valid: false,
         code: 'SYMLINK_PROJECT_CONFIG_FORBIDDEN',

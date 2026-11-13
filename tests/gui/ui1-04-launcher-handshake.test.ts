@@ -29,10 +29,7 @@ import {
   LaunchedProjectHost,
   resolveEntrypoint,
 } from '../../src/service/project-service/launcher';
-import {
-  computeProjectRootHash,
-  readServiceIdentity,
-} from '../../src/service/project-service/instance-identity';
+import { computeProjectRootHash, readServiceIdentity } from '../../src/service/project-service/instance-identity';
 
 function createValidProjectStructure(projectDir: string, configOverrides: Record<string, any> = {}): void {
   const maosDir = path.join(projectDir, '.maos');
@@ -72,7 +69,6 @@ function createValidProjectStructure(projectDir: string, configOverrides: Record
 
   fs.writeFileSync(path.join(maosDir, 'maos.config.json'), JSON.stringify(config, null, 2), 'utf-8');
 }
-
 
 function makeHttpRequest(
   port: number,
@@ -136,7 +132,14 @@ describe('UI1-04: Launcher Handshake and Project Validation', () => {
   const spawnedPids: number[] = [];
 
   beforeAll(() => {
-    tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-04-test-'));
+    tempBaseDir = (() => {
+      const p = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-04-test-'));
+      try {
+        return fs.realpathSync(p);
+      } catch {
+        return p;
+      }
+    })();
     // Create a local directory within workspace for testing non-temp rules
     nonTempBaseDir = path.join(process.cwd(), '.tmp-ui1-04-workspace-test');
     if (!fs.existsSync(nonTempBaseDir)) {
@@ -261,11 +264,7 @@ describe('UI1-04: Launcher Handshake and Project Validation', () => {
       const noVersionDir = path.join(tempBaseDir, 'no-version-proj');
       const maosDir = path.join(noVersionDir, '.maos');
       fs.mkdirSync(maosDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(maosDir, 'maos.config.json'),
-        JSON.stringify({ projectName: 'no-version' }),
-        'utf-8',
-      );
+      fs.writeFileSync(path.join(maosDir, 'maos.config.json'), JSON.stringify({ projectName: 'no-version' }), 'utf-8');
 
       const result = validateProjectFolder(noVersionDir, { allowTemp: true });
       expect(result.valid).toBe(false);
@@ -391,8 +390,6 @@ describe('UI1-04: Launcher Handshake and Project Validation', () => {
       expect(healthRes.body.data.serviceInstanceId).toBe(host.serviceInstanceId);
       expect(healthRes.body.data.servicePort).toBe(host.port);
 
-
-
       // (i) Clean shutdown
       await host.stop();
       expect(host.isAlive()).toBe(false);
@@ -435,11 +432,23 @@ describe('UI1-04: Launcher Handshake and Project Validation', () => {
       expect(wrongOrigin.status).toBe(403);
       expect(wrongOrigin.body.error.code).toBe('FORBIDDEN_ORIGIN');
 
-      const missingSession = await makeHttpRequest(host.port, '/api/v1/project', undefined, testProjectDir, rendererOrigin);
+      const missingSession = await makeHttpRequest(
+        host.port,
+        '/api/v1/project',
+        undefined,
+        testProjectDir,
+        rendererOrigin,
+      );
       expect(missingSession.status).toBe(401);
       expect(missingSession.body.error.code).toBe('AUTH_REQUIRED');
 
-      const wrongProject = await makeHttpRequest(host.port, '/api/v1/project', session.token, otherProject, rendererOrigin);
+      const wrongProject = await makeHttpRequest(
+        host.port,
+        '/api/v1/project',
+        session.token,
+        otherProject,
+        rendererOrigin,
+      );
       expect(wrongProject.status).toBe(400);
       expect(wrongProject.body.error.code).toBe('PROJECT_SCOPE_MISMATCH');
 
@@ -812,12 +821,10 @@ describe('UI1-04: Launcher Handshake and Project Validation', () => {
       const resA = await makeHttpRequest(hostA.port, '/api/v1/project', sessionA.token, projA);
       const resB = await makeHttpRequest(hostB.port, '/api/v1/project', sessionB.token, projB);
 
-
       expect(resA.status).toBe(200);
       expect(resB.status).toBe(200);
       expect(resA.body.data.projectName).toBe('project-a');
       expect(resB.body.data.projectName).toBe('project-b');
-
 
       await launcher.stopAll();
       expect(hostA.isAlive()).toBe(false);

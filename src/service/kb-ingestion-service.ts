@@ -104,11 +104,7 @@ export interface ExtractedPage {
 
 // ── Text Extraction Implementations ─────────────────────────────────
 
-function extractText(
-  content: Buffer,
-  mimeType: KbDocumentMimeType,
-  filePath: string,
-): ExtractedText {
+function extractText(content: Buffer, mimeType: KbDocumentMimeType, filePath: string): ExtractedText {
   switch (mimeType) {
     case 'text/plain':
     case 'text/csv':
@@ -119,11 +115,10 @@ function extractText(
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       return extractDocxText(content, filePath);
     default:
-      throw new KbIngestionError(
-        'UNSUPPORTED_TYPE',
-        `No extraction engine for MIME type: ${mimeType}`,
-        { mimeType, filePath },
-      );
+      throw new KbIngestionError('UNSUPPORTED_TYPE', `No extraction engine for MIME type: ${mimeType}`, {
+        mimeType,
+        filePath,
+      });
   }
 }
 
@@ -137,38 +132,30 @@ function extractPlainText(content: Buffer, filePath: string): ExtractedText {
   try {
     rawText = content.toString('utf-8');
   } catch {
-    throw new KbIngestionError(
-      'MALFORMED_DOCUMENT',
-      'Failed to decode text content as UTF-8',
-      { filePath },
-    );
+    throw new KbIngestionError('MALFORMED_DOCUMENT', 'Failed to decode text content as UTF-8', { filePath });
   }
 
   // Detect binary content
   if (hasBinaryBytes(content)) {
-    throw new KbIngestionError(
-      'MALFORMED_DOCUMENT',
-      'File appears to contain binary data, not valid text',
-      { filePath },
-    );
+    throw new KbIngestionError('MALFORMED_DOCUMENT', 'File appears to contain binary data, not valid text', {
+      filePath,
+    });
   }
 
   if (rawText.trim().length === 0) {
-    throw new KbIngestionError(
-      'EMPTY_DOCUMENT',
-      'Document contains no extractable text',
-      { filePath },
-    );
+    throw new KbIngestionError('EMPTY_DOCUMENT', 'Document contains no extractable text', { filePath });
   }
 
   const sections = detectSections(rawText, filePath);
-  const pages: ExtractedPage[] = [{
-    pageNumber: 1,
-    text: rawText,
-    charOffsetStart: 0,
-    charOffsetEnd: rawText.length,
-    sectionHeading: sections.length > 0 ? sections[0] : null,
-  }];
+  const pages: ExtractedPage[] = [
+    {
+      pageNumber: 1,
+      text: rawText,
+      charOffsetStart: 0,
+      charOffsetEnd: rawText.length,
+      sectionHeading: sections.length > 0 ? sections[0] : null,
+    },
+  ];
 
   return { text: rawText, pages, warnings };
 }
@@ -182,11 +169,7 @@ function extractPdfText(content: Buffer, filePath: string): ExtractedText {
 
   // Validate PDF magic bytes
   if (content.length < 5 || content.subarray(0, 5).toString('ascii') !== '%PDF-') {
-    throw new KbIngestionError(
-      'MALFORMED_DOCUMENT',
-      'File does not have valid PDF magic bytes (%PDF-)',
-      { filePath },
-    );
+    throw new KbIngestionError('MALFORMED_DOCUMENT', 'File does not have valid PDF magic bytes (%PDF-)', { filePath });
   }
 
   // Check for encryption markers
@@ -291,29 +274,23 @@ function decodePdfString(s: string): string {
 function extractDocxText(content: Buffer, filePath: string): ExtractedText {
   const warnings: string[] = [];
 
-  if (content.length < 4 || content[0] !== 0x50 || content[1] !== 0x4B) {
-    throw new KbIngestionError(
-      'MALFORMED_DOCUMENT',
-      'File does not have valid DOCX/ZIP magic bytes (PK)',
-      { filePath },
-    );
+  if (content.length < 4 || content[0] !== 0x50 || content[1] !== 0x4b) {
+    throw new KbIngestionError('MALFORMED_DOCUMENT', 'File does not have valid DOCX/ZIP magic bytes (PK)', {
+      filePath,
+    });
   }
 
   if (content.includes(Buffer.from('EncryptedPackage'))) {
-    throw new KbIngestionError(
-      'ENCRYPTED_DOCUMENT',
-      'DOCX appears to be encrypted — cannot extract text',
-      { filePath },
-    );
+    throw new KbIngestionError('ENCRYPTED_DOCUMENT', 'DOCX appears to be encrypted — cannot extract text', {
+      filePath,
+    });
   }
 
   const documentXml = extractZipEntry(content, 'word/document.xml');
   if (!documentXml) {
-    throw new KbIngestionError(
-      'MALFORMED_DOCUMENT',
-      'DOCX missing word/document.xml — not a valid Word document',
-      { filePath },
-    );
+    throw new KbIngestionError('MALFORMED_DOCUMENT', 'DOCX missing word/document.xml — not a valid Word document', {
+      filePath,
+    });
   }
 
   const xmlString = documentXml.toString('utf-8');
@@ -345,20 +322,18 @@ function extractDocxText(content: Buffer, filePath: string): ExtractedText {
   const fullText = paragraphs.join('\n');
 
   if (fullText.trim().length === 0) {
-    throw new KbIngestionError(
-      'EMPTY_DOCUMENT',
-      'DOCX contains no extractable text',
-      { filePath },
-    );
+    throw new KbIngestionError('EMPTY_DOCUMENT', 'DOCX contains no extractable text', { filePath });
   }
 
-  const pages: ExtractedPage[] = [{
-    pageNumber: 1,
-    text: fullText,
-    charOffsetStart: 0,
-    charOffsetEnd: fullText.length,
-    sectionHeading: sectionHeadings.length > 0 ? sectionHeadings[0] : null,
-  }];
+  const pages: ExtractedPage[] = [
+    {
+      pageNumber: 1,
+      text: fullText,
+      charOffsetStart: 0,
+      charOffsetEnd: fullText.length,
+      sectionHeading: sectionHeadings.length > 0 ? sectionHeadings[0] : null,
+    },
+  ];
 
   if (sectionHeadings.length > 0) {
     warnings.push(`Detected ${sectionHeadings.length} section heading(s)`);
@@ -424,13 +399,13 @@ function findEOCD(buf: Buffer): number {
 
 export function normalizeText(raw: string): string {
   return raw
-    .normalize('NFC')           // Stable Unicode NFC
-    .replace(/\r\n/g, '\n')     // CRLF → LF
-    .replace(/\r/g, '\n')       // CR → LF
-    .replace(/[\t ]+/g, ' ')    // Collapse horizontal whitespace
+    .normalize('NFC') // Stable Unicode NFC
+    .replace(/\r\n/g, '\n') // CRLF → LF
+    .replace(/\r/g, '\n') // CR → LF
+    .replace(/[\t ]+/g, ' ') // Collapse horizontal whitespace
     .replace(/\n{3,}/g, '\n\n') // Collapse excessive blank lines
-    .replace(/ +\n/g, '\n')     // Trim trailing spaces on lines
-    .replace(/\n +/g, '\n');    // Trim leading spaces on lines
+    .replace(/ +\n/g, '\n') // Trim trailing spaces on lines
+    .replace(/\n +/g, '\n'); // Trim leading spaces on lines
 }
 
 function detectSections(text: string, filePath: string): string[] {
@@ -527,11 +502,7 @@ export function generateDocumentId(projectId: string, canonicalPath: string): st
 
 function isPathWithinRoot(candidate: string, root: string): boolean {
   const relative = path.relative(root, candidate);
-  return relative === '' || (
-    relative !== '..' &&
-    !relative.startsWith(`..${path.sep}`) &&
-    !path.isAbsolute(relative)
-  );
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 function resolveAndValidatePath(
@@ -540,11 +511,7 @@ function resolveAndValidatePath(
 ): { absolutePath: string; canonicalPath: string } {
   const pathResult = validateCorpusPath(sourcePath);
   if (!pathResult.valid) {
-    throw new KbIngestionError(
-      'INVALID_PATH',
-      `Invalid source path: ${pathResult.errors.join('; ')}`,
-      { sourcePath },
-    );
+    throw new KbIngestionError('INVALID_PATH', `Invalid source path: ${pathResult.errors.join('; ')}`, { sourcePath });
   }
 
   const canonicalRelative = canonicalizeCorpusPath(sourcePath);
@@ -552,11 +519,11 @@ function resolveAndValidatePath(
 
   const resolvedProject = path.resolve(projectRoot);
   if (!isPathWithinRoot(absolutePath, resolvedProject)) {
-    throw new KbIngestionError(
-      'PATH_OUTSIDE_ROOT',
-      'Resolved path escapes project root',
-      { sourcePath, absolutePath, projectRoot: resolvedProject },
-    );
+    throw new KbIngestionError('PATH_OUTSIDE_ROOT', 'Resolved path escapes project root', {
+      sourcePath,
+      absolutePath,
+      projectRoot: resolvedProject,
+    });
   }
 
   let canonicalProject = resolvedProject;
@@ -566,19 +533,22 @@ function resolveAndValidatePath(
     // Keep the resolved root so the regular SOURCE_NOT_FOUND check remains authoritative.
   }
 
-  let canonicalFile = absolutePath;
-  try {
-    canonicalFile = fs.realpathSync(absolutePath);
-  } catch {
-    // Missing files are reported by the regular SOURCE_NOT_FOUND check below.
-  }
+  if (fs.existsSync(absolutePath)) {
+    let canonicalFile = absolutePath;
+    try {
+      canonicalFile = fs.realpathSync(absolutePath);
+    } catch {
+      // Missing files are reported by the regular SOURCE_NOT_FOUND check below.
+    }
 
-  if (!isPathWithinRoot(canonicalFile, canonicalProject)) {
-    throw new KbIngestionError(
-      'SYMLINK_ESCAPE',
-      'Source file is a symlink/junction that escapes the project root',
-      { sourcePath, absolutePath, realPath: canonicalFile, projectRoot: canonicalProject },
-    );
+    if (!isPathWithinRoot(canonicalFile, canonicalProject)) {
+      throw new KbIngestionError('SYMLINK_ESCAPE', 'Source file is a symlink/junction that escapes the project root', {
+        sourcePath,
+        absolutePath,
+        realPath: canonicalFile,
+        projectRoot: canonicalProject,
+      });
+    }
   }
 
   return { absolutePath, canonicalPath: canonicalRelative };
@@ -620,17 +590,11 @@ export class KbIngestionService {
   /**
    * Ingest a single document into the knowledge base.
    */
-  ingest(
-    input: KbIngestionInput,
-    policy: KbCorpusPolicy,
-  ): KbIngestionResult {
+  ingest(input: KbIngestionInput, policy: KbCorpusPolicy): KbIngestionResult {
     // 1. Validate policy
     const policyResult = validateCorpusPolicy(policy);
     if (!policyResult.valid) {
-      throw new KbIngestionError(
-        'POLICY_INVALID',
-        `Invalid corpus policy: ${policyResult.errors.join('; ')}`,
-      );
+      throw new KbIngestionError('POLICY_INVALID', `Invalid corpus policy: ${policyResult.errors.join('; ')}`);
     }
 
     // 2. Project isolation
@@ -642,37 +606,26 @@ export class KbIngestionService {
     }
 
     // 3. Path validation and resolution
-    const { absolutePath, canonicalPath } = resolveAndValidatePath(
-      input.sourcePath,
-      this.projectRoot,
-    );
+    const { absolutePath, canonicalPath } = resolveAndValidatePath(input.sourcePath, this.projectRoot);
 
     // 4. Check source exists and is a file
     if (!fs.existsSync(absolutePath)) {
-      throw new KbIngestionError(
-        'SOURCE_NOT_FOUND',
-        `Source file not found: ${input.sourcePath}`,
-        { absolutePath },
-      );
+      throw new KbIngestionError('SOURCE_NOT_FOUND', `Source file not found: ${input.sourcePath}`, { absolutePath });
     }
 
     const stat = fs.statSync(absolutePath);
     if (stat.isDirectory()) {
-      throw new KbIngestionError(
-        'SOURCE_IS_DIRECTORY',
-        'Source path points to a directory, not a file',
-        { sourcePath: input.sourcePath },
-      );
+      throw new KbIngestionError('SOURCE_IS_DIRECTORY', 'Source path points to a directory, not a file', {
+        sourcePath: input.sourcePath,
+      });
     }
 
     // 5. MIME type resolution (fail-closed)
     const mimeType = resolveDocumentMimeType(input.sourcePath);
     if (!mimeType) {
-      throw new KbIngestionError(
-        'UNSUPPORTED_TYPE',
-        `Unsupported file type: ${path.extname(input.sourcePath)}`,
-        { sourcePath: input.sourcePath },
-      );
+      throw new KbIngestionError('UNSUPPORTED_TYPE', `Unsupported file type: ${path.extname(input.sourcePath)}`, {
+        sourcePath: input.sourcePath,
+      });
     }
 
     // 6. Source size check
@@ -714,11 +667,10 @@ export class KbIngestionService {
         const needsReingest = input.forceReingest || hashChanged || sizeChanged || policyChanged || isStale;
 
         if (!needsReingest) {
-          throw new KbIngestionError(
-            'ALREADY_INGESTED',
-            'Document is already ingested with identical content',
-            { documentId, sourceHash },
-          );
+          throw new KbIngestionError('ALREADY_INGESTED', 'Document is already ingested with identical content', {
+            documentId,
+            sourceHash,
+          });
         }
 
         docVersion = existing.entry.indexVersion + 1;
@@ -752,11 +704,10 @@ export class KbIngestionService {
       }
     } catch (err: any) {
       if (err instanceof KbIngestionError) throw err;
-      throw new KbIngestionError(
-        'EXTRACTION_FAILED',
-        `Text extraction failed: ${err.message}`,
-        { sourcePath: input.sourcePath, mimeType },
-      );
+      throw new KbIngestionError('EXTRACTION_FAILED', `Text extraction failed: ${err.message}`, {
+        sourcePath: input.sourcePath,
+        mimeType,
+      });
     }
 
     // 12. Normalize text
@@ -766,13 +717,7 @@ export class KbIngestionService {
     const allWarnings = [...extracted.warnings];
 
     // 13. Document limits check
-    const limitsResult = validateDocumentLimits(
-      stat.size,
-      pageCount,
-      extractedTextBytes,
-      0,
-      policy.limits,
-    );
+    const limitsResult = validateDocumentLimits(stat.size, pageCount, extractedTextBytes, 0, policy.limits);
     if (!limitsResult.valid) {
       throw new KbIngestionError(
         'DOCUMENT_LIMIT_EXCEEDED',
@@ -781,11 +726,7 @@ export class KbIngestionService {
     }
 
     // 14. Chunk the normalized text
-    const rawChunks = chunkText(
-      normalizedText,
-      policy.chunking.chunkSizeChars,
-      policy.chunking.overlapChars,
-    );
+    const rawChunks = chunkText(normalizedText, policy.chunking.chunkSizeChars, policy.chunking.overlapChars);
 
     // Check chunk count limit
     if (rawChunks.length > policy.limits.maxChunksPerDocument) {
@@ -951,11 +892,7 @@ export class KbIngestionService {
 
   // ── Persistence ─────────────────────────────────────────────────
 
-  private persistIngestion(
-    entry: KbCorpusDocumentEntry,
-    chunks: readonly KbTextChunk[],
-    policy: KbCorpusPolicy,
-  ): void {
+  private persistIngestion(entry: KbCorpusDocumentEntry, chunks: readonly KbTextChunk[], policy: KbCorpusPolicy): void {
     this.ensureDirs();
 
     const chunkFilePath = path.join(this.chunksDir, `${entry.id}.json`);
@@ -1013,10 +950,7 @@ export class KbIngestionService {
 
     const validManifest = validateKbIngestionManifest(updatedManifest);
     if (!validManifest.valid) {
-      throw new KbIngestionError(
-        'PERSIST_FAILED',
-        `Manifest validation failed: ${validManifest.errors.join('; ')}`,
-      );
+      throw new KbIngestionError('PERSIST_FAILED', `Manifest validation failed: ${validManifest.errors.join('; ')}`);
     }
 
     this.atomicWriteJson(this.manifestPath, updatedManifest);
@@ -1040,11 +974,12 @@ export class KbIngestionService {
     try {
       fs.renameSync(tempPath, targetPath);
     } catch (err) {
-      try { fs.unlinkSync(tempPath); } catch { /* best effort */ }
-      throw new KbIngestionError(
-        'PERSIST_FAILED',
-        `Failed to atomically rename ${tempPath} to ${targetPath}`,
-      );
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        /* best effort */
+      }
+      throw new KbIngestionError('PERSIST_FAILED', `Failed to atomically rename ${tempPath} to ${targetPath}`);
     }
   }
 
@@ -1093,7 +1028,9 @@ export class KbIngestionService {
       if (fs.existsSync(chunkPath)) {
         fs.unlinkSync(chunkPath);
       }
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
 
     const updatedEntries = { ...manifest.entries };
     delete updatedEntries[documentId];
@@ -1126,16 +1063,24 @@ export class KbIngestionService {
       if (fs.existsSync(this.chunksDir)) {
         const files = fs.readdirSync(this.chunksDir);
         for (const file of files) {
-          try { fs.unlinkSync(path.join(this.chunksDir, file)); } catch { /* best effort */ }
+          try {
+            fs.unlinkSync(path.join(this.chunksDir, file));
+          } catch {
+            /* best effort */
+          }
         }
       }
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
 
     try {
       if (fs.existsSync(this.manifestPath)) {
         fs.unlinkSync(this.manifestPath);
       }
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
 
     return { documentsRemoved, chunksRemoved };
   }

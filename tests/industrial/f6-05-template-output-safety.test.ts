@@ -46,41 +46,17 @@ import {
   FORBIDDEN_MACRO_EXTENSIONS,
   ALLOWED_TEMPLATE_EXTENSIONS,
 } from '../../src/industrial/office/template-safety';
-import {
-  OfficeTemplateSafetyService,
-} from '../../src/service/office-template-safety-service';
-import {
-  DocxGeneratorService,
-} from '../../src/service/docx-generator-service';
-import {
-  XlsxGeneratorService,
-} from '../../src/service/xlsx-generator-service';
-import {
-  PptxGeneratorService,
-} from '../../src/service/pptx-generator-service';
-import {
-  OfficeInputService,
-} from '../../src/service/office-input-service';
-import {
-  ArtifactService,
-} from '../../src/service/artifact-service';
-import {
-  ApprovalService,
-} from '../../src/service/approval-service';
-import {
-  AuditService,
-} from '../../src/service/audit-service';
-import {
-  EventService,
-} from '../../src/service/event-service';
-import {
-  DurableIdempotencyStore,
-} from '../../src/core/idempotency-store';
-import {
-  buildZipArchive,
-  parseZipArchive,
-  ZipFileInput,
-} from '../../src/industrial/office/ooxml-packager';
+import { OfficeTemplateSafetyService } from '../../src/service/office-template-safety-service';
+import { DocxGeneratorService } from '../../src/service/docx-generator-service';
+import { XlsxGeneratorService } from '../../src/service/xlsx-generator-service';
+import { PptxGeneratorService } from '../../src/service/pptx-generator-service';
+import { OfficeInputService } from '../../src/service/office-input-service';
+import { ArtifactService } from '../../src/service/artifact-service';
+import { ApprovalService } from '../../src/service/approval-service';
+import { AuditService } from '../../src/service/audit-service';
+import { EventService } from '../../src/service/event-service';
+import { DurableIdempotencyStore } from '../../src/core/idempotency-store';
+import { buildZipArchive, parseZipArchive, ZipFileInput } from '../../src/industrial/office/ooxml-packager';
 import {
   executeGenerateDocxTool,
   executeGenerateXlsxTool,
@@ -481,7 +457,14 @@ describe('F6-05: Template and Output Safety', () => {
   // ── Setup and Teardown ──────────────────────────────────────────────
 
   beforeEach(() => {
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f6-05-test-'));
+    projectRoot = (() => {
+      const p = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f6-05-test-'));
+      try {
+        return fs.realpathSync(p);
+      } catch {
+        return p;
+      }
+    })();
 
     // Create directories
     fs.mkdirSync(path.join(projectRoot, 'docs'), { recursive: true });
@@ -719,7 +702,9 @@ describe('F6-05: Template and Output Safety', () => {
       const buf = buildZipArchive(maliciousFiles);
       const res = inspectOfficePackageBuffer(buf, 'docx', true);
       expect(res.valid).toBe(false);
-      expect(res.errors.some((e) => e.includes('TEMPLATE_MACRO_DETECTED') || e.includes('TEMPLATE_ACTIVE_CONTENT_DETECTED'))).toBe(true);
+      expect(
+        res.errors.some((e) => e.includes('TEMPLATE_MACRO_DETECTED') || e.includes('TEMPLATE_ACTIVE_CONTENT_DETECTED')),
+      ).toBe(true);
     });
 
     it('rejects package containing embedded OLE active objects (<w:object>, <p:oleObj>, <oleObjects>)', () => {
@@ -871,10 +856,7 @@ describe('F6-05: Template and Output Safety', () => {
 
       // 3. Stripped citations
       expect(() => {
-        templateSafetyService.assertUntrustedTemplateIntegrity(
-          { ...input, citations: [] },
-          canonicalHash,
-        );
+        templateSafetyService.assertUntrustedTemplateIntegrity({ ...input, citations: [] }, canonicalHash);
       }).toThrowError(/attempts to strip required source citations/);
     });
   });
@@ -1105,9 +1087,15 @@ describe('F6-05: Template and Output Safety', () => {
 
       // Verify audit events
       const events = auditService.getRecords();
-      const docxOutEvent = events.find((e) => (e.data as any).event === 'OUTPUT_VALIDATED' && (e.data as any).outputPath === 'artifacts/out_safe.docx');
-      const xlsxOutEvent = events.find((e) => (e.data as any).event === 'OUTPUT_VALIDATED' && (e.data as any).outputPath === 'artifacts/out_safe.xlsx');
-      const pptxOutEvent = events.find((e) => (e.data as any).event === 'OUTPUT_VALIDATED' && (e.data as any).outputPath === 'artifacts/out_safe.pptx');
+      const docxOutEvent = events.find(
+        (e) => (e.data as any).event === 'OUTPUT_VALIDATED' && (e.data as any).outputPath === 'artifacts/out_safe.docx',
+      );
+      const xlsxOutEvent = events.find(
+        (e) => (e.data as any).event === 'OUTPUT_VALIDATED' && (e.data as any).outputPath === 'artifacts/out_safe.xlsx',
+      );
+      const pptxOutEvent = events.find(
+        (e) => (e.data as any).event === 'OUTPUT_VALIDATED' && (e.data as any).outputPath === 'artifacts/out_safe.pptx',
+      );
 
       expect(docxOutEvent).toBeDefined();
       expect(xlsxOutEvent).toBeDefined();
@@ -1118,7 +1106,10 @@ describe('F6-05: Template and Output Safety', () => {
       // Mock dangerous buffer with OLE object
       const dangerousPackage = buildZipArchive([
         { path: '[Content_Types].xml', data: '<?xml version="1.0"?><Types/>' },
-        { path: 'word/document.xml', data: '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:object/></w:body></w:document>' },
+        {
+          path: 'word/document.xml',
+          data: '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:object/></w:body></w:document>',
+        },
       ]);
 
       expect(() => {
