@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import { createRestApiServer, RestApiServer } from '../../src/api/server';
+import { MaosWebSocketClient } from '../../src/api/ws-client';
 import { createTask } from '../../src/core/queue';
 import {
   BrowserRestClient,
@@ -420,12 +421,82 @@ describe('UI1-02: Typed API & Event Clients', () => {
   // 5. BrowserEventClient (F3-04 Sequenced Events & Replay)
   // ══════════════════════════════════════════════════════════════
 
+  class NodeWebSocketAdapter {
+    public static readonly CONNECTING = 0;
+    public static readonly OPEN = 1;
+    public static readonly CLOSING = 2;
+    public static readonly CLOSED = 3;
+
+    public readyState: number = 0;
+    public onopen: (() => void) | null = null;
+    public onmessage: ((event: { data: any }) => void) | null = null;
+    public onclose: (() => void) | null = null;
+    public onerror: ((err: any) => void) | null = null;
+
+    private client: MaosWebSocketClient;
+
+    constructor(url: string, protocols?: string | string[]) {
+      this.client = new MaosWebSocketClient();
+      this.readyState = 0;
+
+      const headers: Record<string, string> = {};
+      if (protocols) {
+        headers['Sec-WebSocket-Protocol'] = Array.isArray(protocols) ? protocols.join(', ') : protocols;
+      }
+
+      this.client.on('open', () => {
+        this.readyState = 1;
+        this.onopen?.();
+      });
+
+      this.client.on('message', (msg: any) => {
+        const dataStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
+        this.onmessage?.({ data: dataStr });
+      });
+
+      this.client.on('close', () => {
+        this.readyState = 3;
+        this.onclose?.();
+      });
+
+      this.client.on('error', (err: any) => {
+        this.readyState = 3;
+        this.onerror?.(err);
+        this.onclose?.();
+      });
+
+      queueMicrotask(() => {
+        this.client.connect(url, { headers }).catch((err) => {
+          this.readyState = 3;
+          this.onerror?.(err);
+          this.onclose?.();
+        });
+      });
+    }
+
+    send(data: string): void {
+      if (this.readyState !== 1) return;
+      try {
+        this.client.send(JSON.parse(data));
+      } catch {
+        this.client.send({ raw: data } as any);
+      }
+    }
+
+    close(): void {
+      this.readyState = 2;
+      this.client.close();
+      this.readyState = 3;
+    }
+  }
+
   describe('BrowserEventClient Sequenced Event & Replay', () => {
     it('connects to live WebSocket endpoint and establishes connection', async () => {
       const eventClient = new BrowserEventClient({
         wsUrl,
         projectId: 'test-ui-project',
         initialCursor: 0,
+        WebSocketClass: NodeWebSocketAdapter as any,
       });
 
       const states: string[] = [];
@@ -441,6 +512,10 @@ describe('UI1-02: Typed API & Event Clients', () => {
             clearInterval(check);
             clearTimeout(timeout);
             resolve();
+          } else if (eventClient.getState() === 'failed') {
+            clearInterval(check);
+            clearTimeout(timeout);
+            reject(new Error('WebSocket connection failed to establish'));
           }
         }, 50);
       });
