@@ -21,24 +21,56 @@ import { RingAgentService } from '../../src/service/ring-agent-service';
 import { AuditService } from '../../src/service/audit-service';
 import { RingToolRegistry } from '../../src/service/ring-tool-registry';
 import { DEFAULT_RING_ROLE, isRingRole, isRingThreadId } from '../../src/service/ring-contract';
-import { validateRingRunState, validateRingThreadState, validateRingRunEvent } from '../../src/gui/src/api/ring-run-types';
+import {
+  validateRingRunState,
+  validateRingThreadState,
+  validateRingRunEvent,
+} from '../../src/gui/src/api/ring-run-types';
 
 function makeTempRoot(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-contract-'));
+  const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-contract-'));
+  const root = (() => {
+    try {
+      return fs.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = path.resolve(__dirname, '../..');
-  for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
+  for (const f of [
+    'sop_turbine_vibration_monitoring.md',
+    'maintenance_report.txt',
+    'safety_thresholds.json',
+    'turbine_vibration_log.csv',
+  ]) {
     fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root, 'demo', 'industrial', f));
   }
-  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-contract-test', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true } }));
+  fs.writeFileSync(
+    path.join(root, '.maos', 'maos.config.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      projectName: 'ring-contract-test',
+      profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true },
+    }),
+  );
   return root;
 }
 
 describe('TASK RING-CONTRACT-01: frozen contract', () => {
   let root: string;
-  beforeEach(() => { root = makeTempRoot(); });
-  afterEach(() => { delete process.env.BASETEN_API_KEY; try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ } });
+  beforeEach(() => {
+    root = makeTempRoot();
+  });
+  afterEach(() => {
+    delete process.env.BASETEN_API_KEY;
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
 
   it('thread shape validates; default role exists; unknown roles fail closed', () => {
     expect(DEFAULT_RING_ROLE).toBe('operator');
@@ -49,7 +81,13 @@ describe('TASK RING-CONTRACT-01: frozen contract', () => {
     expect(isRingRole('admin')).toBe(false);
     expect(isRingThreadId('thread-1730000000000-abcdef12')).toBe(true);
     expect(isRingThreadId('ring-1730000000000-abcdef12')).toBe(false);
-    const thread = { threadId: 'thread-1730000000000-abcdef12', title: 'Turbine review', role: 'operator', createdAt: new Date().toISOString(), runs: ['ring-abc123'] };
+    const thread = {
+      threadId: 'thread-1730000000000-abcdef12',
+      title: 'Turbine review',
+      role: 'operator',
+      createdAt: new Date().toISOString(),
+      runs: ['ring-abc123'],
+    };
     expect(validateRingThreadState(thread)).toEqual(thread);
     expect(() => validateRingThreadState({ ...thread, role: 'admin' })).toThrow('RING_RUN_INVALID');
     expect(() => validateRingThreadState({ ...thread, runs: 'ring-abc123' })).toThrow('RING_RUN_INVALID');
@@ -63,7 +101,13 @@ describe('TASK RING-CONTRACT-01: frozen contract', () => {
     expect(snap.status).toBe('completed');
     const threadsDir = path.join(root, '.maos', 'ring-runs', 'threads');
     fs.mkdirSync(threadsDir, { recursive: true });
-    const thread = { threadId: 'thread-1730000000000-abcdef12', title: 'Turbine review', role: 'operator', createdAt: new Date().toISOString(), runs: [runId] };
+    const thread = {
+      threadId: 'thread-1730000000000-abcdef12',
+      title: 'Turbine review',
+      role: 'operator',
+      createdAt: new Date().toISOString(),
+      runs: [runId],
+    };
     fs.writeFileSync(path.join(threadsDir, thread.threadId + '.json'), JSON.stringify(thread, null, 2));
     const reloadedThread = JSON.parse(fs.readFileSync(path.join(threadsDir, thread.threadId + '.json'), 'utf-8'));
     expect(validateRingThreadState(reloadedThread).runs).toEqual([runId]);
@@ -80,13 +124,33 @@ describe('TASK RING-CONTRACT-01: frozen contract', () => {
     expect(delta.delta).toBe('Turbine ');
     const plan = validateRingRunEvent({ type: 'plan.updated', ts, plan: [{ step: 'Read SOP', status: 'done' }] });
     expect(plan.plan).toEqual([{ step: 'Read SOP', status: 'done' }]);
-    const artifact = validateRingRunEvent({ type: 'artifact.created', ts, artifact: { path: 'a/b/note.md', kind: 'note', size: 42, sha256: 'abc' } });
+    const artifact = validateRingRunEvent({
+      type: 'artifact.created',
+      ts,
+      artifact: { path: 'a/b/note.md', kind: 'note', size: 42, sha256: 'abc' },
+    });
     expect(artifact.artifact && artifact.artifact.size).toBe(42);
-    const memory = validateRingRunEvent({ type: 'memory.saved', ts, memory: { noteId: 'n1', summary: 'T-07 critical' } });
+    const memory = validateRingRunEvent({
+      type: 'memory.saved',
+      ts,
+      memory: { noteId: 'n1', summary: 'T-07 critical' },
+    });
     expect(memory.memory && memory.memory.noteId).toBe('n1');
     expect(() => validateRingRunEvent({ type: 'model.ghost', ts })).toThrow('RING_RUN_INVALID');
-    expect(() => validateRingRunEvent({ type: 'plan.updated', ts, plan: [{ step: 'x', status: 'maybe' }] })).toThrow('RING_RUN_INVALID');
-    const existing = ['run.started', 'model.turn', 'tool.call', 'tool.result', 'approval.pending', 'approval.resolved', 'run.completed', 'run.failed', 'run.cancelled'];
+    expect(() => validateRingRunEvent({ type: 'plan.updated', ts, plan: [{ step: 'x', status: 'maybe' }] })).toThrow(
+      'RING_RUN_INVALID',
+    );
+    const existing = [
+      'run.started',
+      'model.turn',
+      'tool.call',
+      'tool.result',
+      'approval.pending',
+      'approval.resolved',
+      'run.completed',
+      'run.failed',
+      'run.cancelled',
+    ];
     for (const type of existing) {
       expect(validateRingRunEvent({ type, ts }).type).toBe(type);
     }
@@ -94,17 +158,51 @@ describe('TASK RING-CONTRACT-01: frozen contract', () => {
 
   it('registry gate: consequential enforcement is registry-owned and fails closed', async () => {
     const registry = new RingToolRegistry();
-    registry.register({ name: 'analyze_telemetry', description: 't', parameters: {}, consequential: false, execute: () => ({ ok: true }) });
-    registry.register({ name: 'draft_safety_note', description: 't', parameters: {}, consequential: true, execute: () => ({ ok: true }) });
-    registry.register({ name: 'request_approval', description: 't', parameters: {}, consequential: true, execute: () => ({ ok: true }) });
+    registry.register({
+      name: 'analyze_telemetry',
+      description: 't',
+      parameters: {},
+      consequential: false,
+      execute: () => ({ ok: true }),
+    });
+    registry.register({
+      name: 'draft_safety_note',
+      description: 't',
+      parameters: {},
+      consequential: true,
+      execute: () => ({ ok: true }),
+    });
+    registry.register({
+      name: 'request_approval',
+      description: 't',
+      parameters: {},
+      consequential: true,
+      execute: () => ({ ok: true }),
+    });
     expect(registry.isConsequential('analyze_telemetry')).toBe(false);
     expect(registry.isConsequential('draft_safety_note')).toBe(true);
     expect(registry.isConsequential('request_approval')).toBe(true);
     expect(registry.isConsequential('mystery_tool')).toBe(true);
-    expect(() => registry.register({ name: 'analyze_telemetry', description: 'dup', parameters: {}, consequential: false, execute: () => ({ ok: true }) })).toThrow('RING_TOOL_DUPLICATE');
-    const out = await registry.execute('analyze_telemetry', { projectRoot: root, evidenceRoot: root, runId: 'ring-x', runContext: {} }, {});
+    expect(() =>
+      registry.register({
+        name: 'analyze_telemetry',
+        description: 'dup',
+        parameters: {},
+        consequential: false,
+        execute: () => ({ ok: true }),
+      }),
+    ).toThrow('RING_TOOL_DUPLICATE');
+    const out = await registry.execute(
+      'analyze_telemetry',
+      { projectRoot: root, evidenceRoot: root, runId: 'ring-x', runContext: {} },
+      {},
+    );
     expect(out.ok).toBe(true);
-    const unknown = await registry.execute('mystery_tool', { projectRoot: root, evidenceRoot: root, runId: 'ring-x', runContext: {} }, {});
+    const unknown = await registry.execute(
+      'mystery_tool',
+      { projectRoot: root, evidenceRoot: root, runId: 'ring-x', runContext: {} },
+      {},
+    );
     expect(unknown.ok).toBe(false);
   });
 
@@ -112,7 +210,9 @@ describe('TASK RING-CONTRACT-01: frozen contract', () => {
     delete process.env.BASETEN_API_KEY;
     const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
     const seen: Array<{ runId: string; type: string }> = [];
-    const off = service.onStreamEvent((runId, event) => { seen.push({ runId, type: event.type }); });
+    const off = service.onStreamEvent((runId, event) => {
+      seen.push({ runId, type: event.type });
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry and give the verdict');
     const snap = await service.waitForCompletion(runId);
     off();

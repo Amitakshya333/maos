@@ -35,7 +35,14 @@ const FIXTURES = [
 ];
 
 function makeTempRoot(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-cli-'));
+  const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-cli-'));
+  const root = (() => {
+    try {
+      return fs.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = path.resolve(__dirname, '../..');

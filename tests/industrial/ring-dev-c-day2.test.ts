@@ -18,7 +18,14 @@ import { carriesRawCsvRows, isRestartAuthorizationRequest } from '../../src/serv
 import { runRingSkillWorkflow } from '../../src/service/ring-skill-workflows';
 
 function makeTempRoot(): string {
-  const root = fss.mkdtempSync(pathh.join(oss.tmpdir(), 'maos-ring-day2-'));
+  const raw = fss.mkdtempSync(pathh.join(oss.tmpdir(), 'maos-ring-day2-'));
+  const root = (() => {
+    try {
+      return fss.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fss.mkdirSync(pathh.join(root, '.maos'), { recursive: true });
   fss.mkdirSync(pathh.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = pathh.resolve(__dirname, '../..');

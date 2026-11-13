@@ -33,14 +33,36 @@ import { RingToolRegistry } from '../../src/service/ring-tool-registry';
 import { validateRingRunState } from '../../src/gui/src/api/ring-run-types';
 
 function makeTempRoot(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-dev-a-'));
+  const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-dev-a-'));
+  const root = (() => {
+    try {
+      return fs.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = path.resolve(__dirname, '../..');
-  for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv', 'turbine_inspection_scan.pdf']) {
+  for (const f of [
+    'sop_turbine_vibration_monitoring.md',
+    'maintenance_report.txt',
+    'safety_thresholds.json',
+    'turbine_vibration_log.csv',
+    'turbine_inspection_scan.pdf',
+  ]) {
     fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root, 'demo', 'industrial', f));
   }
-  fs.writeFileSync(path.join(root, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-dev-a-test', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true }, providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } }, agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }] }));
+  fs.writeFileSync(
+    path.join(root, '.maos', 'maos.config.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      projectName: 'ring-dev-a-test',
+      profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true },
+      providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } },
+      agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }],
+    }),
+  );
   return root;
 }
 
@@ -54,15 +76,35 @@ function mockProvider(responses: ProviderResponse[]): IProvider {
 }
 
 function providerResponse(content: string | null, toolCalls?: ProviderResponse['toolCalls']): ProviderResponse {
-  return { content, toolCalls: toolCalls ?? [], usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, model: BASETEN_API_MODEL, latencyMs: 1, finishReason: toolCalls?.length ? 'tool_calls' : 'stop' };
+  return {
+    content,
+    toolCalls: toolCalls ?? [],
+    usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    model: BASETEN_API_MODEL,
+    latencyMs: 1,
+    finishReason: toolCalls?.length ? 'tool_calls' : 'stop',
+  };
 }
 
-const toolCall = (id: string, name: string, args: Record<string, unknown>) => ({ id, type: 'function' as const, function: { name, arguments: JSON.stringify(args) } });
+const toolCall = (id: string, name: string, args: Record<string, unknown>) => ({
+  id,
+  type: 'function' as const,
+  function: { name, arguments: JSON.stringify(args) },
+});
 
 describe('TASK DEV-A-01: Ring brain', () => {
   let root: string;
-  beforeEach(() => { root = makeTempRoot(); });
-  afterEach(() => { delete process.env[BASETEN_API_KEY_ENV]; try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ } });
+  beforeEach(() => {
+    root = makeTempRoot();
+  });
+  afterEach(() => {
+    delete process.env[BASETEN_API_KEY_ENV];
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
 
   it('threads persist and carry conversation; restart rebuilds from disk', async () => {
     delete process.env[BASETEN_API_KEY_ENV];
@@ -71,7 +113,9 @@ describe('TASK DEV-A-01: Ring brain', () => {
     expect(thread.threadId).toMatch(/^thread-[0-9]+-[0-9a-f]{8}$/);
     expect(fs.existsSync(path.join(root, '.maos', 'ring-runs', 'threads', thread.threadId + '.json'))).toBe(true);
     const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root) });
-    const runId1 = service.startRun('Analyze turbine vibration telemetry and give the verdict', { threadId: thread.threadId });
+    const runId1 = service.startRun('Analyze turbine vibration telemetry and give the verdict', {
+      threadId: thread.threadId,
+    });
     const snap1 = await service.waitForCompletion(runId1);
     expect(snap1.status).toBe('completed');
     expect(snap1.finalAnswer).toContain('CRITICAL');
@@ -87,16 +131,29 @@ describe('TASK DEV-A-01: Ring brain', () => {
     expect(history.some((e) => e.type === 'run.started')).toBe(true);
     expect(history.some((e) => e.type === 'run.completed')).toBe(true);
     // thread with unknown id fails closed
-    try { service.startRun('hi', { threadId: 'thread-123-nope' }); expect.unreachable('unknown thread must fail closed'); } catch (err) { expect((err as { code?: string }).code).toBe('RING_THREAD_NOT_FOUND'); }
+    try {
+      service.startRun('hi', { threadId: 'thread-123-nope' });
+      expect.unreachable('unknown thread must fail closed');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('RING_THREAD_NOT_FOUND');
+    }
   });
 
   it('streaming fans out tool and plan/memory events live; nothing is faked', async () => {
     delete process.env[BASETEN_API_KEY_ENV];
     const memory = new MemoryService(root);
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), memoryService: memory });
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      memoryService: memory,
+    });
     const seen: Array<{ type: string }> = [];
-    const off = service.onStreamEvent((_runId, event) => { seen.push({ type: event.type }); });
-    const runId = service.startRun('Analyze turbine vibration telemetry, remember that T-07 is critical, and update the plan');
+    const off = service.onStreamEvent((_runId, event) => {
+      seen.push({ type: event.type });
+    });
+    const runId = service.startRun(
+      'Analyze turbine vibration telemetry, remember that T-07 is critical, and update the plan',
+    );
     const snap = await service.waitForCompletion(runId);
     off();
     expect(snap.status).toBe('completed');
@@ -117,9 +174,15 @@ describe('TASK DEV-A-01: Ring brain', () => {
       providerResponse('Checking telemetry.', [toolCall('call_tel_1', 'analyze_telemetry', {})]),
       providerResponse('Telemetry is CRITICAL at 2.637 mm/s.', []),
     ]);
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      providerFactory: () => provider,
+    });
     const seen: string[] = [];
-    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); });
+    const off = service.onStreamEvent((_runId, event) => {
+      seen.push(event.type);
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
     const snap = await service.waitForCompletion(runId);
     off();
@@ -145,14 +208,25 @@ describe('TASK DEV-A-01: Ring brain', () => {
       generate: async () => providerResponse(whole, []),
       generateStream: async (_messages, _tools, options) => {
         for (const f of fragments) {
-          try { (options as { onDelta?: (d: string) => void } | undefined)?.onDelta?.(f); } catch { /* ignore */ }
+          try {
+            (options as { onDelta?: (d: string) => void } | undefined)?.onDelta?.(f);
+          } catch {
+            /* ignore */
+          }
         }
         return providerResponse(whole, []);
       },
     };
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      providerFactory: () => provider,
+    });
     const seen: string[] = [];
-    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); if (event.type === 'model.delta') deltas.push(String(event.delta)); });
+    const off = service.onStreamEvent((_runId, event) => {
+      seen.push(event.type);
+      if (event.type === 'model.delta') deltas.push(String(event.delta));
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
     const snap = await service.waitForCompletion(runId);
     off();
@@ -172,9 +246,15 @@ describe('TASK DEV-A-01: Ring brain', () => {
 
   it('hosted stream fallback: no generateStream still completes with no faked deltas', async () => {
     const provider = mockProvider([providerResponse('Telemetry is CRITICAL at 2.637 mm/s.', [])]);
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      providerFactory: () => provider,
+    });
     const seen: string[] = [];
-    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); });
+    const off = service.onStreamEvent((_runId, event) => {
+      seen.push(event.type);
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
     const snap = await service.waitForCompletion(runId);
     off();
@@ -188,7 +268,14 @@ describe('TASK DEV-A-01: Ring brain', () => {
     const registry = new RingToolRegistry();
     const { createRingToolRegistry } = await import('../../src/service/ring-tools');
     const full = createRingToolRegistry({});
-    for (const name of ['analyze_telemetry', 'read_company_document', 'search_knowledge', 'draft_safety_note', 'verify_export', 'request_approval']) {
+    for (const name of [
+      'analyze_telemetry',
+      'read_company_document',
+      'search_knowledge',
+      'draft_safety_note',
+      'verify_export',
+      'request_approval',
+    ]) {
       const def = full.get(name);
       expect(def, name + ' registered').toBeTruthy();
       registry.register(def!);
@@ -199,12 +286,20 @@ describe('TASK DEV-A-01: Ring brain', () => {
     expect(registry.isConsequential('create_work_order')).toBe(true);
     expect(registry.isConsequential('no_such_tool')).toBe(true);
     // migrated analyze_telemetry keeps its deterministic output shape
-    const out = await registry.execute('analyze_telemetry', { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} }, {});
+    const out = await registry.execute(
+      'analyze_telemetry',
+      { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} },
+      {},
+    );
     expect(out.verdict).toBe('CRITICAL');
     expect(out.overallVibrationRms).toBe(2.637);
     expect(typeof out.source).toBe('string');
     // read_company_document still refuses paths outside the evidence root
-    const refused = await registry.execute('read_company_document', { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} }, { path: '../maos.config.json' });
+    const refused = await registry.execute(
+      'read_company_document',
+      { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} },
+      { path: '../maos.config.json' },
+    );
     expect(refused.ok).toBe(false);
     expect(String(refused.error)).toContain('PATH_OUTSIDE_EVIDENCE_ROOT');
   });
@@ -212,8 +307,14 @@ describe('TASK DEV-A-01: Ring brain', () => {
   it('ocr reads the demo scan text layer; vision is honestly unavailable; memory round-trips', async () => {
     delete process.env[BASETEN_API_KEY_ENV];
     const memory = new MemoryService(root);
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), memoryService: memory });
-    const runId = service.startRun('Read the turbine inspection scan PDF, remember that bearing clearance is 0.050 mm, then recall T-07 notes');
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      memoryService: memory,
+    });
+    const runId = service.startRun(
+      'Read the turbine inspection scan PDF, remember that bearing clearance is 0.050 mm, then recall T-07 notes',
+    );
     const snap = await service.waitForCompletion(runId);
     expect(snap.status).toBe('completed');
     const ocr = snap.transcript.find((e) => e.type === 'tool.result' && e.toolName === 'ocr_document');
@@ -223,7 +324,11 @@ describe('TASK DEV-A-01: Ring brain', () => {
     // vision with no weights: honest unavailable, never fabricated
     const { createRingToolRegistry } = await import('../../src/service/ring-tools');
     const registry = createRingToolRegistry({});
-    const seen = await registry.execute('inspect_image', { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} }, { path: 'turbine_inspection_scan.pdf' });
+    const seen = await registry.execute(
+      'inspect_image',
+      { projectRoot: root, evidenceRoot: path.join(root, 'demo', 'industrial'), runId: 'ring-test', runContext: {} },
+      { path: 'turbine_inspection_scan.pdf' },
+    );
     expect(seen.ok).toBe(true);
     expect(seen.available).toBe(false);
     expect(JSON.stringify(seen).toLowerCase()).not.toContain('bearing wear');
@@ -235,9 +340,20 @@ describe('TASK DEV-A-01: Ring brain', () => {
     const { createServiceContainer } = await import('../../src/service');
     const services = createServiceContainer(root);
     const audit = new AuditService(root);
-    const service = new RingAgentService({ projectRoot: root, auditService: audit, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: audit,
+      memoryService: services.memory,
+      ocrService: services.ocr,
+      visionService: services.vision,
+      docxGenerator: services.docxGenerator,
+      xlsxGenerator: services.xlsxGenerator,
+      kbSearch: services.kbSearch,
+    });
     const seen: string[] = [];
-    const off = service.onStreamEvent((_runId, event) => { seen.push(event.type); });
+    const off = service.onStreamEvent((_runId, event) => {
+      seen.push(event.type);
+    });
     const runId = service.startRun('Brief me on T-07 then raise a work order for the vibration finding');
     const awaiting = await service.waitForRun(runId, 30000);
     expect(awaiting.status).toBe('awaiting_approval');
@@ -269,14 +385,32 @@ describe('TASK DEV-A-01: Ring brain', () => {
   it('demo path hosted loopback-mock: brief, work order, approval, DOCX', async () => {
     const provider = mockProvider([
       providerResponse('Telemetry checked.', [toolCall('call_brief_1', 'analyze_telemetry', {})]),
-      providerResponse('Raising the work order.', [toolCall('call_wo_1', 'create_work_order', { title: 'T-07 work order', assetId: 'T-07', finding: 'Turbine T-07 CRITICAL vibration requires inspection.', priority: 'urgent', evidencePaths: ['turbine_vibration_log.csv'] })]),
+      providerResponse('Raising the work order.', [
+        toolCall('call_wo_1', 'create_work_order', {
+          title: 'T-07 work order',
+          assetId: 'T-07',
+          finding: 'Turbine T-07 CRITICAL vibration requires inspection.',
+          priority: 'urgent',
+          evidencePaths: ['turbine_vibration_log.csv'],
+        }),
+      ]),
       providerResponse('Work order created and approved.', []),
     ]);
     const { createServiceContainer } = await import('../../src/service');
     const services = createServiceContainer(root);
     const haveEngineHosted = seedEngineFixture(root);
     const auditHosted = new AuditService(root);
-    const service = new RingAgentService({ projectRoot: root, auditService: auditHosted, providerFactory: () => provider, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: auditHosted,
+      providerFactory: () => provider,
+      memoryService: services.memory,
+      ocrService: services.ocr,
+      visionService: services.vision,
+      docxGenerator: services.docxGenerator,
+      xlsxGenerator: services.xlsxGenerator,
+      kbSearch: services.kbSearch,
+    });
     const runId = service.startRun('Brief me on T-07 then raise a work order for the vibration finding');
     const awaiting = await service.waitForRun(runId, 30000);
     expect(awaiting.status).toBe('awaiting_approval');
@@ -311,8 +445,19 @@ describe('TASK DEV-A-01: Ring brain', () => {
 
   it('telemetry summary only rides along when the question needs it', async () => {
     const bodies: Array<Record<string, unknown>> = [];
-    const provider: IProvider = { name: 'fake-baseten-loopback', model: BASETEN_API_MODEL, generate: async (messages) => { bodies.push({ messages }); return providerResponse('Safety note drafted.', []); } };
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const provider: IProvider = {
+      name: 'fake-baseten-loopback',
+      model: BASETEN_API_MODEL,
+      generate: async (messages) => {
+        bodies.push({ messages });
+        return providerResponse('Safety note drafted.', []);
+      },
+    };
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      providerFactory: () => provider,
+    });
     const runId = service.startRun('Draft a safety note about shift handover');
     const snap = await service.waitForCompletion(runId);
     expect(snap.status).toBe('completed');
@@ -323,8 +468,19 @@ describe('TASK DEV-A-01: Ring brain', () => {
 
   it('telemetry question DOES ride the deterministic summary along (and never raw rows)', async () => {
     const bodies: Array<Record<string, unknown>> = [];
-    const provider: IProvider = { name: 'fake-baseten-loopback', model: BASETEN_API_MODEL, generate: async (messages) => { bodies.push({ messages }); return providerResponse('Telemetry verdict summarized.', []); } };
-    const service = new RingAgentService({ projectRoot: root, auditService: new AuditService(root), providerFactory: () => provider });
+    const provider: IProvider = {
+      name: 'fake-baseten-loopback',
+      model: BASETEN_API_MODEL,
+      generate: async (messages) => {
+        bodies.push({ messages });
+        return providerResponse('Telemetry verdict summarized.', []);
+      },
+    };
+    const service = new RingAgentService({
+      projectRoot: root,
+      auditService: new AuditService(root),
+      providerFactory: () => provider,
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry and give the verdict');
     const snap = await service.waitForCompletion(runId);
     expect(snap.status).toBe('completed');
@@ -339,4 +495,3 @@ describe('TASK DEV-A-01: Ring brain', () => {
     expect(bodyText).not.toContain('2026-08-22T09:00:00+05:30,T-07');
   });
 });
-

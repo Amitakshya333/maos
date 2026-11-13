@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     root: path.resolve(__dirname),
     include: ['tests/**/*.test.ts'],
+    setupFiles: [path.resolve(__dirname, 'tests/setup-vitest.ts')],
     environment: 'node',
     // Several suites exercise intentionally process-global state (model
     // residency, lifecycle files, and launcher children). Force one worker so
