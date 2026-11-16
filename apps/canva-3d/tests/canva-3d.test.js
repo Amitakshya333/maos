@@ -59,4 +59,42 @@ describe('Canva 3D Math & Geometry Suite', () => {
     assert.deepStrictEqual(parsed.rotation, [45, 90, 0]);
     assert.strictEqual(parsed.material.color, '#ec4899');
   });
+
+  test('should generate valid procedural helix geometry without index out of bounds', async () => {
+    const { createProceduralHelix } = await import('../src/engine/ProceduralGenerators.ts');
+    const helix = createProceduralHelix(0.8, 0.15, 8, 2.0);
+
+    assert(helix.attributes.position.count > 0, 'Helix must have vertices');
+    assert(helix.index !== null, 'Helix must be indexed geometry');
+    assert(helix.attributes.normal !== undefined, 'Helix must have computed normals');
+
+    const vertexCount = helix.attributes.position.count;
+    const indices = helix.index.array;
+    for (let i = 0; i < indices.length; i++) {
+      assert(indices[i] >= 0 && indices[i] < vertexCount, `Index ${indices[i]} out of bounds [0, ${vertexCount})`);
+    }
+  });
+
+  test('should generate valid procedural star geometry with computed normals', async () => {
+    const { createProceduralStar } = await import('../src/engine/ProceduralGenerators.ts');
+    const star = createProceduralStar(10, 1.2, 0.6, 0.4);
+
+    assert(star.attributes.position.count > 0, 'Star must have vertices');
+    assert(star.index !== null, 'Star must be indexed geometry');
+    assert(star.attributes.normal !== undefined, 'Star must have computed normals');
+
+    const vertexCount = star.attributes.position.count;
+    const indices = star.index.array;
+    for (let i = 0; i < indices.length; i++) {
+      assert(indices[i] >= 0 && indices[i] < vertexCount, `Index ${indices[i]} out of bounds [0, ${vertexCount})`);
+    }
+  });
+
+  test('should generate crystal polyhedron geometry with valid normals', async () => {
+    const { createCrystalPolyhedron } = await import('../src/engine/ProceduralGenerators.ts');
+    const crystal = createCrystalPolyhedron(1.0);
+
+    assert(crystal.attributes.position.count > 0, 'Crystal must have vertices');
+    assert(crystal.attributes.normal !== undefined, 'Crystal must have computed normals');
+  });
 });
