@@ -131,33 +131,97 @@ export function generateReleaseSbom(
   const servicePath = fs.existsSync(path.join(absRoot, 'dist', 'service', 'index.js'))
     ? 'dist/service/index.js'
     : 'src/service/index.ts';
-  registerFile('project-service-core', 'project-service', 'MAOS Project Service Runtime', '0.4.0', servicePath, 'MIT', false);
+  registerFile(
+    'project-service-core',
+    'project-service',
+    'MAOS Project Service Runtime',
+    '0.4.0',
+    servicePath,
+    'MIT',
+    false,
+  );
 
   const serviceHostPath = fs.existsSync(path.join(absRoot, 'dist', 'service', 'project-service', 'host.js'))
     ? 'dist/service/project-service/host.js'
     : 'src/service/project-service/host.ts';
-  registerFile('project-service-host', 'project-service', 'MAOS Project Service Host', '0.4.0', serviceHostPath, 'MIT', false);
+  registerFile(
+    'project-service-host',
+    'project-service',
+    'MAOS Project Service Host',
+    '0.4.0',
+    serviceHostPath,
+    'MIT',
+    false,
+  );
 
   // 3. Model Manager
   const modelMgrPath = fs.existsSync(path.join(absRoot, 'dist', 'service', 'model-manager', 'model-manager.js'))
     ? 'dist/service/model-manager/model-manager.js'
     : 'src/service/model-manager/model-manager.ts';
-  registerFile('model-manager-core', 'model-manager', 'MAOS Model Manager & Residency Service', '0.4.0', modelMgrPath, 'MIT', false);
+  registerFile(
+    'model-manager-core',
+    'model-manager',
+    'MAOS Model Manager & Residency Service',
+    '0.4.0',
+    modelMgrPath,
+    'MIT',
+    false,
+  );
 
   // 4. Rust Engine Binary
   const rustExt = process.platform === 'win32' ? '.exe' : '';
   const rustBinRelPath = `rust/target/release/maos-engine${rustExt}`;
-  registerFile('rust-engine-binary', 'rust-engine', 'MAOS Rust Industrial Authority Engine', '0.1.0', rustBinRelPath, 'MIT OR Apache-2.0', true);
+  registerFile(
+    'rust-engine-binary',
+    'rust-engine',
+    'MAOS Rust Industrial Authority Engine',
+    '0.1.0',
+    rustBinRelPath,
+    'MIT OR Apache-2.0',
+    true,
+  );
 
   // 5. Python Runtime Scripts
-  registerFile('python-rms-calculation', 'python-runtime', 'Sovereign RMS Calculation Script', '1.0.0', 'fixtures/f8-05/rms-calculation.py', 'MIT', false);
-  registerFile('python-rms-verification', 'python-runtime', 'Sovereign RMS Pytest Verification Suite', '1.0.0', 'fixtures/f8-05/rms-verification-test.py', 'MIT', false);
+  registerFile(
+    'python-rms-calculation',
+    'python-runtime',
+    'Sovereign RMS Calculation Script',
+    '1.0.0',
+    'fixtures/f8-05/rms-calculation.py',
+    'MIT',
+    false,
+  );
+  registerFile(
+    'python-rms-verification',
+    'python-runtime',
+    'Sovereign RMS Pytest Verification Suite',
+    '1.0.0',
+    'fixtures/f8-05/rms-verification-test.py',
+    'MIT',
+    false,
+  );
 
   // 6. Container Manifest
-  registerFile('sandbox-container-manifest', 'sandbox-container', 'MAOS Docker Sandbox Runner Manifest', '0.3.0-industrial', 'industrial/container/sandbox-manifest.json', 'MIT', false);
+  registerFile(
+    'sandbox-container-manifest',
+    'sandbox-container',
+    'MAOS Docker Sandbox Runner Manifest',
+    '0.3.0-industrial',
+    'industrial/container/sandbox-manifest.json',
+    'MIT',
+    false,
+  );
 
   // 7. Model Registry
-  registerFile('model-registry-spec', 'model-registry', 'Deterministic Industrial Model Registry', '0.3.0', 'src/domain/model-manifest.ts', 'MIT', false);
+  registerFile(
+    'model-registry-spec',
+    'model-registry',
+    'Deterministic Industrial Model Registry',
+    '0.3.0',
+    'src/domain/model-manifest.ts',
+    'MIT',
+    false,
+  );
 
   const embManifestPath = path.resolve(absRoot, 'embedding-snapshot-manifest.json');
   if (fs.existsSync(embManifestPath)) {
@@ -194,7 +258,15 @@ export function generateReleaseSbom(
   }
 
   // 8. GUI Assets
-  registerFile('gui-index-html', 'gui-assets', 'MAOS React GUI Shell Index', '0.4.0', 'dist/gui/index.html', 'MIT', false);
+  registerFile(
+    'gui-index-html',
+    'gui-assets',
+    'MAOS React GUI Shell Index',
+    '0.4.0',
+    'dist/gui/index.html',
+    'MIT',
+    false,
+  );
 
   // Index GUI bundle assets
   const distAssetsDir = path.join(absRoot, 'dist', 'gui', 'assets');
@@ -247,7 +319,15 @@ export function verifyReleaseSbom(sbom: ReleaseSbom, projectRoot: string): SbomV
   let verifiedCount = 0;
 
   for (const [id, entry] of Object.entries(sbom.components)) {
-    const absPath = path.resolve(absRoot, entry.relativePath);
+    let relPath = entry.relativePath;
+    if (entry.component === 'rust-engine' || id === 'rust-engine-binary') {
+      const rustExt = process.platform === 'win32' ? '.exe' : '';
+      const candidate = `rust/target/release/maos-engine${rustExt}`;
+      if (fs.existsSync(path.resolve(absRoot, candidate))) {
+        relPath = candidate;
+      }
+    }
+    const absPath = path.resolve(absRoot, relPath);
 
     // 1. Missing component check
     if (!fs.existsSync(absPath)) {

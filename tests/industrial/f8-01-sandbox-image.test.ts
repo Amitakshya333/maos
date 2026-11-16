@@ -94,6 +94,10 @@ describe('F8-01: Build the Pinned Sandbox Image', () => {
     // Copy live or build genuine POSIX ustar Docker archive in tempDir
     const liveArchive = path.join(PROJECT_ROOT, 'offline-stores', 'sandbox-image', 'image.tar');
     const destArchive = path.join(tempDir, 'offline-stores', 'sandbox-image', 'image.tar');
+    if (!fs.existsSync(liveArchive) || fs.statSync(liveArchive).size < 1024) {
+      const { buildDockerArchive } = require('../../scripts/generate-sandbox-archive');
+      buildDockerArchive(liveArchive);
+    }
     if (fs.existsSync(liveArchive) && fs.statSync(liveArchive).size >= 1024) {
       try {
         fs.linkSync(liveArchive, destArchive);
@@ -376,7 +380,9 @@ describe('F8-01: Build the Pinned Sandbox Image', () => {
 
       const auditWhitespace = await service.verifyImage('   ');
       expect(auditWhitespace.valid).toBe(false);
-      expect(auditWhitespace.errors.some((e) => e.includes(SANDBOX_ERROR_CODES.INDEPENDENT_DIGEST_REQUIRED))).toBe(true);
+      expect(auditWhitespace.errors.some((e) => e.includes(SANDBOX_ERROR_CODES.INDEPENDENT_DIGEST_REQUIRED))).toBe(
+        true,
+      );
     });
 
     it('exhaustively validates Docker save archive structure (validateDockerArchiveStructure)', () => {
@@ -438,7 +444,7 @@ describe('F8-01: Build the Pinned Sandbox Image', () => {
     it('explicitly rejects synthetic or hollow placeholder archives lacking runtime files or matching digests', () => {
       const syntheticTarPath = path.join(tempDir, 'synthetic-hollow.tar');
       const { buildDockerArchive } = require('../../scripts/generate-sandbox-archive');
-      buildDockerArchive(syntheticTarPath);
+      buildDockerArchive(syntheticTarPath, { hollow: true });
 
       const result = validateDockerArchiveStructure(syntheticTarPath, 'maos-sandbox-runner:0.3.0-industrial');
       expect(result.valid).toBe(false);
@@ -635,7 +641,9 @@ print(f"RMS: {result}")
       expect(audit.offlineStoreVerified).toBe(true);
 
       // Verification fails if observed digest does not match
-      const wrongAudit = await service.verifyImage('sha256:1111111111111111111111111111111111111111111111111111111111111111');
+      const wrongAudit = await service.verifyImage(
+        'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+      );
       expect(wrongAudit.valid).toBe(false);
       expect(wrongAudit.imageDigestVerified).toBe(false);
     });

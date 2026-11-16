@@ -112,13 +112,15 @@ export function validateTemplatePath(
 
   // 1. Check length
   if (templatePath.length > TEMPLATE_SAFETY_BOUNDS.MAX_PATH_LENGTH) {
-    errors.push(`[TEMPLATE_PATH_TRAVERSAL] Template path exceeds maximum length of ${TEMPLATE_SAFETY_BOUNDS.MAX_PATH_LENGTH} characters.`);
+    errors.push(
+      `[TEMPLATE_PATH_TRAVERSAL] Template path exceeds maximum length of ${TEMPLATE_SAFETY_BOUNDS.MAX_PATH_LENGTH} characters.`,
+    );
   }
 
   // 2. Safe industrial path constraints (no traversal, no null bytes, no drive letters, no URL schemes)
   if (!isSafeIndustrialPath(templatePath)) {
     errors.push(
-      `[TEMPLATE_PATH_TRAVERSAL] Template path '${templatePath}' violates path safety constraints (traversal, null bytes, or URL schemes detected).`
+      `[TEMPLATE_PATH_TRAVERSAL] Template path '${templatePath}' violates path safety constraints (traversal, null bytes, or URL schemes detected).`,
     );
   }
 
@@ -129,7 +131,7 @@ export function validateTemplatePath(
   for (const macroExt of FORBIDDEN_MACRO_EXTENSIONS) {
     if (lowerPath.endsWith(macroExt)) {
       errors.push(
-        `[TEMPLATE_FORBIDDEN_EXTENSION] Macro-enabled template extension '${macroExt}' is strictly forbidden in air-gapped environment.`
+        `[TEMPLATE_FORBIDDEN_EXTENSION] Macro-enabled template extension '${macroExt}' is strictly forbidden in air-gapped environment.`,
       );
     }
   }
@@ -139,19 +141,25 @@ export function validateTemplatePath(
   const hasAllowedExt = allowed.some((ext) => lowerPath.endsWith(ext));
   if (!hasAllowedExt) {
     errors.push(
-      `[TEMPLATE_FORBIDDEN_EXTENSION] Invalid template extension for type '${expectedType}'. Allowed extensions: ${allowed.join(', ')}.`
+      `[TEMPLATE_FORBIDDEN_EXTENSION] Invalid template extension for type '${expectedType}'. Allowed extensions: ${allowed.join(', ')}.`,
     );
   }
 
   // 4. Resolve absolute path and verify boundary confinement
-  const canonicalProjectRoot = path.resolve(projectRoot);
+  const canonicalProjectRoot = (() => {
+    try {
+      return fs.realpathSync(path.resolve(projectRoot));
+    } catch {
+      return path.resolve(projectRoot);
+    }
+  })();
   const candidateAbsPath = path.resolve(canonicalProjectRoot, templatePath);
 
   // Must start with canonical project root directory
   const relativeFromRoot = path.relative(canonicalProjectRoot, candidateAbsPath);
   if (relativeFromRoot.startsWith('..') || path.isAbsolute(relativeFromRoot)) {
     errors.push(
-      `[TEMPLATE_PATH_OUTSIDE_PROJECT] Template path '${templatePath}' resolves outside project root '${canonicalProjectRoot}'.`
+      `[TEMPLATE_PATH_OUTSIDE_PROJECT] Template path '${templatePath}' resolves outside project root '${canonicalProjectRoot}'.`,
     );
   }
 
@@ -166,7 +174,7 @@ export function validateTemplatePath(
           errors.push(`[TEMPLATE_PATH_TRAVERSAL] Template target '${templatePath}' is not a regular file.`);
         } else if (stats.size > TEMPLATE_SAFETY_BOUNDS.MAX_TEMPLATE_BYTES) {
           errors.push(
-            `[TEMPLATE_INVALID_ZIP] Template file size (${stats.size} bytes) exceeds maximum limit of ${TEMPLATE_SAFETY_BOUNDS.MAX_TEMPLATE_BYTES} bytes.`
+            `[TEMPLATE_INVALID_ZIP] Template file size (${stats.size} bytes) exceeds maximum limit of ${TEMPLATE_SAFETY_BOUNDS.MAX_TEMPLATE_BYTES} bytes.`,
           );
         }
 
@@ -175,7 +183,7 @@ export function validateTemplatePath(
         const relativeReal = path.relative(canonicalProjectRoot, realAbsPath);
         if (relativeReal.startsWith('..') || path.isAbsolute(relativeReal)) {
           errors.push(
-            `[TEMPLATE_PATH_OUTSIDE_PROJECT] Template path '${templatePath}' links outside project root via symlink or directory junction.`
+            `[TEMPLATE_PATH_OUTSIDE_PROJECT] Template path '${templatePath}' links outside project root via symlink or directory junction.`,
           );
         }
       } catch (err: any) {
@@ -240,7 +248,7 @@ export function inspectOfficePackageBuffer(
 
   if (zipEntries.size > TEMPLATE_SAFETY_BOUNDS.MAX_PART_COUNT) {
     errors.push(
-      `[TEMPLATE_INVALID_ZIP] Package part count (${zipEntries.size}) exceeds limit of ${TEMPLATE_SAFETY_BOUNDS.MAX_PART_COUNT}.`
+      `[TEMPLATE_INVALID_ZIP] Package part count (${zipEntries.size}) exceeds limit of ${TEMPLATE_SAFETY_BOUNDS.MAX_PART_COUNT}.`,
     );
   }
 
@@ -251,7 +259,7 @@ export function inspectOfficePackageBuffer(
     // Single part size check
     if (rawBuf.length > TEMPLATE_SAFETY_BOUNDS.MAX_UNCOMPRESSED_PART_BYTES) {
       errors.push(
-        `[TEMPLATE_INVALID_ZIP] Part '${partPath}' uncompressed size (${rawBuf.length} bytes) exceeds limit of ${TEMPLATE_SAFETY_BOUNDS.MAX_UNCOMPRESSED_PART_BYTES} bytes.`
+        `[TEMPLATE_INVALID_ZIP] Part '${partPath}' uncompressed size (${rawBuf.length} bytes) exceeds limit of ${TEMPLATE_SAFETY_BOUNDS.MAX_UNCOMPRESSED_PART_BYTES} bytes.`,
       );
     }
 
@@ -259,7 +267,7 @@ export function inspectOfficePackageBuffer(
     for (const ext of FORBIDDEN_FILE_EXTENSIONS) {
       if (lowerPath.endsWith(ext)) {
         errors.push(
-          `[TEMPLATE_FORBIDDEN_EXTENSION] Package contains forbidden file extension: '${partPath}' (${ext}).`
+          `[TEMPLATE_FORBIDDEN_EXTENSION] Package contains forbidden file extension: '${partPath}' (${ext}).`,
         );
       }
     }
@@ -267,20 +275,14 @@ export function inspectOfficePackageBuffer(
     // Forbidden macro & active content part names
     for (const forbidden of FORBIDDEN_PART_NAMES) {
       if (lowerPath === forbidden || lowerPath.endsWith(`/${forbidden}`)) {
-        errors.push(
-          `[TEMPLATE_MACRO_DETECTED] Package contains forbidden macro or active part: '${partPath}'.`
-        );
+        errors.push(`[TEMPLATE_MACRO_DETECTED] Package contains forbidden macro or active part: '${partPath}'.`);
       }
     }
 
     // Check for OLE binary parts
-    if (
-      lowerPath.includes('oleobject') ||
-      lowerPath.endsWith('.bin') ||
-      lowerPath.includes('activex')
-    ) {
+    if (lowerPath.includes('oleobject') || lowerPath.endsWith('.bin') || lowerPath.includes('activex')) {
       errors.push(
-        `[TEMPLATE_ACTIVE_CONTENT_DETECTED] Package contains forbidden OLE or active binary part: '${partPath}'.`
+        `[TEMPLATE_ACTIVE_CONTENT_DETECTED] Package contains forbidden OLE or active binary part: '${partPath}'.`,
       );
     }
   }
@@ -289,11 +291,7 @@ export function inspectOfficePackageBuffer(
   for (const [partPath, rawBuf] of zipEntries.entries()) {
     const lowerPath = partPath.toLowerCase().replace(/\\/g, '/');
 
-    if (
-      lowerPath.endsWith('.xml') ||
-      lowerPath.endsWith('.rels') ||
-      lowerPath === '[content_types].xml'
-    ) {
+    if (lowerPath.endsWith('.xml') || lowerPath.endsWith('.rels') || lowerPath === '[content_types].xml') {
       const xmlText = rawBuf.toString('utf8');
       parts.set(partPath, xmlText);
 
@@ -320,7 +318,7 @@ export function inspectOfficePackageBuffer(
         /<oleObject\b/i.test(xmlText)
       ) {
         errors.push(
-          `[TEMPLATE_ACTIVE_CONTENT_DETECTED] Part '${partPath}' contains prohibited embedded OLE object tag.`
+          `[TEMPLATE_ACTIVE_CONTENT_DETECTED] Part '${partPath}' contains prohibited embedded OLE object tag.`,
         );
       }
 
@@ -328,7 +326,7 @@ export function inspectOfficePackageBuffer(
       for (const kw of DANGEROUS_EXECUTABLE_KEYWORDS) {
         if (xmlText.toLowerCase().includes(kw)) {
           errors.push(
-            `[TEMPLATE_ACTIVE_CONTENT_DETECTED] Part '${partPath}' contains prohibited executable or script pattern: '${kw}'.`
+            `[TEMPLATE_ACTIVE_CONTENT_DETECTED] Part '${partPath}' contains prohibited executable or script pattern: '${kw}'.`,
           );
         }
       }
@@ -336,7 +334,7 @@ export function inspectOfficePackageBuffer(
       // Check for external relationships in document body
       if (/TargetMode\s*=\s*["']External["']/i.test(xmlText)) {
         errors.push(
-          `[TEMPLATE_EXTERNAL_RELATIONSHIP] Part '${partPath}' contains prohibited external relationship (TargetMode="External").`
+          `[TEMPLATE_EXTERNAL_RELATIONSHIP] Part '${partPath}' contains prohibited external relationship (TargetMode="External").`,
         );
       }
 
@@ -349,7 +347,7 @@ export function inspectOfficePackageBuffer(
         for (const scheme of FORBIDDEN_REL_URL_SCHEMES) {
           if (textContent.includes(scheme)) {
             errors.push(
-              `[TEMPLATE_EXTERNAL_RELATIONSHIP] Part '${partPath}' contains prohibited URL scheme '${scheme}' in text run.`
+              `[TEMPLATE_EXTERNAL_RELATIONSHIP] Part '${partPath}' contains prohibited URL scheme '${scheme}' in text run.`,
             );
           }
         }
@@ -363,7 +361,7 @@ export function inspectOfficePackageBuffer(
           const formulaStr = fMatch[1].trim();
           if (isPotentialFormulaInjection(formulaStr)) {
             errors.push(
-              `[TEMPLATE_FORMULA_INJECTION] Part '${partPath}' contains dangerous formula injection in <f> element: '${formulaStr}'.`
+              `[TEMPLATE_FORMULA_INJECTION] Part '${partPath}' contains dangerous formula injection in <f> element: '${formulaStr}'.`,
             );
           }
         }

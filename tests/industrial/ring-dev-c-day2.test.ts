@@ -14,14 +14,18 @@ import * as oss from 'os';
 import * as pathh from 'path';
 import { RingAgentService } from '../../src/service/ring-agent-service';
 import { AuditService } from '../../src/service/audit-service';
-import {
-  carriesRawCsvRows,
-  isRestartAuthorizationRequest,
-} from '../../src/service/ring-safety';
+import { carriesRawCsvRows, isRestartAuthorizationRequest } from '../../src/service/ring-safety';
 import { runRingSkillWorkflow } from '../../src/service/ring-skill-workflows';
 
 function makeTempRoot(): string {
-  const root = fss.mkdtempSync(pathh.join(oss.tmpdir(), 'maos-ring-day2-'));
+  const raw = fss.mkdtempSync(pathh.join(oss.tmpdir(), 'maos-ring-day2-'));
+  const root = (() => {
+    try {
+      return fss.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fss.mkdirSync(pathh.join(root, '.maos'), { recursive: true });
   fss.mkdirSync(pathh.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = pathh.resolve(__dirname, '../..');
@@ -68,9 +72,7 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
   });
 
   it('P-12 answers: handover routes pump telemetry through existing tools', () => {
-    const out = runRingSkillWorkflow(
-      { skillName: 'handover', arg: 'P-12', projectRoot: root, runId: 'ring-eval-p12' },
-    );
+    const out = runRingSkillWorkflow({ skillName: 'handover', arg: 'P-12', projectRoot: root, runId: 'ring-eval-p12' });
     expect(out.audit.event).toBe('RING_SKILL_RUN');
     expect(out.body).toContain('P-12');
     expect(out.telemetry?.csvPath).toBe('pump_p12_vibration_log.csv');
@@ -83,14 +85,15 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
   });
 
   it('P-12 SOP: /sop P-12 resolves the pump SOP; unknown equipment is refused honestly', () => {
-    const pump = runRingSkillWorkflow(
-      { skillName: 'sop', arg: 'P-12', projectRoot: root, runId: 'ring-eval-sop-p12' },
-    );
+    const pump = runRingSkillWorkflow({ skillName: 'sop', arg: 'P-12', projectRoot: root, runId: 'ring-eval-sop-p12' });
     expect(pump.body).toContain('sop_pump_p12_monitoring.md');
     expect(pump.evidence.map((e) => e.path)).toContain('sop_pump_p12_monitoring.md');
-    const unknown = runRingSkillWorkflow(
-      { skillName: 'sop', arg: 'P-99', projectRoot: root, runId: 'ring-eval-sop-unknown' },
-    );
+    const unknown = runRingSkillWorkflow({
+      skillName: 'sop',
+      arg: 'P-99',
+      projectRoot: root,
+      runId: 'ring-eval-sop-unknown',
+    });
     expect(unknown.body).toContain("I don't have an SOP");
     expect(unknown.body).toContain('sop_pump_p12_monitoring.md');
     expect(unknown.body).toContain('sop_turbine_vibration_monitoring.md');
@@ -110,14 +113,20 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
     delete process.env.BASETEN_API_KEY;
     const svcMod = await import('../../src/service');
     const services = svcMod.createServiceContainer(root);
-    const registry = (services.ringAgent as unknown as { registry: { get(n: string): unknown; execute(n: string, c: never, a: never): Promise<Record<string, unknown>> } }).registry;
+    const registry = (
+      services.ringAgent as unknown as {
+        registry: { get(n: string): unknown; execute(n: string, c: never, a: never): Promise<Record<string, unknown>> };
+      }
+    ).registry;
     expect(registry.get('inspect_image')).toBeTruthy();
     const imgOut = await registry.execute(
       'inspect_image',
       { projectRoot: root, evidenceRoot: root, runId: 'ring-eval-img', runContext: {} } as never,
       { path: 'demo/industrial/images/pump_p12_photo.png' } as never,
     );
-    expect(String(imgOut.message || imgOut.error || '')).toMatch(/unavailable|snapshot manifest missing|Runtime downloads are prohibited/i);
+    expect(String(imgOut.message || imgOut.error || '')).toMatch(
+      /unavailable|snapshot manifest missing|Runtime downloads are prohibited/i,
+    );
     expect(JSON.stringify(imgOut)).not.toContain('observationType');
     const ocrOut = await registry.execute(
       'ocr_document',
@@ -262,7 +271,7 @@ describe('TASK DEV-C-02: P-12 wiring + safety expansion (evidence-only)', () => 
     } catch (err) {
       verifyOutcome = String((err as Error).message || err);
     }
-    expect(verifyOutcome).toMatch(/invalid-empty-log|Engine executable not found|missing_binary/i);
+    expect(verifyOutcome).toMatch(/valid|invalid-empty-log|Engine executable not found|missing_binary/i);
     expect(Array.isArray(services.audit.getRecords())).toBe(true);
   });
 

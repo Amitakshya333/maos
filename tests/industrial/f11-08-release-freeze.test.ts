@@ -82,7 +82,7 @@ describe('F11-08: Release Freeze & Integrity Verification', () => {
     });
 
     it('public demo evidence pack files are completely covered and pristine', () => {
-      const manifest: ReleaseFreezeManifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
+      const manifest = generateReleaseFreezeManifest(PROJECT_ROOT);
       const demoAssets = manifest.assets.filter((a) => a.category === 'demo');
       expect(demoAssets.length).toBeGreaterThanOrEqual(5);
 

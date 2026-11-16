@@ -12,9 +12,10 @@
  * 8. Protected invariant: rust/test.txt SHA-256 integrity
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import * as crypto from 'crypto';
 import {
   PINNED_VLM_CONFIG,
@@ -34,6 +35,51 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const TEST_HASH_TARGET = '1392245502333919F23E58B8F544F12470DB3829AABD5336A011E58D2B733435';
 
 describe('F4-04: Benchmark and Pin VLM', () => {
+  let testRoot: string;
+
+  beforeAll(() => {
+    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f4-04-test-'));
+    fs.mkdirSync(path.join(testRoot, '.maos'), { recursive: true });
+    fs.writeFileSync(
+      path.join(testRoot, '.maos', 'maos.config.json'),
+      JSON.stringify({ schemaVersion: 1, projectName: 'test-f4-04' }),
+    );
+    // Copy vlm-snapshot-manifest.json from PROJECT_ROOT
+    const vlmSrc = path.join(PROJECT_ROOT, 'vlm-snapshot-manifest.json');
+    if (fs.existsSync(vlmSrc)) {
+      fs.copyFileSync(vlmSrc, path.join(testRoot, 'vlm-snapshot-manifest.json'));
+    }
+    // Setup mock text snapshot directory & manifest
+    const textSnapshotRelativePath =
+      'models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1';
+    const textSnapshotDir = path.join(testRoot, 'offline-stores', 'model-snapshot', textSnapshotRelativePath);
+    fs.mkdirSync(textSnapshotDir, { recursive: true });
+    const textConfig = Buffer.from('{"model_type":"qwen2"}', 'utf8');
+    fs.writeFileSync(path.join(textSnapshotDir, 'config.json'), textConfig);
+    fs.writeFileSync(
+      path.join(testRoot, 'model-snapshot-manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        model: 'Qwen/Qwen2.5-3B-Instruct',
+        revision: 'aa8e72537993ba99e69dfaafa59ed015b17504d1',
+        snapshotRelativePath: textSnapshotRelativePath,
+        files: [
+          {
+            path: 'config.json',
+            size: textConfig.length,
+            sha256: crypto.createHash('sha256').update(textConfig).digest('hex'),
+          },
+        ],
+      }),
+    );
+  });
+
+  afterAll(() => {
+    try {
+      fs.rmSync(testRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
   beforeEach(() => {
     SharedModelManager.resetInstance();
   });
@@ -107,13 +153,13 @@ describe('F4-04: Benchmark and Pin VLM', () => {
 
   describe('Shared GPU Model Manager Ownership & Residency', () => {
     it('acts as a singleton authority managing model leases and VRAM', () => {
-      const manager1 = SharedModelManager.getInstance(PROJECT_ROOT);
-      const manager2 = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager1 = SharedModelManager.getInstance(testRoot);
+      const manager2 = SharedModelManager.getInstance(testRoot);
       expect(manager1).toBe(manager2);
     });
 
     it('initializes default registrations for text model and pinned VLM', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager = SharedModelManager.getInstance(testRoot);
       const textReg = manager.getModelRegistration('Qwen/Qwen2.5-3B-Instruct');
       const vlmReg = manager.getModelRegistration(PINNED_VLM_CONFIG.modelId);
 
@@ -124,16 +170,18 @@ describe('F4-04: Benchmark and Pin VLM', () => {
     });
 
     it('fails closed when the pinned VLM snapshot is absent', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
-      expect(() => manager.acquireLeaseSync({
-        modelId: PINNED_VLM_CONFIG.modelId,
-        agentId: 'AGENT_TEST_1',
-      })).toThrowError(/Snapshot directory not found|snapshot verification failed/i);
+      const manager = SharedModelManager.getInstance(testRoot);
+      expect(() =>
+        manager.acquireLeaseSync({
+          modelId: PINNED_VLM_CONFIG.modelId,
+          agentId: 'AGENT_TEST_1',
+        }),
+      ).toThrowError(/Snapshot directory not found|snapshot verification failed/i);
       expect(manager.listLeases()).toHaveLength(0);
     });
 
     it('enforces serialized residency: switching models unloads previous when no active leases', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager = SharedModelManager.getInstance(testRoot);
 
       // Load text model
       const lease1 = manager.acquireLeaseSync({
@@ -144,10 +192,12 @@ describe('F4-04: Benchmark and Pin VLM', () => {
       manager.releaseLease(lease1.id);
 
       // A missing VLM snapshot must not evict the verified resident model.
-      expect(() => manager.acquireLeaseSync({
-        modelId: PINNED_VLM_CONFIG.modelId,
-        agentId: 'VISION_AGENT',
-      })).toThrowError(/Snapshot directory not found|snapshot verification failed/i);
+      expect(() =>
+        manager.acquireLeaseSync({
+          modelId: PINNED_VLM_CONFIG.modelId,
+          agentId: 'VISION_AGENT',
+        }),
+      ).toThrowError(/Snapshot directory not found|snapshot verification failed/i);
       expect(manager.getResidencyStatus().residentModelId).toBe('Qwen/Qwen2.5-3B-Instruct');
     });
 
@@ -160,7 +210,7 @@ describe('F4-04: Benchmark and Pin VLM', () => {
     });
 
     it('supports cancelling queued requests', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager = SharedModelManager.getInstance(testRoot);
       // Active lease holding the single GPU slot
       const lease = manager.acquireLeaseSync({
         modelId: 'Qwen/Qwen2.5-3B-Instruct',
@@ -169,20 +219,40 @@ describe('F4-04: Benchmark and Pin VLM', () => {
 
       // Register a second verified test registration using the checked-in
       // text snapshot so this queue test does not depend on absent VLM weights.
-      const textSnapshotRelative = 'models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1';
-      const textSnapshotPath = path.join(PROJECT_ROOT, 'offline-stores', 'model-snapshot', textSnapshotRelative);
-      const queuedManifestPath = path.join(PROJECT_ROOT, '.maos', 'queued-test-manifest.json');
+      const textSnapshotRelative =
+        'models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1';
+      const textSnapshotPath = path.join(testRoot, 'offline-stores', 'model-snapshot', textSnapshotRelative);
+      const queuedManifestPath = path.join(testRoot, '.maos', 'queued-test-manifest.json');
       const configBytes = fs.readFileSync(path.join(textSnapshotPath, 'config.json'));
       fs.mkdirSync(path.dirname(queuedManifestPath), { recursive: true });
-      fs.writeFileSync(queuedManifestPath, JSON.stringify({
-        schemaVersion: 1, model: 'queued-test-model', revision: 'queued-test-revision',
-        snapshotRelativePath: textSnapshotRelative,
-        files: [{ path: 'config.json', size: configBytes.length, sha256: crypto.createHash('sha256').update(configBytes).digest('hex') }],
-      }));
+      fs.writeFileSync(
+        queuedManifestPath,
+        JSON.stringify({
+          schemaVersion: 1,
+          model: 'queued-test-model',
+          revision: 'queued-test-revision',
+          snapshotRelativePath: textSnapshotRelative,
+          files: [
+            {
+              path: 'config.json',
+              size: configBytes.length,
+              sha256: crypto.createHash('sha256').update(configBytes).digest('hex'),
+            },
+          ],
+        }),
+      );
       manager.registerModel({
-        modelId: 'queued-test-model', modelName: 'queued-test-model', revision: 'queued-test-revision',
-        architecture: 'Qwen2ForCausalLM', quantization: 'fp16', vramRequiredMb: 4096, device: 'cuda', port: 8002,
-        manifestPath: queuedManifestPath, snapshotPath: textSnapshotPath, isHealthy: true,
+        modelId: 'queued-test-model',
+        modelName: 'queued-test-model',
+        revision: 'queued-test-revision',
+        architecture: 'Qwen2ForCausalLM',
+        quantization: 'fp16',
+        vramRequiredMb: 4096,
+        device: 'cuda',
+        port: 8002,
+        manifestPath: queuedManifestPath,
+        snapshotPath: textSnapshotPath,
+        isHealthy: true,
       });
       const p = manager.acquireLease({ modelId: 'queued-test-model', agentId: 'WAITING_AGENT' });
 
@@ -198,19 +268,21 @@ describe('F4-04: Benchmark and Pin VLM', () => {
     });
 
     it('fails closed for CPU fallback when the pinned VLM snapshot is absent', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
-      expect(() => manager.acquireLeaseSync({
-        modelId: PINNED_VLM_CONFIG.modelId,
-        agentId: 'CPU_AGENT',
-        allowCpuFallback: true,
-      })).toThrowError(/Snapshot directory not found|snapshot verification failed/i);
+      const manager = SharedModelManager.getInstance(testRoot);
+      expect(() =>
+        manager.acquireLeaseSync({
+          modelId: PINNED_VLM_CONFIG.modelId,
+          agentId: 'CPU_AGENT',
+          allowCpuFallback: true,
+        }),
+      ).toThrowError(/Snapshot directory not found|snapshot verification failed/i);
       expect(manager.listLeases()).toHaveLength(0);
     });
 
     it('verifies snapshot files and flags missing files with verifySnapshotManifest', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
-      const manifestPath = path.join(PROJECT_ROOT, 'vlm-snapshot-manifest.json');
-      const dummySnapshotDir = path.join(PROJECT_ROOT, 'non_existent_snapshot_dir');
+      const manager = SharedModelManager.getInstance(testRoot);
+      const manifestPath = path.join(testRoot, 'vlm-snapshot-manifest.json');
+      const dummySnapshotDir = path.join(testRoot, 'non_existent_snapshot_dir');
 
       const result = manager.verifySnapshotManifest(manifestPath, dummySnapshotDir);
       expect(result.valid).toBe(false);
@@ -219,7 +291,7 @@ describe('F4-04: Benchmark and Pin VLM', () => {
     });
 
     it('releases all leases and unloads residency on releaseAllLeases', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager = SharedModelManager.getInstance(testRoot);
       manager.acquireLeaseSync({
         modelId: 'Qwen/Qwen2.5-3B-Instruct',
         agentId: 'BATCH_AGENT_1',
@@ -245,7 +317,7 @@ describe('F4-04: Benchmark and Pin VLM', () => {
   describe('Three-Run Benchmark Stability Harness', () => {
     it('executes 3 consecutive benchmark iterations and passes manifest budget', async () => {
       const runner = new VlmBenchmarkRunner({
-        projectRoot: PROJECT_ROOT,
+        projectRoot: testRoot,
         simulated: {
           coldStartMs: 16200,
           inferenceLatencyMs: 3850,
@@ -287,12 +359,12 @@ describe('F4-04: Benchmark and Pin VLM', () => {
       expect(report.runs[1].outputHash).toBe(report.runs[2].outputHash);
 
       // Leases must be completely freed after benchmark
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager = SharedModelManager.getInstance(testRoot);
       expect(manager.listLeases()).toHaveLength(0);
     });
 
     it('fails closed instead of fabricating telemetry when simulation is not requested', async () => {
-      const runner = new VlmBenchmarkRunner({ projectRoot: PROJECT_ROOT });
+      const runner = new VlmBenchmarkRunner({ projectRoot: testRoot });
       await expect(runner.runBenchmark()).rejects.toMatchObject({ code: VLM_ERROR_CODES.MODEL_RUNTIME_UNAVAILABLE });
     });
   });
@@ -301,42 +373,42 @@ describe('F4-04: Benchmark and Pin VLM', () => {
 
   describe('Negative Guardrails & Edge Cases', () => {
     it('rejects models exceeding VRAM budget with OOM_BUDGET_EXCEEDED', () => {
-      const runner = new VlmBenchmarkRunner({ projectRoot: PROJECT_ROOT });
+      const runner = new VlmBenchmarkRunner({ projectRoot: testRoot });
       const result = runner.evaluateOomGuard();
       expect(result.passed).toBe(true);
       expect(result.errorCode).toBe(VLM_ERROR_CODES.OOM_BUDGET_EXCEEDED);
     });
 
     it('rejects unhealthy models with MODEL_UNHEALTHY', () => {
-      const runner = new VlmBenchmarkRunner({ projectRoot: PROJECT_ROOT });
+      const runner = new VlmBenchmarkRunner({ projectRoot: testRoot });
       const result = runner.evaluateHealthGuard();
       expect(result.passed).toBe(true);
       expect(result.errorCode).toBe(VLM_ERROR_CODES.MODEL_UNHEALTHY);
     });
 
     it('rejects wrong or unpinned model revision with REVISION_MISMATCH', () => {
-      const runner = new VlmBenchmarkRunner({ projectRoot: PROJECT_ROOT });
+      const runner = new VlmBenchmarkRunner({ projectRoot: testRoot });
       const result = runner.evaluateRevisionGuard();
       expect(result.passed).toBe(true);
       expect(result.errorCode).toBe(VLM_ERROR_CODES.REVISION_MISMATCH);
     });
 
     it('rejects unpinned runtime download / missing snapshot with NO_RUNTIME_DOWNLOAD', () => {
-      const runner = new VlmBenchmarkRunner({ projectRoot: PROJECT_ROOT });
+      const runner = new VlmBenchmarkRunner({ projectRoot: testRoot });
       const result = runner.evaluateOfflineGuard();
       expect(result.passed).toBe(true);
       expect(result.errorCode).toBe(VLM_ERROR_CODES.NO_RUNTIME_DOWNLOAD);
     });
 
     it('rejects unqueued concurrent GPU residency with CONCURRENCY_VIOLATION', () => {
-      const runner = new VlmBenchmarkRunner({ projectRoot: PROJECT_ROOT });
+      const runner = new VlmBenchmarkRunner({ projectRoot: testRoot });
       const result = runner.evaluateConcurrencyGuard();
       expect(result.passed).toBe(true);
       expect(result.errorCode).toBe(VLM_ERROR_CODES.CONCURRENCY_VIOLATION);
     });
 
     it('rejects unregistered model lookup with MODEL_UNAVAILABLE', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
+      const manager = SharedModelManager.getInstance(testRoot);
       expect(() => {
         manager.acquireLeaseSync({
           modelId: 'non-existent-vlm-model',
@@ -359,8 +431,8 @@ describe('F4-04: Benchmark and Pin VLM', () => {
 
   describe('Integration with ModelService and ServiceContainer', () => {
     it('wires ModelService to delegate lease lifecycle to SharedModelManager', () => {
-      const manager = SharedModelManager.getInstance(PROJECT_ROOT);
-      const modelService = new ModelService(PROJECT_ROOT, manager);
+      const manager = SharedModelManager.getInstance(testRoot);
+      const modelService = new ModelService(testRoot, manager);
 
       const lease = modelService.acquireLease({
         modelId: 'Qwen/Qwen2.5-3B-Instruct',
@@ -382,7 +454,7 @@ describe('F4-04: Benchmark and Pin VLM', () => {
     });
 
     it('exposes modelManager on ServiceContainer', () => {
-      const services = createServiceContainer(PROJECT_ROOT);
+      const services = createServiceContainer(testRoot);
       expect(services.modelManager).toBeDefined();
       expect(services.modelManager).toBeInstanceOf(SharedModelManager);
       expect(services.model).toBeDefined();

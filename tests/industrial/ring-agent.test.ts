@@ -22,27 +22,67 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     object: 'chat.completion',
     created: 1730000000,
     model: BASETEN_API_MODEL,
-    choices: [{ index: 0, message: { role: 'assistant', content, ...(toolCalls ? { tool_calls: toolCalls } : {}) }, finish_reason: toolCalls ? 'tool_calls' : finishReason }],
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', content, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
+        finish_reason: toolCalls ? 'tool_calls' : finishReason,
+      },
+    ],
     usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
   });
 
   beforeEach(() => {
-    tempProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-agent-test-'));
+    const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-agent-test-'));
+    try {
+      tempProjectRoot = fs.realpathSync(raw);
+    } catch {
+      tempProjectRoot = raw;
+    }
     const repoRoot = path.resolve(__dirname, '../..');
     fs.mkdirSync(path.join(tempProjectRoot, '.maos'), { recursive: true });
     fs.mkdirSync(path.join(tempProjectRoot, 'demo', 'industrial'), { recursive: true });
-    for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
-      fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(tempProjectRoot, 'demo', 'industrial', f));
+    for (const f of [
+      'sop_turbine_vibration_monitoring.md',
+      'maintenance_report.txt',
+      'safety_thresholds.json',
+      'turbine_vibration_log.csv',
+    ]) {
+      fs.copyFileSync(
+        path.join(repoRoot, 'demo', 'industrial', f),
+        path.join(tempProjectRoot, 'demo', 'industrial', f),
+      );
     }
-    fs.writeFileSync(path.join(tempProjectRoot, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-agent-test', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true }, providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } }, agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }] }, null, 2));
+    fs.writeFileSync(
+      path.join(tempProjectRoot, '.maos', 'maos.config.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          projectName: 'ring-agent-test',
+          profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true },
+          providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } },
+          agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }],
+        },
+        null,
+        2,
+      ),
+    );
     capturedRequests = [];
   });
 
   afterEach(async () => {
-    if (restoreFetch) { restoreFetch(); restoreFetch = null; }
-    if (mockServer) { await new Promise<void>((r) => mockServer!.close(() => r())); mockServer = null; }
+    if (restoreFetch) {
+      restoreFetch();
+      restoreFetch = null;
+    }
+    if (mockServer) {
+      await new Promise<void>((r) => mockServer!.close(() => r()));
+      mockServer = null;
+    }
     delete process.env[BASETEN_API_KEY_ENV];
-    try { fs.rmSync(tempProjectRoot, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(tempProjectRoot, { recursive: true, force: true });
+    } catch {}
   });
 
   /**
@@ -67,61 +107,88 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     for (const tc of msg.tool_calls || []) {
       const args = typeof tc.function?.arguments === 'string' ? tc.function.arguments : '{}';
       const mid = Math.max(1, Math.ceil(args.length / 2));
-      chunks.push({ delta: { tool_calls: [{ index: 0, id: tc.id, type: 'function', function: { name: tc.function?.name, arguments: '' } }] } });
+      chunks.push({
+        delta: {
+          tool_calls: [{ index: 0, id: tc.id, type: 'function', function: { name: tc.function?.name, arguments: '' } }],
+        },
+      });
       chunks.push({ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(0, mid) } }] } });
       chunks.push({ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(mid) } }] } });
     }
     chunks.push({ delta: {}, finish: choice.finish_reason || (msg.tool_calls?.length ? 'tool_calls' : 'stop') });
     return chunks;
   };
-  const startMock = (handler: (body: any) => any, opts?: { delayMs?: number }): Promise<string> => new Promise((resolve, reject) => {
-    mockServer = http.createServer((req, res) => {
-      const chunks: Buffer[] = [];
-      req.on('data', (c) => chunks.push(Buffer.from(c)));
-      req.on('end', () => {
-        let body: any; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = undefined; }
-        capturedRequests.push({ url: req.url || '', body });
-        const send = () => {
-          const out = handler(body);
-          if (body && body.stream === true) {
-            res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-            for (const c of toSSEChunks(out)) {
-              res.write(`data: ${JSON.stringify({ id: 'chatcmpl-ring-agent-mock', object: 'chat.completion.chunk', created: 1730000000, model: BASETEN_API_MODEL, choices: [{ index: 0, delta: c.delta, finish_reason: c.finish ?? null }] })}\n\n`);
-            }
-            res.write('data: [DONE]\n\n');
-            res.end();
-            return;
+  const startMock = (handler: (body: any) => any, opts?: { delayMs?: number }): Promise<string> =>
+    new Promise((resolve, reject) => {
+      mockServer = http.createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on('data', (c) => chunks.push(Buffer.from(c)));
+        req.on('end', () => {
+          let body: any;
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          } catch {
+            body = undefined;
           }
-          res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out));
+          capturedRequests.push({ url: req.url || '', body });
+          const send = () => {
+            const out = handler(body);
+            if (body && body.stream === true) {
+              res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+              });
+              for (const c of toSSEChunks(out)) {
+                res.write(
+                  `data: ${JSON.stringify({ id: 'chatcmpl-ring-agent-mock', object: 'chat.completion.chunk', created: 1730000000, model: BASETEN_API_MODEL, choices: [{ index: 0, delta: c.delta, finish_reason: c.finish ?? null }] })}\n\n`,
+                );
+              }
+              res.write('data: [DONE]\n\n');
+              res.end();
+              return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(out));
+          };
+          if (opts?.delayMs) setTimeout(send, opts.delayMs);
+          else send();
+        });
+      });
+      mockServer.once('error', reject);
+      mockServer.listen(0, '127.0.0.1', () => {
+        mockServerPort = (mockServer!.address() as AddressInfo).port;
+        const mockBase = `http://127.0.0.1:${mockServerPort}`;
+        const originalFetch = globalThis.fetch;
+        const nativeFetch = originalFetch.bind(globalThis);
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const target = String(input);
+          if (target.startsWith(`${BASETEN_API_BASE_URL}/chat/completions`))
+            return nativeFetch(`${mockBase}/chat/completions`, { ...init, redirect: 'error' });
+          return nativeFetch(input, init);
+        }) as typeof globalThis.fetch;
+        restoreFetch = () => {
+          globalThis.fetch = originalFetch;
         };
-        if (opts?.delayMs) setTimeout(send, opts.delayMs); else send();
+        resolve(mockBase);
       });
     });
-    mockServer.once('error', reject);
-    mockServer.listen(0, '127.0.0.1', () => {
-      mockServerPort = (mockServer!.address() as AddressInfo).port;
-      const mockBase = `http://127.0.0.1:${mockServerPort}`;
-      const originalFetch = globalThis.fetch;
-      const nativeFetch = originalFetch.bind(globalThis);
-      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const target = String(input);
-        if (target.startsWith(`${BASETEN_API_BASE_URL}/chat/completions`)) return nativeFetch(`${mockBase}/chat/completions`, { ...init, redirect: 'error' });
-        return nativeFetch(input, init);
-      }) as typeof globalThis.fetch;
-      restoreFetch = () => { globalThis.fetch = originalFetch; };
-      resolve(mockBase);
-    });
-  });
 
   it('(a) full loop: tool call then final answer completes with telemetry in transcript', async () => {
     process.env[BASETEN_API_KEY_ENV] = 'synthetic-ring-agent-key';
     let call = 0;
     await startMock(() => {
       call++;
-      if (call === 1) return completion(null, [{ id: 'call_1', type: 'function', function: { name: 'analyze_telemetry', arguments: '{}' } }]);
+      if (call === 1)
+        return completion(null, [
+          { id: 'call_1', type: 'function', function: { name: 'analyze_telemetry', arguments: '{}' } },
+        ]);
       return completion('Turbine T-07 is CRITICAL: RMS 2.637 mm/s from the deterministic telemetry tool.');
     });
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const events: string[] = [];
     service.onEvent((e) => events.push(e.type));
     const runId = service.startRun('Analyze turbine vibration telemetry and summarize the verdict');
@@ -153,11 +220,25 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
 
   it('(b) approval: consequential draft pauses, deny writes nothing, approve writes and completes', async () => {
     process.env[BASETEN_API_KEY_ENV] = 'synthetic-ring-agent-key';
-    const noteArgs = JSON.stringify({ title: 'Vibration Alert', content: 'Turbine T-07 CRITICAL vibration requires inspection.', filename: 'safety-note.md' });
+    const noteArgs = JSON.stringify({
+      title: 'Vibration Alert',
+      content: 'Turbine T-07 CRITICAL vibration requires inspection.',
+      filename: 'safety-note.md',
+    });
     // deny branch
     let denyCall = 0;
-    await startMock(() => { denyCall++; if (denyCall === 1) return completion(null, [{ id: 'call_draft', type: 'function', function: { name: 'draft_safety_note', arguments: noteArgs } }]); return completion('should not be used after denial'); });
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    await startMock(() => {
+      denyCall++;
+      if (denyCall === 1)
+        return completion(null, [
+          { id: 'call_draft', type: 'function', function: { name: 'draft_safety_note', arguments: noteArgs } },
+        ]);
+      return completion('should not be used after denial');
+    });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const runId = service.startRun('Draft a safety note about turbine vibration');
     const awaiting = await service.waitForRun(runId);
     expect(awaiting.status).toBe('awaiting_approval');
@@ -173,12 +254,28 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     expect(fs.existsSync(draftsDir) ? fs.readdirSync(draftsDir).length : 0).toBe(0);
     expect(denied.transcript.some((e) => e.type === 'approval.resolved' && e.decision === 'denied')).toBe(true);
     // approve branch (fresh mock)
-    if (restoreFetch) { restoreFetch(); restoreFetch = null; }
-    if (mockServer) { await new Promise<void>((r) => mockServer!.close(() => r())); mockServer = null; }
+    if (restoreFetch) {
+      restoreFetch();
+      restoreFetch = null;
+    }
+    if (mockServer) {
+      await new Promise<void>((r) => mockServer!.close(() => r()));
+      mockServer = null;
+    }
     capturedRequests = [];
     let approveCall = 0;
-    await startMock(() => { approveCall++; if (approveCall === 1) return completion(null, [{ id: 'call_draft2', type: 'function', function: { name: 'draft_safety_note', arguments: noteArgs } }]); return completion('Safety note drafted after approval.'); });
-    const service2 = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    await startMock(() => {
+      approveCall++;
+      if (approveCall === 1)
+        return completion(null, [
+          { id: 'call_draft2', type: 'function', function: { name: 'draft_safety_note', arguments: noteArgs } },
+        ]);
+      return completion('Safety note drafted after approval.');
+    });
+    const service2 = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const runId2 = service2.startRun('Draft a safety note about turbine vibration');
     const awaiting2 = await service2.waitForRun(runId2);
     expect(awaiting2.status).toBe('awaiting_approval');
@@ -190,13 +287,18 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     expect(fs.readdirSync(draftsDir).length).toBe(1);
     const draftFile = path.join(draftsDir, fs.readdirSync(draftsDir)[0]);
     expect(fs.readFileSync(draftFile, 'utf-8')).toContain('Vibration Alert');
-    expect(approved.transcript.some((e) => e.type === 'tool.result' && e.toolName === 'draft_safety_note' && e.ok === true)).toBe(true);
+    expect(
+      approved.transcript.some((e) => e.type === 'tool.result' && e.toolName === 'draft_safety_note' && e.ok === true),
+    ).toBe(true);
   });
 
   it('(c) cancellation: cancel during pending model call marks cancelled', async () => {
     process.env[BASETEN_API_KEY_ENV] = 'synthetic-ring-agent-key';
     await startMock(() => completion('late answer should be ignored'), { delayMs: 400 });
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry slowly');
     await new Promise((r) => setTimeout(r, 30));
     expect(service.getRun(runId)?.status).toBe('running');
@@ -210,7 +312,10 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
   it('(d) evidence-only: no key runs deterministic tools with zero model requests', async () => {
     delete process.env[BASETEN_API_KEY_ENV];
     await startMock(() => completion('model must never be called'));
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const runId = service.startRun('Analyze turbine vibration telemetry and give the verdict');
     const snap = await service.waitForCompletion(runId);
     expect(snap.status).toBe('completed');
@@ -219,7 +324,9 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     expect(snap.finalAnswer).toContain('2.637');
     expect(snap.finalAnswer).toContain('evidence-only');
     expect(snap.transcript.some((e) => e.type === 'mode.evidence-only')).toBe(true);
-    expect(snap.transcript.some((e) => e.type === 'tool.result' && e.toolName === 'analyze_telemetry' && e.ok === true)).toBe(true);
+    expect(
+      snap.transcript.some((e) => e.type === 'tool.result' && e.toolName === 'analyze_telemetry' && e.ok === true),
+    ).toBe(true);
     expect(capturedRequests.length).toBe(0);
   });
 
@@ -234,7 +341,16 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
     const { createServiceContainer } = await import('../../src/service');
     const services = createServiceContainer(tempProjectRoot);
     const audit = new AuditService(tempProjectRoot);
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: audit, memoryService: services.memory, ocrService: services.ocr, visionService: services.vision, docxGenerator: services.docxGenerator, xlsxGenerator: services.xlsxGenerator, kbSearch: services.kbSearch });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: audit,
+      memoryService: services.memory,
+      ocrService: services.ocr,
+      visionService: services.vision,
+      docxGenerator: services.docxGenerator,
+      xlsxGenerator: services.xlsxGenerator,
+      kbSearch: services.kbSearch,
+    });
     const runId = service.startRun('Raise a work order and draft my handover');
     const awaiting = await service.waitForRun(runId, 30000);
     expect(awaiting.status).toBe('awaiting_approval');
@@ -269,7 +385,10 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
   it('(e) prompt safety: model request contains summary and not raw CSV rows', async () => {
     process.env[BASETEN_API_KEY_ENV] = 'synthetic-ring-agent-key';
     await startMock(() => completion('Summary reviewed.'));
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const runId = service.startRun('Explain the turbine vibration verdict');
     const snap = await service.waitForCompletion(runId);
     expect(snap.status).toBe('completed');
@@ -285,8 +404,22 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent Service', () => {
   it('(f) path safety: read_company_document outside evidence root is refused', async () => {
     process.env[BASETEN_API_KEY_ENV] = 'synthetic-ring-agent-key';
     let call = 0;
-    await startMock(() => { call++; if (call === 1) return completion(null, [{ id: 'call_read', type: 'function', function: { name: 'read_company_document', arguments: JSON.stringify({ path: '../maos.config.json' }) } }]); return completion('Outside-root read was refused as expected.'); });
-    const service = new RingAgentService({ projectRoot: tempProjectRoot, auditService: new AuditService(tempProjectRoot) });
+    await startMock(() => {
+      call++;
+      if (call === 1)
+        return completion(null, [
+          {
+            id: 'call_read',
+            type: 'function',
+            function: { name: 'read_company_document', arguments: JSON.stringify({ path: '../maos.config.json' }) },
+          },
+        ]);
+      return completion('Outside-root read was refused as expected.');
+    });
+    const service = new RingAgentService({
+      projectRoot: tempProjectRoot,
+      auditService: new AuditService(tempProjectRoot),
+    });
     const runId = service.startRun('Read the document at ../maos.config.json');
     const snap = await service.waitForCompletion(runId);
     expect(snap.status).toBe('completed');
@@ -304,10 +437,28 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent REST API (g)', () => {
     const root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-api2-'));
     fs.mkdirSync(path.join(root2, '.maos'), { recursive: true });
     fs.mkdirSync(path.join(root2, 'demo', 'industrial'), { recursive: true });
-    for (const f of ['sop_turbine_vibration_monitoring.md', 'maintenance_report.txt', 'safety_thresholds.json', 'turbine_vibration_log.csv']) {
+    for (const f of [
+      'sop_turbine_vibration_monitoring.md',
+      'maintenance_report.txt',
+      'safety_thresholds.json',
+      'turbine_vibration_log.csv',
+    ]) {
       fs.copyFileSync(path.join(repoRoot, 'demo', 'industrial', f), path.join(root2, 'demo', 'industrial', f));
     }
-    fs.writeFileSync(path.join(root2, '.maos', 'maos.config.json'), JSON.stringify({ schemaVersion: 1, projectName: 'ring-api2', profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true }, providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } }, agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }] }, null, 2));
+    fs.writeFileSync(
+      path.join(root2, '.maos', 'maos.config.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          projectName: 'ring-api2',
+          profile: { id: 'industrial', displayName: 'MAOS Industrial', mode: 'sovereign-local', zeroCloud: true },
+          providers: { baseten: { baseURL: BASETEN_API_BASE_URL, basetenApiEnabled: true } },
+          agents: [{ id: 'ANALYST_AGENT', role: 'analyst', provider: 'baseten', model: BASETEN_API_MODEL }],
+        },
+        null,
+        2,
+      ),
+    );
     // Mock is installed via a fresh service test would need fetch bridge; instead test service directly via container router with evidence-only fallback by deleting key.
     delete process.env[BASETEN_API_KEY_ENV];
     const svcMod = await import('../../src/service');
@@ -316,10 +467,27 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent REST API (g)', () => {
     const router = new routerMod.RestApiRouter(services, root2);
     const exec = async (method: string, url: string, payload?: any) => {
       const payloadBuf = Buffer.from(payload === undefined ? '' : JSON.stringify(payload));
-      const req = { method, url, headers: { host: '127.0.0.1', 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' }, on: () => {} } as any;
-      (req as any)[Symbol.asyncIterator] = async function* () { if (payloadBuf.length) yield payloadBuf; };
-      let statusCode = 0; let resBody = '';
-      const res = { writeHead: (s: number) => { statusCode = s; }, setHeader: () => {}, end: (d: string) => { resBody = d; } } as any;
+      const req = {
+        method,
+        url,
+        headers: { host: '127.0.0.1', 'content-type': 'application/json' },
+        socket: { remoteAddress: '127.0.0.1' },
+        on: () => {},
+      } as any;
+      (req as any)[Symbol.asyncIterator] = async function* () {
+        if (payloadBuf.length) yield payloadBuf;
+      };
+      let statusCode = 0;
+      let resBody = '';
+      const res = {
+        writeHead: (s: number) => {
+          statusCode = s;
+        },
+        setHeader: () => {},
+        end: (d: string) => {
+          resBody = d;
+        },
+      } as any;
       await router.handle(req, res);
       return { status: statusCode, body: resBody ? JSON.parse(resBody) : {} };
     };
@@ -327,12 +495,19 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent REST API (g)', () => {
       const bad = await exec('POST', '/api/v1/ring/runs', {});
       expect(bad.status).toBe(400);
       expect(bad.body.error.code).toBe('VALIDATION_FAILED');
-      const started = await exec('POST', '/api/v1/ring/runs', { instruction: 'Analyze turbine vibration telemetry and give the verdict' });
+      const started = await exec('POST', '/api/v1/ring/runs', {
+        instruction: 'Analyze turbine vibration telemetry and give the verdict',
+      });
       expect(started.status).toBe(201);
       const runId = started.body.data.runId as string;
       expect(typeof runId).toBe('string');
       let finalState: any = null;
-      for (let i = 0; i < 50; i++) { const f = await exec('GET', '/api/v1/ring/runs/' + runId); finalState = f; if (f.body.data.status === 'completed') break; await new Promise((r) => setTimeout(r, 10)); }
+      for (let i = 0; i < 50; i++) {
+        const f = await exec('GET', '/api/v1/ring/runs/' + runId);
+        finalState = f;
+        if (f.body.data.status === 'completed') break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
       expect(finalState.body.data.status).toBe('completed');
       expect(finalState.body.data.finalAnswer).toContain('CRITICAL');
       expect(finalState.body.data.mode).toBe('evidence-only');
@@ -340,7 +515,9 @@ describe('TASK RING-AGENT-LOOP-01: Ring Agent REST API (g)', () => {
       expect(missing.status).toBe(404);
       expect(missing.body.error.code).toBe('NOT_FOUND');
     } finally {
-      try { fs.rmSync(root2, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(root2, { recursive: true, force: true });
+      } catch {}
     }
   });
 });

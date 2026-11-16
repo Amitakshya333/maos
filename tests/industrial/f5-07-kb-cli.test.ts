@@ -32,17 +32,9 @@ import {
   KbVerifyResult,
   KbClearResult,
 } from '../../src/domain/kb-cli-types';
-import {
-  createDefaultCorpusPolicy,
-  KbCorpusPolicy,
-} from '../../src/domain/kb-corpus-policy';
-import {
-  PINNED_EMBEDDING_CONFIG,
-  EmbeddingSnapshotManifest,
-} from '../../src/domain/embedding';
-import {
-  createDeterministicSemanticVector,
-} from '../../src/industrial/kb-retrieval-fixtures';
+import { createDefaultCorpusPolicy, KbCorpusPolicy } from '../../src/domain/kb-corpus-policy';
+import { PINNED_EMBEDDING_CONFIG, EmbeddingSnapshotManifest } from '../../src/domain/embedding';
+import { createDeterministicSemanticVector } from '../../src/industrial/kb-retrieval-fixtures';
 import {
   runKbBuild,
   runKbStatus,
@@ -145,7 +137,12 @@ describe('F5-07: Knowledge-Base CLI and Service Operations', () => {
   }
 
   beforeEach(() => {
-    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f5-07-test-'));
+    const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-f5-07-test-'));
+    try {
+      testRoot = fs.realpathSync(raw);
+    } catch {
+      testRoot = raw;
+    }
     fs.mkdirSync(path.join(testRoot, '.maos', 'audit'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, '.maos', 'kb'), { recursive: true });
     fs.mkdirSync(path.join(testRoot, 'docs'), { recursive: true });
@@ -212,14 +209,21 @@ describe('F5-07: Knowledge-Base CLI and Service Operations', () => {
     });
 
     it('rejects directory without .maos/ with INVALID_PROJECT (code 10)', () => {
-      const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-dir-'));
+      const rawBare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-dir-'));
+      const bareDir = (() => {
+        try {
+          return fs.realpathSync(rawBare);
+        } catch {
+          return rawBare;
+        }
+      })();
       try {
         resolveAndValidateKbProjectRoot(bareDir, { allowTemp: true });
         expect.unreachable('Should have thrown');
       } catch (err: any) {
         expect(err).toBeInstanceOf(KbCliError);
         expect(err.exitCode).toBe(KB_CLI_EXIT.INVALID_PROJECT);
-        expect(err.message).toContain('Missing \'.maos\'');
+        expect(err.message).toContain("Missing '.maos'");
       } finally {
         fs.rmSync(bareDir, { recursive: true, force: true });
       }
@@ -299,7 +303,14 @@ describe('F5-07: Knowledge-Base CLI and Service Operations', () => {
     });
 
     it('fails closed with MISSING_MODEL (code 12) when offline embedding snapshot is absent', async () => {
-      const noModelDir = fs.mkdtempSync(path.join(os.tmpdir(), 'no-model-'));
+      const rawNoModel = fs.mkdtempSync(path.join(os.tmpdir(), 'no-model-'));
+      const noModelDir = (() => {
+        try {
+          return fs.realpathSync(rawNoModel);
+        } catch {
+          return rawNoModel;
+        }
+      })();
       fs.mkdirSync(path.join(noModelDir, '.maos'), { recursive: true });
       fs.mkdirSync(path.join(noModelDir, 'docs'), { recursive: true });
       fs.writeFileSync(path.join(noModelDir, 'docs', 'test.txt'), 'Sample document.');

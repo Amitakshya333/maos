@@ -50,7 +50,14 @@ const FIXTURES = [
 ];
 
 function makeTempRoot(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-tui-'));
+  const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-tui-'));
+  const root = (() => {
+    try {
+      return fs.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = path.resolve(__dirname, '../..');
@@ -321,8 +328,19 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
 
   // TASK RING-TUI-FIX-01: the four CEO defects, pinned as regression tests.
   it('banner is centered with left padding and never printed at column 0 raw', () => {
-    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY ENFORCED', audit: 'AUDIT LOGGING', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
-    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100, height: 0 }, projectLabel: 'demo-plant', branch: 'main' });
+    const systems = {
+      engine: 'ENGINE HEALTHY',
+      boundary: 'BOUNDARY ENFORCED',
+      audit: 'AUDIT LOGGING',
+      telemetry: 'T-07 CRITICAL RMS 2.637',
+      mode: 'EVIDENCE-ONLY' as const,
+    };
+    const home = renderIndustrialTuiHome({
+      systems,
+      caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100, height: 0 },
+      projectLabel: 'demo-plant',
+      branch: 'main',
+    });
     const rows = home.split('\n');
     for (let i = 0; i < CEO_BANNER.length; i++) {
       const row = rows[i];
@@ -333,8 +351,19 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
   });
 
   it('home render at narrow 80 cols keeps every line within bounds', () => {
-    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY ENFORCED', audit: 'AUDIT LOGGING', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
-    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 80, height: 0 }, projectLabel: 'demo-plant', branch: 'main' });
+    const systems = {
+      engine: 'ENGINE HEALTHY',
+      boundary: 'BOUNDARY ENFORCED',
+      audit: 'AUDIT LOGGING',
+      telemetry: 'T-07 CRITICAL RMS 2.637',
+      mode: 'EVIDENCE-ONLY' as const,
+    };
+    const home = renderIndustrialTuiHome({
+      systems,
+      caps: { unicode: true, emoji: true, color: false, narrow: false, width: 80, height: 0 },
+      projectLabel: 'demo-plant',
+      branch: 'main',
+    });
     const rows = home.split('\n');
     const strip = (v: string): string => v.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
     for (const row of rows) expect(strip(row).length).toBeLessThanOrEqual(80);
@@ -342,8 +371,19 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
   });
 
   it('input card borders always close at 80 cols (rounded corners present)', () => {
-    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY NOT CHECKED IN THIS SESSION', audit: 'AUDIT NOT CHECKED IN THIS SESSION', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
-    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 80, height: 0 }, projectLabel: 'demo-plant', branch: 'main' });
+    const systems = {
+      engine: 'ENGINE HEALTHY',
+      boundary: 'BOUNDARY NOT CHECKED IN THIS SESSION',
+      audit: 'AUDIT NOT CHECKED IN THIS SESSION',
+      telemetry: 'T-07 CRITICAL RMS 2.637',
+      mode: 'EVIDENCE-ONLY' as const,
+    };
+    const home = renderIndustrialTuiHome({
+      systems,
+      caps: { unicode: true, emoji: true, color: false, narrow: false, width: 80, height: 0 },
+      projectLabel: 'demo-plant',
+      branch: 'main',
+    });
     const strip = (v: string): string => v.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
     const rows = home.split('\n').map(strip);
     for (const row of rows) expect(row.length).toBeLessThanOrEqual(80);
@@ -363,7 +403,12 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
   it('Systems panel sanitizes firewall/audit failures (no raw adapter text)', async () => {
     const container = createServiceContainer(root);
     const systems = await readIndustrialTuiSystems(container, root, 'evidence-only');
-    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100, height: 0 }, projectLabel: 'demo-plant', branch: 'main' });
+    const home = renderIndustrialTuiHome({
+      systems,
+      caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100, height: 0 },
+      projectLabel: 'demo-plant',
+      branch: 'main',
+    });
     for (const leak of ['firewall', 'Firewall', 'ENOENT', 'inactive', 'BLOCKED (', 'CHECK FAILED', 'CHAIN INVALID']) {
       expect(home).not.toContain(leak);
     }
@@ -372,8 +417,19 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
   });
 
   it('dead layout is alive: breathing room, invitation copy, live status footer', () => {
-    const systems = { engine: 'ENGINE HEALTHY', boundary: 'BOUNDARY ENFORCED', audit: 'AUDIT LOGGING', telemetry: 'T-07 CRITICAL RMS 2.637', mode: 'EVIDENCE-ONLY' as const };
-    const home = renderIndustrialTuiHome({ systems, caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100, height: 0 }, projectLabel: 'demo-plant', branch: 'main' });
+    const systems = {
+      engine: 'ENGINE HEALTHY',
+      boundary: 'BOUNDARY ENFORCED',
+      audit: 'AUDIT LOGGING',
+      telemetry: 'T-07 CRITICAL RMS 2.637',
+      mode: 'EVIDENCE-ONLY' as const,
+    };
+    const home = renderIndustrialTuiHome({
+      systems,
+      caps: { unicode: true, emoji: true, color: false, narrow: false, width: 100, height: 0 },
+      projectLabel: 'demo-plant',
+      branch: 'main',
+    });
     expect(home).toContain('Type /ring to talk to Ring');
     expect(home).toContain('demo-plant:main');
     expect(home).toContain('v' + INDUSTRIAL_TUI_VERSION);
@@ -499,10 +555,10 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
       let colored: string;
       try {
         colored = renderIndustrialTuiHome({
-        systems: sys,
-        caps: { unicode: true, emoji: false, color: true, narrow: false, width: 100, height: 0 },
-        projectLabel: 'demo-plant',
-        branch: 'main',
+          systems: sys,
+          caps: { unicode: true, emoji: false, color: true, narrow: false, width: 100, height: 0 },
+          projectLabel: 'demo-plant',
+          branch: 'main',
         });
       } finally {
         chalk.level = prevLevel;
@@ -569,4 +625,3 @@ describe('TASK RING-TUI-01: industrial TUI', () => {
     });
   });
 });
-

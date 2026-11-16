@@ -21,15 +21,8 @@ import { createRestApiServer, RestApiServer } from '../../src/api/server';
 import { MaosRestClient } from '../../src/api/client';
 import { GuiApiAdapter } from '../../src/gui/src/api/adapter';
 import { ServiceContainer } from '../../src/service';
-import {
-  planTaskWorkflow,
-  planStepToolExecution,
-  verifyStepToolPreExecution,
-} from '../../src/core/orchestrator';
-import {
-  InferenceInput,
-  TaskFile,
-} from '../../src/domain';
+import { planTaskWorkflow, planStepToolExecution, verifyStepToolPreExecution } from '../../src/core/orchestrator';
+import { InferenceInput, TaskFile } from '../../src/domain';
 import { AgentProfile } from '../../src/core/router';
 import { ToolPreExecutionContext } from '../../src/industrial/tool-approval-planner';
 
@@ -261,13 +254,7 @@ describe('F7-05: 4-Way Interface Parity & Idempotency Hardening', () => {
         created: new Date().toISOString(),
         updated: new Date().toISOString(),
       };
-      const orchPlanOutcome = planTaskWorkflow(
-        dummyTaskFile,
-        directInference,
-        testFleet,
-        'parity-proj-01',
-        'run-01',
-      );
+      const orchPlanOutcome = planTaskWorkflow(dummyTaskFile, directInference, testFleet, 'parity-proj-01', 'run-01');
       expect(orchPlanOutcome.success).toBe(true);
       if (!orchPlanOutcome.success) return;
       const orchPlan = orchPlanOutcome.plan;
@@ -480,7 +467,7 @@ describe('F7-05: 4-Way Interface Parity & Idempotency Hardening', () => {
 
   describe('6. Protected Canary Invariant', () => {
     it('confirms rust/test.txt SHA-256 hash is unmodified', () => {
-      const canaryPath = path.join('c:\\maos', 'rust', 'test.txt');
+      const canaryPath = path.resolve(__dirname, '../../rust/test.txt');
       expect(fs.existsSync(canaryPath)).toBe(true);
 
       const content = fs.readFileSync(canaryPath);

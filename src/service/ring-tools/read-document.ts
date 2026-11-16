@@ -23,7 +23,10 @@ export function createReadCompanyDocumentTool(_deps: RingToolDeps): RingToolDefi
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Document path relative to the evidence root (or project-relative inside it).' },
+        path: {
+          type: 'string',
+          description: 'Document path relative to the evidence root (or project-relative inside it).',
+        },
       },
       required: ['path'],
     },
@@ -45,7 +48,8 @@ export function createReadCompanyDocumentTool(_deps: RingToolDeps): RingToolDefi
       if (!isWithin(evidenceRoot, candidate) || candidate === evidenceRoot) {
         throw new Error(`PATH_OUTSIDE_EVIDENCE_ROOT: refused to read outside the evidence root: ${requested}`);
       }
-      if (!fs.existsSync(candidate)) throw new Error(`Company document not found under the evidence root: ${requested}`);
+      if (!fs.existsSync(candidate))
+        throw new Error(`Company document not found under the evidence root: ${requested}`);
       const realRoot = fs.realpathSync(evidenceRoot);
       const realCandidate = fs.realpathSync(candidate);
       if (!isStrictlyWithin(realRoot, realCandidate)) {
@@ -54,7 +58,13 @@ export function createReadCompanyDocumentTool(_deps: RingToolDeps): RingToolDefi
       const stat = fs.statSync(realCandidate);
       if (!stat.isFile()) throw new Error(`Company document is not a file: ${requested}`);
       if (stat.size > 256 * 1024) throw new Error(`Company document exceeds the 256 KB read limit: ${requested}`);
-      const rel = path.relative(ctx.projectRoot, realCandidate).split(path.sep).join('/');
+      let realProjectRoot: string;
+      try {
+        realProjectRoot = fs.realpathSync(ctx.projectRoot);
+      } catch {
+        realProjectRoot = path.resolve(ctx.projectRoot);
+      }
+      const rel = path.relative(realProjectRoot, realCandidate).split(path.sep).join('/');
       if (path.extname(realCandidate).toLowerCase() === '.csv') {
         const bytes = fs.readFileSync(realCandidate);
         return {

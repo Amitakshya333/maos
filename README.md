@@ -267,8 +267,11 @@ npx vitest run tests/oasis/
 ├── apps/
 │   └── canva-3d/                # Target application: Canva 3D Spatial Studio (Three.js/Vite)
 ├── demo/
-│   └── hackday-2026/
-│       └── ignite-showcase.ps1  # 3-minute live presentation rehearsal script
+│   ├── hackday-2026/
+│   │   └── ignite-showcase.ps1  # 3-minute live presentation rehearsal script
+│   └── industrial/
+│       ├── RUNBOOK.md           # Industrial operational runbook (demo/industrial/RUNBOOK.md)
+│       └── PRESENTATION_SCRIPT.md # Industrial presentation script (demo/industrial/PRESENTATION_SCRIPT.md)
 ├── docs/
 │   ├── screenshots/             # Real high-resolution captures of TUI & architecture
 │   └── MAOS_OASIS_PITCH_AND_ARCHITECTURE.md # Master 5-beat pitch script & judge Q&As

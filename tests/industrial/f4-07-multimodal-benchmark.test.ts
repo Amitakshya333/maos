@@ -34,22 +34,9 @@ import {
   MultimodalBenchmarkRunnerOptions,
 } from '../../src/industrial/multimodal-benchmark-runner';
 import { writeFixturesToDisk } from '../../src/industrial/multimodal-fixtures';
-import {
-  PINNED_VLM_CONFIG,
-  VLM_MANIFEST_BUDGETS,
-  VLM_ERROR_CODES,
-  VlmError,
-} from '../../src/domain/vision';
-import {
-  ComparableObservation,
-  ConflictReviewError,
-  classifyObservationConflict,
-} from '../../src/domain/conflict';
-import {
-  createServiceContainer,
-  ServiceContainer,
-  SharedModelManager,
-} from '../../src/service';
+import { PINNED_VLM_CONFIG, VLM_MANIFEST_BUDGETS, VLM_ERROR_CODES, VlmError } from '../../src/domain/vision';
+import { ComparableObservation, ConflictReviewError, classifyObservationConflict } from '../../src/domain/conflict';
+import { createServiceContainer, ServiceContainer, SharedModelManager } from '../../src/service';
 
 describe('F4-07: Multimodal Benchmark Suite', () => {
   const TEST_TXT_INVARIANT = '1392245502333919F23E58B8F544F12470DB3829AABD5336A011E58D2B733435';
@@ -68,18 +55,28 @@ describe('F4-07: Multimodal Benchmark Suite', () => {
     if (fs.existsSync(vlmManifestSrc)) {
       fs.copyFileSync(vlmManifestSrc, path.join(tmpDir, 'vlm-snapshot-manifest.json'));
     }
-    const textSnapshotRelativePath = 'models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1';
+    const textSnapshotRelativePath =
+      'models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1';
     const textSnapshotDir = path.join(tmpDir, 'offline-stores', 'model-snapshot', textSnapshotRelativePath);
     fs.mkdirSync(textSnapshotDir, { recursive: true });
     const textConfig = Buffer.from('{"model_type":"qwen2"}', 'utf8');
     fs.writeFileSync(path.join(textSnapshotDir, 'config.json'), textConfig);
-    fs.writeFileSync(path.join(tmpDir, 'model-snapshot-manifest.json'), JSON.stringify({
-      schemaVersion: 1,
-      model: 'Qwen/Qwen2.5-3B-Instruct',
-      revision: 'aa8e72537993ba99e69dfaafa59ed015b17504d1',
-      snapshotRelativePath: textSnapshotRelativePath,
-      files: [{ path: 'config.json', size: textConfig.length, sha256: crypto.createHash('sha256').update(textConfig).digest('hex') }],
-    }));
+    fs.writeFileSync(
+      path.join(tmpDir, 'model-snapshot-manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        model: 'Qwen/Qwen2.5-3B-Instruct',
+        revision: 'aa8e72537993ba99e69dfaafa59ed015b17504d1',
+        snapshotRelativePath: textSnapshotRelativePath,
+        files: [
+          {
+            path: 'config.json',
+            size: textConfig.length,
+            sha256: crypto.createHash('sha256').update(textConfig).digest('hex'),
+          },
+        ],
+      }),
+    );
 
     // Generate frozen fixtures into tmpDir
     writeFixturesToDisk(tmpDir);
@@ -190,16 +187,12 @@ describe('F4-07: Multimodal Benchmark Suite', () => {
     it('correctly classifies numeric and unit conflicts', async () => {
       const manifest = runner.loadManifest();
 
-      const numConflictFixture = manifest.fixtures.find(
-        (f) => f.fixtureClass === 'ocr_vision_numeric_conflict',
-      )!;
+      const numConflictFixture = manifest.fixtures.find((f) => f.fixtureClass === 'ocr_vision_numeric_conflict')!;
       const numResult = await runner.runFixtureBenchmark(numConflictFixture);
       expect(numResult.finalClassification).toBe('CONFLICTING_VALUE');
       expect(numResult.requiresReview).toBe(true);
 
-      const unitConflictFixture = manifest.fixtures.find(
-        (f) => f.fixtureClass === 'ocr_vision_unit_conflict',
-      )!;
+      const unitConflictFixture = manifest.fixtures.find((f) => f.fixtureClass === 'ocr_vision_unit_conflict')!;
       const unitResult = await runner.runFixtureBenchmark(unitConflictFixture);
       expect(unitResult.finalClassification).toBe('CONFLICTING_UNIT');
       expect(unitResult.requiresReview).toBe(true);
@@ -327,8 +320,7 @@ describe('F4-07: Multimodal Benchmark Suite', () => {
 
       const benchmarkEvent = auditExport.records.find(
         (r) =>
-          r.source === 'multimodal_benchmark_runner' &&
-          (r.data as any).action === 'MULTIMODAL_BENCHMARK_COMPLETED',
+          r.source === 'multimodal_benchmark_runner' && (r.data as any).action === 'MULTIMODAL_BENCHMARK_COMPLETED',
       );
       expect(benchmarkEvent).toBeDefined();
       expect((benchmarkEvent!.data as any).reportId).toBe(report.reportId);
@@ -524,12 +516,7 @@ describe('F4-07: Multimodal Benchmark Suite', () => {
     // 17. Conflict report tampering
     it('17. Conflict report tampering: detected when artifact content is modified post-finalization', async () => {
       const report = await runner.runBenchmark();
-      const reportFile = path.join(
-        tmpDir,
-        'evidence',
-        'benchmarks',
-        `multimodal-benchmark-${report.reportId}.json`,
-      );
+      const reportFile = path.join(tmpDir, 'evidence', 'benchmarks', `multimodal-benchmark-${report.reportId}.json`);
       expect(fs.existsSync(reportFile)).toBe(true);
 
       // Tamper content
@@ -697,7 +684,7 @@ describe('F4-07: Multimodal Benchmark Suite', () => {
 
   describe('7. Protected Invariant', () => {
     it('preserves rust/test.txt SHA-256 hash invariant across all benchmark tests', () => {
-      const testTxtPath = path.resolve('c:/maos/rust/test.txt');
+      const testTxtPath = path.resolve(__dirname, '../../rust/test.txt');
       expect(fs.existsSync(testTxtPath)).toBe(true);
       const content = fs.readFileSync(testTxtPath);
       const hash = crypto.createHash('sha256').update(content).digest('hex').toUpperCase();

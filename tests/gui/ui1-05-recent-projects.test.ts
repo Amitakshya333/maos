@@ -22,11 +22,7 @@ import {
   RecentProjectError,
   getOrGenerateProjectId,
 } from '../../src/service/project-service/recent-projects';
-import {
-  ProjectHostLauncher,
-  LauncherError,
-  killProcessTree,
-} from '../../src/service/project-service/launcher';
+import { ProjectHostLauncher, LauncherError, killProcessTree } from '../../src/service/project-service/launcher';
 import { computeProjectRootHash } from '../../src/service/project-service/instance-identity';
 
 function createValidProject(projectDir: string, configOverrides: Record<string, any> = {}): void {
@@ -75,7 +71,12 @@ describe('UI1-05: Recent Projects and Relocation', () => {
   let launcher: ProjectHostLauncher;
 
   beforeAll(() => {
-    tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-05-test-'));
+    const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-05-test-'));
+    try {
+      tempBaseDir = fs.realpathSync(raw);
+    } catch {
+      tempBaseDir = raw;
+    }
   });
 
   afterAll(async () => {
@@ -88,7 +89,10 @@ describe('UI1-05: Recent Projects and Relocation', () => {
   });
 
   beforeEach(() => {
-    metadataFile = path.join(tempBaseDir, `recent-projects-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`);
+    metadataFile = path.join(
+      tempBaseDir,
+      `recent-projects-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`,
+    );
     store = new RecentProjectStore({
       storagePath: metadataFile,
       allowTemp: true,
@@ -366,9 +370,9 @@ describe('UI1-05: Recent Projects and Relocation', () => {
       const record = await store.recordProjectOpened(p, { allowTemp: true });
       const nonExistent = path.join(tempBaseDir, 'does-not-exist');
 
-      await expect(
-        store.relocateProject(record.projectId, nonExistent, { allowTemp: true }),
-      ).rejects.toThrow(RecentProjectError);
+      await expect(store.relocateProject(record.projectId, nonExistent, { allowTemp: true })).rejects.toThrow(
+        RecentProjectError,
+      );
     });
 
     it('rejects relocation to folder missing .maos directory', async () => {
@@ -380,9 +384,9 @@ describe('UI1-05: Recent Projects and Relocation', () => {
 
       const record = await store.recordProjectOpened(p, { allowTemp: true });
 
-      await expect(
-        store.relocateProject(record.projectId, targetNoMaos, { allowTemp: true }),
-      ).rejects.toThrow(RecentProjectError);
+      await expect(store.relocateProject(record.projectId, targetNoMaos, { allowTemp: true })).rejects.toThrow(
+        RecentProjectError,
+      );
     });
 
     it('rejects relocation to symlinked/junction folder when allowSymlinks: false', async () => {
@@ -417,8 +421,12 @@ describe('UI1-05: Recent Projects and Relocation', () => {
       createValidProject(p);
       const record = await store.recordProjectOpened(p, { allowTemp: true });
 
-      await expect(store.relocateProject(record.projectId, '', { allowTemp: true })).rejects.toThrow(RecentProjectError);
-      await expect(store.relocateProject(record.projectId, '   ', { allowTemp: true })).rejects.toThrow(RecentProjectError);
+      await expect(store.relocateProject(record.projectId, '', { allowTemp: true })).rejects.toThrow(
+        RecentProjectError,
+      );
+      await expect(store.relocateProject(record.projectId, '   ', { allowTemp: true })).rejects.toThrow(
+        RecentProjectError,
+      );
     });
   });
 
@@ -515,11 +523,7 @@ describe('UI1-05: Recent Projects and Relocation', () => {
     });
 
     it('recovers safely from incompatible schemaVersion in metadata file', async () => {
-      fs.writeFileSync(
-        metadataFile,
-        JSON.stringify({ schemaVersion: 999, projects: [] }),
-        'utf-8',
-      );
+      fs.writeFileSync(metadataFile, JSON.stringify({ schemaVersion: 999, projects: [] }), 'utf-8');
 
       const list = await store.listRecentProjects();
       expect(list).toEqual([]);

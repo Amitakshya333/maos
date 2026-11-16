@@ -97,17 +97,17 @@ export async function attemptOllamaAutoStart(
   timeoutMs = 10000,
 ): Promise<boolean> {
   const binary = findOllamaExecutable();
-  if (!binary) return false;
-
-  try {
-    const child = child_process.spawn(binary, ['serve'], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    child.unref();
-  } catch {
-    return false;
+  if (binary) {
+    try {
+      const child = child_process.spawn(binary, ['serve'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.unref();
+    } catch {
+      // Continue and poll fetch in case daemon is managed externally or test mock is supplied
+    }
   }
 
   const start = Date.now();

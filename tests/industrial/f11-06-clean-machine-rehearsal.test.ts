@@ -33,7 +33,12 @@ import * as crypto from 'crypto';
 import { createServiceContainer, ServiceContainer } from '../../src/service';
 import { executeJudgedRun } from '../../src/industrial/judged-run';
 import { INDUSTRIAL_CLI_EXIT } from '../../src/industrial/industrial-cli';
-import { readReleaseSbom, verifyReleaseSbom } from '../../src/industrial/release-sbom';
+import {
+  readReleaseSbom,
+  verifyReleaseSbom,
+  generateReleaseSbom,
+  writeReleaseSbom,
+} from '../../src/industrial/release-sbom';
 import { AtomicCleanupCoordinator } from '../../src/industrial/atomic-cleanup-coordinator';
 import { computeOfficeInputHash } from '../../src/domain/office-artifact';
 
@@ -110,6 +115,10 @@ describe('F11-06: Clean-Machine Release Rehearsal', () => {
       path.join(PROJECT_ROOT, 'src', 'domain', 'model-manifest.ts'),
       path.join(cleanTargetDir, 'src', 'domain', 'model-manifest.ts'),
     );
+
+    // Recompute release SBOM in clean target to reflect the runner's native engine binary
+    const cleanSbom = generateReleaseSbom(cleanTargetDir);
+    writeReleaseSbom(cleanSbom, path.join(cleanTargetDir, 'industrial', 'release-sbom.json'));
 
     // Create necessary MAOS directories
     fs.mkdirSync(path.join(cleanTargetDir, '.maos', 'audit'), { recursive: true });

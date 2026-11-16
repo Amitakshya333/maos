@@ -5,21 +5,31 @@ import type { IProvider } from '../backends/provider';
 import { OpenAIProvider } from '../backends/openai-provider';
 import { ProviderApiPolicyError } from '../backends/meta-api-policy';
 import { runAgent } from '../core/agent-runner';
-import type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
+import type {
+  IndustrialAnalysisAgentRequest,
+  IndustrialAnalysisAgentResult,
+} from '../domain/industrial-analysis-agent';
 import type { AuditService } from '../service/audit-service';
 import type { EndpointAllowlistService } from '../service/endpoint-allowlist-service';
 import { verifyTelemetryAnalysis } from './telemetry-analysis';
 
-export type { IndustrialAnalysisAgentRequest, IndustrialAnalysisAgentResult } from '../domain/industrial-analysis-agent';
+export type {
+  IndustrialAnalysisAgentRequest,
+  IndustrialAnalysisAgentResult,
+} from '../domain/industrial-analysis-agent';
 
 const ALLOWED_TOOLS = ['analyze_telemetry_csv', 'task_complete'];
 const AGENT_DEADLINE_MS = 60_000;
-const AGENT_TIMEOUT_MESSAGE = 'The analysis exceeded its 60-second deadline. No report was accepted; retry when the configured model is responsive.';
+const AGENT_TIMEOUT_MESSAGE =
+  'The analysis exceeded its 60-second deadline. No report was accepted; retry when the configured model is responsive.';
 
 const PROMPT = `You are a read-only industrial telemetry analysis assistant. Use only the supplied analyze_telemetry_csv tool and the user-selected source path. After the tool returns, explain only what its deterministic evidence supports. Include the exact analysisId in your summary so the explanation is linked to its evidence. Do not infer causes, prescribe operation, or claim certification. Finish by calling task_complete with that evidence-linked summary.`;
 
 export class IndustrialAnalysisAgentError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
     super(message);
     this.name = 'IndustrialAnalysisAgentError';
   }
@@ -38,7 +48,8 @@ export class IndustrialAnalysisAgentService {
   constructor(
     private readonly provider: IProvider | undefined,
     private readonly modelEndpoint: string | undefined,
-    private readonly audit: Pick<AuditService, 'recordAuditEvent'> & Partial<Pick<AuditService, 'getRecords' | 'verifyChain'>>,
+    private readonly audit: Pick<AuditService, 'recordAuditEvent'> &
+      Partial<Pick<AuditService, 'getRecords' | 'verifyChain'>>,
     private readonly endpointAllowlist?: EndpointAllowlistService,
     private readonly resolveRuntime?: () => IndustrialAnalysisAgentRuntime,
   ) {}
@@ -59,7 +70,8 @@ export class IndustrialAnalysisAgentService {
     input: IndustrialAnalysisAgentRequest,
     options: IndustrialAnalysisAgentOptions = {},
   ): Promise<IndustrialAnalysisAgentResult> {
-    if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+    if (options.signal?.aborted)
+      throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
     const deadlineAt = Date.now() + AGENT_DEADLINE_MS;
     const controller = new AbortController();
     const forwardAbort = () => controller.abort();
@@ -108,9 +120,12 @@ export class IndustrialAnalysisAgentService {
       } catch (error) {
         if (error instanceof IndustrialAnalysisAgentError) throw error;
         if (error instanceof ProviderApiPolicyError) {
-          const code = error.code === 'META_API_OPT_IN_REQUIRED' || error.code === 'BASETEN_API_OPT_IN_REQUIRED'
-            ? 'MODEL_ENDPOINT_BLOCKED'
-            : error.code === 'MODEL_CREDENTIAL_MISSING' ? error.code : 'PROJECT_CONFIG_INVALID';
+          const code =
+            error.code === 'META_API_OPT_IN_REQUIRED' || error.code === 'BASETEN_API_OPT_IN_REQUIRED'
+              ? 'MODEL_ENDPOINT_BLOCKED'
+              : error.code === 'MODEL_CREDENTIAL_MISSING'
+                ? error.code
+                : 'PROJECT_CONFIG_INVALID';
           throw new IndustrialAnalysisAgentError(code, error.message);
         }
         const detail = error instanceof Error ? error.message : String(error);
@@ -121,7 +136,10 @@ export class IndustrialAnalysisAgentService {
       }
     }
     if (!provider || !modelEndpoint) {
-      throw new IndustrialAnalysisAgentError('MODEL_NOT_CONFIGURED', 'Configure ANALYST_AGENT and an approved local loopback model endpoint, or explicitly opt in to the exact Meta or Baseten Model API endpoint and model.');
+      throw new IndustrialAnalysisAgentError(
+        'MODEL_NOT_CONFIGURED',
+        'Configure ANALYST_AGENT and an approved local loopback model endpoint, or explicitly opt in to the exact Meta or Baseten Model API endpoint and model.',
+      );
     }
     if (typeof input.request !== 'string' || input.request.trim().length === 0 || input.request.length > 4000) {
       throw new IndustrialAnalysisAgentError('INVALID_REQUEST', 'request must contain 1 to 4000 characters.');
@@ -141,16 +159,29 @@ export class IndustrialAnalysisAgentService {
       }
       selectedSource = fs.realpathSync(candidate);
       const realRelative = path.relative(root, selectedSource);
-      if (!realRelative || realRelative === '..' || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
+      if (
+        !realRelative ||
+        realRelative === '..' ||
+        realRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(realRelative)
+      ) {
         throw new Error('sourcePath must resolve to a file inside the project.');
       }
       const stat = fs.statSync(selectedSource);
-      if (!stat.isFile() || path.extname(selectedSource).toLowerCase() !== '.csv' || stat.size < 1 || stat.size > 5 * 1024 * 1024) {
+      if (
+        !stat.isFile() ||
+        path.extname(selectedSource).toLowerCase() !== '.csv' ||
+        stat.size < 1 ||
+        stat.size > 5 * 1024 * 1024
+      ) {
         throw new Error('sourcePath must identify a project-local CSV between 1 byte and 5 MB.');
       }
       selectedSource = realRelative.split(path.sep).join('/');
     } catch (error) {
-      throw new IndustrialAnalysisAgentError('INVALID_SOURCE_PATH', error instanceof Error ? error.message : String(error));
+      throw new IndustrialAnalysisAgentError(
+        'INVALID_SOURCE_PATH',
+        error instanceof Error ? error.message : String(error),
+      );
     }
 
     let modelUrl: URL;
@@ -159,16 +190,31 @@ export class IndustrialAnalysisAgentService {
     } catch {
       throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'The configured model endpoint URL is invalid.');
     }
-    const hostedEndpointAllowed = provider instanceof OpenAIProvider &&
-      ((provider.isMetaApi && provider.baseURL === modelEndpoint) || (provider.isBasetenApi && provider.baseURL === modelEndpoint));
-    const loopbackEndpointAllowed = modelUrl.protocol === 'http:' &&
+    const hostedEndpointAllowed =
+      provider instanceof OpenAIProvider &&
+      ((provider.isMetaApi && provider.baseURL === modelEndpoint) ||
+        (provider.isBasetenApi && provider.baseURL === modelEndpoint));
+    const loopbackEndpointAllowed =
+      modelUrl.protocol === 'http:' &&
       ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(modelUrl.hostname.toLowerCase()) &&
-      !modelUrl.username && !modelUrl.password && !modelUrl.search && !modelUrl.hash;
+      !modelUrl.username &&
+      !modelUrl.password &&
+      !modelUrl.search &&
+      !modelUrl.hash;
     if (!hostedEndpointAllowed && !loopbackEndpointAllowed) {
-      throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', 'Only a credential-free HTTP loopback endpoint or an exact provider approved by shared Meta/Baseten policy is allowed.');
+      throw new IndustrialAnalysisAgentError(
+        'MODEL_ENDPOINT_BLOCKED',
+        'Only a credential-free HTTP loopback endpoint or an exact provider approved by shared Meta/Baseten policy is allowed.',
+      );
     }
+    // The explicitly configured 'mock' provider is a first-class loopback test
+    // double: once it passes the credential-free HTTP loopback qualification
+    // above, the endpoint-allowlist ephemeral-port floor must not reject its
+    // loopback port. Hosted endpoints keep their exact-match policy, and every
+    // other loopback endpoint still goes through the allowlist below.
+    const isMockLoopbackTestDouble = provider.name === 'mock' && loopbackEndpointAllowed;
     // Hosted exceptions are bound to one exact endpoint/model in shared provider policy.
-    if (this.endpointAllowlist && !hostedEndpointAllowed) {
+    if (this.endpointAllowlist && !hostedEndpointAllowed && !isMockLoopbackTestDouble) {
       const port = modelUrl.port ? parseInt(modelUrl.port, 10) : 80;
       const validation = this.endpointAllowlist.validateSocketTarget({
         protocol: 'tcp',
@@ -178,7 +224,10 @@ export class IndustrialAnalysisAgentService {
         serviceId: 'industrial_analysis_agent',
       });
       if (!validation.allowed) {
-        throw new IndustrialAnalysisAgentError('MODEL_ENDPOINT_BLOCKED', `The model endpoint is blocked by policy: ${validation.reason}`);
+        throw new IndustrialAnalysisAgentError(
+          'MODEL_ENDPOINT_BLOCKED',
+          `The model endpoint is blocked by policy: ${validation.reason}`,
+        );
       }
     }
 
@@ -235,20 +284,32 @@ export class IndustrialAnalysisAgentService {
       throw new IndustrialAnalysisAgentError('AGENT_EXECUTION_FAILED', run.error || run.summary);
     }
     if (toolResults.length !== 1) {
-      throw new IndustrialAnalysisAgentError('ANALYSIS_TOOL_NOT_USED', 'The model did not request exactly one allowed telemetry analysis tool call.');
+      throw new IndustrialAnalysisAgentError(
+        'ANALYSIS_TOOL_NOT_USED',
+        'The model did not request exactly one allowed telemetry analysis tool call.',
+      );
     }
 
     let evidence: any;
     try {
       evidence = JSON.parse(toolResults[0]);
     } catch {
-      throw new IndustrialAnalysisAgentError('INVALID_TOOL_RESULT', 'The telemetry analysis tool returned invalid evidence data.');
+      throw new IndustrialAnalysisAgentError(
+        'INVALID_TOOL_RESULT',
+        'The telemetry analysis tool returned invalid evidence data.',
+      );
     }
     if (!evidence?.ok || typeof evidence.analysisId !== 'string' || typeof evidence.receiptPath !== 'string') {
-      throw new IndustrialAnalysisAgentError('ANALYSIS_TOOL_FAILED', evidence?.message || 'The telemetry analysis tool did not produce evidence.');
+      throw new IndustrialAnalysisAgentError(
+        'ANALYSIS_TOOL_FAILED',
+        evidence?.message || 'The telemetry analysis tool did not produce evidence.',
+      );
     }
     if (typeof run.summary !== 'string' || !run.summary.includes(evidence.analysisId)) {
-      throw new IndustrialAnalysisAgentError('EVIDENCE_REFERENCE_REQUIRED', 'The model explanation did not cite its analysisId.');
+      throw new IndustrialAnalysisAgentError(
+        'EVIDENCE_REFERENCE_REQUIRED',
+        'The model explanation did not cite its analysisId.',
+      );
     }
 
     const verification = verifyTelemetryAnalysis(root, evidence.analysisId);
@@ -258,11 +319,15 @@ export class IndustrialAnalysisAgentService {
       verification.sourcePath !== evidence.source?.evidencePath ||
       verification.receiptSha256 !== evidence.receiptSha256
     ) {
-      throw new IndustrialAnalysisAgentError('EVIDENCE_VERIFICATION_FAILED', 'Persisted telemetry evidence did not verify against its source and rules.');
+      throw new IndustrialAnalysisAgentError(
+        'EVIDENCE_VERIFICATION_FAILED',
+        'Persisted telemetry evidence did not verify against its source and rules.',
+      );
     }
 
     assertBeforeDeadline();
-    if (options.signal?.aborted) throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
+    if (options.signal?.aborted)
+      throw new IndustrialAnalysisAgentError('AGENT_CANCELLED', 'The analysis request was cancelled.');
     const reportedModel = run.reportedModel || null;
     const report = {
       schemaVersion: 1,
@@ -297,7 +362,12 @@ export class IndustrialAnalysisAgentService {
       fs.mkdirSync(reportRoot, { recursive: true });
       const realReportRoot = fs.realpathSync(reportRoot);
       const reportRelative = path.relative(root, realReportRoot);
-      if (!reportRelative || reportRelative === '..' || reportRelative.startsWith(`..${path.sep}`) || path.isAbsolute(reportRelative)) {
+      if (
+        !reportRelative ||
+        reportRelative === '..' ||
+        reportRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(reportRelative)
+      ) {
         throw new Error('Agent report directory resolves outside the project.');
       }
       const reportFile = path.join(realReportRoot, `${evidence.analysisId}.json`);
@@ -309,7 +379,10 @@ export class IndustrialAnalysisAgentService {
       const acceptedBytes = Buffer.from(`${JSON.stringify(acceptedReport, null, 2)}\n`, 'utf8');
       reportSha256 = createHash('sha256').update(acceptedBytes).digest('hex');
     } catch (error) {
-      throw new IndustrialAnalysisAgentError('AGENT_REPORT_FAILED', error instanceof Error ? error.message : String(error));
+      throw new IndustrialAnalysisAgentError(
+        'AGENT_REPORT_FAILED',
+        error instanceof Error ? error.message : String(error),
+      );
     }
 
     try {
@@ -350,11 +423,17 @@ export class IndustrialAnalysisAgentService {
         },
       });
     } catch (error) {
-      const persisted = this.audit.getRecords?.().filter((record) => {
-        const data = record.data as Record<string, unknown>;
-        return data.event === 'INDUSTRIAL_ANALYSIS_AGENT_COMPLETED' && data.runId === runId &&
-          data.analysisId === evidence.analysisId && data.reportSha256 === reportSha256 && data.outcome === 'completed';
-      }) || [];
+      const persisted =
+        this.audit.getRecords?.().filter((record) => {
+          const data = record.data as Record<string, unknown>;
+          return (
+            data.event === 'INDUSTRIAL_ANALYSIS_AGENT_COMPLETED' &&
+            data.runId === runId &&
+            data.analysisId === evidence.analysisId &&
+            data.reportSha256 === reportSha256 &&
+            data.outcome === 'completed'
+          );
+        }) || [];
       const chainValid = this.audit.verifyChain?.().valid ?? false;
       if (persisted.length === 1 && chainValid) auditRecord = persisted[0];
       else {

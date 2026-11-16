@@ -50,14 +50,8 @@ import {
   FORBIDDEN_IMPORT_MODULES,
   FORBIDDEN_RUNTIME_COMMANDS,
 } from '../../src/domain/sandbox';
-import {
-  ToolApprovalPlanner,
-  ToolPreExecutionContext,
-} from '../../src/industrial/tool-approval-planner';
-import {
-  WorkflowPlan,
-  WorkflowPlanStep,
-} from '../../src/domain/workflow-plan';
+import { ToolApprovalPlanner, ToolPreExecutionContext } from '../../src/industrial/tool-approval-planner';
+import { WorkflowPlan, WorkflowPlanStep } from '../../src/domain/workflow-plan';
 import {
   createServiceContainer,
   SandboxRunnerService,
@@ -74,6 +68,7 @@ const CANARY_EXPECTED_HASH = '1392245502333919f23e58b8f544f12470db3829aabd5336a0
 function isDockerRunning(): boolean {
   try {
     execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+    execSync('docker image inspect maos-sandbox-runner:0.3.0-industrial', { stdio: 'ignore', timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -1328,10 +1323,9 @@ print(f"NP={np.__version__}|PD={pd.__version__}|SCIPY={scipy.__version__}|SYMPY=
     it('V10.1: guarantees zero orphaned containers across all adversarial tests', () => {
       if (!dockerAvailable) return;
 
-      const psOutput = execSync(
-        'docker ps -a --filter "name=maos-sandbox-run-" --format "{{.Names}}"',
-        { encoding: 'utf8' },
-      ).trim();
+      const psOutput = execSync('docker ps -a --filter "name=maos-sandbox-run-" --format "{{.Names}}"', {
+        encoding: 'utf8',
+      }).trim();
 
       expect(psOutput).toBe('');
     });

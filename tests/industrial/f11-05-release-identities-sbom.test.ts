@@ -52,12 +52,10 @@ describe('F11-05: Release Identities & SBOM Verification', () => {
 
   beforeAll(() => {
     checkCanary();
-    if (fs.existsSync(sbomOutputPath)) {
-      canonicalSbom = readReleaseSbom(sbomOutputPath);
-    } else {
-      canonicalSbom = generateReleaseSbom(PROJECT_ROOT);
-      writeReleaseSbom(canonicalSbom, sbomOutputPath);
-    }
+    // Recompute release SBOM dynamically so it matches the current runner's native
+    // binary architecture and fresh build output.
+    canonicalSbom = generateReleaseSbom(PROJECT_ROOT);
+    writeReleaseSbom(canonicalSbom, sbomOutputPath);
   });
 
   beforeEach(() => {
@@ -225,7 +223,10 @@ describe('F11-05: Release Identities & SBOM Verification', () => {
         fs.mkdirSync(fakeGui, { recursive: true });
         const fakeIndex = path.join(fakeGui, 'index.html');
         // Inject remote CDN link
-        fs.writeFileSync(fakeIndex, '<html><head><script src="https://cdn.jsdelivr.net/npm/vue"></script></head></html>');
+        fs.writeFileSync(
+          fakeIndex,
+          '<html><head><script src="https://cdn.jsdelivr.net/npm/vue"></script></head></html>',
+        );
 
         const testSbom: ReleaseSbom = {
           schemaVersion: 1,

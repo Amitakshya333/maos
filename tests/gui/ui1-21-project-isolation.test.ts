@@ -39,11 +39,24 @@ describe('UI1-21: Project, Root & Data Isolation Security Suite', () => {
   let tokenB: string;
 
   beforeAll(async () => {
-    dirA = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-21-alpha-'));
-    dirB = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-21-beta-'));
+    const rawA = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-21-alpha-'));
+    const rawB = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ui1-21-beta-'));
+    try {
+      dirA = fs.realpathSync(rawA);
+    } catch {
+      dirA = rawA;
+    }
+    try {
+      dirB = fs.realpathSync(rawB);
+    } catch {
+      dirB = rawB;
+    }
 
     // Set up project structure for both projects
-    for (const [dir, name] of [[dirA, 'project-alpha'], [dirB, 'project-beta']]) {
+    for (const [dir, name] of [
+      [dirA, 'project-alpha'],
+      [dirB, 'project-beta'],
+    ]) {
       const maosDir = path.join(dir, '.maos');
       fs.mkdirSync(path.join(maosDir, 'status'), { recursive: true });
       fs.mkdirSync(path.join(maosDir, 'logs'), { recursive: true });

@@ -1,4 +1,4 @@
-# MAOS Industrial — 5-Minute Ring Stage Arc (Recording Script)
+# MAOS Industrial — 5-Minute Ring Stage Arc (Recording Script / Judged Presentation Script)
 
 **Status:** Script prepared for a Ring-centered capture. No video has been
 recorded — every segment below is TO-RECORD. Before using it as a hackathon
@@ -19,7 +19,7 @@ with `baseURL https://inference.baseten.co/v1`, model
 `schemaVersion` template rule** (config must carry the required schema
 version field), and the `BASETEN_API_KEY` in the launcher shell ONLY — never
 pasted, never in a file. Follow the authenticated-shell setup in
-[`RUNBOOK.md`](RUNBOOK.md) and the full go/no-go in
+[`RUNBOOK.md`](RUNBOOK.md) (preflight) and the full go/no-go in
 [`RECORDING_READINESS.md`](RECORDING_READINESS.md). Use one fresh temporary
 project per run so approval, stale-source failure, stale-rules failure, and
 rejection cannot be confused as one run. Record the real windows (full app +

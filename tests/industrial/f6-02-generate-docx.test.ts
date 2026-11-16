@@ -28,36 +28,15 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
-import {
-  OfficeDocxInput,
-  DocxGenerationError,
-  computeOfficeInputHash,
-} from '../../src/domain/office-artifact';
-import {
-  DocxGeneratorService,
-} from '../../src/service/docx-generator-service';
-import {
-  OfficeInputService,
-} from '../../src/service/office-input-service';
-import {
-  ArtifactService,
-} from '../../src/service/artifact-service';
-import {
-  ApprovalService,
-} from '../../src/service/approval-service';
-import {
-  AuditService,
-} from '../../src/service/audit-service';
-import {
-  EventService,
-} from '../../src/service/event-service';
-import {
-  DurableIdempotencyStore,
-} from '../../src/core/idempotency-store';
-import {
-  validateDocxPackage,
-  parseZipArchive,
-} from '../../src/industrial/office/ooxml-packager';
+import { OfficeDocxInput, DocxGenerationError, computeOfficeInputHash } from '../../src/domain/office-artifact';
+import { DocxGeneratorService } from '../../src/service/docx-generator-service';
+import { OfficeInputService } from '../../src/service/office-input-service';
+import { ArtifactService } from '../../src/service/artifact-service';
+import { ApprovalService } from '../../src/service/approval-service';
+import { AuditService } from '../../src/service/audit-service';
+import { EventService } from '../../src/service/event-service';
+import { DurableIdempotencyStore } from '../../src/core/idempotency-store';
+import { validateDocxPackage, parseZipArchive } from '../../src/industrial/office/ooxml-packager';
 import {
   executeGenerateDocxTool,
   executeGenerateDocxToolAsync,
@@ -157,9 +136,7 @@ describe('F6-02: generate_docx Tool', () => {
           acknowledgedBy: 'human-lead-engineer',
         },
       ],
-      limitations: [
-        'Applicable only to gaseous service PSV-100 series valves.',
-      ],
+      limitations: ['Applicable only to gaseous service PSV-100 series valves.'],
       citations: [
         {
           citationId: 'cit-1',
@@ -468,7 +445,7 @@ describe('F6-02: generate_docx Tool', () => {
   it('rejects document generation when evidence has low confidence and no human review', () => {
     const input = createValidDocxInput({
       evidenceState: {
-        ocrConfidence: 0.40, // Below 0.70 threshold
+        ocrConfidence: 0.4, // Below 0.70 threshold
         hasUnresolvedConflicts: false,
         isQuarantined: false,
         reviewedByHuman: false,
@@ -862,8 +839,8 @@ describe('F6-02: generate_docx Tool', () => {
       .filter((l) => l.trim().length > 0)
       .map((l) => JSON.parse(l));
 
-    const docxEvents = auditLines.filter((rec) =>
-      rec.data?.event === 'DOCX_GENERATED' || rec.data?.event === 'DOCX_GENERATION_STARTED',
+    const docxEvents = auditLines.filter(
+      (rec) => rec.data?.event === 'DOCX_GENERATED' || rec.data?.event === 'DOCX_GENERATION_STARTED',
     );
 
     expect(docxEvents.length).toBeGreaterThanOrEqual(2);
@@ -882,7 +859,7 @@ describe('F6-02: generate_docx Tool', () => {
   // ── 12. Canary File Invariant ───────────────────────────────────────
 
   it('preserves canary file rust/test.txt unmodified', () => {
-    const canaryPath = path.join('C:\\maos', 'rust', 'test.txt');
+    const canaryPath = path.resolve(__dirname, '../../rust/test.txt');
     if (fs.existsSync(canaryPath)) {
       const content = fs.readFileSync(canaryPath);
       const hash = crypto.createHash('sha256').update(content).digest('hex');

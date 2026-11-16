@@ -47,23 +47,10 @@ import {
   VisualReviewError,
   VisualReviewIssue,
 } from './office-visual-review-service';
-import {
-  InferenceService,
-  InferenceServiceOptions,
-  computeCanonicalInputHash,
-} from './inference-service';
-import {
-  WorkflowPlanningService,
-  WorkflowPlanningServiceOptions,
-} from './workflow-planning-service';
-import {
-  WorkflowPlanner,
-  WorkflowPlanningInput,
-} from '../industrial/workflow-planner';
-import {
-  ToolApprovalPlanningService,
-  ToolApprovalPlanningServiceOptions,
-} from './tool-approval-planning-service';
+import { InferenceService, InferenceServiceOptions, computeCanonicalInputHash } from './inference-service';
+import { WorkflowPlanningService, WorkflowPlanningServiceOptions } from './workflow-planning-service';
+import { WorkflowPlanner, WorkflowPlanningInput } from '../industrial/workflow-planner';
+import { ToolApprovalPlanningService, ToolApprovalPlanningServiceOptions } from './tool-approval-planning-service';
 import {
   ToolApprovalPlanner,
   ToolContractCreationOptions,
@@ -91,11 +78,7 @@ import { ProcessBoundaryService } from './process-boundary-service';
 import { NetworkMonitorService } from './network-monitor-service';
 import { ServiceIdentityService } from './service-identity-service';
 import { IndustrialFirewallRequirementService } from './industrial-firewall-requirement-service';
-import {
-  SovereigntyBundleService,
-  GenerateBundleOptions,
-  SignOffBundleInput,
-} from './sovereignty-bundle-service';
+import { SovereigntyBundleService, GenerateBundleOptions, SignOffBundleInput } from './sovereignty-bundle-service';
 import {
   AtomicCleanupCoordinator,
   AtomicCleanupCoordinatorOptions,
@@ -338,19 +321,59 @@ export function createServiceContainer(projectRoot: string): ServiceContainer {
           `Unable to read the project's MAOS configuration. Repair the configuration or its file permissions, then retry. ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      if (!Array.isArray(projectConfig.agents) || !projectConfig.providers || typeof projectConfig.providers !== 'object' || Array.isArray(projectConfig.providers)) {
+      if (
+        !Array.isArray(projectConfig.agents) ||
+        !projectConfig.providers ||
+        typeof projectConfig.providers !== 'object' ||
+        Array.isArray(projectConfig.providers)
+      ) {
         throw new IndustrialAnalysisAgentError(
           'PROJECT_CONFIG_INVALID',
           'The project MAOS configuration must define agent and provider settings before Industrial CSV analysis.',
         );
       }
       const analysisModel = projectConfig.agents.find((agent) => agent?.id === 'ANALYST_AGENT');
-      if (typeof analysisModel?.provider !== 'string' || !analysisModel.provider.trim() || typeof analysisModel.model !== 'string' || !analysisModel.model.trim()) return {};
+      if (
+        typeof analysisModel?.provider !== 'string' ||
+        !analysisModel.provider.trim() ||
+        typeof analysisModel.model !== 'string' ||
+        !analysisModel.model.trim()
+      )
+        return {};
       const providerConfig = projectConfig.providers[analysisModel.provider];
-      if (!providerConfig || typeof providerConfig !== 'object' || typeof providerConfig.baseURL !== 'string' || !providerConfig.baseURL.trim()) return {};
+      if (
+        !providerConfig ||
+        typeof providerConfig !== 'object' ||
+        typeof providerConfig.baseURL !== 'string' ||
+        !providerConfig.baseURL.trim()
+      )
+        return {};
       const timeout = analysisModel.timeoutMs ?? 60_000;
       if (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout <= 0) {
-        throw new IndustrialAnalysisAgentError('PROJECT_CONFIG_INVALID', 'ANALYST_AGENT.timeoutMs must be a positive number.');
+        throw new IndustrialAnalysisAgentError(
+          'PROJECT_CONFIG_INVALID',
+          'ANALYST_AGENT.timeoutMs must be a positive number.',
+        );
+      }
+      // First-class mock provider path for tests: the provider named exactly
+      // 'mock' is an explicitly configured OpenAI-compatible loopback test
+      // double. It never requires an API key and never enters the Meta/Baseten
+      // hosted-policy opt-in path -- hosted flags on the mock entry are ignored
+      // rather than honored, so a mock can never trip hosted credential policy.
+      if (analysisModel.provider === 'mock') {
+        return {
+          provider: new OpenAIProvider({
+            name: analysisModel.provider,
+            apiKey: 'not-needed',
+            reservedMetaApiKeyEnvVars: collectReservedMetaApiKeyEnvVars(projectConfig.providers),
+            baseURL: providerConfig.baseURL,
+            model: analysisModel.model,
+            timeout,
+            maxRetries: 0,
+            ...(typeof providerConfig.temperature === 'number' ? { temperature: providerConfig.temperature } : {}),
+          }),
+          modelEndpoint: providerConfig.baseURL,
+        };
       }
       return {
         provider: new OpenAIProvider({
@@ -498,14 +521,55 @@ export { RingAgentService, RingAgentError, RING_AGENT_TOOLS } from './ring-agent
 export { RingThreadService } from './ring-thread-service';
 export { RingToolRegistry, truncate as truncateRingToolResult } from './ring-tool-registry';
 export type { RingToolContext, RingToolDefinition } from './ring-contract';
-export type { RingRole, RingThread, RingThreadCreateRequest, RingThreadMessageRequest, RingRunCreateContractRequest, RingStreamEventType, RingPlanStep, RingArtifactDescriptor, RingMemoryRecord } from './ring-contract';
+export type {
+  RingRole,
+  RingThread,
+  RingThreadCreateRequest,
+  RingThreadMessageRequest,
+  RingRunCreateContractRequest,
+  RingStreamEventType,
+  RingPlanStep,
+  RingArtifactDescriptor,
+  RingMemoryRecord,
+} from './ring-contract';
 export { RING_ROLES, DEFAULT_RING_ROLE, RING_STREAM_EVENT_TYPES, isRingThreadId, isRingRole } from './ring-contract';
-export type { RingAgentRunStatus, RingAgentMode, RingAgentApprovalDecision, RingAgentRunContext, RingAgentRunSnapshot, RingAgentTranscriptEntry, RingAgentPendingApproval } from './ring-agent-service';
-export { RING_SKILLS, RING_SKILLS_MANIFEST, listRingSkills, parseRingSkillCommand, renderRingSkillTemplate } from './ring-skills';
+export type {
+  RingAgentRunStatus,
+  RingAgentMode,
+  RingAgentApprovalDecision,
+  RingAgentRunContext,
+  RingAgentRunSnapshot,
+  RingAgentTranscriptEntry,
+  RingAgentPendingApproval,
+} from './ring-agent-service';
+export {
+  RING_SKILLS,
+  RING_SKILLS_MANIFEST,
+  listRingSkills,
+  parseRingSkillCommand,
+  renderRingSkillTemplate,
+} from './ring-skills';
 export type { RingSkill, RingSkillMenuItem } from './ring-skills';
-export { RING_ROLE_PERSONAS, RING_BASE_RULES, listRingRolePersonas, getRingRolePersona, ringSystemPromptFor, ringToolsFor } from './ring-roles';
+export {
+  RING_ROLE_PERSONAS,
+  RING_BASE_RULES,
+  listRingRolePersonas,
+  getRingRolePersona,
+  ringSystemPromptFor,
+  ringToolsFor,
+} from './ring-roles';
 export type { RingRolePersona } from './ring-roles';
-export { RING_DOC_BEGIN, RING_DOC_END, wrapEvidenceAsData, containsInjectionAttempt, isRestartAuthorizationRequest, ringRestartRefusal, ringMissingDataMessage, stripRawCsvRows, carriesRawCsvRows } from './ring-safety';
+export {
+  RING_DOC_BEGIN,
+  RING_DOC_END,
+  wrapEvidenceAsData,
+  containsInjectionAttempt,
+  isRestartAuthorizationRequest,
+  ringRestartRefusal,
+  ringMissingDataMessage,
+  stripRawCsvRows,
+  carriesRawCsvRows,
+} from './ring-safety';
 export { runRingSkillWorkflow, ringSkillsForRole } from './ring-skill-workflows';
 export type { RingWorkflowInput, RingWorkflowResult, RingWorkflowEvidence } from './ring-skill-workflows';
 export { RingArtifactService } from './ring-artifact-store';
@@ -562,17 +626,8 @@ export {
   verifyServiceIdentity,
   clearServiceIdentity,
 } from './project-service/instance-identity';
-export {
-  validateProjectFolder,
-  assertValidProjectFolder,
-  ProjectValidationError,
-} from './project-service/validator';
-export {
-  ProjectHostLauncher,
-  LauncherError,
-  killProcessTree,
-  isProcessAlive,
-} from './project-service/launcher';
+export { validateProjectFolder, assertValidProjectFolder, ProjectValidationError } from './project-service/validator';
+export { ProjectHostLauncher, LauncherError, killProcessTree, isProcessAlive } from './project-service/launcher';
 export {
   RecentProjectStore,
   RecentProject,
@@ -580,59 +635,20 @@ export {
   RelocationConfirmationRequiredError,
   getDefaultRecentProjectsPath,
 } from './project-service/recent-projects';
-export {
-  WorkspaceLayoutStore,
-  WorkspaceLayoutStoreOptions,
-} from './project-service/layout-store';
-export {
-  PdfRasterService,
-  PdfRasterServiceOptions,
-} from './pdf-raster-service';
-export {
-  OcrService,
-  OcrServiceOptions,
-} from './ocr-service';
-export {
-  VisionService,
-  VisionServiceOptions,
-} from './vision-service';
-export {
-  ConflictReviewService,
-  CompareObservationsParams,
-} from './conflict-service';
-export {
-  KbIngestionService,
-  KbIngestionServiceOptions,
-} from './kb-ingestion-service';
-export {
-  EmbeddingService,
-  EmbeddingServiceOptions,
-} from './embedding-service';
-export {
-  KbVectorIndexService,
-  KbVectorIndexServiceOptions,
-} from './kb-vector-index-service';
-export {
-  KbSearchService,
-  KbSearchServiceOptions,
-} from './kb-search-service';
-export {
-  KbService,
-} from './kb-service';
-export {
-  OfficeInputService,
-  OfficeInputValidationOptions,
-  OfficeInputFreshnessResult,
-} from './office-input-service';
-export {
-  DocxGeneratorService,
-} from './docx-generator-service';
-export {
-  XlsxGeneratorService,
-} from './xlsx-generator-service';
-export {
-  PptxGeneratorService,
-} from './pptx-generator-service';
+export { WorkspaceLayoutStore, WorkspaceLayoutStoreOptions } from './project-service/layout-store';
+export { PdfRasterService, PdfRasterServiceOptions } from './pdf-raster-service';
+export { OcrService, OcrServiceOptions } from './ocr-service';
+export { VisionService, VisionServiceOptions } from './vision-service';
+export { ConflictReviewService, CompareObservationsParams } from './conflict-service';
+export { KbIngestionService, KbIngestionServiceOptions } from './kb-ingestion-service';
+export { EmbeddingService, EmbeddingServiceOptions } from './embedding-service';
+export { KbVectorIndexService, KbVectorIndexServiceOptions } from './kb-vector-index-service';
+export { KbSearchService, KbSearchServiceOptions } from './kb-search-service';
+export { KbService } from './kb-service';
+export { OfficeInputService, OfficeInputValidationOptions, OfficeInputFreshnessResult } from './office-input-service';
+export { DocxGeneratorService } from './docx-generator-service';
+export { XlsxGeneratorService } from './xlsx-generator-service';
+export { PptxGeneratorService } from './pptx-generator-service';
 export {
   OfficeTemplateSafetyService,
   TemplateValidationSummary,
@@ -645,46 +661,23 @@ export {
   VisualReviewError,
   VisualReviewIssue,
 } from './office-visual-review-service';
-export {
-  InferenceService,
-  InferenceServiceOptions,
-  computeCanonicalInputHash,
-} from './inference-service';
-export {
-  WorkflowPlanningService,
-  WorkflowPlanningServiceOptions,
-} from './workflow-planning-service';
-export {
-  WorkflowPlanner,
-  WorkflowPlanningInput,
-} from '../industrial/workflow-planner';
-export {
-  ToolApprovalPlanningService,
-  ToolApprovalPlanningServiceOptions,
-} from './tool-approval-planning-service';
+export { InferenceService, InferenceServiceOptions, computeCanonicalInputHash } from './inference-service';
+export { WorkflowPlanningService, WorkflowPlanningServiceOptions } from './workflow-planning-service';
+export { WorkflowPlanner, WorkflowPlanningInput } from '../industrial/workflow-planner';
+export { ToolApprovalPlanningService, ToolApprovalPlanningServiceOptions } from './tool-approval-planning-service';
 export {
   ToolApprovalPlanner,
   ToolContractCreationOptions,
   ToolPreExecutionContext,
 } from '../industrial/tool-approval-planner';
-export {
-  SovereigntyBoundaryService,
-  SovereigntyBoundaryServiceOptions,
-} from './sovereignty-boundary-service';
+export { SovereigntyBoundaryService, SovereigntyBoundaryServiceOptions } from './sovereignty-boundary-service';
 export {
   EndpointAllowlistService,
   EndpointAllowlistServiceOptions,
   RegisteredServiceRecord,
 } from './endpoint-allowlist-service';
-export {
-  FirewallService,
-  FirewallServiceOptions,
-  ApplyFirewallOptions,
-} from './firewall-service';
-export {
-  NetworkMonitorService,
-  NetworkMonitorServiceOptions,
-} from './network-monitor-service';
+export { FirewallService, FirewallServiceOptions, ApplyFirewallOptions } from './firewall-service';
+export { NetworkMonitorService, NetworkMonitorServiceOptions } from './network-monitor-service';
 export {
   ServiceIdentityService,
   ServiceIdentityServiceOptions,
@@ -707,9 +700,3 @@ export {
   AtomicCleanupReport,
   SignalHandlerOptions,
 } from '../industrial/atomic-cleanup-coordinator';
-
-
-
-
-
-

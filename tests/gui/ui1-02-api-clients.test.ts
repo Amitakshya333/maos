@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import { createRestApiServer, RestApiServer } from '../../src/api/server';
+import { MaosWebSocketClient } from '../../src/api/ws-client';
 import { createTask } from '../../src/core/queue';
 import {
   BrowserRestClient,
@@ -279,9 +280,13 @@ describe('UI1-02: Typed API & Event Clients', () => {
       const contentionClient = new BrowserRestClient({
         baseUrl,
         projectRoot: testDir,
-        fetchFn: async () => new Response(JSON.stringify({
-          error: { code, message: 'T-07 could not acquire project coordination.', details },
-        }), { status, headers: { 'Content-Type': 'application/json' } }),
+        fetchFn: async () =>
+          new Response(
+            JSON.stringify({
+              error: { code, message: 'T-07 could not acquire project coordination.', details },
+            }),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          ),
       });
 
       await expect(contentionClient.startIndustrialJudgedRun()).rejects.toMatchObject({
@@ -416,12 +421,82 @@ describe('UI1-02: Typed API & Event Clients', () => {
   // 5. BrowserEventClient (F3-04 Sequenced Events & Replay)
   // ══════════════════════════════════════════════════════════════
 
+  class NodeWebSocketAdapter {
+    public static readonly CONNECTING = 0;
+    public static readonly OPEN = 1;
+    public static readonly CLOSING = 2;
+    public static readonly CLOSED = 3;
+
+    public readyState: number = 0;
+    public onopen: (() => void) | null = null;
+    public onmessage: ((event: { data: any }) => void) | null = null;
+    public onclose: (() => void) | null = null;
+    public onerror: ((err: any) => void) | null = null;
+
+    private client: MaosWebSocketClient;
+
+    constructor(url: string, protocols?: string | string[]) {
+      this.client = new MaosWebSocketClient();
+      this.readyState = 0;
+
+      const headers: Record<string, string> = {};
+      if (protocols) {
+        headers['Sec-WebSocket-Protocol'] = Array.isArray(protocols) ? protocols.join(', ') : protocols;
+      }
+
+      this.client.on('open', () => {
+        this.readyState = 1;
+        this.onopen?.();
+      });
+
+      this.client.on('message', (msg: any) => {
+        const dataStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
+        this.onmessage?.({ data: dataStr });
+      });
+
+      this.client.on('close', () => {
+        this.readyState = 3;
+        this.onclose?.();
+      });
+
+      this.client.on('error', (err: any) => {
+        this.readyState = 3;
+        this.onerror?.(err);
+        this.onclose?.();
+      });
+
+      queueMicrotask(() => {
+        this.client.connect(url, { headers }).catch((err) => {
+          this.readyState = 3;
+          this.onerror?.(err);
+          this.onclose?.();
+        });
+      });
+    }
+
+    send(data: string): void {
+      if (this.readyState !== 1) return;
+      try {
+        this.client.send(JSON.parse(data));
+      } catch {
+        this.client.send({ raw: data } as any);
+      }
+    }
+
+    close(): void {
+      this.readyState = 2;
+      this.client.close();
+      this.readyState = 3;
+    }
+  }
+
   describe('BrowserEventClient Sequenced Event & Replay', () => {
     it('connects to live WebSocket endpoint and establishes connection', async () => {
       const eventClient = new BrowserEventClient({
         wsUrl,
         projectId: 'test-ui-project',
         initialCursor: 0,
+        WebSocketClass: NodeWebSocketAdapter as any,
       });
 
       const states: string[] = [];
@@ -431,12 +506,16 @@ describe('UI1-02: Typed API & Event Clients', () => {
 
       // Wait for connected state
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('WebSocket connection timed out')), 4000);
+        const timeout = setTimeout(() => reject(new Error('WebSocket connection timed out')), 15000);
         const check = setInterval(() => {
           if (eventClient.getState() === 'connected') {
             clearInterval(check);
             clearTimeout(timeout);
             resolve();
+          } else if (eventClient.getState() === 'failed') {
+            clearInterval(check);
+            clearTimeout(timeout);
+            reject(new Error('WebSocket connection failed to establish'));
           }
         }, 50);
       });
@@ -584,7 +663,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
           fromCursor: 10,
           toCursor: 11,
           hasMore: false,
-        })
+        }),
       );
 
       expect(received.length).toBe(2);
@@ -615,7 +694,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
           oldestSequence: 200,
           projectId: 'proj-1',
           instructions: 'Re-fetch state',
-        })
+        }),
       );
 
       expect(resyncReason).toBe('STALE_CURSOR');
@@ -695,13 +774,7 @@ describe('UI1-02: Typed API & Event Clients', () => {
     });
 
     it('contains ZERO shell/CLI executions in GUI client and views', () => {
-      const forbiddenPatterns = [
-        'execSync',
-        'exec(',
-        'spawn(',
-        'fork(',
-        'child_process',
-      ];
+      const forbiddenPatterns = ['execSync', 'exec(', 'spawn(', 'fork(', 'child_process'];
 
       checkFiles(guiSrcDir, (filePath, content) => {
         for (const pattern of forbiddenPatterns) {

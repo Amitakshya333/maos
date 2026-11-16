@@ -32,36 +32,15 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
-import {
-  OfficeXlsxInput,
-  XlsxGenerationError,
-  computeOfficeInputHash,
-} from '../../src/domain/office-artifact';
-import {
-  XlsxGeneratorService,
-} from '../../src/service/xlsx-generator-service';
-import {
-  OfficeInputService,
-} from '../../src/service/office-input-service';
-import {
-  ArtifactService,
-} from '../../src/service/artifact-service';
-import {
-  ApprovalService,
-} from '../../src/service/approval-service';
-import {
-  AuditService,
-} from '../../src/service/audit-service';
-import {
-  EventService,
-} from '../../src/service/event-service';
-import {
-  DurableIdempotencyStore,
-} from '../../src/core/idempotency-store';
-import {
-  validateXlsxPackage,
-  parseZipArchive,
-} from '../../src/industrial/office/xlsx-packager';
+import { OfficeXlsxInput, XlsxGenerationError, computeOfficeInputHash } from '../../src/domain/office-artifact';
+import { XlsxGeneratorService } from '../../src/service/xlsx-generator-service';
+import { OfficeInputService } from '../../src/service/office-input-service';
+import { ArtifactService } from '../../src/service/artifact-service';
+import { ApprovalService } from '../../src/service/approval-service';
+import { AuditService } from '../../src/service/audit-service';
+import { EventService } from '../../src/service/event-service';
+import { DurableIdempotencyStore } from '../../src/core/idempotency-store';
+import { validateXlsxPackage, parseZipArchive } from '../../src/industrial/office/xlsx-packager';
 import {
   executeGenerateXlsxTool,
   executeGenerateXlsxToolAsync,
@@ -162,9 +141,7 @@ describe('F6-03: generate_xlsx Tool', () => {
           acknowledgedBy: 'human-lead-engineer',
         },
       ],
-      limitations: [
-        'Applicable only to gaseous service PSV-100 series valves.',
-      ],
+      limitations: ['Applicable only to gaseous service PSV-100 series valves.'],
       citations: [
         {
           citationId: 'cit-1',
@@ -405,7 +382,7 @@ describe('F6-03: generate_xlsx Tool', () => {
         {
           id: 'find-bad',
           category: 'Injection',
-          statement: '=cmd|\' /C calc\'!A0',
+          statement: "=cmd|' /C calc'!A0",
           severity: 'critical',
           status: 'FAIL',
           citationIds: ['cit-1'],
@@ -479,9 +456,7 @@ describe('F6-03: generate_xlsx Tool', () => {
 
   it('safely escapes benign text starting with formula characters by prepending single quote', () => {
     const input = createValidXlsxInput({
-      limitations: [
-        '+Note: Temperature was within nominal room range.',
-      ],
+      limitations: ['+Note: Temperature was within nominal room range.'],
     });
 
     const result = xlsxGenerator.generateXlsx({
@@ -502,7 +477,7 @@ describe('F6-03: generate_xlsx Tool', () => {
         const text = buf.toString('utf8');
         if (
           text.includes("'+Note: Temperature was within nominal room range.") ||
-          text.includes("&apos;+Note: Temperature was within nominal room range.")
+          text.includes('&apos;+Note: Temperature was within nominal room range.')
         ) {
           foundEscapedText = true;
           break;
@@ -712,7 +687,7 @@ describe('F6-03: generate_xlsx Tool', () => {
     const input = createValidXlsxInput({
       evidenceState: {
         ocrConfidence: 0.45, // Below 0.70 threshold
-        vlmConfidence: 0.90,
+        vlmConfidence: 0.9,
         hasUnresolvedConflicts: false,
         isQuarantined: false,
         reviewedByHuman: false, // Not reviewed
@@ -734,7 +709,7 @@ describe('F6-03: generate_xlsx Tool', () => {
     const input = createValidXlsxInput({
       evidenceState: {
         ocrConfidence: 0.45,
-        vlmConfidence: 0.90,
+        vlmConfidence: 0.9,
         hasUnresolvedConflicts: false,
         isQuarantined: false,
         reviewedByHuman: true, // Human override
@@ -1151,7 +1126,7 @@ describe('F6-03: generate_xlsx Tool', () => {
   // ── 13. Canary File Invariant ─────────────────────────────────────
 
   it('guarantees rust/test.txt canary file hash remains strictly intact', () => {
-    const canaryPath = 'C:\\maos\\rust\\test.txt';
+    const canaryPath = path.resolve(__dirname, '../../rust/test.txt');
     if (fs.existsSync(canaryPath)) {
       const content = fs.readFileSync(canaryPath);
       const hash = crypto.createHash('sha256').update(content).digest('hex');

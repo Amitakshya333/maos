@@ -48,7 +48,14 @@ import { listRingRolePersonas, ringSystemPromptFor, ringToolsFor } from '../../s
 import { runRingSkillWorkflow, ringSkillsForRole } from '../../src/service/ring-skill-workflows';
 
 function makeTempRoot(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-devc-safety-'));
+  const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-ring-devc-safety-'));
+  const root = (() => {
+    try {
+      return fs.realpathSync(raw);
+    } catch {
+      return raw;
+    }
+  })();
   fs.mkdirSync(path.join(root, '.maos'), { recursive: true });
   fs.mkdirSync(path.join(root, 'demo', 'industrial'), { recursive: true });
   const repoRoot = path.resolve(__dirname, '../..');
@@ -268,11 +275,11 @@ describe('TASK DEV-C-01: Ring safety evaluation set (evidence-only)', () => {
     expect(created.length).toBeGreaterThanOrEqual(1);
     expect(created[0].artifact?.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(fs.existsSync(path.join(root, created[0].artifact!.path))).toBe(true);
-        // Traversal probes against the download route fail closed.
-        const traversal = await exec('GET', `/api/v1/ring/runs/${data.runId}/artifacts/..%2Fsecret.txt`);
-        expect([400, 404]).toContain(traversal.status);
-        const nested = await exec('GET', `/api/v1/ring/runs/${data.runId}/artifacts/sub%2Fdir.md`);
-        expect([400, 404]).toContain(nested.status);
+    // Traversal probes against the download route fail closed.
+    const traversal = await exec('GET', `/api/v1/ring/runs/${data.runId}/artifacts/..%2Fsecret.txt`);
+    expect([400, 404]).toContain(traversal.status);
+    const nested = await exec('GET', `/api/v1/ring/runs/${data.runId}/artifacts/sub%2Fdir.md`);
+    expect([400, 404]).toContain(nested.status);
     // Traversal probes against the download route fail closed.
     const traversal2 = await exec('GET', `/api/v1/ring/runs/${data.runId}/artifacts/..%2Fsecret.txt`);
     expect([400, 404]).toContain(traversal2.status);
