@@ -75,7 +75,18 @@ describe('Canva 3D Math & Geometry Suite', () => {
     }
   });
 
-  test('should generate valid procedural star geometry with computed normals', async () => {
+  test('should handle edge cases in procedural helix with non-zero geometry', async () => {
+    const { createProceduralHelix } = await import('../src/engine/ProceduralGenerators.ts');
+    // Edge cases: negative radius, zero tube, negative turns, negative height
+    const edgeHelix = createProceduralHelix(-1.0, 0, -4, -3.0);
+
+    assert(edgeHelix.attributes.position.count > 0, 'Helix must safely clamp and construct vertices');
+    assert(edgeHelix.index !== null, 'Helix index must exist');
+    assert(!isNaN(edgeHelix.attributes.position.array[0]), 'Vertices must not be NaN');
+    assert(!isNaN(edgeHelix.attributes.normal.array[0]), 'Normals must not be NaN');
+  });
+
+  test('should generate valid 3D procedural star geometry with computed normals and no degenerate triangles', async () => {
     const { createProceduralStar } = await import('../src/engine/ProceduralGenerators.ts');
     const star = createProceduralStar(10, 1.2, 0.6, 0.4);
 
@@ -88,13 +99,50 @@ describe('Canva 3D Math & Geometry Suite', () => {
     for (let i = 0; i < indices.length; i++) {
       assert(indices[i] >= 0 && indices[i] < vertexCount, `Index ${indices[i]} out of bounds [0, ${vertexCount})`);
     }
+
+    // Verify strictly zero degenerate triangles (no face with duplicate indices)
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+      assert(a !== b && b !== c && a !== c, `Degenerate triangle detected at offset ${i}: (${a}, ${b}, ${c})`);
+    }
+
+    // Verify real 3D depth
+    star.computeBoundingBox();
+    const depthZ = star.boundingBox.max.z - star.boundingBox.min.z;
+    assert(Math.abs(depthZ - 0.4) < 0.001, `Star must have 3D depth equal to 0.4, got ${depthZ}`);
   });
 
-  test('should generate crystal polyhedron geometry with valid normals', async () => {
+  test('should handle edge cases in procedural star safely', async () => {
+    const { createProceduralStar } = await import('../src/engine/ProceduralGenerators.ts');
+    // Edge cases: negative points, zero depth, inner radius >= outer radius
+    const star = createProceduralStar(-5, 0.8, 1.5, 0);
+
+    assert(star.attributes.position.count > 0, 'Edge star must have vertices');
+    assert(star.index !== null, 'Edge star must have indices');
+    const vertexCount = star.attributes.position.count;
+    const indices = star.index.array;
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+      assert(a >= 0 && a < vertexCount);
+      assert(b >= 0 && b < vertexCount);
+      assert(c >= 0 && c < vertexCount);
+      assert(a !== b && b !== c && a !== c, 'Edge star must have no degenerate triangles');
+    }
+  });
+
+  test('should generate crystal polyhedron geometry with valid normals and handle edge cases', async () => {
     const { createCrystalPolyhedron } = await import('../src/engine/ProceduralGenerators.ts');
     const crystal = createCrystalPolyhedron(1.0);
 
     assert(crystal.attributes.position.count > 0, 'Crystal must have vertices');
     assert(crystal.attributes.normal !== undefined, 'Crystal must have computed normals');
+
+    const edgeCrystal = createCrystalPolyhedron(-2.0);
+    assert(edgeCrystal.attributes.position.count > 0, 'Negative radius crystal must safely construct');
+    assert(!isNaN(edgeCrystal.attributes.position.array[0]), 'Crystal vertices must not be NaN');
   });
 });

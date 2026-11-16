@@ -11,7 +11,8 @@ export type ShapeType =
   | 'ring'
   | 'badge'
   | 'proceduralStar'
-  | 'proceduralHelix';
+  | 'proceduralHelix'
+  | 'crystal';
 
 export type TransformMode = 'translate' | 'rotate' | 'scale';
 

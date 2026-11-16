@@ -257,6 +257,8 @@ export class ThreeSceneManager {
         return createProceduralStar(10, 1.2, 0.6, 0.4);
       case 'proceduralHelix':
         return createProceduralHelix(0.8, 0.15, 8, 2.0);
+      case 'crystal':
+        return createCrystalPolyhedron(0.95);
       default:
         return new THREE.BoxGeometry(1.2, 1.2, 1.2);
     }
@@ -285,7 +287,7 @@ export class ThreeSceneManager {
     type: ShapeType,
     position?: [number, number, number],
     materialProps?: Partial<MaterialProperties>,
-    customName?: string
+    customName?: string,
   ): SceneObjectData {
     const id = `obj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const name = customName || `${type.charAt(0).toUpperCase() + type.slice(1)} ${this.objects.size + 1}`;
@@ -384,7 +386,11 @@ export class ThreeSceneManager {
 
   public updateObjectTransform(
     id: string,
-    transform: { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }
+    transform: {
+      position?: [number, number, number];
+      rotation?: [number, number, number];
+      scale?: [number, number, number];
+    },
   ) {
     const mesh = this.objects.get(id);
     const data = this.objectData.get(id);
@@ -398,7 +404,7 @@ export class ThreeSceneManager {
       mesh.rotation.set(
         THREE.MathUtils.degToRad(transform.rotation[0]),
         THREE.MathUtils.degToRad(transform.rotation[1]),
-        THREE.MathUtils.degToRad(transform.rotation[2])
+        THREE.MathUtils.degToRad(transform.rotation[2]),
       );
       data.rotation = transform.rotation;
     }
@@ -414,11 +420,7 @@ export class ThreeSceneManager {
     const data = this.objectData.get(id);
     if (!data) return null;
 
-    const newPos: [number, number, number] = [
-      data.position[0] + 0.8,
-      data.position[1],
-      data.position[2] + 0.8,
-    ];
+    const newPos: [number, number, number] = [data.position[0] + 0.8, data.position[1], data.position[2] + 0.8];
 
     return this.addObject(data.type, newPos, data.material, `${data.name} (Copy)`);
   }
@@ -579,7 +581,7 @@ export class ThreeSceneManager {
       (error) => {
         console.error('GLTF Export Error:', error);
       },
-      { binary: true }
+      { binary: true },
     );
   }
 

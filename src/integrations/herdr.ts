@@ -1015,14 +1015,15 @@ export class HerdrHarness {
 
     try {
       const { stdout } = await this.execCli(['status'], 3000);
-      if (stdout.includes('not running')) {
+      if (
+        stdout.includes('not running') ||
+        stdout.includes('error:') ||
+        stdout.includes('failed to connect') ||
+        stdout.includes('stopped')
+      ) {
         return false;
       }
-      return (
-        stdout.includes('status: running') ||
-        stdout.includes('server: running') ||
-        (stdout.includes('server:') && stdout.includes('running'))
-      );
+      return /server:\s*(?:running|(?:[^\n]*\r?\n\s+)*status:\s*running\b)/i.test(stdout);
     } catch {
       try {
         const { stdout } = await this.execCli(['agent', 'list'], 3000);

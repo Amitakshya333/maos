@@ -36,6 +36,7 @@ const SHAPES: Array<{ type: ShapeType; name: string; description: string; icon: 
   { type: 'badge', name: 'Badge', description: 'Extruded Star Plaque', icon: <Shield className="w-5 h-5 text-purple-400" /> },
   { type: 'proceduralStar', name: 'Gemma Star', description: 'Procedural 10-Point Mesh', icon: <Sparkles className="w-5 h-5 text-yellow-300 animate-spin" /> },
   { type: 'proceduralHelix', name: 'Gemma Helix', description: 'Coiled 3D Spring Math', icon: <RotateCw className="w-5 h-5 text-cyan-300 animate-pulse" /> },
+  { type: 'crystal', name: 'Gemma Crystal', description: 'Polyhedral Geode Mesh', icon: <Gem className="w-5 h-5 text-indigo-400 animate-pulse" /> },
 ];
 
 const MATERIAL_PRESETS: MaterialPreset[] = [

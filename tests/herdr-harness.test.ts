@@ -1085,6 +1085,53 @@ describe('Herdr Harness - Multi-Pane Action Harness', () => {
       expect(pingCalled).toBe(true);
     });
 
+    it('accurately parses CLI server status without false positives from client status', async () => {
+      // Offline server status
+      const offlineHarness = new HerdrHarness({
+        preferSocket: false,
+        cliExecutor: async (_cli, args) => {
+          if (args[0] === 'status') {
+            return {
+              stdout: 'client:\n  status: running\nserver:\n  status: not running\n',
+              stderr: '',
+            };
+          }
+          return { stdout: '', stderr: '' };
+        },
+      });
+      expect(await offlineHarness.isAvailable()).toBe(false);
+
+      // Stopped server status
+      const stoppedHarness = new HerdrHarness({
+        preferSocket: false,
+        cliExecutor: async (_cli, args) => {
+          if (args[0] === 'status') {
+            return {
+              stdout: 'client:\n  status: running\nserver:\n  status: stopped\n',
+              stderr: '',
+            };
+          }
+          return { stdout: '', stderr: '' };
+        },
+      });
+      expect(await stoppedHarness.isAvailable()).toBe(false);
+
+      // Online server status
+      const onlineHarness = new HerdrHarness({
+        preferSocket: false,
+        cliExecutor: async (_cli, args) => {
+          if (args[0] === 'status') {
+            return {
+              stdout: 'client:\n  status: running\nserver:\n  status: running\n',
+              stderr: '',
+            };
+          }
+          return { stdout: '', stderr: '' };
+        },
+      });
+      expect(await onlineHarness.isAvailable()).toBe(true);
+    });
+
     it('standalone exported functions exist and are functions', () => {
       expect(typeof splitPane).toBe('function');
       expect(typeof runCommand).toBe('function');
