@@ -15,6 +15,6 @@ export default defineConfig({
     maxWorkers: 1,
     // Real offline embedding tests spawn Python and load the pinned transformer
     // model; allow cold starts on slower CI runners.
-    testTimeout: 60000,
+    testTimeout: 120000,
   },
 });

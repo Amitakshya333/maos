@@ -60,6 +60,7 @@ jobs:
       - name: Run Unit Tests
         run: npm test
         env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
           HF_HUB_OFFLINE: '1'
           TRANSFORMERS_OFFLINE: '1'
           HF_DATASETS_OFFLINE: '1'
