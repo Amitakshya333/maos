@@ -366,8 +366,8 @@ npx vitest run tests/oasis/
 │   ├── hackday-2026/
 │   │   └── ignite-showcase.ps1  # 3-minute live presentation rehearsal script
 │   └── industrial/
-│       ├── RUNBOOK.md           # Industrial operational runbook
-│       └── PRESENTATION_SCRIPT.md # Industrial presentation script
+│       ├── RUNBOOK.md           # Industrial operational runbook (demo/industrial/RUNBOOK.md)
+│       └── PRESENTATION_SCRIPT.md # Industrial presentation script (demo/industrial/PRESENTATION_SCRIPT.md)
 ├── docs/
 │   ├── screenshots/             # Real high-resolution captures of TUI & architecture
 │   │   ├── 01-sovereign-mission-control.png
