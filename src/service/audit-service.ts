@@ -31,6 +31,7 @@ import {
   engineChainVerify,
   engineChainVerifyRequestSizeBytes,
   getDefaultEnginePath,
+  resolveEnginePath,
   EngineManifest,
   MAX_ENGINE_REQUEST_BYTES,
 } from '../industrial/rust-engine-bridge';
@@ -296,18 +297,7 @@ export class AuditService {
   }
 
   private resolveEnginePath(): string {
-    if (this.customEnginePath) {
-      return this.customEnginePath;
-    }
-    const localPath = getDefaultEnginePath(this.projectRoot);
-    if (fs.existsSync(localPath)) {
-      return localPath;
-    }
-    const cwdPath = getDefaultEnginePath(process.cwd());
-    if (fs.existsSync(cwdPath)) {
-      return cwdPath;
-    }
-    return localPath;
+    return resolveEnginePath(this.projectRoot, this.customEnginePath);
   }
 
   private getEngineManifest(): EngineManifest {

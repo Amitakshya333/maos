@@ -32,7 +32,7 @@ import {
 } from '../domain/raster';
 import { ArtifactService } from './artifact-service';
 import { AuditService } from './audit-service';
-import { engineHash, getDefaultEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
+import { engineHash, getDefaultEnginePath, resolveEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
 
 export interface PdfRasterServiceOptions {
   pythonExecutable?: string;
@@ -514,7 +514,7 @@ export class PdfRasterService {
 
   private computeSha256(filePath: string): string {
     const buf = fs.readFileSync(filePath);
-    const enginePath = getDefaultEnginePath(this.projectRoot);
+    const enginePath = resolveEnginePath(this.projectRoot);
     if (fs.existsSync(enginePath)) {
       try {
         const manifest = verifyExecutable(enginePath);

@@ -34,6 +34,7 @@ import {
   verifyExecutable,
   engineVerifyCalculation,
   getDefaultEnginePath,
+  resolveEnginePath,
   EngineManifest,
   EngineError,
 } from '../industrial/rust-engine-bridge';
@@ -321,7 +322,7 @@ export class CalculationTraceService {
     let engineDetails: Record<string, unknown> = {};
 
     if (useRust) {
-      const enginePath = options.customEnginePath || this.customEnginePath || getDefaultEnginePath(this.projectRoot);
+      const enginePath = resolveEnginePath(this.projectRoot, options.customEnginePath || this.customEnginePath);
       let manifest: EngineManifest;
       try {
         manifest = verifyExecutable(enginePath, options.expectedEngineHash);

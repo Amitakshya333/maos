@@ -23,7 +23,7 @@ import type { Artifact, ArtifactType } from '../domain/schemas';
 import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import { EventService } from './event-service';
 import { ApprovalService } from './approval-service';
-import { getDefaultEnginePath, verifyExecutable, engineHash } from '../industrial/rust-engine-bridge';
+import { getDefaultEnginePath, resolveEnginePath, verifyExecutable, engineHash } from '../industrial/rust-engine-bridge';
 
 export const MAX_ARTIFACT_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const DISALLOWED_ARTIFACT_EXTENSIONS = new Set([
@@ -165,7 +165,7 @@ export class ArtifactService {
       throw new Error('RUST_HASH_FAILED: Simulated Rust engine failure for testing.');
     }
 
-    const enginePath = getDefaultEnginePath(this.projectRoot);
+    const enginePath = resolveEnginePath(this.projectRoot);
     const engineExists = fs.existsSync(enginePath);
 
     if (this.options.requireRustHash && !engineExists) {

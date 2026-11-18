@@ -29,7 +29,7 @@ import { ArtifactService } from './artifact-service';
 import { AuditService } from './audit-service';
 import { PdfRasterService } from './pdf-raster-service';
 import { PdfRasterError } from '../domain/raster';
-import { engineHash, getDefaultEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
+import { engineHash, getDefaultEnginePath, resolveEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
 
 export interface OcrServiceOptions {
   pythonExecutable?: string;
@@ -684,7 +684,7 @@ export class OcrService {
 
   private computeSourceHash(filePath: string): string {
     const buf = fs.readFileSync(filePath);
-    const enginePath = getDefaultEnginePath(this.projectRoot);
+    const enginePath = resolveEnginePath(this.projectRoot);
     if (fs.existsSync(enginePath)) {
       try {
         const manifest = verifyExecutable(enginePath);

@@ -343,7 +343,7 @@ export class MaosTui {
     // Hide cursor & clear screen
     process.stdout.write('\x1b[?25l');
     console.clear();
-    process.stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?25l');
+    process.stdout.write('\x1b[?1000h\x1b[?1006h\x1b[?25l');
 
     this.setupKeyboard();
     this.updateGpuTelemetry();
@@ -394,7 +394,7 @@ export class MaosTui {
         process.stdin.setRawMode(false);
       }
     } catch {}
-    process.stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?25h'); // restore mouse and cursor
+    process.stdout.write('\x1b[?1000l\x1b[?1006l\x1b[?25h'); // restore mouse and cursor
     console.clear();
     console.log(c.cyanBright('✦ MAOS Oasis TUI closed. Returning to terminal.'));
     process.exit(0);
@@ -413,16 +413,25 @@ export class MaosTui {
     readline.emitKeypressEvents(process.stdin);
 
     process.stdin.on('keypress', (str, key) => {
-      // Handle SGR Mouse Events: \x1b[<button;col;row;M
-      if (str && str.startsWith('\x1b[<')) {
-        const mouseMatch = str.match(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
+      // Consume ANY SGR mouse sequence fragment or complete sequence
+      const isMousePacket = Boolean(
+        str && (
+          str.startsWith('\x1b[<') ||
+          str.startsWith('[<') ||
+          str.startsWith('<') ||
+          /(?:\x1b\[<|\[<|<)?\d+;\d+;\d+[Mm]/.test(str)
+        )
+      );
+
+      if (isMousePacket) {
+        const mouseMatch = (str || '').match(/(?:\x1b\[<|\[<|<)?(\d+);(\d+);(\d+)([Mm])/);
         if (mouseMatch) {
           const btn = parseInt(mouseMatch[1], 10);
           const col = parseInt(mouseMatch[2], 10);
           const row = parseInt(mouseMatch[3], 10);
           const isPress = mouseMatch[4] === 'M';
 
-          if (isPress && (btn === 0 || btn === 64 || btn === 65)) {
+          if (isPress) {
             // Mouse wheel scroll
             if (btn === 64) {
               this.transcriptScrollOffset = Math.min(
@@ -438,82 +447,97 @@ export class MaosTui {
             }
 
             // Left Click (btn === 0)
-            const terminalCols = process.stdout.columns || 100;
-            const terminalRows = process.stdout.rows || 32;
-            const railW = terminalCols >= 96 ? Math.min(28, Math.max(20, Math.floor(terminalCols * 0.22))) : 0;
-            const mainW = railW ? Math.max(20, terminalCols - railW - 3) : terminalCols;
+            if (btn === 0) {
+              const terminalCols = process.stdout.columns || 100;
+              const terminalRows = process.stdout.rows || 32;
+              const railW = terminalCols >= 96 ? Math.min(28, Math.max(20, Math.floor(terminalCols * 0.22))) : 0;
+              const mainW = railW ? Math.max(20, terminalCols - railW - 3) : terminalCols;
 
-            // Clicked in Sidebar
-            if (railW > 0 && col > mainW) {
-              const bodyRows = Math.max(1, terminalRows - 4);
-              const navTop = Math.max(1, Math.floor(bodyRows * 0.08)) + 3;
-              const settingsRow = Math.max(navTop + 10, bodyRows - 4) + 3;
+              // Clicked in Sidebar
+              if (railW > 0 && col > mainW) {
+                const bodyRows = Math.max(1, terminalRows - 4);
+                const navTop = Math.max(1, Math.floor(bodyRows * 0.08)) + 3;
+                const settingsRow = Math.max(navTop + 10, bodyRows - 4) + 3;
 
-              if (row >= navTop && row <= navTop + 1) {
-                this.activeTab = 1;
-                this.statusMessage = 'Switched to Dashboard [1].';
-                this.render();
-                return;
-              } else if (row >= navTop + 2 && row <= navTop + 3) {
-                this.activeTab = 2;
-                void this.updateHerdrTelemetry();
-                this.statusMessage = 'Switched to Agents [2].';
-                this.render();
-                return;
-              } else if (row >= navTop + 4 && row <= navTop + 5) {
-                this.activeTab = 3;
-                this.statusMessage = 'Switched to Telemetry [3].';
-                this.render();
-                return;
-              } else if (row >= navTop + 6 && row <= navTop + 7) {
-                this.activeTab = 4;
-                this.statusMessage = 'Switched to Event Log [4].';
-                this.render();
-                return;
-              } else if (row >= settingsRow - 1 && row <= settingsRow + 2) {
-                this.activeTab = 5;
-                this.statusMessage = 'Switched to Settings [5].';
-                this.render();
-                return;
-              }
-            }
+                this.modalMode = 'none';
+                this.modalInputText = '';
 
-            // Clicked in bottom hotkey bar (row === terminalRows)
-            if (row >= terminalRows - 1) {
-              if (col <= 14) {
-                this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
-                this.statusMessage = `Switched to View [${this.activeTab}].`;
-                this.render();
-                return;
+                if (row >= navTop && row <= navTop + 1) {
+                  this.activeTab = 1;
+                  this.statusMessage = 'Switched to Dashboard [1].';
+                  this.render();
+                  return;
+                } else if (row >= navTop + 2 && row <= navTop + 3) {
+                  this.activeTab = 2;
+                  void this.updateHerdrTelemetry();
+                  this.statusMessage = 'Switched to Agents [2].';
+                  this.render();
+                  return;
+                } else if (row >= navTop + 4 && row <= navTop + 5) {
+                  this.activeTab = 3;
+                  this.statusMessage = 'Switched to Telemetry [3].';
+                  this.render();
+                  return;
+                } else if (row >= navTop + 6 && row <= navTop + 7) {
+                  this.activeTab = 4;
+                  this.statusMessage = 'Switched to Event Log [4].';
+                  this.render();
+                  return;
+                } else if (row >= settingsRow - 1) {
+                  this.activeTab = 5;
+                  this.statusMessage = 'Switched to Settings [5].';
+                  this.render();
+                  return;
+                }
               }
-              if (col >= 15 && col <= 30) {
-                this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
-                this.statusMessage = `Active model switched to ${this.selectedModel}.`;
-                this.render();
-                return;
-              }
-              if (col >= 31 && col <= 45) {
-                this.openStudio();
-                return;
-              }
-              if (col >= 46 && col <= 60) {
-                this.runCanvaTests();
-                return;
-              }
-              if (col >= 61 && col <= 75) {
-                this.updateGpuTelemetry();
-                void this.updateHerdrTelemetry();
-                this.statusMessage = 'GPU and Herdr telemetry refreshed.';
-                this.render();
-                return;
-              }
-              if (col >= 76) {
-                this.exit();
-                return;
+
+              // Clicked in bottom hotkey bar (row >= terminalRows - 1)
+              if (row >= terminalRows - 1) {
+                this.modalMode = 'none';
+                this.modalInputText = '';
+
+                if (col <= 16) {
+                  this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
+                  this.statusMessage = `Switched to View [${this.activeTab}].`;
+                  this.render();
+                  return;
+                }
+                if (col >= 17 && col <= 32) {
+                  this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
+                  this.statusMessage = `Active model switched to ${this.selectedModel}.`;
+                  this.render();
+                  return;
+                }
+                if (col >= 33 && col <= 48) {
+                  this.openStudio();
+                  return;
+                }
+                if (col >= 49 && col <= 62) {
+                  this.runCanvaTests();
+                  return;
+                }
+                if (col >= 63 && col <= 78) {
+                  this.updateGpuTelemetry();
+                  void this.updateHerdrTelemetry();
+                  this.statusMessage = 'GPU and Herdr telemetry refreshed.';
+                  this.render();
+                  return;
+                }
+                if (col >= 79 && col <= 94) {
+                  this.activeTab = 5;
+                  this.statusMessage = 'Switched to Settings [5].';
+                  this.render();
+                  return;
+                }
+                if (col >= 95) {
+                  this.exit();
+                  return;
+                }
               }
             }
           }
         }
+        // ALWAYS return! Never leak mouse packets into keyboard input!
         return;
       }
 
@@ -633,7 +657,7 @@ export class MaosTui {
       // If in modal dialog mode (ignite/promptTest modal overlays):
       if (this.modalMode !== 'none' && this.modalMode !== 'command') {
         if (key.name === 'escape') {
-          this.modalMode = 'command';
+          this.modalMode = 'none';
           this.modalInputText = '';
           this.statusMessage = 'Action cancelled.';
           this.render();
@@ -701,6 +725,8 @@ export class MaosTui {
         }
         if (['1', '2', '3', '4', '5'].includes(key.name)) {
           this.activeTab = parseInt(key.name, 10);
+          this.modalMode = 'none';
+          this.modalInputText = '';
           this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
@@ -711,11 +737,14 @@ export class MaosTui {
       if (this.activeTab === 1 || this.modalMode === 'command') {
         if (key.name === 'tab') {
           this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
+          this.modalMode = 'none';
+          this.modalInputText = '';
           this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
         }
         if (key.name === 'escape') {
+          this.modalMode = 'none';
           if (this.modalInputText !== '') {
             this.modalInputText = '';
             this.statusMessage = 'Input cleared.';
@@ -798,13 +827,16 @@ export class MaosTui {
       }
       if (key.name === 'tab') {
         this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
+        this.modalMode = 'none';
+        this.modalInputText = '';
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
         return;
       }
       if (key.name === 'return' || key.name === '/' || str === '/') {
         this.activeTab = 1;
-        if (str === '/') this.modalInputText = '/';
+        this.modalMode = 'command';
+        this.modalInputText = str === '/' ? '/' : '';
         this.statusMessage = 'Command prompt active.';
         this.render();
         return;
@@ -818,12 +850,16 @@ export class MaosTui {
             : this.activeTab <= 1
               ? 5
               : this.activeTab - 1;
+        this.modalMode = 'none';
+        this.modalInputText = '';
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
         return;
       }
       if (['1', '2', '3', '4', '5'].includes(key.name)) {
         this.activeTab = parseInt(key.name, 10);
+        this.modalMode = 'none';
+        this.modalInputText = '';
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
         return;
@@ -1493,8 +1529,11 @@ export class MaosTui {
           ]
         : this.activeTab === 1
           ? [
-              `${c.boldWhite('Enter')} ${c.slateMuted('Run Goal / Command')}`,
+              `${c.boldWhite('Enter')} ${c.slateMuted('Run Goal')}`,
               `${c.boldWhite('Tab')} ${c.slateMuted('Switch View')}`,
+              `${c.boldWhite('G')} ${c.amber(`Model ${this.selectedModel.replace('gemma2:', '')}`)}`,
+              `${c.boldWhite('D')} ${c.pink('Studio')}`,
+              `${c.boldWhite('S')} ${c.white('Settings')}`,
               ...(hasTranscriptSession ? [`${c.boldWhite('PgUp/PgDn')} ${c.slateMuted('Scroll')}`] : []),
               `${c.boldWhite('Esc')} ${c.slateMuted('Clear')}`,
               `${c.cyanBright('/help')} ${c.slateMuted('Commands')}`,
@@ -1507,6 +1546,7 @@ export class MaosTui {
               `${c.boldWhite('D')} ${c.pink('Studio')}`,
               `${c.boldWhite('T')} ${c.emerald('Test')}`,
               `${c.boldWhite('R')} ${c.cyan('Refresh')}`,
+              `${c.boldWhite('S')} ${c.white('Settings')}`,
               `${c.boldWhite('Q')} ${c.slateMuted('Quit')}`,
             ]
     ).join('   ');

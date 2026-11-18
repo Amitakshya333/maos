@@ -347,3 +347,36 @@ export function getDefaultEnginePath(projectRoot: string): string {
   const ext = process.platform === 'win32' ? '.exe' : '';
   return path.resolve(projectRoot, 'rust', 'target', 'release', `maos-engine${ext}`);
 }
+
+/**
+ * Resolve the Rust engine executable path using fail-closed precedence:
+ * 1. Explicit custom path (if provided)
+ * 2. Local engine in projectRoot (if exists)
+ * 3. Environment variable MAOS_ENGINE_PATH (if set and exists)
+ * 4. Local engine in process.cwd() (if exists)
+ * 5. Package repository root relative to this module (if exists)
+ * 6. Fallback to defaultEnginePath for projectRoot or process.cwd()
+ */
+export function resolveEnginePath(projectRoot?: string, customPath?: string): string {
+  if (customPath) {
+    return customPath;
+  }
+  if (projectRoot) {
+    const local = getDefaultEnginePath(projectRoot);
+    if (fs.existsSync(local)) {
+      return local;
+    }
+  }
+  if (process.env.MAOS_ENGINE_PATH && fs.existsSync(process.env.MAOS_ENGINE_PATH)) {
+    return process.env.MAOS_ENGINE_PATH;
+  }
+  const cwdPath = getDefaultEnginePath(process.cwd());
+  if (fs.existsSync(cwdPath)) {
+    return cwdPath;
+  }
+  const repoCandidate = getDefaultEnginePath(path.resolve(__dirname, '..', '..'));
+  if (fs.existsSync(repoCandidate)) {
+    return repoCandidate;
+  }
+  return projectRoot ? getDefaultEnginePath(projectRoot) : cwdPath;
+}

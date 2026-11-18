@@ -63,6 +63,7 @@ import { AuditService } from './audit-service';
 import { withJudgedRunOutputLock } from '../industrial/judged-run-lock';
 import {
   getDefaultEnginePath,
+  resolveEnginePath,
   verifyExecutable,
 } from '../industrial/rust-engine-bridge';
 
@@ -341,7 +342,7 @@ export class SovereigntyBundleService {
     let rustVerifier: any = options.rustVerifier;
     if (!rustVerifier) {
       try {
-        const enginePath = getDefaultEnginePath(this.projectRoot);
+        const enginePath = resolveEnginePath(this.projectRoot);
         if (fs.existsSync(enginePath)) {
           const manifest = verifyExecutable(enginePath);
           rustVerifier = {

@@ -15,7 +15,7 @@ import { ArtifactService } from './artifact-service';
 import { ModelService } from './model-service';
 import { readServiceIdentity, ServiceInstanceIdentity } from './project-service/instance-identity';
 import { getOrGenerateProjectId } from './project-service/recent-projects';
-import { getDefaultEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
+import { getDefaultEnginePath, resolveEnginePath, verifyExecutable } from '../industrial/rust-engine-bridge';
 
 export interface ProjectServiceDeps {
   taskService?: TaskService;
@@ -434,7 +434,7 @@ export class ProjectService {
     const models = modelService.listModels();
     const residency = modelService.getModelResidencyStatus();
 
-    const enginePath = getDefaultEnginePath(this.projectRoot);
+    const enginePath = resolveEnginePath(this.projectRoot);
     let rustEngineHealth = false;
     if (fs.existsSync(enginePath)) {
       try {
