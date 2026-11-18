@@ -47,32 +47,32 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       {/* Mode Switches */}
       <button
         onClick={() => onSetTransformMode('translate')}
-        className={`p-1.5 rounded-full transition-colors ${
+        className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-colors touch-manipulation ${
           transformMode === 'translate' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'
         }`}
         title="Translate (W)"
       >
-        <Move className="w-3.5 h-3.5" />
+        <Move className="w-4 h-4" />
       </button>
 
       <button
         onClick={() => onSetTransformMode('rotate')}
-        className={`p-1.5 rounded-full transition-colors ${
+        className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-colors touch-manipulation ${
           transformMode === 'rotate' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'
         }`}
         title="Rotate (E)"
       >
-        <RotateCw className="w-3.5 h-3.5" />
+        <RotateCw className="w-4 h-4" />
       </button>
 
       <button
         onClick={() => onSetTransformMode('scale')}
-        className={`p-1.5 rounded-full transition-colors ${
+        className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-colors touch-manipulation ${
           transformMode === 'scale' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'
         }`}
         title="Scale (R)"
       >
-        <Maximize2 className="w-3.5 h-3.5" />
+        <Maximize2 className="w-4 h-4" />
       </button>
 
       <div className="h-4 w-px bg-white/10 mx-1" />
@@ -80,28 +80,28 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       {/* Center button */}
       <button
         onClick={() => onCenterObject(selectedObject.id)}
-        className="p-1.5 rounded-full text-slate-400 hover:text-white transition-colors"
+        className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-slate-400 hover:text-white transition-colors touch-manipulation"
         title="Align to Center"
       >
-        <Crosshair className="w-3.5 h-3.5" />
+        <Crosshair className="w-4 h-4" />
       </button>
 
       {/* Duplicate */}
       <button
         onClick={() => onDuplicate(selectedObject.id)}
-        className="p-1.5 rounded-full text-slate-400 hover:text-white transition-colors"
+        className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-slate-400 hover:text-white transition-colors touch-manipulation"
         title="Duplicate (Ctrl+D)"
       >
-        <Copy className="w-3.5 h-3.5" />
+        <Copy className="w-4 h-4" />
       </button>
 
       {/* Delete */}
       <button
         onClick={() => onDelete(selectedObject.id)}
-        className="p-1.5 rounded-full text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors"
+        className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors touch-manipulation"
         title="Delete (Del)"
       >
-        <Trash2 className="w-3.5 h-3.5" />
+        <Trash2 className="w-4 h-4" />
       </button>
     </div>
   );

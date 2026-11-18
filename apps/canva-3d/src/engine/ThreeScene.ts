@@ -63,6 +63,7 @@ export class ThreeSceneManager {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
+    this.renderer.domElement.style.touchAction = 'none';
     container.appendChild(this.renderer.domElement);
 
     // 4. Controls
@@ -174,9 +175,9 @@ export class ThreeSceneManager {
     this.renderer.setSize(width, height);
   };
 
-  private onPointerDown = (event: MouseEvent) => {
-    // Only handle left click on canvas
-    if (event.button !== 0) return;
+  private onPointerDown = (event: PointerEvent | MouseEvent) => {
+    // Only handle left click on canvas or touch taps
+    if (event.button !== 0 && (event as PointerEvent).pointerType !== 'touch') return;
 
     // Ignore clicks if clicking transform controls handles
     const rect = this.renderer.domElement.getBoundingClientRect();

@@ -59,6 +59,26 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         </span>
         <span className="kbd-hint">Alt+1..8: Views</span>
         <span className="kbd-hint">Ctrl+J: Cockpit</span>
+        <button
+          className="status-item"
+          onClick={() => { window.location.hash = '#/settings'; }}
+          title="Open Settings & Roles (Alt+8)"
+          aria-label="Open Settings"
+          data-testid="status-bar-settings-btn"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '2px 6px',
+            borderRadius: '3px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: 'inherit',
+          }}
+        >
+          ⚙ Settings
+        </button>
       </div>
     </footer>
   );

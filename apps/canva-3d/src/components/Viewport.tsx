@@ -42,7 +42,11 @@ export const Viewport: React.FC<ViewportProps> = ({
       onDrop={handleDrop}
     >
       {/* Three.js Canvas Container */}
-      <div ref={canvasContainerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <div
+        ref={canvasContainerRef}
+        className="w-full h-full cursor-grab active:cursor-grabbing touch-none"
+        style={{ touchAction: 'none' }}
+      />
 
       {/* Drag Over Overlay Glow */}
       {isDragOver && (

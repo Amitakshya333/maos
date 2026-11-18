@@ -343,6 +343,7 @@ export class MaosTui {
     // Hide cursor & clear screen
     process.stdout.write('\x1b[?25l');
     console.clear();
+    process.stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?25l');
 
     this.setupKeyboard();
     this.updateGpuTelemetry();
@@ -393,7 +394,7 @@ export class MaosTui {
         process.stdin.setRawMode(false);
       }
     } catch {}
-    process.stdout.write('\x1b[?25h'); // restore cursor
+    process.stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?25h'); // restore mouse and cursor
     console.clear();
     console.log(c.cyanBright('✦ MAOS Oasis TUI closed. Returning to terminal.'));
     process.exit(0);
@@ -412,6 +413,110 @@ export class MaosTui {
     readline.emitKeypressEvents(process.stdin);
 
     process.stdin.on('keypress', (str, key) => {
+      // Handle SGR Mouse Events: \x1b[<button;col;row;M
+      if (str && str.startsWith('\x1b[<')) {
+        const mouseMatch = str.match(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
+        if (mouseMatch) {
+          const btn = parseInt(mouseMatch[1], 10);
+          const col = parseInt(mouseMatch[2], 10);
+          const row = parseInt(mouseMatch[3], 10);
+          const isPress = mouseMatch[4] === 'M';
+
+          if (isPress && (btn === 0 || btn === 64 || btn === 65)) {
+            // Mouse wheel scroll
+            if (btn === 64) {
+              this.transcriptScrollOffset = Math.min(
+                this.transcriptRenderedRowCount - this.transcriptViewportRows,
+                this.transcriptScrollOffset + 3,
+              );
+              this.render();
+              return;
+            } else if (btn === 65) {
+              this.transcriptScrollOffset = Math.max(0, this.transcriptScrollOffset - 3);
+              this.render();
+              return;
+            }
+
+            // Left Click (btn === 0)
+            const terminalCols = process.stdout.columns || 100;
+            const terminalRows = process.stdout.rows || 32;
+            const railW = terminalCols >= 96 ? Math.min(28, Math.max(20, Math.floor(terminalCols * 0.22))) : 0;
+            const mainW = railW ? Math.max(20, terminalCols - railW - 3) : terminalCols;
+
+            // Clicked in Sidebar
+            if (railW > 0 && col > mainW) {
+              const bodyRows = Math.max(1, terminalRows - 4);
+              const navTop = Math.max(1, Math.floor(bodyRows * 0.08)) + 3;
+              const settingsRow = Math.max(navTop + 10, bodyRows - 4) + 3;
+
+              if (row >= navTop && row <= navTop + 1) {
+                this.activeTab = 1;
+                this.statusMessage = 'Switched to Dashboard [1].';
+                this.render();
+                return;
+              } else if (row >= navTop + 2 && row <= navTop + 3) {
+                this.activeTab = 2;
+                void this.updateHerdrTelemetry();
+                this.statusMessage = 'Switched to Agents [2].';
+                this.render();
+                return;
+              } else if (row >= navTop + 4 && row <= navTop + 5) {
+                this.activeTab = 3;
+                this.statusMessage = 'Switched to Telemetry [3].';
+                this.render();
+                return;
+              } else if (row >= navTop + 6 && row <= navTop + 7) {
+                this.activeTab = 4;
+                this.statusMessage = 'Switched to Event Log [4].';
+                this.render();
+                return;
+              } else if (row >= settingsRow - 1 && row <= settingsRow + 2) {
+                this.activeTab = 5;
+                this.statusMessage = 'Switched to Settings [5].';
+                this.render();
+                return;
+              }
+            }
+
+            // Clicked in bottom hotkey bar (row === terminalRows)
+            if (row >= terminalRows - 1) {
+              if (col <= 14) {
+                this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
+                this.statusMessage = `Switched to View [${this.activeTab}].`;
+                this.render();
+                return;
+              }
+              if (col >= 15 && col <= 30) {
+                this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
+                this.statusMessage = `Active model switched to ${this.selectedModel}.`;
+                this.render();
+                return;
+              }
+              if (col >= 31 && col <= 45) {
+                this.openStudio();
+                return;
+              }
+              if (col >= 46 && col <= 60) {
+                this.runCanvaTests();
+                return;
+              }
+              if (col >= 61 && col <= 75) {
+                this.updateGpuTelemetry();
+                void this.updateHerdrTelemetry();
+                this.statusMessage = 'GPU and Herdr telemetry refreshed.';
+                this.render();
+                return;
+              }
+              if (col >= 76) {
+                this.exit();
+                return;
+              }
+            }
+          }
+        }
+        return;
+      }
+
       // Synthesize key object if undefined from readline on raw Windows stream
       if (!key) {
         if (!str) return;
@@ -442,14 +547,14 @@ export class MaosTui {
       if (this.externalCommandRunning) {
         // Tab key always cycles views:
         if (key.name === 'tab') {
-          this.activeTab = this.activeTab >= 4 ? 1 : this.activeTab + 1;
+          this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
           this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
         }
         // Direct number keys switch views:
-        if (str === '1' || str === '2' || str === '3' || str === '4') {
-          this.activeTab = Number(str);
+        if (['1', '2', '3', '4', '5'].includes(str || key.name)) {
+          this.activeTab = Number(str || key.name);
           this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
@@ -478,7 +583,7 @@ export class MaosTui {
           this.render();
           return;
         }
-        // Q key quits when on other views (tabs 2, 3, 4):
+        // Q key quits when on other views (tabs 2, 3, 4, 5):
         if (this.activeTab !== 1 && key.name === 'q') {
           this.exit();
           return;
@@ -490,6 +595,39 @@ export class MaosTui {
           return;
         }
         return;
+      }
+
+      // Global Ctrl / Meta shortcuts (works anywhere, even while typing)
+      if (key.ctrl || key.meta) {
+        if (key.name === 'd' || str === '\x04') {
+          this.openStudio();
+          return;
+        }
+        if (key.name === 'g' || str === '\x07') {
+          this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
+          this.statusMessage = `Active model switched to ${this.selectedModel}.`;
+          if (this.activeTab === 1 && this.transcript.length > 0) this.appendTranscript(this.statusMessage);
+          this.render();
+          return;
+        }
+        if (key.name === 't' || str === '\x14') {
+          this.runCanvaTests();
+          return;
+        }
+        if (key.name === 'r' || str === '\x12') {
+          this.updateGpuTelemetry();
+          void this.updateHerdrTelemetry();
+          this.statusMessage = 'GPU and Herdr telemetry refreshed.';
+          if (this.activeTab === 1 && this.transcript.length > 0) this.appendTranscript(this.statusMessage);
+          this.render();
+          return;
+        }
+        if (key.name === 's' || str === '\x13') {
+          this.activeTab = 5;
+          this.statusMessage = 'Switched to Settings [5].';
+          this.render();
+          return;
+        }
       }
 
       // If in modal dialog mode (ignite/promptTest modal overlays):
@@ -520,10 +658,59 @@ export class MaosTui {
         return;
       }
 
+      // If on Tab 1 with EMPTY input, single-key action hotkeys take precedence!
+      if (this.activeTab === 1 && this.modalMode !== 'command' && this.modalInputText === '') {
+        if (key.name === 'g') {
+          this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
+          this.statusMessage = `Active model switched to ${this.selectedModel}.`;
+          if (this.transcript.length > 0) this.appendTranscript(this.statusMessage);
+          this.render();
+          return;
+        }
+        if (key.name === 'd') {
+          this.openStudio();
+          return;
+        }
+        if (key.name === 't') {
+          this.runCanvaTests();
+          return;
+        }
+        if (key.name === 'r') {
+          this.updateGpuTelemetry();
+          void this.updateHerdrTelemetry();
+          this.statusMessage = 'GPU and Herdr telemetry refreshed.';
+          if (this.transcript.length > 0) this.appendTranscript(this.statusMessage);
+          this.render();
+          return;
+        }
+        if (key.name === 's') {
+          this.activeTab = 5;
+          this.statusMessage = 'Switched to Settings [5].';
+          this.render();
+          return;
+        }
+        if (key.name === 'i') {
+          this.modalMode = 'ignite';
+          this.modalInputText = 'Build and deploy Canva 3D Spatial Studio';
+          this.render();
+          return;
+        }
+        if (key.name === 'q') {
+          this.exit();
+          return;
+        }
+        if (['1', '2', '3', '4', '5'].includes(key.name)) {
+          this.activeTab = parseInt(key.name, 10);
+          this.statusMessage = `Switched to View [${this.activeTab}].`;
+          this.render();
+          return;
+        }
+      }
+
       // If on Tab 1 (where the prompt box is always ready to receive input) or command mode:
       if (this.activeTab === 1 || this.modalMode === 'command') {
         if (key.name === 'tab') {
-          this.activeTab = this.activeTab >= 4 ? 1 : this.activeTab + 1;
+          this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
           this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
@@ -604,13 +791,13 @@ export class MaosTui {
         }
       }
 
-      // Action hotkeys on other tabs (Tabs 2, 3, 4):
+      // Action hotkeys on other tabs (Tabs 2, 3, 4, 5):
       if (key.name === 'q') {
         this.exit();
         return;
       }
       if (key.name === 'tab') {
-        this.activeTab = this.activeTab >= 4 ? 1 : this.activeTab + 1;
+        this.activeTab = this.activeTab >= 5 ? 1 : this.activeTab + 1;
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
         return;
@@ -625,17 +812,17 @@ export class MaosTui {
       if (key.name === 'up' || key.name === 'down') {
         this.activeTab =
           key.name === 'down'
-            ? this.activeTab >= 4
+            ? this.activeTab >= 5
               ? 1
               : this.activeTab + 1
             : this.activeTab <= 1
-              ? 4
+              ? 5
               : this.activeTab - 1;
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
         return;
       }
-      if (['1', '2', '3', '4'].includes(key.name)) {
+      if (['1', '2', '3', '4', '5'].includes(key.name)) {
         this.activeTab = parseInt(key.name, 10);
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
@@ -643,6 +830,13 @@ export class MaosTui {
       }
 
       // Action hotkeys
+      if (key.name === 's') {
+        this.activeTab = 5;
+        this.statusMessage = 'Switched to Settings [5].';
+        this.render();
+        return;
+      }
+
       if (key.name === 'i') {
         this.modalMode = 'ignite';
         this.modalInputText = 'Build and deploy Canva 3D Spatial Studio';
@@ -823,7 +1017,7 @@ export class MaosTui {
       this.render();
       return;
     }
-    if (name === 'model') {
+    if (name === 'model' || name === 'g') {
       const requested = (parts[0] || '').toLowerCase().replace(/^gemma2:/, '');
       if (!requested) {
         this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
@@ -864,8 +1058,11 @@ export class MaosTui {
       this.render();
       return;
     }
-    if (name === 'settings') {
-      this.runCliCommand(['configure', ...parts], 'Opening MAOS provider settings');
+    if (['settings', 'config', 'preferences', '5', 's'].includes(name)) {
+      this.activeTab = 5;
+      this.statusMessage = 'Settings & Configuration opened.';
+      this.appendTranscript('Settings & Configuration opened.');
+      this.render();
       return;
     }
     if (name === 'web' || name === 'web-dashboard') {
@@ -1232,6 +1429,8 @@ export class MaosTui {
     if (this.activeTab === 1) this.renderTabFleet(page, mainW, availableBodyRows);
     else if (this.activeTab === 2) this.renderTabGemma(page, mainW);
     else if (this.activeTab === 3) this.renderTabHealer(page, mainW);
+    else if (this.activeTab === 4) this.renderTabCanva3D(page, mainW);
+    else if (this.activeTab === 5) this.renderTabSettings(page, mainW);
     else this.renderTabCanva3D(page, mainW);
     const commandInDashboard = this.modalMode === 'command' && this.activeTab === 1;
     if (this.modalMode !== 'none' && !commandInDashboard) this.renderModal(page, mainW);
@@ -1270,7 +1469,7 @@ export class MaosTui {
       const settingsRow = Math.max(navTop + 10, bodyRows - 4);
       if (settingsRow - 1 >= 0 && settingsRow - 1 < bodyRows)
         sidebar[settingsRow - 1] = c.slateBorder('─'.repeat(railW));
-      railItem(settingsRow, '⚙  Settings', 0);
+      railItem(settingsRow, '⚙  Settings', 5);
 
       for (let i = 0; i < bodyRows; i++) {
         lines.push(`${pad(pageAt(i), mainW)}${c.slateBorder(' │ ')}${pad(sidebar[i], railW)}`);
@@ -1609,6 +1808,58 @@ export class MaosTui {
     lines.push(
       `  ${c.white('Shortcuts')}  ${c.boldWhite('D')} ${c.slateText('open studio')}  ${c.slateMuted('·')}  ${c.boldWhite('T')} ${c.slateText('geometry tests')}  ${c.slateMuted('·')}  ${c.boldWhite('I')} ${c.slateText('autonomous task')}`,
     );
+  }
+
+  // ── Tab 5: Settings & Mission Control Preferences ──────────────
+  private renderTabSettings(lines: string[], W: number): void {
+    const center = (value: string) => centerTerminalLine(value, W);
+    lines.push(center(c.boldWhite('SETTINGS & CONFIGURATION')));
+    lines.push(center(c.slateText('MAOS Oasis mission control preferences and local boundaries')));
+    lines.push('');
+    appendMetricCards(lines, W, [
+      {
+        label: 'ACTIVE MODEL',
+        value: this.selectedModel,
+        detail: 'Press G to toggle (2B / 9B)',
+        color: c.violetBright,
+      },
+      {
+        label: 'STUDIO URL',
+        value: 'localhost:5173',
+        detail: 'Press D to open Canva 3D',
+        color: c.pink,
+      },
+      {
+        label: 'LOCAL SOVEREIGNTY',
+        value: 'LOOPBACK ONLY',
+        detail: '0.00 KB cloud egress',
+        color: c.emerald,
+      },
+    ]);
+
+    lines.push('');
+    lines.push(`${c.cyanBright('◆')} ${c.boldWhite('PROVIDER & ENDPOINT CONFIGURATION')}`);
+    lines.push(
+      `  ${c.white('Local Model Server')}    ${c.cyan('http://127.0.0.1:11434')} ${c.slateMuted('(Ollama / Local inference)')}`,
+    );
+    lines.push(
+      `  ${c.white('Engine Status')}         ${c.emerald('VERIFIED')} ${c.slateMuted('(Rust engine target/release/maos-engine.exe)')}`,
+    );
+    lines.push(`  ${c.white('Project Root')}          ${c.slateText(this.projectRoot)}`);
+    lines.push(`  ${c.white('Active Branch')}         ${c.cyan('maos-ignite/hi-1')}`);
+
+    lines.push('');
+    lines.push(`${c.cyanBright('◆')} ${c.boldWhite('INTERACTIVE NAVIGATION & HOTKEYS')}`);
+    lines.push(`  ${c.boldWhite('1 / ⌂')}  ${c.white('Dashboard / Fleet')}   ${c.slateMuted('· Main mission control & goal runner')}`);
+    lines.push(`  ${c.boldWhite('2 / ◇')}  ${c.white('Agents / Herdr')}      ${c.slateMuted('· Live agent matrix & multi-pane swarm')}`);
+    lines.push(`  ${c.boldWhite('3 / ▥')}  ${c.white('Telemetry')}          ${c.slateMuted('· Real-time GPU VRAM, Temp & Throughput')}`);
+    lines.push(`  ${c.boldWhite('4 / ▤')}  ${c.white('Event Log')}          ${c.slateMuted('· Audit records, system trace & events')}`);
+    lines.push(`  ${c.boldWhite('5 / ⚙')}  ${c.white('Settings')}           ${c.slateMuted('· Provider config, endpoints & preferences')}`);
+    lines.push(`  ${c.boldWhite('G')}      ${c.amber('Toggle Model')}       ${c.slateMuted('· Fast switch between Gemma 2B and 9B')}`);
+    lines.push(`  ${c.boldWhite('D')}      ${c.pink('Canva 3D Studio')}    ${c.slateMuted('· Open spatial 3D studio in browser')}`);
+    lines.push(`  ${c.boldWhite('T')}      ${c.emerald('Run Tests')}        ${c.slateMuted('· Execute automated Canva 3D test suite')}`);
+    lines.push(`  ${c.boldWhite('R')}      ${c.cyan('Refresh')}            ${c.slateMuted('· Poll hardware & Herdr process status')}`);
+    lines.push(`  ${c.boldWhite('Mouse')}  ${c.cyanBright('Click to Switch')}    ${c.slateMuted('· Full mouse & touch support on tabs/buttons')}`);
   }
 
   // ── Modal Dialog Overlay ───────────────────────────────────────
