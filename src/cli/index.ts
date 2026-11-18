@@ -198,12 +198,14 @@ program
   .option('--no-watch', 'Single heal sweep then exit (default watches until Ctrl+C)')
   .option('-y, --yes', 'Auto-merge clean worker branches on completion')
   .option('--no-exit', 'Do not call process.exit on error or completion')
-  .action(async (options: IgniteOptions) => {
+  .action(async (options: IgniteOptions & { exit?: boolean }) => {
+    const noExit = options.noExit === true || options.exit === false;
+    options.noExit = noExit;
     try {
       await runIgnite(options);
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
-      if (!options.noExit) {
+      if (!noExit) {
         process.exit(1);
       }
     }

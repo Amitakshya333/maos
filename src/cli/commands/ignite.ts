@@ -69,6 +69,8 @@ export interface IgniteOptions {
   branchPrefix?: string;
   /** Do not call process.exit directly; throw IgniteError or return cleanly (e.g. when called from TUI). */
   noExit?: boolean;
+  /** Commander sets exit: false when --no-exit is supplied. */
+  exit?: boolean;
 }
 
 export interface IgniteWorker {
@@ -150,15 +152,25 @@ export function resolveWorktreeTestCommand(worktreePath: string): string {
     const pkgPath = path.join(worktreePath, 'package.json');
     if (fs.existsSync(pkgPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as { scripts?: Record<string, string> };
-      if (pkg.scripts?.test && !/no test specified/i.test(pkg.scripts.test)) return 'npm test --silent';
+      if (pkg.scripts?.['test:oasis']) return 'npm run test:oasis --silent';
       if (pkg.scripts?.['test:unit']) return 'npm run test:unit --silent';
+      if (fs.existsSync(path.join(worktreePath, 'apps', 'canva-3d', 'tests', 'canva-3d.test.js'))) {
+        return 'node --test apps/canva-3d/tests/canva-3d.test.js';
+      }
       if (fs.existsSync(path.join(worktreePath, 'tsconfig.json'))) return 'npx tsc --noEmit';
-      return 'npm test --silent';
+      if (
+        pkg.scripts?.test &&
+        !/no test specified/i.test(pkg.scripts.test) &&
+        !/vitest run$/i.test(pkg.scripts.test.trim())
+      ) {
+        return 'npm test --silent';
+      }
+      return 'npx tsc --noEmit';
     }
   } catch {
     /* fall through */
   }
-  return 'npm test --silent';
+  return 'npx tsc --noEmit';
 }
 
 // ─── Provider resolution ─────────────────────────────────────────
@@ -250,6 +262,7 @@ function tryMergeBranch(cwd: string, branch: string): { merged: boolean; detail:
 
 export async function runIgnite(options: IgniteOptions): Promise<void> {
   const cwd = process.cwd();
+  const noExit = options.noExit === true || options.exit === false;
   const { panes: maxPanes, maxHeals, goal } = validateIgniteOptions(options);
   const dryRun = options.dryRun === true;
   const watch = dryRun ? false : options.watch !== false;
@@ -272,7 +285,7 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
   if (!services.project.isInitialized()) {
     console.log(chalk.red('\n❌ MAOS is not initialized in this directory.'));
     console.log(chalk.gray('Run: maos init'));
-    if (options.noExit) {
+    if (noExit) {
       throw new IgniteError('MAOS is not initialized in this directory. Run: maos init');
     }
     process.exit(1);
@@ -281,7 +294,7 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
   if (!dryRun && !(await isHerdrAvailable())) {
     console.log(chalk.red('\n❌ Herdr multiplexer is not reachable (`herdr status` failed).'));
     console.log(chalk.gray('Start Herdr, then retry. OpSec note: Herdr IPC is a local socket only.'));
-    if (options.noExit) {
+    if (noExit) {
       throw new IgniteError('Herdr multiplexer is not reachable (`herdr status` failed). Start Herdr, then retry.');
     }
     process.exit(1);
@@ -405,7 +418,7 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
 
   if (workers.length === 0) {
     console.log(chalk.red('\n❌ No workers spawned — aborting ignite. Check Herdr + git worktree support.'));
-    if (options.noExit) {
+    if (noExit) {
       throw new IgniteError('No workers spawned — aborting ignite. Check Herdr + git worktree support.');
     }
     process.exit(1);
@@ -458,9 +471,17 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
     return;
   }
 
-  // ── Step 5: Consensus & Merge (on Ctrl+C / SIGINT) ───────────
+  // ── Step 5: Consensus & Merge (on Ctrl+C / SIGINT or worker completion) ──
   console.log(chalk.gray('\nPress Ctrl+C to stop the swarm and print the consensus/merge report.'));
+  let isShuttingDown = false;
+  let heartbeatTimer: NodeJS.Timeout | null = null;
   const shutdown = () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
     console.log(chalk.cyan('\n\n🛑 Stopping swarm...'));
     healer.stop();
     for (const w of workers) {
@@ -473,14 +494,17 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
       ),
     );
     printMergeReport(cwd, workers, options.yes === true);
-    process.exit(0);
+    if (!noExit) {
+      process.exit(0);
+    }
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
   // Heartbeat: periodic worker/pane status while watching.
   const reader = new CliHerdrPaneReader();
-  const heartbeat = setInterval(async () => {
+  let zeroLiveCount = 0;
+  heartbeatTimer = setInterval(async () => {
     try {
       const panes = await reader.listPanes();
       const live = workers.filter((w) => panes.some((p) => p.paneId === w.paneId)).length;
@@ -491,14 +515,31 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
           `[${now}] workers ${live}/${workers.length} live │ heals ${stats.patchesApplied} │ withheld ${stats.patchesSkippedLowConfidence} │ traces ${stats.tracesSeen}`,
         ),
       );
+      if (live === 0) {
+        zeroLiveCount++;
+        // If all workers are closed/finished across 2 polling cycles, auto-shutdown gracefully
+        if (zeroLiveCount >= 2) {
+          shutdown();
+        }
+      } else {
+        zeroLiveCount = 0;
+      }
     } catch {
       /* transient Herdr hiccup — next beat retries */
     }
-  }, 20000);
-  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+  }, 10000);
+  if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
 
-  // Keep the process alive until a signal arrives.
-  await new Promise(() => {});
+  // Keep the process alive until a signal arrives or shutdown finishes.
+  await new Promise<void>((resolve) => {
+    const checkInterval = setInterval(() => {
+      if (isShuttingDown) {
+        clearInterval(checkInterval);
+        resolve();
+      }
+    }, 500);
+    if (typeof checkInterval.unref === 'function') checkInterval.unref();
+  });
 }
 
 function printMergeReport(cwd: string, workers: IgniteWorker[], autoMerge: boolean): void {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { IgniteError, runIgnite } from '../../src/cli/commands/ignite';
+import { IgniteError, runIgnite, resolveWorktreeTestCommand } from '../../src/cli/commands/ignite';
 import { AutonomousHealer } from '../../src/core/autonomous-healer';
 import { MessageBus } from '../../src/core/message-bus';
 
@@ -30,6 +30,67 @@ describe('TUI and Ignite Resilience Suite', () => {
         ).rejects.toThrow(IgniteError);
       } finally {
         process.chdir(origCwd);
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
+      }
+    });
+
+    it('throws IgniteError instead of process.exit when exit=false (Commander --no-exit flag)', async () => {
+      const origCwd = process.cwd();
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-uninit-'));
+      try {
+        process.chdir(tmpDir);
+        await expect(
+          runIgnite({
+            goal: 'Build studio',
+            exit: false,
+            dryRun: false,
+          }),
+        ).rejects.toThrow(IgniteError);
+      } finally {
+        process.chdir(origCwd);
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
+      }
+    });
+  });
+
+  describe('resolveWorktreeTestCommand', () => {
+    it('prefers npx tsc --noEmit when package.json test script is full vitest run', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-cmd-'));
+      try {
+        fs.writeFileSync(
+          path.join(tmpDir, 'package.json'),
+          JSON.stringify({
+            scripts: { test: 'vitest run' },
+          }),
+          'utf-8',
+        );
+        fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}', 'utf-8');
+        const cmd = resolveWorktreeTestCommand(tmpDir);
+        expect(cmd).toBe('npx tsc --noEmit');
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
+      }
+    });
+
+    it('prefers test:unit when declared', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-cmd-'));
+      try {
+        fs.writeFileSync(
+          path.join(tmpDir, 'package.json'),
+          JSON.stringify({
+            scripts: { 'test:unit': 'vitest run tests/unit' },
+          }),
+          'utf-8',
+        );
+        const cmd = resolveWorktreeTestCommand(tmpDir);
+        expect(cmd).toBe('npm run test:unit --silent');
+      } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
         } catch {}

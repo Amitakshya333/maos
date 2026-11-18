@@ -12,8 +12,8 @@
       "name": "MAOS Orchestrator CLI",
       "version": "0.4.0",
       "relativePath": "dist/cli/index.js",
-      "sha256": "db285cc282ad1ffc97cd54decc9e3483908052651f39ce52ac6afc2b13661d0a",
-      "size": 47570,
+      "sha256": "48140a46e174515a886c3701d25bb5a5ca2620b4c54440135b87917725f8a49f",
+      "size": 47782,
       "license": "MIT",
       "isExecutable": true,
       "isRemote": false
@@ -60,8 +60,8 @@
       "name": "MAOS Rust Industrial Authority Engine",
       "version": "0.1.0",
       "relativePath": "rust/target/release/maos-engine.exe",
-      "sha256": "d33f01d22b4272ad5221d469c98b44b2c73a6946c8cb683920cd7b026dfd27e2",
-      "size": 462848,
+      "sha256": "d11c861b125dce1ddd2506dffa3ad1b758a6015f8b187f3be8f4af301a5f5f29",
+      "size": 472064,
       "license": "MIT OR Apache-2.0",
       "isExecutable": true,
       "isRemote": false
@@ -216,20 +216,20 @@
       "name": "MAOS React GUI Shell Index",
       "version": "0.4.0",
       "relativePath": "dist/gui/index.html",
-      "sha256": "8d894396e93056e88f20220320a617febb138a5f066a8abdbcd6589f14e9d31d",
+      "sha256": "5b925fc4f9e7ca0de0083df06bd1724107eb1759df1ef7ce921cb9bf11ce3db3",
       "size": 1100,
       "license": "MIT",
       "isExecutable": false,
       "isRemote": false
     },
-    "gui-bundle-index-bD6IEUz4.js": {
-      "id": "gui-bundle-index-bD6IEUz4.js",
+    "gui-bundle-index-Dim7zYx-.js": {
+      "id": "gui-bundle-index-Dim7zYx-.js",
       "component": "gui-assets",
-      "name": "MAOS GUI Bundle JavaScript (index-bD6IEUz4.js)",
+      "name": "MAOS GUI Bundle JavaScript (index-Dim7zYx-.js)",
       "version": "0.4.0",
-      "relativePath": "dist/gui/assets/index-bD6IEUz4.js",
-      "sha256": "392e48fe3b58ac7528a528af53e8409c8cc599c79c67c031df7469719e11ee50",
-      "size": 582286,
+      "relativePath": "dist/gui/assets/index-Dim7zYx-.js",
+      "sha256": "fafaf5c9486adf364932b4f396baa6fe6225cc587b7f2b35a7c82e129a9e627a",
+      "size": 583029,
       "license": "MIT",
       "isExecutable": false,
       "isRemote": false
@@ -247,5 +247,5 @@
       "isRemote": false
     }
   },
-  "entriesHash": "01b3d726464ea74f8933605b45167abe5733cc2cb0bd126f11b87409827cdc9a"
+  "entriesHash": "58e16b2fa0a62457a76e5f28c6111d7579555fc355233697a62a024a770d92c3"
 }

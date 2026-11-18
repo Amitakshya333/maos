@@ -829,6 +829,7 @@ export class MaosTui {
       } else if (parts[0].startsWith('-')) {
         const args = ['ignite', ...parts];
         if (!parts.includes('--model') && !parts.includes('-m')) args.push('--model', this.selectedModel);
+        if (!parts.includes('--no-exit')) args.push('--no-exit');
         this.runCliCommand(args, 'Launching MAOS Gemma swarm');
       } else {
         this.launchIgniteGoal(parts.join(' '));
@@ -906,7 +907,18 @@ export class MaosTui {
       return;
     }
     this.runCliCommand(
-      ['ignite', '--gemma', '--harness', 'herdr', '--model', this.selectedModel, '--no-exit', '--goal', trimmedGoal],
+      [
+        'ignite',
+        '--gemma',
+        '--harness',
+        'herdr',
+        '--model',
+        this.selectedModel,
+        '--no-exit',
+        '--no-watch',
+        '--goal',
+        trimmedGoal,
+      ],
       'Launching MAOS Gemma swarm',
     );
   }
@@ -976,23 +988,28 @@ export class MaosTui {
         process.stdin.resume();
       } catch {}
       process.stdout.write('\x1b[?25l');
-      const succeeded = !error && code === 0;
-      this.statusMessage = error
-        ? `${label} failed: ${error.message.slice(0, 90)}`
-        : succeeded
-          ? `${label} completed.`
-          : `${label} ended with ${signal || `exit code ${code ?? 'unknown'}`}.`;
-      this.appendTranscript(
-        error
-          ? `\nError: ${error.message}`
+      const wasAborted = this.statusMessage === 'Aborting running process...' || signal === 'SIGINT';
+      const succeeded = !error && code === 0 && !wasAborted;
+      this.statusMessage = wasAborted
+        ? `${label} aborted by user.`
+        : error
+          ? `${label} failed: ${error.message.slice(0, 90)}`
           : succeeded
-            ? `\n✓ ${label} completed (exit 0).`
-            : `\n✗ ${label} ended with ${signal || `exit code ${code ?? 'unknown'}`}.`,
+            ? `${label} completed.`
+            : `${label} ended with ${signal || `exit code ${code ?? 'unknown'}`}.`;
+      this.appendTranscript(
+        wasAborted
+          ? `\n⚠ ${label} aborted by user.`
+          : error
+            ? `\nError: ${error.message}`
+            : succeeded
+              ? `\n✓ ${label} completed (exit 0).`
+              : `\n✗ ${label} ended with ${signal || `exit code ${code ?? 'unknown'}`}.`,
       );
       this.recordActivity(
-        error || !succeeded ? 'ERROR' : 'COMMAND',
-        `${label} ${error || !succeeded ? 'failed' : 'completed'}`,
-        error || !succeeded ? c.pink : c.emerald,
+        wasAborted ? 'COMMAND' : error || !succeeded ? 'ERROR' : 'COMMAND',
+        `${label} ${wasAborted ? 'aborted' : error || !succeeded ? 'failed' : 'completed'}`,
+        wasAborted ? c.amber : error || !succeeded ? c.pink : c.emerald,
       );
       this.updateGpuTelemetry();
       void this.updateHerdrTelemetry();

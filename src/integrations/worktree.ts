@@ -141,6 +141,21 @@ export function ensureWorktree(agentId: string, branchName: string, cwd: string)
     gitExec(['worktree', 'add', '--force', wtPath, branchName], cwd);
   }
 
+  // Link node_modules from project root if present to enable dependencies in the worktree
+  const rootNodeModules = path.join(cwd, 'node_modules');
+  const wtNodeModules = path.join(wtPath, 'node_modules');
+  if (fs.existsSync(rootNodeModules) && !fs.existsSync(wtNodeModules)) {
+    try {
+      if (process.platform === 'win32') {
+        fs.symlinkSync(rootNodeModules, wtNodeModules, 'junction');
+      } else {
+        fs.symlinkSync(rootNodeModules, wtNodeModules, 'dir');
+      }
+    } catch {
+      /* best effort fallback */
+    }
+  }
+
   return { worktreePath: wtPath, branch: branchName, agentId, active: true };
 }
 
@@ -150,6 +165,16 @@ export function ensureWorktree(agentId: string, branchName: string, cwd: string)
  */
 export function removeWorktree(agentId: string, cwd: string): void {
   const wtPath = getWorktreePath(cwd, agentId);
+
+  // Unlink node_modules junction/symlink first if present
+  const wtNodeModules = path.join(wtPath, 'node_modules');
+  if (fs.existsSync(wtNodeModules)) {
+    try {
+      fs.unlinkSync(wtNodeModules);
+    } catch {
+      /* best effort */
+    }
+  }
 
   try {
     gitSafe(['worktree', 'remove', wtPath, '--force'], cwd);
