@@ -14,7 +14,7 @@
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync, spawn } from 'child_process';
+import { execSync, spawn, type ChildProcess } from 'child_process';
 import chalk from 'chalk';
 import { AgentInfo, getDefaultHerdrHarness, PaneInfo } from '../integrations/herdr';
 
@@ -276,6 +276,16 @@ export class MaosTui {
   private activeTab: number = 1; // 1: Dashboard, 2: Herdr, 3: Telemetry, 4: Event log
   private isRunning: boolean = true;
   private externalCommandRunning: boolean = false;
+  private activeChild: ChildProcess | null = null;
+  private externalCommandLabel: string = '';
+  private externalCommandStartTime: number = 0;
+  private spinnerFrames: string[] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  private spinnerIndex: number = 0;
+  private spinnerTimer: NodeJS.Timeout | null = null;
+  private lastCommandExitCode: number | null = null;
+  private lastCommandLabel: string = '';
+  private isRendering: boolean = false;
+  private renderPending: boolean = false;
   private selectedModel: string = 'gemma2:9b';
   private modalMode: 'none' | 'ignite' | 'promptTest' | 'command' = 'command';
   private modalInputText: string = '';
@@ -308,7 +318,20 @@ export class MaosTui {
   private projectRoot: string;
   private readonly resizeHandler = () => this.render();
   private readonly interruptHandler = () => {
-    if (!this.externalCommandRunning) this.exit();
+    if (this.externalCommandRunning && this.activeChild) {
+      this.statusMessage = 'Aborting running process...';
+      this.appendTranscript('\n^C [Aborting running process...]');
+      try {
+        if (process.platform === 'win32' && this.activeChild.pid) {
+          execSync(`taskkill /pid ${this.activeChild.pid} /T /F`, { stdio: 'ignore' });
+        } else {
+          this.activeChild.kill('SIGINT');
+        }
+      } catch {}
+      this.render();
+      return;
+    }
+    this.exit();
   };
   private readonly terminateHandler = () => this.exit();
 
@@ -326,6 +349,20 @@ export class MaosTui {
     void this.updateHerdrTelemetry();
     process.stdout.on('resize', this.resizeHandler);
 
+    // Sandbox unhandled rejections to prevent crashing the TUI during demos
+    process.on('unhandledRejection', (reason: unknown) => {
+      const msg = reason instanceof Error ? reason.message : String(reason);
+      this.recordActivity('ERROR', `Async notice: ${msg.slice(0, 80)}`, c.pink);
+      this.statusMessage = `Task notice: ${msg.slice(0, 60)}`;
+      this.render();
+    });
+    process.on('uncaughtException', (err: Error) => {
+      const msg = err.message || String(err);
+      this.recordActivity('ERROR', `Exception recovered: ${msg.slice(0, 80)}`, c.pink);
+      this.statusMessage = `Exception caught: ${msg.slice(0, 60)}`;
+      this.render();
+    });
+
     // Render loop
     this.render();
     this.startRefreshLoop();
@@ -338,7 +375,24 @@ export class MaosTui {
   private exit(): void {
     this.isRunning = false;
     if (this.refreshTimer) clearInterval(this.refreshTimer);
+    if (this.spinnerTimer) clearInterval(this.spinnerTimer);
+    if (this.transcriptRenderTimer) clearTimeout(this.transcriptRenderTimer);
+    if (this.activeChild) {
+      try {
+        if (process.platform === 'win32' && this.activeChild.pid) {
+          execSync(`taskkill /pid ${this.activeChild.pid} /T /F`, { stdio: 'ignore' });
+        } else {
+          this.activeChild.kill('SIGINT');
+        }
+      } catch {}
+      this.activeChild = null;
+    }
     process.stdout.removeListener('resize', this.resizeHandler);
+    try {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+    } catch {}
     process.stdout.write('\x1b[?25h'); // restore cursor
     console.clear();
     console.log(c.cyanBright('✦ MAOS Oasis TUI closed. Returning to terminal.'));
@@ -378,9 +432,9 @@ export class MaosTui {
         };
       }
 
-      // Handle Ctrl+C to always quit immediately
+      // Handle Ctrl+C to cancel current process or quit cleanly
       if ((key.ctrl && key.name === 'c') || str === '\x03') {
-        this.exit();
+        this.interruptHandler();
         return;
       }
 
@@ -630,6 +684,7 @@ export class MaosTui {
         '',
         'MAOS Oasis commands',
         '  /dashboard       Open the Dashboard',
+        '  /status          Display system snapshot (Herdr, model, GPU, last exit)',
         '  /herdr           Open live HERDR agents and panes',
         '  /telemetry       Open GPU and system telemetry',
         '  /events          Open the event log',
@@ -650,6 +705,25 @@ export class MaosTui {
       this.transcriptScrollOffset = 0;
       this.transcript = this.transcript.slice(-5000);
       this.statusMessage = 'Help shown in session output.';
+      this.render();
+      return;
+    }
+    if (['status', 'snapshot', 'info'].includes(name)) {
+      const vramGb = (this.gpuStats.vramUsedMiB / 1024).toFixed(1);
+      const totalGb = (this.gpuStats.vramTotalMiB / 1024).toFixed(1);
+      const lastExit =
+        this.lastCommandExitCode !== null ? `${this.lastCommandExitCode}` : 'none (no command finished yet)';
+      this.transcript.push(
+        '',
+        '── MAOS Oasis System Status ──',
+        `  Ollama Model : ${this.selectedModel} (${this.gpuStats.modelInVram})`,
+        `  GPU Telemetry: Temp ${this.gpuStats.tempC}°C │ Util ${this.gpuStats.gpuUtil}% │ VRAM ${vramGb}/${totalGb} GB`,
+        `  Herdr Status : ${this.herdrAvailable ? 'ONLINE' : 'OFFLINE'} (${this.herdrPanes.length} pane(s), ${this.herdrAgents.length} agent(s))`,
+        `  Last Command : ${this.lastCommandLabel || 'none'} → exit code: ${lastExit}`,
+        `  Active State : ${this.externalCommandRunning ? `RUNNING (${this.externalCommandLabel})` : 'IDLE'}`,
+        '',
+      );
+      this.statusMessage = 'System status captured.';
       this.render();
       return;
     }
@@ -832,7 +906,7 @@ export class MaosTui {
       return;
     }
     this.runCliCommand(
-      ['ignite', '--gemma', '--harness', 'herdr', '--model', this.selectedModel, '--goal', trimmedGoal],
+      ['ignite', '--gemma', '--harness', 'herdr', '--model', this.selectedModel, '--no-exit', '--goal', trimmedGoal],
       'Launching MAOS Gemma swarm',
     );
   }
@@ -851,8 +925,22 @@ export class MaosTui {
   }
 
   private runExternalProcess(command: string, args: string[], cwd: string, label: string): void {
-    if (this.externalCommandRunning) return;
+    if (this.externalCommandRunning) {
+      this.reportCommand('A task is currently running. Press Ctrl+C to abort it before starting a new one.', true);
+      return;
+    }
     this.externalCommandRunning = true;
+    this.externalCommandLabel = label;
+    this.externalCommandStartTime = Date.now();
+    this.spinnerIndex = 0;
+    if (this.spinnerTimer) clearInterval(this.spinnerTimer);
+    this.spinnerTimer = setInterval(() => {
+      if (this.externalCommandRunning && this.isRunning && this.activeTab === 1) {
+        this.spinnerIndex = (this.spinnerIndex + 1) % this.spinnerFrames.length;
+        this.render();
+      }
+    }, 150);
+
     this.activeTab = 1;
     this.transcriptScrollOffset = 0;
     this.appendTranscript(`\n$ ${label}`);
@@ -864,7 +952,14 @@ export class MaosTui {
     const finish = (code: number | null, signal?: NodeJS.Signals | null, error?: Error) => {
       if (finished) return;
       finished = true;
+      if (this.spinnerTimer) {
+        clearInterval(this.spinnerTimer);
+        this.spinnerTimer = null;
+      }
+      this.activeChild = null;
       this.externalCommandRunning = false;
+      this.lastCommandExitCode = code;
+      this.lastCommandLabel = label;
       if (!this.isRunning) return;
 
       if (this.commandOutputRemainder) {
@@ -906,6 +1001,7 @@ export class MaosTui {
 
     try {
       const child = spawn(command, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+      this.activeChild = child;
       child.stdout?.setEncoding('utf8');
       child.stderr?.setEncoding('utf8');
       child.stdout?.on('data', (chunk: string) => this.appendCommandOutput(chunk));
@@ -1016,6 +1112,24 @@ export class MaosTui {
   // ── Render Engine ──────────────────────────────────────────────
 
   private render(): void {
+    if (!this.isRunning) return;
+    if (this.isRendering) {
+      this.renderPending = true;
+      return;
+    }
+    this.isRendering = true;
+    try {
+      this.renderInternal();
+    } finally {
+      this.isRendering = false;
+      if (this.renderPending) {
+        this.renderPending = false;
+        this.render();
+      }
+    }
+  }
+
+  private renderInternal(): void {
     const W = Math.max(20, (process.stdout.columns || 120) - 2);
     const railW = W >= Math.max(113, MAOS_OASIS_LOGO_WIDTH + 27) ? 24 : 0;
     const mainW = W - railW - (railW ? 3 : 0);
@@ -1028,7 +1142,12 @@ export class MaosTui {
     const vramGb = (this.gpuStats.vramUsedMiB / 1024).toFixed(1);
     const totalGb = (this.gpuStats.vramTotalMiB / 1024).toFixed(1);
     const modelBadge = this.selectedModel.replace('gemma2:', 'GEMMA ').toUpperCase() + ' · LOCAL';
-    const telemetry = `${c.cyan(modelBadge)}  ${c.slateBorder('│')}  ${c.cyanBright(`HERDR: ${this.herdrAvailable ? 'LIVE' : 'OFFLINE'}`)}  ${c.slateBorder('│')}  ${c.amber(`GPU ${this.gpuStats.tempC}°C`)}  ${c.slateBorder('│')}  ${c.violetBright(`VRAM ${vramGb}/${totalGb} GB`)}`;
+    const herdrStatus = this.herdrAvailable
+      ? this.herdrPanes.length > 0
+        ? `HERDR: ${this.herdrPanes.length} PANE${this.herdrPanes.length > 1 ? 'S' : ''}`
+        : 'HERDR: LIVE'
+      : 'HERDR: OFFLINE';
+    const telemetry = `${c.cyan(modelBadge)}  ${c.slateBorder('│')}  ${c.cyanBright(herdrStatus)}  ${c.slateBorder('│')}  ${c.amber(`GPU ${this.gpuStats.tempC}°C`)}  ${c.slateBorder('│')}  ${c.violetBright(`VRAM ${vramGb}/${totalGb} GB`)}`;
     const headerGap = W - visibleLength(title) - visibleLength(telemetry);
     lines.push(headerGap >= 2 ? title + ' '.repeat(headerGap) + telemetry : fullLine(title));
     if (headerGap < 2) lines.push(fullLine(telemetry));
@@ -1141,6 +1260,14 @@ export class MaosTui {
       if (this.externalCommandRunning && this.commandOutputRemainder) {
         rows.push(...wrapTerminalLine(this.commandOutputRemainder, transcriptWidth));
       }
+      if (this.externalCommandRunning) {
+        const elapsedSec = Math.floor((Date.now() - this.externalCommandStartTime) / 1000);
+        const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+        const secs = String(elapsedSec % 60).padStart(2, '0');
+        const spinner = this.spinnerFrames[this.spinnerIndex % this.spinnerFrames.length];
+        const runningRow = `${spinner} ${this.externalCommandLabel || 'Running'}... (${mins}:${secs})`;
+        rows.push(...wrapTerminalLine(runningRow, transcriptWidth));
+      }
       const promptRows = 4;
       const viewportRows = Math.max(1, bodyRows - promptRows);
       this.transcriptViewportRows = viewportRows;
@@ -1153,7 +1280,17 @@ export class MaosTui {
       const start = Math.max(0, end - viewportRows);
       const visibleRows = rows.slice(start, end);
       for (let i = visibleRows.length; i < viewportRows; i++) lines.push('');
-      for (const row of visibleRows) lines.push(c.slateText(row));
+      for (const row of visibleRows) {
+        if (/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(row)) {
+          lines.push(c.cyanBright(row));
+        } else if (row.startsWith('✓')) {
+          lines.push(c.emerald(row));
+        } else if (row.startsWith('✗') || row.startsWith('Error:')) {
+          lines.push(c.pink(row));
+        } else {
+          lines.push(c.slateText(row));
+        }
+      }
 
       lines.push(c.slateBorder('─'.repeat(W)));
       const innerW = Math.max(0, W - 4);

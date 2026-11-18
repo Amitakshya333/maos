@@ -762,8 +762,16 @@ export class AutonomousHealer {
       'HEALER',
       `Closed-loop healer started (poll ${this.opts.pollIntervalMs}ms, panes: ${this.opts.paneIds?.join(',') || 'auto-discover'})`,
     );
-    void this.sweep();
-    this.timer = setInterval(() => void this.sweep(), this.opts.pollIntervalMs);
+    void this.sweep().catch((err: unknown) => {
+      this.stats.failures++;
+      this.logger.warn('HEALER', `Initial sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    this.timer = setInterval(() => {
+      this.sweep().catch((err: unknown) => {
+        this.stats.failures++;
+        this.logger.warn('HEALER', `Periodic sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, this.opts.pollIntervalMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
   }
 
@@ -793,54 +801,85 @@ export class AutonomousHealer {
 
   private async sweep(): Promise<HealAttempt[]> {
     const attempts: HealAttempt[] = [];
-    let panes: HerdrPaneHandle[];
     try {
-      panes = await this.resolvePanes();
-    } catch (err: unknown) {
-      this.stats.failures++;
-      this.logger.warn('HEALER', err instanceof Error ? err.message : String(err));
-      return attempts;
-    }
-    this.lastPaneCount = panes.length;
-    this.stats.polls++;
-
-    for (const pane of panes) {
+      let panes: HerdrPaneHandle[];
       try {
-        const buffer = await this.reader.readBuffer(pane.paneId, this.opts.lines);
-        if (!buffer || buffer.trim().length === 0) continue;
-        const traces = detectErrorTraces(buffer);
-        for (const trace of traces) {
-          const seenKey = `${pane.paneId}:${trace.hash}`;
-          if (this.seen.has(seenKey)) continue;
-          this.seen.set(seenKey, Date.now());
-          this.stats.tracesSeen++;
-          const attempt = await this.healTrace(pane.paneId, trace);
-          if (attempt) attempts.push(attempt);
-        }
+        panes = await this.resolvePanes();
       } catch (err: unknown) {
         this.stats.failures++;
-        this.logger.warn('HEALER', `Pane ${pane.paneId}: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.warn('HEALER', err instanceof Error ? err.message : String(err));
+        return attempts;
       }
-    }
+      this.lastPaneCount = panes.length;
+      this.stats.polls++;
 
-    // Bound the dedupe map (1h TTL sweep).
-    if (this.seen.size > 2000) {
-      const cutoff = Date.now() - 3600_000;
-      for (const [k, v] of this.seen) {
-        if (v < cutoff) this.seen.delete(k);
+      for (const pane of panes) {
+        try {
+          const buffer = await this.reader.readBuffer(pane.paneId, this.opts.lines);
+          if (!buffer || buffer.trim().length === 0) continue;
+          const traces = detectErrorTraces(buffer);
+          for (const trace of traces) {
+            const seenKey = `${pane.paneId}:${trace.hash}`;
+            if (this.seen.has(seenKey)) continue;
+            this.seen.set(seenKey, Date.now());
+            this.stats.tracesSeen++;
+            try {
+              const attempt = await this.healTrace(pane.paneId, trace);
+              if (attempt) attempts.push(attempt);
+            } catch (healErr: unknown) {
+              this.stats.failures++;
+              this.logger.warn(
+                'HEALER',
+                `Pane ${pane.paneId} heal attempt failed: ${healErr instanceof Error ? healErr.message : String(healErr)}`,
+              );
+            }
+          }
+        } catch (err: unknown) {
+          this.stats.failures++;
+          this.logger.warn('HEALER', `Pane ${pane.paneId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
+
+      // Bound the dedupe map (1h TTL sweep).
+      if (this.seen.size > 2000) {
+        const cutoff = Date.now() - 3600_000;
+        for (const [k, v] of this.seen) {
+          if (v < cutoff) this.seen.delete(k);
+        }
+      }
+    } catch (globalErr: unknown) {
+      this.stats.failures++;
+      this.logger.warn(
+        'HEALER',
+        `Unexpected sweep error: ${globalErr instanceof Error ? globalErr.message : String(globalErr)}`,
+      );
     }
     return attempts;
   }
 
   private async healTrace(paneId: string, trace: ErrorTrace): Promise<HealAttempt | null> {
+    const safeEmit = (event: Parameters<NonNullable<typeof this.opts.bus>['emit']>[0]) => {
+      try {
+        this.opts.bus?.emit(event);
+      } catch (err: unknown) {
+        this.logger.warn('HEALER', `Event bus emit failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    const safeOnHeal = (attempt: HealAttempt) => {
+      try {
+        this.opts.onHeal?.(attempt);
+      } catch (err: unknown) {
+        this.logger.warn('HEALER', `onHeal handler failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+
     const heals = this.healsPerPane.get(paneId) || 0;
     if (heals >= (this.opts.maxHealsPerPane as number)) {
       this.logger.warn(
         'HEALER',
         `Pane ${paneId}: heal budget exhausted (${heals}/${this.opts.maxHealsPerPane}) — needs human review: ${trace.message.slice(0, 120)}`,
       );
-      this.opts.bus?.emit(
+      safeEmit(
         createEvent('TASK_FAILED', `healer:${paneId}`, {
           reason: 'heal budget exhausted',
           trace: trace.message.slice(0, 200),
@@ -853,7 +892,7 @@ export class AutonomousHealer {
     if (Date.now() - lastAt < (this.opts.cooldownMs as number)) return null;
 
     this.logger.warn('HEALER', `Pane ${paneId}: ${trace.kind} failure — ${trace.message.slice(0, 160)}`);
-    this.opts.bus?.emit(
+    safeEmit(
       createEvent('TASK_PROGRESS', `healer:${paneId}`, {
         phase: 'HEAL_DIAGNOSED',
         kind: trace.kind,
@@ -875,7 +914,7 @@ export class AutonomousHealer {
         'HEALER',
         `Pane ${paneId}: patch withheld (confidence ${patch.confidence.toFixed(2)}, needs review) — ${patch.diagnosis.slice(0, 160)}`,
       );
-      this.opts.bus?.emit(
+      safeEmit(
         createEvent('TASK_PROGRESS', `healer:${paneId}`, {
           phase: 'HEAL_WITHHELD',
           diagnosis: patch.diagnosis.slice(0, 200),
@@ -890,7 +929,7 @@ export class AutonomousHealer {
         appliedAt: Date.now(),
         note: 'withheld: low confidence / needs review',
       };
-      this.opts.onHeal?.(withheld);
+      safeOnHeal(withheld);
       return withheld;
     }
 
@@ -903,7 +942,7 @@ export class AutonomousHealer {
         'HEALER',
         `Pane ${paneId}: hotpatch applied to ${filesTouched.join(', ')} — ${patch.diagnosis.slice(0, 140)}`,
       );
-      this.opts.bus?.emit(
+      safeEmit(
         createEvent('TASK_PROGRESS', `healer:${paneId}`, {
           phase: 'HEAL_APPLIED',
           files: filesTouched,
@@ -932,7 +971,7 @@ export class AutonomousHealer {
         appliedAt: Date.now(),
         note: `applied to ${filesTouched.join(', ')}`,
       };
-      this.opts.onHeal?.(attempt);
+      safeOnHeal(attempt);
       return attempt;
     } catch (err: unknown) {
       this.stats.failures++;

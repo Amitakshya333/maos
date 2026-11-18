@@ -24,16 +24,23 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiAdapter } from '../api';
 import type { JudgedRunResponse } from '../api/rest-client';
 import type { RingAskResult } from '../api/ring-types';
-import type {
-  RingApprovalDecision,
-  RingRunEvent,
-  RingRunRequest,
-  RingRunState,
-} from '../api/ring-run-types';
+import type { RingApprovalDecision, RingRunEvent, RingRunRequest, RingRunState } from '../api/ring-run-types';
 import { CompletionRefusalDemo } from './CompletionRefusalDemo';
 import { RingArtifactCard, RingBottomLine, RingLiveText, RingMemoryNote, RingPlanChecklist } from './RingStreamPanels';
-import { DEFAULT_RING_ROLE, RING_EXPAND_KEY, RingRolePicker, RingThreadSidebar, toThreadSummary, type RingThreadClient } from './RingThreads';
-import { attachmentInstructionSuffix, RingAttachmentBar, type RingAttachment, type RingAttachmentClient } from './RingAttachments';
+import {
+  DEFAULT_RING_ROLE,
+  RING_EXPAND_KEY,
+  RingRolePicker,
+  RingThreadSidebar,
+  toThreadSummary,
+  type RingThreadClient,
+} from './RingThreads';
+import {
+  attachmentInstructionSuffix,
+  RingAttachmentBar,
+  type RingAttachment,
+  type RingAttachmentClient,
+} from './RingAttachments';
 import { TelemetryReviewCoordinator } from './telemetryReviewCoordinator';
 
 /** Exact hosted badge copy (RING-IMPL-01 step 2). Served suffix only from server echo. */
@@ -165,7 +172,14 @@ export const RingAgentRoster: React.FC<{
       overflow: 'hidden',
     }}
   >
-    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color, #333333)', fontWeight: 600, fontSize: '13px' }}>
+    <div
+      style={{
+        padding: '10px 14px',
+        borderBottom: '1px solid var(--border-color, #333333)',
+        fontWeight: 600,
+        fontSize: '13px',
+      }}
+    >
       Agents
     </div>
     <div style={{ overflowY: 'auto', padding: '6px' }}>
@@ -207,11 +221,29 @@ export const RingAgentRoster: React.FC<{
               }}
             />
             <span style={{ minWidth: 0 }}>
-              <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {agent.name}
                 {agent.isLead ? ' · lead' : ''}
               </span>
-              <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-dim, #888888)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '11px',
+                  color: 'var(--text-dim, #888888)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {agent.role} · {status}
               </span>
             </span>
@@ -248,7 +280,9 @@ export const RingUserMessage: React.FC<{ text: string; agentId: string }> = ({ t
 
 export const RingModelTurn: React.FC<{ text: string }> = ({ text }) => (
   <div data-testid="ring-model-turn" style={{ alignSelf: 'flex-start', maxWidth: '80%' }}>
-    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--status-green, #4ade80)', marginBottom: '4px' }}>RING</div>
+    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--status-green, #4ade80)', marginBottom: '4px' }}>
+      RING
+    </div>
     <div
       style={{
         padding: '10px 14px',
@@ -299,11 +333,16 @@ export const RingToolChip: React.FC<{ call: RingRunEvent; result?: RingRunEvent 
         <span>{label}</span>
       </button>
       {expanded && (
-        <div data-testid="ring-tool-result" style={{ marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary, #cccccc)' }}>
+        <div
+          data-testid="ring-tool-result"
+          style={{ marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary, #cccccc)' }}
+        >
           {!result && <div>Running…</div>}
           {result?.resultSummary && <div>{result.resultSummary}</div>}
           {result?.verdict && <div>Verdict: {result.verdict}</div>}
-          {typeof result?.overallRms === 'number' && <div data-testid="ring-tool-rms">RMS: {result.overallRms} mm/s</div>}
+          {typeof result?.overallRms === 'number' && (
+            <div data-testid="ring-tool-rms">RMS: {result.overallRms} mm/s</div>
+          )}
           {result?.sources && result.sources.length > 0 && (
             <div>
               Sources:{' '}
@@ -353,7 +392,10 @@ export const RingApprovalCard: React.FC<{
         {event.action}
       </div>
       {event.reason && (
-        <div data-testid="ring-approval-reason" style={{ fontSize: '12px', color: 'var(--text-secondary, #cccccc)', marginTop: '4px' }}>
+        <div
+          data-testid="ring-approval-reason"
+          style={{ fontSize: '12px', color: 'var(--text-secondary, #cccccc)', marginTop: '4px' }}
+        >
           Why: {event.reason}
         </div>
       )}
@@ -407,7 +449,9 @@ export const RingApprovalResolved: React.FC<{ event: RingRunEvent }> = ({ event 
 
 export const RingFinalAnswer: React.FC<{ answer: string; mode: RingRunState['mode'] }> = ({ answer, mode }) => (
   <div data-testid="ring-final-answer" style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>
-    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--status-green, #4ade80)', marginBottom: '4px' }}>RING · FINAL</div>
+    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--status-green, #4ade80)', marginBottom: '4px' }}>
+      RING · FINAL
+    </div>
     {mode === 'evidence-only' && (
       <div data-testid="ring-no-model-note" style={{ fontSize: '11px', color: '#e3b341', marginBottom: '6px' }}>
         No model wrote this answer and no model ran — evidence-only response shown as-is.
@@ -466,7 +510,9 @@ export const defaultRingRunClient: RingRunClient = {
     storeEvidenceFile: async (name, contentBase64) => {
       const lower = name.toLowerCase();
       if (!lower.endsWith('.csv')) {
-        throw new Error('No evidence-root write route for this file kind yet (CSV upload works; PDF/image stay local-only).');
+        throw new Error(
+          'No evidence-root write route for this file kind yet (CSV upload works; PDF/image stay local-only).',
+        );
       }
       return apiAdapter.storeRingCsvEvidence(name, contentBase64);
     },
@@ -673,9 +719,17 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
         for (const rid of summary.runs) {
           try {
             const state = await clientRef.current.getRun(rid);
-            setRuns((prev) => (prev.some((r) => r.runId === rid) ? prev : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state }]));
+            setRuns((prev) =>
+              prev.some((r) => r.runId === rid)
+                ? prev
+                : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state }],
+            );
           } catch {
-            setRuns((prev) => (prev.some((r) => r.runId === rid) ? prev : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state: null }]));
+            setRuns((prev) =>
+              prev.some((r) => r.runId === rid)
+                ? prev
+                : [...prev, { runId: rid, instruction: '(thread history)', agentId: selectedAgentId, state: null }],
+            );
           }
         }
         const last = summary.runs[summary.runs.length - 1];
@@ -692,7 +746,11 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
     // Run-id fallback (overlay had no thread yet): append + poll.
     try {
       const state = await clientRef.current.getRun(value);
-      setRuns((prev) => (prev.some((r) => r.runId === value) ? prev : [...prev, { runId: value, instruction: '(from overlay)', agentId: selectedAgentId, state }]));
+      setRuns((prev) =>
+        prev.some((r) => r.runId === value)
+          ? prev
+          : [...prev, { runId: value, instruction: '(from overlay)', agentId: selectedAgentId, state }],
+      );
       setActiveRunId(value);
       runCounterRef.current += 1;
       setExpandNotice('Adopted run ' + value + ' from the overlay.');
@@ -796,23 +854,41 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
   useEffect(() => {
     if (!activeRunId || !isActive) return;
     let cancelled = false;
+    let retryDelay = pollIntervalMs;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      pollTimer = setTimeout(() => {
+        void tick();
+      }, retryDelay);
+    };
+
     const tick = async () => {
+      if (cancelled) return;
       try {
         const state = await clientRef.current.getRun(activeRunId);
         if (cancelled) return;
         setPollError(null);
+        retryDelay = pollIntervalMs;
         setRuns((prev) => prev.map((run) => (run.runId === activeRunId ? { ...run, state } : run)));
         onRunState?.(state);
       } catch (err: unknown) {
-        if (!cancelled) setPollError((err as Error).message || 'Could not reach the Ring run service.');
+        if (!cancelled) {
+          setPollError((err as Error).message || 'Could not reach the Ring run service.');
+          retryDelay = Math.min(30000, Math.floor(retryDelay * 1.5));
+        }
+      } finally {
+        if (!cancelled) {
+          scheduleNext();
+        }
       }
     };
     void tick();
-    const poll = setInterval(() => void tick(), pollIntervalMs);
     const clock = setInterval(() => setNowMs(Date.now()), 500);
     return () => {
       cancelled = true;
-      clearInterval(poll);
+      if (pollTimer) clearTimeout(pollTimer);
       clearInterval(clock);
     };
   }, [activeRunId, isActive, pollIntervalMs, onRunState]);
@@ -1044,15 +1120,17 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
         // the same non-empty id; id-less mocks never pair by accident.
         const result = entry.toolCallId
           ? events
-            .slice(index + 1)
-            .find((candidate) => candidate.type === 'tool.result' && candidate.toolCallId === entry.toolCallId)
+              .slice(index + 1)
+              .find((candidate) => candidate.type === 'tool.result' && candidate.toolCallId === entry.toolCallId)
           : undefined;
         return <RingToolChip key={index} call={entry} result={result} />;
       }
       case 'tool.result': {
-        const paired = Boolean(entry.toolCallId) && events
-          .slice(0, index)
-          .some((candidate) => candidate.type === 'tool.call' && candidate.toolCallId === entry.toolCallId);
+        const paired =
+          Boolean(entry.toolCallId) &&
+          events
+            .slice(0, index)
+            .some((candidate) => candidate.type === 'tool.call' && candidate.toolCallId === entry.toolCallId);
         return paired ? null : <RingToolChip key={index} call={entry} result={entry} />;
       }
       case 'model.turn':
@@ -1111,14 +1189,25 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
             key={index}
             role="alert"
             data-testid="ring-run-failed"
-            style={{ alignSelf: 'stretch', fontSize: '12px', color: '#ff7b72', border: '1px solid #ff7b72', borderRadius: '6px', padding: '10px 12px' }}
+            style={{
+              alignSelf: 'stretch',
+              fontSize: '12px',
+              color: '#ff7b72',
+              border: '1px solid #ff7b72',
+              borderRadius: '6px',
+              padding: '10px 12px',
+            }}
           >
             Run failed: {entry.message ?? 'The run failed without a message.'}
           </div>
         );
       case 'run.cancelled':
         return (
-          <div key={index} data-testid="ring-run-cancelled" style={{ alignSelf: 'flex-start', fontSize: '12px', color: 'var(--text-dim, #888888)' }}>
+          <div
+            key={index}
+            data-testid="ring-run-cancelled"
+            style={{ alignSelf: 'flex-start', fontSize: '12px', color: 'var(--text-dim, #888888)' }}
+          >
             Run cancelled.
           </div>
         );
@@ -1154,7 +1243,10 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
       )}
 
       {expandNotice && (
-        <div data-testid="ring-expand-notice" style={{ fontSize: '12px', color: 'var(--text-dim, #888888)', paddingBottom: '8px' }}>
+        <div
+          data-testid="ring-expand-notice"
+          style={{ fontSize: '12px', color: 'var(--text-dim, #888888)', paddingBottom: '8px' }}
+        >
           {expandNotice}
         </div>
       )}
@@ -1168,7 +1260,12 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
           onSelect={(threadId) => void handleSelectThread(threadId)}
           onNew={() => void handleNewThread()}
         />
-        <RingAgentRoster agents={agents} selectedAgentId={selectedAgentId} presence={presence} onSelect={handleSelectAgent} />
+        <RingAgentRoster
+          agents={agents}
+          selectedAgentId={selectedAgentId}
+          presence={presence}
+          onSelect={handleSelectAgent}
+        />
 
         <div
           style={{
@@ -1185,7 +1282,13 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
           {clientRef.current.createThread && (
             <div
               data-testid="ring-thread-bar"
-              style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color, #333333)', display: 'flex', gap: '8px', alignItems: 'center' }}
+              style={{
+                padding: '8px 16px',
+                borderBottom: '1px solid var(--border-color, #333333)',
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+              }}
             >
               <button
                 type="button"
@@ -1226,8 +1329,13 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {isActive && activeState && (
-                <span data-testid="ring-working-indicator" role="status" style={{ fontSize: '12px', color: 'var(--text-dim, #888888)' }}>
-                  {activeState.status === 'awaiting_approval' ? 'Waiting for approval' : 'Working'} · {formatElapsed(elapsedMs)}
+                <span
+                  data-testid="ring-working-indicator"
+                  role="status"
+                  style={{ fontSize: '12px', color: 'var(--text-dim, #888888)' }}
+                >
+                  {activeState.status === 'awaiting_approval' ? 'Waiting for approval' : 'Working'} ·{' '}
+                  {formatElapsed(elapsedMs)}
                 </span>
               )}
               {isActive && (
@@ -1259,31 +1367,59 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
           </div>
 
           {cancelError && (
-            <div role="alert" data-testid="ring-cancel-error" style={{ padding: '8px 14px', fontSize: '12px', color: '#ff7b72' }}>
+            <div
+              role="alert"
+              data-testid="ring-cancel-error"
+              style={{ padding: '8px 14px', fontSize: '12px', color: '#ff7b72' }}
+            >
               {cancelError}
             </div>
           )}
           {pollError && (
-            <div role="alert" data-testid="ring-poll-error" style={{ padding: '8px 14px', fontSize: '12px', color: '#ff7b72' }}>
-              Could not refresh the run: {pollError}
+            <div
+              role="alert"
+              data-testid="ring-poll-error"
+              style={{
+                padding: '8px 14px',
+                fontSize: '12px',
+                color: '#f59e0b',
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                borderBottom: '1px solid rgba(245, 158, 11, 0.2)',
+              }}
+            >
+              Could not refresh the run: {pollError} (Reconnecting...)
             </div>
           )}
 
           <div
             data-testid="ring-transcript"
-            style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
           >
             {showEmptyState && (
               <div
                 data-testid="ring-empty-state"
                 className="state-box"
-                style={{ margin: 'auto', padding: '40px 20px', textAlign: 'center', color: 'var(--text-dim, #888888)', maxWidth: '520px' }}
+                style={{
+                  margin: 'auto',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: 'var(--text-dim, #888888)',
+                  maxWidth: '520px',
+                }}
               >
                 <div className="state-title" style={{ fontSize: '15px', fontWeight: 500, color: 'inherit' }}>
                   No runs yet
                 </div>
                 <p className="state-message" style={{ fontSize: '13px', margin: '6px auto 14px auto' }}>
-                  Pick an agent, give Ring an instruction, and watch the work happen here — tool activity, approvals, and the final answer.
+                  Pick an agent, give Ring an instruction, and watch the work happen here — tool activity, approvals,
+                  and the final answer.
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {SUGGESTED_INSTRUCTIONS.map((suggestion) => (
@@ -1308,7 +1444,9 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
                 {/* TASK DEV-C-FEEL-01 (feel 3): bottom-line-first. The one-line
                     verdict (numbers with units) renders before the evidence
                     and collapsed tool details below. Verbatim from polled events. */}
-                {run.state && <RingBottomLine events={run.state.events} finalAnswer={run.state.finalAnswer} mode={run.state.mode} />}
+                {run.state && (
+                  <RingBottomLine events={run.state.events} finalAnswer={run.state.finalAnswer} mode={run.state.mode} />
+                )}
                 {(run.state?.events ?? []).map((entry, index) => renderTranscriptEvent(run, entry, index))}
                 {run.state?.finalAnswer && <RingFinalAnswer answer={run.state.finalAnswer} mode={run.state.mode} />}
                 {run.state?.status === 'failed' && !failureEvent && (
@@ -1342,12 +1480,22 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
           <div style={{ padding: '0 16px' }}>
             <RingAttachmentBar
               attachments={attachments}
-              client={clientRef.current.attachmentClient ?? { storeEvidenceFile: async () => { throw new Error('Evidence store unavailable in this context.'); } }}
+              client={
+                clientRef.current.attachmentClient ?? {
+                  storeEvidenceFile: async () => {
+                    throw new Error('Evidence store unavailable in this context.');
+                  },
+                }
+              }
               onChange={setAttachments}
               onError={setAttachError}
             />
             {attachError && (
-              <div role='alert' data-testid='ring-attach-error' style={{ paddingTop: '6px', fontSize: '12px', color: '#ff7b72' }}>
+              <div
+                role="alert"
+                data-testid="ring-attach-error"
+                style={{ paddingTop: '6px', fontSize: '12px', color: '#ff7b72' }}
+              >
                 {attachError}
               </div>
             )}
@@ -1398,7 +1546,14 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
             <div
               role="alert"
               data-testid="ring-start-error"
-              style={{ padding: '0 16px 12px', fontSize: '12px', color: '#ff7b72', display: 'flex', gap: '10px', alignItems: 'center' }}
+              style={{
+                padding: '0 16px 12px',
+                fontSize: '12px',
+                color: '#ff7b72',
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'center',
+              }}
             >
               <span>{startError}</span>
               <button

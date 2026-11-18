@@ -113,7 +113,7 @@ import type {
 import type { RingAskRequest, RingAskResult } from './ring-types';
 import { validateRingAskResult } from './ring-types';
 import type { RingRunRequest, RingRunStartResult, RingRunState, RingApprovalDecision } from './ring-run-types';
-import { validateRingRunStart, validateRingRunState } from './ring-run-types';
+import { validateRingRunStart, validateRingRunState, validateRingThreadState } from './ring-run-types';
 import type {
   ComparableObservation,
   ConflictItem,
@@ -746,7 +746,12 @@ export class BrowserRestClient {
   }
 
   async getRingRun(runId: string, options?: RequestOptions): Promise<RingRunState> {
-    const res = await this.request<RingRunState>('GET', `/api/v1/ring/runs/${encodeURIComponent(runId)}`, undefined, options);
+    const res = await this.request<RingRunState>(
+      'GET',
+      `/api/v1/ring/runs/${encodeURIComponent(runId)}`,
+      undefined,
+      options,
+    );
     return validateRingRunState(res.data);
   }
 
@@ -759,7 +764,10 @@ export class BrowserRestClient {
    * client shape frozen here so Dev B/C compile against it). Existing
    * /ring/runs routes above stay working unchanged.
    */
-  async createRingThread(input: { title?: string; role?: string }, options?: RequestOptions): Promise<{ threadId: string }> {
+  async createRingThread(
+    input: { title?: string; role?: string },
+    options?: RequestOptions,
+  ): Promise<{ threadId: string }> {
     const res = await this.request<{ threadId: string }>('POST', '/api/v1/ring/threads', input, options);
     if (!res.data || typeof (res.data as { threadId?: unknown }).threadId !== 'string') {
       throw new Error('RING_RUN_INVALID: threadId must be a non-empty string.');
@@ -767,14 +775,31 @@ export class BrowserRestClient {
     return { threadId: (res.data as { threadId: string }).threadId };
   }
 
-  async getRingThread(threadId: string, options?: RequestOptions): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
-    const res = await this.request<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }>('GET', `/api/v1/ring/threads/${encodeURIComponent(threadId)}`, undefined, options);
-    const { validateRingThreadState } = await import('./ring-run-types');
+  async getRingThread(
+    threadId: string,
+    options?: RequestOptions,
+  ): Promise<{ threadId: string; title: string; role: string; createdAt: string; runs: string[] }> {
+    const res = await this.request<{
+      threadId: string;
+      title: string;
+      role: string;
+      createdAt: string;
+      runs: string[];
+    }>('GET', `/api/v1/ring/threads/${encodeURIComponent(threadId)}`, undefined, options);
     return validateRingThreadState(res.data);
   }
 
-  async postRingThreadMessage(threadId: string, instruction: string, options?: RequestOptions): Promise<RingRunStartResult> {
-    const res = await this.request<RingRunStartResult>('POST', `/api/v1/ring/threads/${encodeURIComponent(threadId)}/messages`, { instruction }, options);
+  async postRingThreadMessage(
+    threadId: string,
+    instruction: string,
+    options?: RequestOptions,
+  ): Promise<RingRunStartResult> {
+    const res = await this.request<RingRunStartResult>(
+      'POST',
+      `/api/v1/ring/threads/${encodeURIComponent(threadId)}/messages`,
+      { instruction },
+      options,
+    );
     return validateRingRunStart(res.data);
   }
 
@@ -806,15 +831,27 @@ export class BrowserRestClient {
     if (typeof window === 'undefined') headers.Origin = this.baseUrl;
     if (this.sessionToken) headers.Authorization = 'Bearer ' + this.sessionToken;
     try {
-      const response = await this.fetch('' + this.baseUrl + '/api/v1/ring/runs/' + encodeURIComponent(runId) + '/artifacts/' + encodeURIComponent(clean), {
-        method: 'GET',
-        headers,
-        signal: abortScope.signal,
-      });
+      const response = await this.fetch(
+        '' +
+          this.baseUrl +
+          '/api/v1/ring/runs/' +
+          encodeURIComponent(runId) +
+          '/artifacts/' +
+          encodeURIComponent(clean),
+        {
+          method: 'GET',
+          headers,
+          signal: abortScope.signal,
+        },
+      );
       if (!response.ok) {
         const text = await response.text();
         let body: unknown = { message: text };
-        try { body = JSON.parse(text); } catch { /* keep plain-text failure */ }
+        try {
+          body = JSON.parse(text);
+        } catch {
+          /* keep plain-text failure */
+        }
         throw mapHttpError(response.status, body, correlationId);
       }
       return await response.blob();
@@ -825,7 +862,10 @@ export class BrowserRestClient {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new TimeoutError('Request timed out after ' + timeoutMs + 'ms for ring artifact ' + clean);
       }
-      throw new NetworkError('Failed to download ring artifact ' + clean + ': ' + ((err as Error)?.message || String(err)), err);
+      throw new NetworkError(
+        'Failed to download ring artifact ' + clean + ': ' + ((err as Error)?.message || String(err)),
+        err,
+      );
     } finally {
       abortScope.dispose();
     }

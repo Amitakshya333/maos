@@ -39,6 +39,16 @@ import { renderPanel, getBrandBadge, renderDivider } from '../../utils/ui';
 
 // ─── Options ─────────────────────────────────────────────────────
 
+export class IgniteError extends Error {
+  constructor(
+    message: string,
+    public readonly code: number = 1,
+  ) {
+    super(message);
+    this.name = 'IgniteError';
+  }
+}
+
 export interface IgniteOptions {
   gemma?: boolean;
   harness?: string;
@@ -57,6 +67,8 @@ export interface IgniteOptions {
   maxHeals?: string | number;
   /** Git branch prefix for worker worktrees (default "maos-ignite"). */
   branchPrefix?: string;
+  /** Do not call process.exit directly; throw IgniteError or return cleanly (e.g. when called from TUI). */
+  noExit?: boolean;
 }
 
 export interface IgniteWorker {
@@ -260,12 +272,18 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
   if (!services.project.isInitialized()) {
     console.log(chalk.red('\n❌ MAOS is not initialized in this directory.'));
     console.log(chalk.gray('Run: maos init'));
+    if (options.noExit) {
+      throw new IgniteError('MAOS is not initialized in this directory. Run: maos init');
+    }
     process.exit(1);
   }
 
   if (!dryRun && !(await isHerdrAvailable())) {
     console.log(chalk.red('\n❌ Herdr multiplexer is not reachable (`herdr status` failed).'));
     console.log(chalk.gray('Start Herdr, then retry. OpSec note: Herdr IPC is a local socket only.'));
+    if (options.noExit) {
+      throw new IgniteError('Herdr multiplexer is not reachable (`herdr status` failed). Start Herdr, then retry.');
+    }
     process.exit(1);
   }
   if (!process.env.HERDR_ENV) {
@@ -347,13 +365,23 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
       // Worker 0 splits from current pane, then moves to dedicated "Swarm Workers" tab.
       // Workers 1..N split relative to Worker 0's pane inside that tab, keeping Tab 5 pristine!
       const targetPane = i === 0 ? undefined : workers[0]?.paneId;
-      const paneId = await herdrSplitPane({ direction, cwd: wt.worktreePath, noFocus: true, targetPane });
-      if (i === 0) {
-        try {
-          await herdrMovePane(paneId, { newTab: true, label: 'Swarm Workers', noFocus: true });
-        } catch {
-          /* continue gracefully if tab move is not supported */
+      let paneId: string;
+      try {
+        paneId = await herdrSplitPane({ direction, cwd: wt.worktreePath, noFocus: true, targetPane });
+        if (i === 0) {
+          try {
+            await herdrMovePane(paneId, { newTab: true, label: 'Swarm Workers', noFocus: true });
+          } catch {
+            /* continue gracefully if tab move is not supported */
+          }
         }
+      } catch (paneErr: unknown) {
+        step.fail(
+          chalk.yellow(
+            `Worker ${agentId} pane split failed (${(paneErr instanceof Error ? paneErr.message : String(paneErr)).slice(0, 100)}). Continuing with remaining workers.`,
+          ),
+        );
+        continue;
       }
       const testCmd = resolveWorktreeTestCommand(wt.worktreePath);
       const safeTitle = task.title.replace(/["'`$\\]/g, '');
@@ -361,7 +389,11 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
         process.platform === 'win32'
           ? `Write-Host "[MAOS ignite] ${safeTitle}"; ${testCmd}`
           : `echo "[MAOS ignite] ${safeTitle}" && ${testCmd}`;
-      herdrPaneRun(paneId, runCmd);
+      try {
+        herdrPaneRun(paneId, runCmd);
+      } catch {
+        /* continue if pane run fails initially */
+      }
       workers.push({ index: i, title: task.title, agentId, branch, worktreePath: wt.worktreePath, paneId, taskFile });
       step.succeed(chalk.green(`Worker ${agentId} live in ${paneId} (${branch})`));
     } catch (err: unknown) {
@@ -373,6 +405,9 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
 
   if (workers.length === 0) {
     console.log(chalk.red('\n❌ No workers spawned — aborting ignite. Check Herdr + git worktree support.'));
+    if (options.noExit) {
+      throw new IgniteError('No workers spawned — aborting ignite. Check Herdr + git worktree support.');
+    }
     process.exit(1);
   }
 

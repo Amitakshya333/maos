@@ -197,12 +197,15 @@ program
   .option('--dry-run', 'Preview the decomposition plan without spawning panes')
   .option('--no-watch', 'Single heal sweep then exit (default watches until Ctrl+C)')
   .option('-y, --yes', 'Auto-merge clean worker branches on completion')
+  .option('--no-exit', 'Do not call process.exit on error or completion')
   .action(async (options: IgniteOptions) => {
     try {
       await runIgnite(options);
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
-      process.exit(1);
+      if (!options.noExit) {
+        process.exit(1);
+      }
     }
   });
 

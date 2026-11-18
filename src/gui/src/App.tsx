@@ -8,6 +8,7 @@ import { StatusBar } from './components/StatusBar';
 import { useTheme } from './components/ThemeContext';
 import { LayoutProvider, useLayout } from './components/LayoutContext';
 import { RoleOnboardingModal } from './components/RoleOnboardingModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ModuleId, ALL_MODULE_IDS } from '../../domain/layout';
 
 // Views
@@ -107,7 +108,7 @@ const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) =
   const { toggleTheme } = useTheme();
   const [readiness, setReadiness] = useState({
     apiStatus: 'CHECKING',
-        modelStatus: 'MODEL: NOT VERIFIED',
+    modelStatus: 'MODEL: NOT VERIFIED',
     engineStatus: 'ENGINE: NOT REPORTED',
     projectRoot: 'UNVERIFIED',
     apiEndpoint: getApiEndpoint(),
@@ -166,9 +167,10 @@ const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) =
     const handleHashChange = () => {
       const fromHash = getViewFromHash();
       if (fromHash) {
-        const nextView = industrialDemo && !INDUSTRIAL_DEMO_VIEWS.includes(fromHash as (typeof INDUSTRIAL_DEMO_VIEWS)[number])
-          ? 'cockpit'
-          : fromHash;
+        const nextView =
+          industrialDemo && !INDUSTRIAL_DEMO_VIEWS.includes(fromHash as (typeof INDUSTRIAL_DEMO_VIEWS)[number])
+            ? 'cockpit'
+            : fromHash;
         setActiveView(nextView);
         setActiveModule(nextView as ModuleId);
       }
@@ -322,16 +324,11 @@ const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) =
         <div className="app-center">
           {/* Main Workspace View */}
           <main className="app-workspace" role="main">
-            {renderActiveView()}
+            <ErrorBoundary>{renderActiveView()}</ErrorBoundary>
           </main>
 
           {/* 6. Context / Cockpit Drawer */}
-          <ContextDrawer
-            isOpen={isDrawerOpen}
-            onToggle={toggleDrawer}
-            height={drawerHeight}
-            lastEventSeq={3}
-          />
+          <ContextDrawer isOpen={isDrawerOpen} onToggle={toggleDrawer} height={drawerHeight} lastEventSeq={3} />
         </div>
       </div>
 
