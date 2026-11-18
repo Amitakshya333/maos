@@ -207,7 +207,8 @@ const AppContent: React.FC<{ industrialDemo: boolean }> = ({ industrialDemo }) =
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore when typing inside input/textarea
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !e.altKey && !e.ctrlKey && !e.metaKey) {
         return;
       }
 

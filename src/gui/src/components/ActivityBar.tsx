@@ -73,16 +73,18 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectVi
 
   // Close more menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
         setIsMoreOpen(false);
       }
     };
     if (isMoreOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isMoreOpen]);
 
@@ -109,7 +111,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectVi
   return (
     <aside className="app-activity-bar" role="navigation" aria-label="Activity Bar" style={{ position: 'relative' }}>
       {/* Top Pinned Modules Group */}
-      <div className="activity-group" role="tablist" aria-orientation="vertical">
+      <div className="activity-group activity-group-top" role="tablist" aria-orientation="vertical">
         {effectivePinned.map((moduleId, index) => {
           const config = MODULE_REGISTRY[moduleId] || {
             label: moduleId,
@@ -225,7 +227,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, onSelectVi
 
       {/* Bottom Group (Settings & Roles) */}
       {!industrialDemo && (
-        <div className="activity-group" role="tablist" aria-orientation="vertical">
+        <div className="activity-group activity-group-bottom" role="tablist" aria-orientation="vertical">
           <button
             role="tab"
             aria-selected={activeView === 'settings'}
