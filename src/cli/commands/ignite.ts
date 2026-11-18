@@ -494,9 +494,14 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
       ),
     );
     printMergeReport(cwd, workers, options.yes === true);
+    cleanupSignals();
     if (!noExit) {
       process.exit(0);
     }
+  };
+  const cleanupSignals = () => {
+    process.removeListener('SIGINT', shutdown);
+    process.removeListener('SIGTERM', shutdown);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
@@ -540,6 +545,7 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
     }, 500);
     if (typeof checkInterval.unref === 'function') checkInterval.unref();
   });
+  cleanupSignals();
 }
 
 function printMergeReport(cwd: string, workers: IgniteWorker[], autoMerge: boolean): void {

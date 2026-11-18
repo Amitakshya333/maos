@@ -205,8 +205,9 @@ program
       await runIgnite(options);
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
+      process.exitCode = typeof err.code === 'number' ? err.code : 1;
       if (!noExit) {
-        process.exit(1);
+        process.exit(process.exitCode);
       }
     }
   });

@@ -438,7 +438,59 @@ export class MaosTui {
         return;
       }
 
-      if (this.externalCommandRunning) return;
+      // If an external command is actively running:
+      if (this.externalCommandRunning) {
+        // Tab key always cycles views:
+        if (key.name === 'tab') {
+          this.activeTab = this.activeTab >= 4 ? 1 : this.activeTab + 1;
+          this.statusMessage = `Switched to View [${this.activeTab}].`;
+          this.render();
+          return;
+        }
+        // Direct number keys switch views:
+        if (str === '1' || str === '2' || str === '3' || str === '4') {
+          this.activeTab = Number(str);
+          this.statusMessage = `Switched to View [${this.activeTab}].`;
+          this.render();
+          return;
+        }
+        // PageUp / PageDown / Home / End scroll the live transcript on View 1:
+        if (
+          ['pageup', 'pagedown', 'home', 'end'].includes(key.name) &&
+          this.activeTab === 1 &&
+          this.transcript.length > 0
+        ) {
+          if (key.name === 'home') {
+            this.transcriptScrollOffset = Math.max(0, this.transcriptRenderedRowCount - this.transcriptViewportRows);
+          } else if (key.name === 'end') {
+            this.transcriptScrollOffset = 0;
+          } else {
+            const step = Math.max(1, this.transcriptViewportRows - 1);
+            this.transcriptScrollOffset += key.name === 'pageup' ? step : -step;
+            this.transcriptScrollOffset = Math.max(
+              0,
+              Math.min(
+                this.transcriptScrollOffset,
+                Math.max(0, this.transcriptRenderedRowCount - this.transcriptViewportRows),
+              ),
+            );
+          }
+          this.render();
+          return;
+        }
+        // Q key quits when on other views (tabs 2, 3, 4):
+        if (this.activeTab !== 1 && key.name === 'q') {
+          this.exit();
+          return;
+        }
+        // Enter gives immediate feedback:
+        if (key.name === 'return') {
+          this.statusMessage = 'A task is currently running. Press Ctrl+C to abort it before starting a new one.';
+          this.render();
+          return;
+        }
+        return;
+      }
 
       // If in modal dialog mode (ignite/promptTest modal overlays):
       if (this.modalMode !== 'none' && this.modalMode !== 'command') {
@@ -1313,9 +1365,11 @@ export class MaosTui {
       const innerW = Math.max(0, W - 4);
       const prefix = `${c.cyanBright('>')} ${c.slateBorder('│')}  `;
       const inputWidth = Math.max(0, innerW - terminalCellWidth(prefix) - 1);
-      const commandText = this.modalInputText
-        ? `${c.white(fitTerminalTail(this.modalInputText, inputWidth))}${c.boldWhite('█')}`
-        : `${c.boldWhite('█')} ${c.slateMuted('Type a goal or /help for commands')}`;
+      const commandText = this.externalCommandRunning
+        ? `${c.cyanBright(this.spinnerFrames[this.spinnerIndex % this.spinnerFrames.length])} ${c.white(`${this.externalCommandLabel || 'Running'}...`)} ${c.slateMuted('(Ctrl+C to abort · Tab to switch view)')}`
+        : this.modalInputText
+          ? `${c.white(fitTerminalTail(this.modalInputText, inputWidth))}${c.boldWhite('█')}`
+          : `${c.boldWhite('█')} ${c.slateMuted('Type a goal or /help for commands')}`;
       const innerContent = prefix + commandText;
       const promptRow = `${c.cyanBright('│ ')}${fitTerminalLine(innerContent, innerW)}${c.cyanBright(' │')}`;
       lines.push(centerTerminalLine(c.cyanBright('╭' + '─'.repeat(Math.max(0, W - 2)) + '╮'), W));
@@ -1351,9 +1405,11 @@ export class MaosTui {
     const promptInnerW = promptW - 4;
     const prefix = `${c.cyanBright('>')} ${c.slateBorder('│')}  `;
     const inputWidth = Math.max(0, promptInnerW - terminalCellWidth(prefix) - 1);
-    const commandText = this.modalInputText
-      ? `${c.white(fitTerminalTail(this.modalInputText, inputWidth))}${c.boldWhite('█')}`
-      : `${c.boldWhite('█')} ${c.slateMuted('Type a goal or /help for commands')}`;
+    const commandText = this.externalCommandRunning
+      ? `${c.cyanBright(this.spinnerFrames[this.spinnerIndex % this.spinnerFrames.length])} ${c.white(`${this.externalCommandLabel || 'Running'}...`)} ${c.slateMuted('(Ctrl+C to abort · Tab to switch view)')}`
+      : this.modalInputText
+        ? `${c.white(fitTerminalTail(this.modalInputText, inputWidth))}${c.boldWhite('█')}`
+        : `${c.boldWhite('█')} ${c.slateMuted('Type a goal or /help for commands')}`;
     const innerContent = prefix + commandText;
     const promptRow = `${c.cyanBright('│ ')}${fitTerminalLine(innerContent, promptInnerW)}${c.cyanBright(' │')}`;
     if (promptW >= 24) {

@@ -12,8 +12,8 @@
       "name": "MAOS Orchestrator CLI",
       "version": "0.4.0",
       "relativePath": "dist/cli/index.js",
-      "sha256": "48140a46e174515a886c3701d25bb5a5ca2620b4c54440135b87917725f8a49f",
-      "size": 47782,
+      "sha256": "d00a6898969ef8e3e9a4c4e77978ed22d8ad5ebb6436735f0f725db2c9d01cf4",
+      "size": 47869,
       "license": "MIT",
       "isExecutable": true,
       "isRemote": false
@@ -216,20 +216,20 @@
       "name": "MAOS React GUI Shell Index",
       "version": "0.4.0",
       "relativePath": "dist/gui/index.html",
-      "sha256": "5b925fc4f9e7ca0de0083df06bd1724107eb1759df1ef7ce921cb9bf11ce3db3",
+      "sha256": "5219e720c9352f5e01af29b5db04b0ca89e0466e23dbb25243afbd797390e35d",
       "size": 1100,
       "license": "MIT",
       "isExecutable": false,
       "isRemote": false
     },
-    "gui-bundle-index-Dim7zYx-.js": {
-      "id": "gui-bundle-index-Dim7zYx-.js",
+    "gui-bundle-index-Dwx5Srg1.js": {
+      "id": "gui-bundle-index-Dwx5Srg1.js",
       "component": "gui-assets",
-      "name": "MAOS GUI Bundle JavaScript (index-Dim7zYx-.js)",
+      "name": "MAOS GUI Bundle JavaScript (index-Dwx5Srg1.js)",
       "version": "0.4.0",
-      "relativePath": "dist/gui/assets/index-Dim7zYx-.js",
-      "sha256": "fafaf5c9486adf364932b4f396baa6fe6225cc587b7f2b35a7c82e129a9e627a",
-      "size": 583029,
+      "relativePath": "dist/gui/assets/index-Dwx5Srg1.js",
+      "sha256": "fca3bc48af8a547b706be461b2835e9eab19cab900de8147983c559356710b4f",
+      "size": 583042,
       "license": "MIT",
       "isExecutable": false,
       "isRemote": false
@@ -247,5 +247,5 @@
       "isRemote": false
     }
   },
-  "entriesHash": "58e16b2fa0a62457a76e5f28c6111d7579555fc355233697a62a024a770d92c3"
+  "entriesHash": "4e6af7efaa6c3daa21ba1475718842b3e2165d78c033a7a8c5844b9e0230c288"
 }

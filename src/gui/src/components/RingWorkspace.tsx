@@ -846,7 +846,7 @@ export const RingWorkspace: React.FC<RingWorkspaceProps> = ({
     [runs, activeRunId],
   );
   const activeState = activeRun?.state ?? null;
-  const isActive = activeState !== null && !TERMINAL_STATUSES.includes(activeState.status);
+  const isActive = activeRun !== null && (activeState === null || !TERMINAL_STATUSES.includes(activeState.status));
 
   // Poll the active run and tick the elapsed clock while it is live. The
   // existing WebSocket event channel is project-scoped, not per-run, so

@@ -104,6 +104,20 @@ export function ensureWorktree(agentId: string, branchName: string, cwd: string)
     // Verify it's on the right branch
     const currentBranch = gitSafe(['rev-parse', '--abbrev-ref', 'HEAD'], wtPath);
     if (currentBranch === branchName) {
+      // Ensure node_modules junction exists even when reusing worktree
+      const rootNodeModules = path.join(cwd, 'node_modules');
+      const wtNodeModules = path.join(wtPath, 'node_modules');
+      if (fs.existsSync(rootNodeModules) && !fs.existsSync(wtNodeModules)) {
+        try {
+          if (process.platform === 'win32') {
+            fs.symlinkSync(rootNodeModules, wtNodeModules, 'junction');
+          } else {
+            fs.symlinkSync(rootNodeModules, wtNodeModules, 'dir');
+          }
+        } catch {
+          /* best effort */
+        }
+      }
       return { worktreePath: wtPath, branch: branchName, agentId, active: true };
     }
     // Wrong branch — remove and recreate
@@ -166,14 +180,19 @@ export function ensureWorktree(agentId: string, branchName: string, cwd: string)
 export function removeWorktree(agentId: string, cwd: string): void {
   const wtPath = getWorktreePath(cwd, agentId);
 
-  // Unlink node_modules junction/symlink first if present
+  // Unlink node_modules junction/symlink first if present (check lstat to handle broken links)
   const wtNodeModules = path.join(wtPath, 'node_modules');
-  if (fs.existsSync(wtNodeModules)) {
-    try {
-      fs.unlinkSync(wtNodeModules);
-    } catch {
-      /* best effort */
+  try {
+    const stat = fs.lstatSync(wtNodeModules);
+    if (stat.isSymbolicLink() || stat.isDirectory()) {
+      try {
+        fs.unlinkSync(wtNodeModules);
+      } catch {
+        fs.rmSync(wtNodeModules, { recursive: false, force: true });
+      }
     }
+  } catch {
+    /* does not exist */
   }
 
   try {

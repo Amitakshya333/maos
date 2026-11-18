@@ -33,7 +33,13 @@ const HOSTED_RUNNING: RingRunState = {
   mode: 'hosted',
   events: [
     { type: 'run.started', ts: '2026-11-02T00:00:00Z' },
-    { type: 'tool.call', ts: '2026-11-02T00:00:01Z', tool: 'analyze_telemetry', toolCallId: 'call-telemetry-1', argsSummary: 'turbine_vibration_log.csv' },
+    {
+      type: 'tool.call',
+      ts: '2026-11-02T00:00:01Z',
+      tool: 'analyze_telemetry',
+      toolCallId: 'call-telemetry-1',
+      argsSummary: 'turbine_vibration_log.csv',
+    },
     {
       type: 'tool.result',
       ts: '2026-11-02T00:00:02Z',
@@ -44,7 +50,11 @@ const HOSTED_RUNNING: RingRunState = {
       overallRms: 4.125,
       sources: ['demo/industrial/turbine_vibration_log.csv'],
     },
-    { type: 'model.turn', ts: '2026-11-02T00:00:03Z', text: 'The deterministic check flags turbine 7; drafting the note next.' },
+    {
+      type: 'model.turn',
+      ts: '2026-11-02T00:00:03Z',
+      text: 'The deterministic check flags turbine 7; drafting the note next.',
+    },
   ],
 };
 
@@ -68,7 +78,13 @@ const APPROVED_RUNNING: RingRunState = {
   mode: 'hosted',
   events: [
     ...AWAITING_APPROVAL.events,
-    { type: 'approval.resolved', ts: '2026-11-02T00:00:05Z', approvalId: 'appr-1', decision: 'approved', action: 'Write safety note to demo/industrial/generated/safety_note.md' },
+    {
+      type: 'approval.resolved',
+      ts: '2026-11-02T00:00:05Z',
+      approvalId: 'appr-1',
+      decision: 'approved',
+      action: 'Write safety note to demo/industrial/generated/safety_note.md',
+    },
   ],
 };
 
@@ -77,7 +93,13 @@ const EVIDENCE_ONLY_DONE: RingRunState = {
   mode: 'evidence-only',
   events: [
     { type: 'run.started', ts: '2026-11-02T00:00:00Z' },
-    { type: 'tool.call', ts: '2026-11-02T00:00:01Z', tool: 'analyze_telemetry', toolCallId: 'call-telemetry-1', argsSummary: 'turbine_vibration_log.csv' },
+    {
+      type: 'tool.call',
+      ts: '2026-11-02T00:00:01Z',
+      tool: 'analyze_telemetry',
+      toolCallId: 'call-telemetry-1',
+      argsSummary: 'turbine_vibration_log.csv',
+    },
     {
       type: 'tool.result',
       ts: '2026-11-02T00:00:02Z',
@@ -187,7 +209,9 @@ describe('TASK DEV-C-FEEL-01: bottom-line-first in the full view', () => {
       expect(view.container.querySelector('[data-testid="ring-tool-result"]')).toBeNull();
       // RMS is shown with units in the expanded tool result
       await act(async () => {
-        view.container.querySelector('[data-testid="ring-tool-chip"] button')?.dispatchEvent(new window.Event('click', { bubbles: true }));
+        view.container
+          .querySelector('[data-testid="ring-tool-chip"] button')
+          ?.dispatchEvent(new window.Event('click', { bubbles: true }));
       });
       expect(view.container.querySelector('[data-testid="ring-tool-rms"]')?.textContent).toContain('mm/s');
     } finally {
@@ -208,7 +232,11 @@ describe('ring roster', () => {
     ]);
 
     const html = renderToStaticMarkup(
-      React.createElement(RingWorkspace, { agents: roster, runClient: makeClient([HOSTED_RUNNING]).client, pollIntervalMs: 60000 }),
+      React.createElement(RingWorkspace, {
+        agents: roster,
+        runClient: makeClient([HOSTED_RUNNING]).client,
+        pollIntervalMs: 60000,
+      }),
     );
     for (const agent of CONFIG_AGENTS) {
       expect(html).toContain(`data-testid="ring-agent-${agent.id}"`);
@@ -246,7 +274,9 @@ describe('ring run transcript', () => {
       await act(async () => analyst!.click());
       await sendInstruction(view.container, 'Why is turbine 7 above its vibration limit?');
 
-      expect(calls.starts).toEqual([{ instruction: 'Why is turbine 7 above its vibration limit?', agentId: 'ANALYST_AGENT' }]);
+      expect(calls.starts).toEqual([
+        { instruction: 'Why is turbine 7 above its vibration limit?', agentId: 'ANALYST_AGENT' },
+      ]);
       expect(view.container.querySelector('[data-testid="ring-user-message"]')?.textContent).toContain('turbine 7');
       const chip = view.container.querySelector('[data-testid="ring-tool-chip"]');
       expect(chip?.textContent).toContain('analyze_telemetry · turbine_vibration_log.csv');
@@ -318,13 +348,57 @@ describe('ring run transcript', () => {
     }
   });
 
+  it('poll failure shows reconnecting banner and recovers when server responds', async () => {
+    let getRunCount = 0;
+    const client: RingRunClient = {
+      startRun: async () => ({ runId: 'run-retry-1' }),
+      getRun: async () => {
+        getRunCount++;
+        if (getRunCount <= 2) {
+          throw new Error('connect ECONNREFUSED 127.0.0.1:3847');
+        }
+        return HOSTED_RUNNING;
+      },
+      cancelRun: async () => {},
+      decideApproval: async () => {},
+    };
+    const view = await mountWorkspace({
+      agents: buildRingRoster(CONFIG_AGENTS),
+      runClient: client,
+      pollIntervalMs: 50,
+    });
+    try {
+      await sendInstruction(view.container, 'Check turbine 7');
+      // After attempts fail, reconnecting banner should appear
+      const pollError = view.container.querySelector('[data-testid="ring-poll-error"]');
+      expect(pollError).not.toBeNull();
+      expect(pollError?.textContent).toContain('ECONNREFUSED');
+      expect(pollError?.textContent).toContain('Reconnecting...');
+
+      // Wait for next scheduled backoff tick to poll and recover
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      });
+
+      expect(getRunCount).toBeGreaterThanOrEqual(3);
+      expect(view.container.querySelector('[data-testid="ring-poll-error"]')).toBeNull();
+      expect(view.container.querySelector('[data-testid="ring-tool-chip"]')).toBeTruthy();
+    } finally {
+      view.unmount();
+    }
+  });
+
   it('run failed shows the failure event message verbatim', async () => {
     const failed: RingRunState = {
       status: 'failed',
       mode: 'hosted',
       events: [
         { type: 'run.started', ts: '2026-11-02T00:00:00Z' },
-        { type: 'run.failed', ts: '2026-11-02T00:00:05Z', message: 'Baseten returned 429: rate limit for muse-spark-open-1026' },
+        {
+          type: 'run.failed',
+          ts: '2026-11-02T00:00:05Z',
+          message: 'Baseten returned 429: rate limit for muse-spark-open-1026',
+        },
       ],
     };
     const { client } = makeClient([failed]);
@@ -363,7 +437,9 @@ describe('ring approval cards', () => {
       const deny = view.container.querySelector<HTMLButtonElement>('[data-testid="ring-approval-deny"]');
       expect(allow?.textContent).toBe('Allow');
       expect(deny?.textContent).toBe('Deny');
-      expect(view.container.querySelector('[data-testid="ring-working-indicator"]')?.textContent).toContain('Waiting for approval');
+      expect(view.container.querySelector('[data-testid="ring-working-indicator"]')?.textContent).toContain(
+        'Waiting for approval',
+      );
 
       await act(async () => {
         allow!.click();
@@ -385,14 +461,33 @@ describe('ring threads (Dev A lane)', () => {
     const { client } = makeClient([HOSTED_RUNNING]);
     const threadClient: RingRunClient = {
       ...client,
-      createThread: async (input) => { threadCalls.push(input); return { threadId: 'thread-1' }; },
-      getThread: async (threadId) => ({ threadId, title: 'T-07 review', role: 'operator', createdAt: '2026-11-02T00:00:00Z', runs: [] }),
-      postThreadMessage: async (threadId, instruction) => { messageCalls.push({ threadId, instruction }); return { runId: 'run-1' }; },
+      createThread: async (input) => {
+        threadCalls.push(input);
+        return { threadId: 'thread-1' };
+      },
+      getThread: async (threadId) => ({
+        threadId,
+        title: 'T-07 review',
+        role: 'operator',
+        createdAt: '2026-11-02T00:00:00Z',
+        runs: [],
+      }),
+      postThreadMessage: async (threadId, instruction) => {
+        messageCalls.push({ threadId, instruction });
+        return { runId: 'run-1' };
+      },
     };
-    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: threadClient, pollIntervalMs: 60000 });
+    const view = await mountWorkspace({
+      agents: buildRingRoster(CONFIG_AGENTS),
+      runClient: threadClient,
+      pollIntervalMs: 60000,
+    });
     try {
       expect(view.container.querySelector('[data-testid="ring-thread-bar"]')).toBeTruthy();
-      await act(async () => { view.container.querySelector<HTMLButtonElement>('[data-testid="ring-new-thread-button"]')!.click(); await new Promise((r) => setTimeout(r, 0)); });
+      await act(async () => {
+        view.container.querySelector<HTMLButtonElement>('[data-testid="ring-new-thread-button"]')!.click();
+        await new Promise((r) => setTimeout(r, 0));
+      });
       expect(threadCalls.length).toBe(1);
       expect(view.container.querySelector('[data-testid="ring-active-thread"]')?.textContent).toContain('thread-1');
       await sendInstruction(view.container, 'Brief me on T-07');
@@ -406,14 +501,25 @@ describe('ring threads (Dev A lane)', () => {
     const created = [];
     const { client } = makeClient([HOSTED_RUNNING]);
     const runStates = {
-      'run-a1': { status: 'completed', mode: 'hosted', events: [{ type: 'run.started', ts: 't' }, { type: 'model.turn', ts: 't', text: 'thread A history text' }] },
+      'run-a1': {
+        status: 'completed',
+        mode: 'hosted',
+        events: [
+          { type: 'run.started', ts: 't' },
+          { type: 'model.turn', ts: 't', text: 'thread A history text' },
+        ],
+      },
     };
     const full = {
       ...client,
       threadClient: {
-        createThread: async (input) => { created.push(input); return { threadId: 'thread-b' }; },
+        createThread: async (input) => {
+          created.push(input);
+          return { threadId: 'thread-b' };
+        },
         getThread: async (threadId) => {
-          if (threadId === 'thread-a') return { threadId, title: 'A review', role: 'safety', createdAt: 't', runs: ['run-a1'] };
+          if (threadId === 'thread-a')
+            return { threadId, title: 'A review', role: 'safety', createdAt: 't', runs: ['run-a1'] };
           return { threadId, title: 'B thread', role: 'maintenance', createdAt: 't', runs: [] };
         },
         postMessage: async () => ({ runId: 'run-x' }),
@@ -421,7 +527,11 @@ describe('ring threads (Dev A lane)', () => {
       getRun: async (runId) => runStates[runId] ?? HOSTED_RUNNING,
     };
     window.localStorage.setItem('maos:ring:expand-thread', 'thread-a');
-    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: full, pollIntervalMs: 60000 });
+    const view = await mountWorkspace({
+      agents: buildRingRoster(CONFIG_AGENTS),
+      runClient: full,
+      pollIntervalMs: 60000,
+    });
     try {
       await view.flush();
       await view.flush();
@@ -441,7 +551,11 @@ describe('ring threads (Dev A lane)', () => {
 
   it('without thread methods the thread bar stays hidden and runs stay unthreaded', async () => {
     const { client, calls } = makeClient([HOSTED_RUNNING]);
-    const view = await mountWorkspace({ agents: buildRingRoster(CONFIG_AGENTS), runClient: client, pollIntervalMs: 60000 });
+    const view = await mountWorkspace({
+      agents: buildRingRoster(CONFIG_AGENTS),
+      runClient: client,
+      pollIntervalMs: 60000,
+    });
     try {
       expect(view.container.querySelector('[data-testid="ring-thread-bar"]')).toBeNull();
       const analyst = view.container.querySelector<HTMLButtonElement>('[data-testid="ring-agent-ANALYST_AGENT"]');

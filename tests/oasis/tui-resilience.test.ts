@@ -2,9 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { IgniteError, runIgnite, resolveWorktreeTestCommand } from '../../src/cli/commands/ignite';
 import { AutonomousHealer } from '../../src/core/autonomous-healer';
 import { MessageBus } from '../../src/core/message-bus';
+import { ensureWorktree, removeWorktree } from '../../src/integrations/worktree';
 
 describe('TUI and Ignite Resilience Suite', () => {
   describe('IgniteError and noExit flag', () => {
@@ -142,6 +144,42 @@ describe('TUI and Ignite Resilience Suite', () => {
       // Should complete without uncaught exception
       const attempts = await healer.healOnce();
       expect(Array.isArray(attempts)).toBe(true);
+    });
+  });
+
+  describe('Worktree Junction Resilience', () => {
+    it('creates node_modules junction on worktree creation and preserves on reuse', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maos-test-wt-'));
+      try {
+        execSync('git init -b main', { cwd: tmpDir, stdio: 'ignore' });
+        execSync('git config user.email "test@maos.internal"', { cwd: tmpDir, stdio: 'ignore' });
+        execSync('git config user.name "Test Runner"', { cwd: tmpDir, stdio: 'ignore' });
+        fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test-repo"}', 'utf-8');
+        const rootModules = path.join(tmpDir, 'node_modules');
+        fs.mkdirSync(rootModules, { recursive: true });
+        fs.writeFileSync(path.join(rootModules, 'test-lib.js'), 'module.exports = 42;', 'utf-8');
+        execSync('git add package.json && git commit -m "init"', { cwd: tmpDir, stdio: 'ignore' });
+
+        const wt = ensureWorktree('test-agent', 'test-branch', tmpDir);
+        const wtModules = path.join(wt.worktreePath, 'node_modules');
+        expect(fs.existsSync(wtModules)).toBe(true);
+        expect(fs.existsSync(path.join(wtModules, 'test-lib.js'))).toBe(true);
+
+        // Reusing the worktree should preserve or recreate the junction
+        const reused = ensureWorktree('test-agent', 'test-branch', tmpDir);
+        expect(reused.worktreePath).toBe(wt.worktreePath);
+        expect(fs.existsSync(path.join(reused.worktreePath, 'node_modules', 'test-lib.js'))).toBe(true);
+
+        // Safe removal cleans up the junction and worktree
+        removeWorktree('test-agent', tmpDir);
+        expect(fs.existsSync(wt.worktreePath)).toBe(false);
+        // Root node_modules must remain intact!
+        expect(fs.existsSync(rootModules)).toBe(true);
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
+      }
     });
   });
 });
