@@ -322,7 +322,7 @@ describe('TUI and Ignite Resilience Suite', () => {
       expect(output).toContain('✓ BLOCKED');
     });
 
-    it('renders Chat view with active model cards and message history', () => {
+    it('renders Chat view with streamlined status header and message history', () => {
       const tui = new MaosTui(process.cwd());
       const lines: string[] = [];
       (tui as any).renderTabChat(lines, 90, 24);
@@ -331,8 +331,38 @@ describe('TUI and Ignite Resilience Suite', () => {
       expect(output).toContain('CHAT');
       expect(output).toContain('ACTIVE MODEL');
       expect(output).toContain('LOCAL INFERENCE');
-      expect(output).toContain('CONVERSATION');
+      expect(output).toContain('0 KB EGRESS');
       expect(output).toContain('Ask Gemma anything');
+    });
+
+    it('dynamically adapts welcome box on narrow terminal width without distortion', () => {
+      const tui = new MaosTui(process.cwd());
+      const lines: string[] = [];
+      (tui as any).renderTabChat(lines, 50, 20);
+      const output = lines.join('\n');
+
+      expect(output).toContain('CHAT');
+      expect(output).toContain('Welcome to MAOS Sovereign Local Chat!');
+      // Verify all lines fit within width 50 without wrapping
+      for (const line of lines) {
+        // Strip ANSI escape codes to check visual cell width
+        const raw = line.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
+        expect(raw.length).toBeLessThanOrEqual(50);
+      }
+    });
+
+    it('appends exactly one assistant response without duplication on sendGemmaChatMessage', async () => {
+      const tui = new MaosTui(process.cwd());
+      expect(tui.getChatMessages()).toHaveLength(0);
+
+      await (tui as any).sendGemmaChatMessage('Hello Gemma');
+
+      const messages = tui.getChatMessages();
+      expect(messages).toHaveLength(2);
+      expect(messages[0].sender).toBe('user');
+      expect(messages[0].text).toBe('Hello Gemma');
+      expect(messages[1].sender).toBe('gemma');
+      expect(messages[1].text.length).toBeGreaterThan(0);
     });
   });
 });

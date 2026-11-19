@@ -437,7 +437,10 @@ export class MaosTui {
 
   private refreshTimer: NodeJS.Timeout | null = null;
   private projectRoot: string;
-  private readonly resizeHandler = () => this.render();
+  private readonly resizeHandler = () => {
+    process.stdout.write('\x1b[2J\x1b[H');
+    this.render();
+  };
   private readonly interruptHandler = () => {
     if (this.chatIsStreaming && this.activeChatAbortController) {
       this.activeChatAbortController.abort();
@@ -541,9 +544,8 @@ export class MaosTui {
   }
 
   public start(): void {
-    // Hide cursor & clear screen
-    process.stdout.write('\x1b[?25l');
-    console.clear();
+    // Switch to alternate screen buffer, clear screen & hide cursor
+    process.stdout.write('\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l');
 
     this.setupKeyboard();
     this.updateGpuTelemetry();
@@ -594,8 +596,8 @@ export class MaosTui {
         process.stdin.setRawMode(false);
       }
     } catch {}
-    process.stdout.write('\x1b[?25h'); // restore cursor
-    console.clear();
+    // Restore normal screen buffer and reveal cursor
+    process.stdout.write('\x1b[?1049l\x1b[?25h');
     console.log(c.cyanBright('✦ MAOS Oasis TUI closed. Returning to terminal.'));
     process.exit(0);
   }
@@ -1285,6 +1287,7 @@ export class MaosTui {
     let replyText = '';
     const host = this.oasisConfig?.ollama?.host || '127.0.0.1';
     const port = this.oasisConfig?.ollama?.port || 11434;
+    let streamedMessage: ChatMessage | null = null;
 
     try {
       const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -1312,8 +1315,8 @@ export class MaosTui {
           const reader = (res.body as any).getReader();
           const decoder = new TextDecoder();
           let buffer = '';
-          const gemmaMsg: ChatMessage = { sender: 'gemma', text: '', time: this.getNowTime() };
-          this.chatMessages.push(gemmaMsg);
+          streamedMessage = { sender: 'gemma', text: '', time: this.getNowTime() };
+          this.chatMessages.push(streamedMessage);
           let lastRenderTime = Date.now();
 
           while (true) {
@@ -1328,7 +1331,7 @@ export class MaosTui {
                 const data = JSON.parse(line);
                 if (data.response) {
                   replyText += data.response;
-                  gemmaMsg.text = replyText;
+                  streamedMessage.text = replyText;
                 }
               } catch {}
             }
@@ -1342,14 +1345,13 @@ export class MaosTui {
               const data = JSON.parse(buffer);
               if (data.response) {
                 replyText += data.response;
-                gemmaMsg.text = replyText;
+                streamedMessage.text = replyText;
               }
             } catch {}
           }
         } else {
           const data = (await res.json()) as { response?: string };
           replyText = data.response?.trim() || '';
-          this.chatMessages.push({ sender: 'gemma', text: replyText, time: this.getNowTime() });
         }
       } else {
         const errorText = await res.text().catch(() => '');
@@ -1388,11 +1390,14 @@ export class MaosTui {
           port +
           '. Start Ollama with "ollama serve" or run "maos doctor --fix" to enable full local Gemma inference.';
       }
-      this.chatMessages.push({ sender: 'gemma', text: replyText, time: this.getNowTime() });
     }
 
     const replyTime = this.getNowTime();
-    this.chatMessages.push({ sender: 'gemma', text: replyText, time: replyTime });
+    if (streamedMessage) {
+      streamedMessage.text = replyText;
+    } else {
+      this.chatMessages.push({ sender: 'gemma', text: replyText, time: replyTime });
+    }
     this.chatIsStreaming = false;
 
     if (inTranscript) {
@@ -1831,7 +1836,10 @@ export class MaosTui {
     lines.push(fullLine(hotkeys));
 
     // Rewrite from the cursor home and strictly clamp rows to viewport height
-    const rendered = lines.slice(0, terminalRows).join('\n');
+    const rendered = lines
+      .slice(0, terminalRows)
+      .map((l) => fitTerminalLine(l, W))
+      .join('\n');
     process.stdout.write('\x1b[H' + rendered + '\x1b[J');
   }
 
@@ -1941,38 +1949,20 @@ export class MaosTui {
   // ── Tab 2: Direct Local Gemma LLM Chat ─────────────────────────
   private renderTabChat(lines: string[], W: number, bodyRows: number): void {
     const center = (value: string) => centerTerminalLine(value, W);
-    lines.push(center(c.boldWhite('CHAT')));
-    lines.push(center(c.slateText(`Direct conversational inference with local Gemma (${this.selectedModel})`)));
-    lines.push('');
-
     const host = this.oasisConfig?.ollama?.host || '127.0.0.1';
     const port = this.oasisConfig?.ollama?.port || 11434;
+    const modelBadge = this.selectedModel.replace('gemma2:', 'GEMMA ').toUpperCase();
 
-    appendMetricCards(lines, W, [
-      {
-        label: 'ACTIVE MODEL',
-        value: this.selectedModel,
-        detail: 'Press G to toggle 2B / 9B',
-        color: c.violetBright,
-      },
-      {
-        label: 'LOCAL INFERENCE',
-        value: `${host}:${port}`,
-        detail: 'Loopback · 0 KB cloud egress',
-        color: c.emerald,
-      },
-      {
-        label: 'CONVERSATION',
-        value: `${this.chatMessages.length} messages`,
-        detail: this.chatIsStreaming ? 'Gemma is replying...' : 'Ready for question',
-        color: c.cyanBright,
-      },
-    ]);
-
-    lines.push('');
+    // Sleek NeoVim-style info bar
+    const infoBar =
+      W >= 87
+        ? `${c.cyanBright('💬')} ${c.boldWhite('CHAT')}  ${c.slateBorder('│')}  ${c.slateMuted('ACTIVE MODEL:')} ${c.violetBright(modelBadge)}  ${c.slateBorder('│')}  ${c.slateMuted('LOCAL INFERENCE:')} ${c.emerald(`${host}:${port}`)}  ${c.slateBorder('│')}  ${c.cyanBright('0 KB EGRESS')}`
+        : `${c.cyanBright('💬 CHAT')} · ${c.violetBright(modelBadge)} · ${c.emerald(`${host}:${port}`)} · ${c.cyanBright('0 KB EGRESS')}`;
+    lines.push(center(infoBar));
+    lines.push(c.slateBorder('─'.repeat(W)));
 
     // Chat history viewport
-    const promptRows = 4;
+    const promptRows = 3;
     const headerRows = lines.length;
     const availableChatRows = Math.max(2, bodyRows - headerRows - promptRows);
 
@@ -1980,28 +1970,20 @@ export class MaosTui {
     const chatDisplayRows: string[] = [];
 
     if (this.chatMessages.length === 0) {
+      const boxW = Math.max(28, Math.min(62, chatContentWidth - 4));
+      const innerW = boxW - 2;
+      const topBorder = c.cyanBright('╭' + '─'.repeat(innerW) + '╮');
+      const bottomBorder = c.cyanBright('╰' + '─'.repeat(innerW) + '╯');
+      const makeBoxRow = (styledText: string) => {
+        return c.cyanBright('│') + centerTerminalLine(styledText, innerW) + c.cyanBright('│');
+      };
+
       chatDisplayRows.push('');
-      chatDisplayRows.push(center(c.cyanBright('╭────────────────────────────────────────────────────────╮')));
-      chatDisplayRows.push(
-        center(
-          c.cyanBright('│') + c.white(' Welcome to MAOS Sovereign Local Chat!                 ') + c.cyanBright('│'),
-        ),
-      );
-      chatDisplayRows.push(
-        center(
-          c.cyanBright('│') +
-            c.slateText(' Chat directly with local Gemma without spawning swarms. ') +
-            c.cyanBright('│'),
-        ),
-      );
-      chatDisplayRows.push(
-        center(
-          c.cyanBright('│') +
-            c.slateMuted(' Try: "Hi", "What is MAOS?", "Explain architecture"     ') +
-            c.cyanBright('│'),
-        ),
-      );
-      chatDisplayRows.push(center(c.cyanBright('╰────────────────────────────────────────────────────────╯')));
+      chatDisplayRows.push(center(topBorder));
+      chatDisplayRows.push(center(makeBoxRow(c.white('Welcome to MAOS Sovereign Local Chat!'))));
+      chatDisplayRows.push(center(makeBoxRow(c.slateText('Chat directly with local Gemma without spawning swarms.'))));
+      chatDisplayRows.push(center(makeBoxRow(c.slateMuted('Try: "Hi", "What is MAOS?", "Explain architecture"'))));
+      chatDisplayRows.push(center(bottomBorder));
     } else {
       for (const msg of this.chatMessages) {
         if (msg.sender === 'user') {
@@ -2040,7 +2022,6 @@ export class MaosTui {
     for (const row of visibleChatRows) lines.push(row);
 
     // Inline Chat Prompt Box
-    lines.push(c.slateBorder('─'.repeat(W)));
     const innerW = Math.max(0, W - 4);
     const prefix = `${c.violetBright('💬')} ${c.slateBorder('│')}  `;
     const inputWidth = Math.max(0, innerW - terminalCellWidth(prefix) - 1);
