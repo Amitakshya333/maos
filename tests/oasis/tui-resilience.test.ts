@@ -7,6 +7,7 @@ import { IgniteError, runIgnite, resolveWorktreeTestCommand } from '../../src/cl
 import { AutonomousHealer } from '../../src/core/autonomous-healer';
 import { MessageBus } from '../../src/core/message-bus';
 import { ensureWorktree, removeWorktree } from '../../src/integrations/worktree';
+import { classifyUserInput, MaosTui } from '../../src/tui/maos-tui';
 
 describe('TUI and Ignite Resilience Suite', () => {
   describe('IgniteError and noExit flag', () => {
@@ -180,6 +181,106 @@ describe('TUI and Ignite Resilience Suite', () => {
           fs.rmSync(tmpDir, { recursive: true, force: true });
         } catch {}
       }
+    });
+  });
+
+  describe('UserInputClassifier (Smart Intent Routing)', () => {
+    it('classifies greetings and casual inputs as chat', () => {
+      expect(classifyUserInput('hi')).toBe('chat');
+      expect(classifyUserInput('HI')).toBe('chat');
+      expect(classifyUserInput('hello')).toBe('chat');
+      expect(classifyUserInput('hey there')).toBe('chat');
+      expect(classifyUserInput('howdy')).toBe('chat');
+      expect(classifyUserInput('good morning')).toBe('chat');
+      expect(classifyUserInput('ping')).toBe('chat');
+      expect(classifyUserInput('test')).toBe('chat');
+      expect(classifyUserInput('')).toBe('chat');
+      expect(classifyUserInput('   ')).toBe('chat');
+    });
+
+    it('classifies conversational inquiries as chat', () => {
+      expect(classifyUserInput('who are you?')).toBe('chat');
+      expect(classifyUserInput('what is maos?')).toBe('chat');
+      expect(classifyUserInput('how does oasis work?')).toBe('chat');
+      expect(classifyUserInput('can you explain how herdr works?')).toBe('chat');
+      expect(classifyUserInput('tell me about gemma')).toBe('chat');
+      expect(classifyUserInput('why loopback only?')).toBe('chat');
+      expect(classifyUserInput('how are you today?')).toBe('chat');
+    });
+
+    it('classifies explicit chat prefixes as chat', () => {
+      expect(classifyUserInput('chat: explain rust engine bridge')).toBe('chat');
+      expect(classifyUserInput('ask: how does the autonomous healer work')).toBe('chat');
+      expect(classifyUserInput('question: what port does ollama use')).toBe('chat');
+    });
+
+    it('classifies actionable engineering tasks as swarm_task', () => {
+      expect(classifyUserInput('build and deploy canva 3d spatial studio')).toBe('swarm_task');
+      expect(classifyUserInput('fix failing vitest unit tests in oasis')).toBe('swarm_task');
+      expect(classifyUserInput('create a new rest api endpoint for tasks')).toBe('swarm_task');
+      expect(classifyUserInput('refactor the database connector for connection pooling')).toBe('swarm_task');
+      expect(classifyUserInput('implement raycasting ground plane collision')).toBe('swarm_task');
+      expect(classifyUserInput('deploy worker service to production')).toBe('swarm_task');
+      expect(classifyUserInput('scaffold react frontend with vite')).toBe('swarm_task');
+      expect(classifyUserInput('optimize buffer geometry allocations')).toBe('swarm_task');
+    });
+
+    it('classifies explicit task prefixes as swarm_task', () => {
+      expect(classifyUserInput('task: benchmark gemma throughput')).toBe('swarm_task');
+      expect(classifyUserInput('goal: build canvas editor')).toBe('swarm_task');
+      expect(classifyUserInput('ignite: test multi-pane clustering')).toBe('swarm_task');
+      expect(classifyUserInput('swarm: run integration tests')).toBe('swarm_task');
+    });
+  });
+
+  describe('MaosTui State Machine and Tab Navigation', () => {
+    it('initializes with modalMode none and activeTab 1 (Dashboard)', () => {
+      const tui = new MaosTui(process.cwd());
+      expect(tui.getModalMode()).toBe('none');
+      expect(tui.getActiveTab()).toBe(1);
+    });
+
+    it('transitions modalMode safely between none, ignite, and promptTest', () => {
+      const tui = new MaosTui(process.cwd());
+      expect(tui.getModalMode()).toBe('none');
+      tui.setModalMode('ignite');
+      expect(tui.getModalMode()).toBe('ignite');
+      tui.setModalMode('none');
+      expect(tui.getModalMode()).toBe('none');
+      tui.setModalMode('promptTest');
+      expect(tui.getModalMode()).toBe('promptTest');
+      tui.setModalMode('none');
+      expect(tui.getModalMode()).toBe('none');
+    });
+
+    it('cycles forward through all tabs in sequence: 1 -> 2 -> 3 -> 4 -> 5 -> 0 -> 1', () => {
+      const tui = new MaosTui(process.cwd());
+      expect(tui.getNextTab(1)).toBe(2); // Dashboard -> Chat
+      expect(tui.getNextTab(2)).toBe(3); // Chat -> Agents
+      expect(tui.getNextTab(3)).toBe(4); // Agents -> Telemetry
+      expect(tui.getNextTab(4)).toBe(5); // Telemetry -> Event Log
+      expect(tui.getNextTab(5)).toBe(0); // Event Log -> Settings
+      expect(tui.getNextTab(0)).toBe(1); // Settings -> Dashboard
+    });
+
+    it('cycles backward through all tabs in sequence: 1 <- 2 <- 3 <- 4 <- 5 <- 0 <- 1', () => {
+      const tui = new MaosTui(process.cwd());
+      expect(tui.getPrevTab(1)).toBe(0); // Dashboard <- Settings
+      expect(tui.getPrevTab(0)).toBe(5); // Settings <- Event Log
+      expect(tui.getPrevTab(5)).toBe(4); // Event Log <- Telemetry
+      expect(tui.getPrevTab(4)).toBe(3); // Telemetry <- Agents
+      expect(tui.getPrevTab(3)).toBe(2); // Agents <- Chat
+      expect(tui.getPrevTab(2)).toBe(1); // Chat <- Dashboard
+    });
+
+    it('allows setting and reading active tab directly', () => {
+      const tui = new MaosTui(process.cwd());
+      tui.setActiveTab(2);
+      expect(tui.getActiveTab()).toBe(2);
+      tui.setActiveTab(0);
+      expect(tui.getActiveTab()).toBe(0);
+      tui.setActiveTab(5);
+      expect(tui.getActiveTab()).toBe(5);
     });
   });
 });
