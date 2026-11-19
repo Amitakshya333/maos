@@ -77,6 +77,7 @@ function filterTools(allTools: ToolDef[], allowedTools?: string[], agentId?: str
 
 /**
  * Sanitize unescaped control characters (newlines, carriage returns, tabs)
+ * and invalid escape sequences (e.g. Windows paths like "src\components\Button.js")
  * within JSON string literals to rescue malformed LLM JSON blocks.
  */
 function sanitizeJsonString(str: string): string {
@@ -86,7 +87,14 @@ function sanitizeJsonString(str: string): string {
   for (let i = 0; i < str.length; i++) {
     const c = str[i];
     if (escape) {
-      out += c;
+      // In JSON, valid escape sequences are: ", \, /, b, f, n, r, t, uXXXX
+      // If the character after \ is not one of these, the backslash was meant to be literal
+      // (e.g. Windows paths like "src\components\Button.js")
+      if (!/["\\/bfnrtu]/.test(c)) {
+        out += '\\' + c;
+      } else {
+        out += c;
+      }
       escape = false;
       continue;
     }
@@ -115,6 +123,9 @@ function sanitizeJsonString(str: string): string {
       }
     }
     out += c;
+  }
+  if (escape) {
+    out += '\\';
   }
   return out;
 }
@@ -272,18 +283,20 @@ export function extractToolCallsFromContent(content: string, availableTools?: st
         if (depth === 0) braceStart = i;
         depth++;
       } else if (char === '}') {
-        depth--;
-        if (depth === 0 && braceStart !== -1) {
-          const slice = content.slice(braceStart, i + 1);
-          const parsed = safeJsonParse(slice);
-          if (parsed) {
-            if (Array.isArray(parsed)) {
-              parsed.forEach(tryParseObject);
-            } else {
-              tryParseObject(parsed);
+        if (depth > 0) {
+          depth--;
+          if (depth === 0 && braceStart !== -1) {
+            const slice = content.slice(braceStart, i + 1);
+            const parsed = safeJsonParse(slice);
+            if (parsed) {
+              if (Array.isArray(parsed)) {
+                parsed.forEach(tryParseObject);
+              } else {
+                tryParseObject(parsed);
+              }
             }
+            braceStart = -1;
           }
-          braceStart = -1;
         }
       }
     }

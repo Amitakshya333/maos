@@ -226,22 +226,47 @@ export function resolveWorktreeTestCommand(worktreePath: string, goal?: string, 
       }
     }
 
-    // 2. Look for root/app JS files created by the agent
-    const commonAppFiles = [
-      'game.js',
-      'minecraft.js',
-      'voxel.js',
-      'controls.js',
-      'server.js',
-      'app.js',
-      'main.js',
-      'index.js',
-      'calculator.js',
-    ];
-    for (const f of commonAppFiles) {
-      if (fs.existsSync(path.join(worktreePath, f))) {
-        return `node --check ${f}`;
+    // 2. Look for ANY JS/MJS source files created by the agent in the worktree
+    try {
+      const rootEntries = fs.readdirSync(worktreePath);
+      const appJsFiles = rootEntries.filter(
+        (f) =>
+          /\.(js|mjs)$/i.test(f) &&
+          !/^(vite\.config|vitest\.config|tailwind\.config|postcss\.config)\./i.test(f) &&
+          !f.startsWith('.') &&
+          fs.statSync(path.join(worktreePath, f)).isFile(),
+      );
+      if (appJsFiles.length > 0) {
+        const preferred = appJsFiles.find((f) => /^(main|app|index|server|cli)\.(js|mjs)$/i.test(f)) || appJsFiles[0];
+        return `node --check ${preferred}`;
       }
+    } catch {
+      /* ignore */
+    }
+
+    // Also check src/ directory for any JS/MJS files created
+    const srcDir = path.join(worktreePath, 'src');
+    if (fs.existsSync(srcDir)) {
+      try {
+        const srcEntries = fs.readdirSync(srcDir);
+        const srcJs = srcEntries.find((f) => /\.(js|mjs)$/i.test(f) && fs.statSync(path.join(srcDir, f)).isFile());
+        if (srcJs) {
+          return `node --check ${path.posix.join('src', srcJs)}`;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Check for Python files created in root
+    try {
+      const rootEntries = fs.readdirSync(worktreePath);
+      const pyFile = rootEntries.find((f) => f.endsWith('.py') && fs.statSync(path.join(worktreePath, f)).isFile());
+      if (pyFile) {
+        return `python -m py_compile ${pyFile}`;
+      }
+    } catch {
+      /* ignore */
     }
 
     // 3. If HTML app client exists, verify web entry
@@ -259,7 +284,27 @@ export function resolveWorktreeTestCommand(worktreePath: string, goal?: string, 
       }
     }
 
+    // 5. If project has its own package.json with test or build scripts
     const pkgPath = path.join(worktreePath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as {
+          name?: string;
+          scripts?: Record<string, string>;
+        };
+        if (pkg.name && pkg.name !== 'maosorch' && pkg.name !== 'hackday-winner-workspace') {
+          if (pkg.scripts?.test && !/no test specified/i.test(pkg.scripts.test)) {
+            return 'npm test --silent';
+          }
+          if (pkg.scripts?.build) {
+            return 'npm run build --silent';
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     if (fs.existsSync(pkgPath) && !isCustomProjectGoal) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as { scripts?: Record<string, string> };
       if (pkg.scripts?.['test:oasis']) return 'npm run test:oasis --silent';
@@ -363,6 +408,26 @@ function tryMergeBranch(cwd: string, branch: string): { merged: boolean; detail:
     const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
     return { merged: false, detail: msg.slice(0, 200) };
   }
+}
+
+export function resolveMaosPackageDir(cwd: string): string {
+  try {
+    let curr = __dirname;
+    while (curr && curr !== path.dirname(curr)) {
+      const candidatePkg = path.join(curr, 'package.json');
+      if (fs.existsSync(candidatePkg)) {
+        const pkg = JSON.parse(fs.readFileSync(candidatePkg, 'utf-8'));
+        if (pkg.name === 'maosorch' || pkg.name === 'maos-oasis') return curr;
+      }
+      curr = path.dirname(curr);
+    }
+  } catch {
+    /* ignore */
+  }
+  if (fs.existsSync(path.join(cwd, 'maos-core', 'package.json'))) {
+    return path.join(cwd, 'maos-core');
+  }
+  return cwd;
 }
 
 // ─── Main ignite flow ────────────────────────────────────────────
@@ -504,12 +569,29 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
         continue;
       }
       const testCmd = resolveWorktreeTestCommand(wt.worktreePath, goal, task);
-      const safeTitle = task.title.replace(/["'`$\\]/g, '');
-      const safeGoal = goal.replace(/["'`$\\]/g, '');
-      const safeDesc = task.description.replace(/["'`$\\]/g, '');
-      const workerAgentEntry = path.join(cwd, 'src', 'cli', 'worker-agent.ts');
-      const distWorker = path.join(cwd, 'dist', 'cli', 'worker-agent.js');
-      const tsxCli = path.join(cwd, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+      const safeTitle = task.title
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/["'`$\\]/g, '')
+        .trim();
+      const safeGoal = goal
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/["'`$\\]/g, '')
+        .trim();
+      const safeDesc = task.description
+        .split('\n')[0]
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/["'`$\\]/g, '')
+        .trim();
+      const pkgDir = resolveMaosPackageDir(cwd);
+      const workerAgentEntry = fs.existsSync(path.join(pkgDir, 'src', 'cli', 'worker-agent.ts'))
+        ? path.join(pkgDir, 'src', 'cli', 'worker-agent.ts')
+        : path.join(cwd, 'src', 'cli', 'worker-agent.ts');
+      const distWorker = fs.existsSync(path.join(pkgDir, 'dist', 'cli', 'worker-agent.js'))
+        ? path.join(pkgDir, 'dist', 'cli', 'worker-agent.js')
+        : path.join(cwd, 'dist', 'cli', 'worker-agent.js');
+      const tsxCli = fs.existsSync(path.join(pkgDir, 'node_modules', 'tsx', 'dist', 'cli.mjs'))
+        ? path.join(pkgDir, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+        : path.join(cwd, 'node_modules', 'tsx', 'dist', 'cli.mjs');
       const colors = ['#8B5CF6', '#10B981', '#3B82F6', '#EC4899', '#F59E0B', '#06B6D4'];
       const color = colors[i % colors.length];
 
@@ -541,10 +623,10 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
       }
       const quotedArgs = workerArgs.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(' ');
 
-      if (fs.existsSync(workerAgentEntry) && fs.existsSync(tsxCli)) {
-        runCmd = `node "${tsxCli}" "${workerAgentEntry}" ${quotedArgs}`;
-      } else if (fs.existsSync(distWorker)) {
+      if (fs.existsSync(distWorker)) {
         runCmd = `node "${distWorker}" ${quotedArgs}`;
+      } else if (fs.existsSync(workerAgentEntry) && fs.existsSync(tsxCli)) {
+        runCmd = `node "${tsxCli}" "${workerAgentEntry}" ${quotedArgs}`;
       } else {
         runCmd =
           process.platform === 'win32'

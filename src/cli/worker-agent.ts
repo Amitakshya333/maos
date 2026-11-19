@@ -31,7 +31,16 @@ const agentRole = getArg('--role', 'Autonomous Coding Agent');
 const model = getArg('--model', 'gemma2:9b');
 const goal = getArg('--goal', 'Build requested software');
 const taskTitle = getArg('--task', 'Implement assigned subsystem');
-const taskDesc = getArg('--task-desc', taskTitle);
+const taskFile = getArg('--task-file', '');
+let taskDesc = getArg('--task-desc', taskTitle);
+if (taskFile && fs.existsSync(taskFile)) {
+  try {
+    const raw = fs.readFileSync(taskFile, 'utf-8');
+    if (raw.trim()) taskDesc = raw.trim();
+  } catch {
+    /* fallback to arg */
+  }
+}
 const worktreePath = path.resolve(getArg('--worktree', process.cwd()));
 const colorHex = getArg('--color', '#8B5CF6');
 const provider = getArg('--provider', 'ollama');
@@ -84,6 +93,9 @@ async function streamChatInference(messages: StreamMessage[]): Promise<StreamRes
         },
       },
       (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          console.log(chalk.yellow(`\n⚠️ Ollama HTTP ${res.statusCode} response.`));
+        }
         res.on('data', (chunk: Buffer) => {
           const lines = chunk
             .toString()
@@ -92,6 +104,9 @@ async function streamChatInference(messages: StreamMessage[]): Promise<StreamRes
           for (const line of lines) {
             try {
               const data = JSON.parse(line);
+              if (data.error) {
+                console.log(chalk.yellow(`\n⚠️ Ollama notice: ${data.error}`));
+              }
               const delta = data.message?.content || data.response || '';
               if (delta) {
                 text += delta;

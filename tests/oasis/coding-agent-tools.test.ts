@@ -5,7 +5,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { executeTool } from '../../src/integrations/tools';
 import { extractToolCallsFromContent } from '../../src/core/agent-runner';
-import { resolveWorktreeTestCommand } from '../../src/cli/commands/ignite';
+import { resolveWorktreeTestCommand, resolveMaosPackageDir } from '../../src/cli/commands/ignite';
 import { ensureWorktree, removeWorktree } from '../../src/integrations/worktree';
 import { applyHotpatch, Hotpatch } from '../../src/core/autonomous-healer';
 
@@ -58,6 +58,51 @@ describe('Coding Agent Tools & Backend Swarm Resilience', () => {
     it('refuses to write to project root directory', () => {
       const res = executeTool('create_file', { path: '.', content: 'root' }, tmpDir, ['/'], 'worker-1');
       expect(res.result).toContain('Refusing to write to project root directory');
+    });
+
+    it('refuses to create malformed JSON when path is a .json file', () => {
+      const res = executeTool(
+        'create_file',
+        { path: 'config.json', content: '{"invalid": missing_quote}' },
+        tmpDir,
+        ['/'],
+        'worker-1',
+      );
+      expect(res.result).toContain('File creation rejected because JSON content is invalid');
+      expect(fs.existsSync(path.join(tmpDir, 'config.json'))).toBe(false);
+    });
+  });
+
+  describe('list_dir tool', () => {
+    it('lists files in project root with dot path safely without path violation', () => {
+      fs.writeFileSync(path.join(tmpDir, 'index.js'), 'console.log(1);', 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'src'));
+      fs.writeFileSync(path.join(tmpDir, 'src', 'app.js'), 'console.log(2);', 'utf-8');
+
+      const res = executeTool('list_dir', { path: '.' }, tmpDir, ['/'], 'worker-1');
+      expect(res.isComplete).toBe(false);
+      expect(res.result).toContain('Directory: .');
+      expect(res.result).toContain('index.js');
+      expect(res.result).toContain('src/');
+    });
+
+    it('lists files in a nested subdirectory', () => {
+      fs.mkdirSync(path.join(tmpDir, 'models'));
+      fs.writeFileSync(path.join(tmpDir, 'models', 'user.js'), 'export class User {}', 'utf-8');
+
+      const res = executeTool('list_dir', { path: 'models' }, tmpDir, ['/'], 'worker-1');
+      expect(res.result).toContain('Directory: models');
+      expect(res.result).toContain('user.js');
+    });
+
+    it('returns error when directory does not exist', () => {
+      const res = executeTool('list_dir', { path: 'nonexistent_folder' }, tmpDir, ['/'], 'worker-1');
+      expect(res.result).toContain('Error: Directory not found');
+    });
+
+    it('blocks directory traversal outside project root', () => {
+      const res = executeTool('list_dir', { path: '../' }, tmpDir, ['/'], 'worker-1');
+      expect(res.result).toContain('PATH_VIOLATION');
     });
   });
 
@@ -339,6 +384,26 @@ server.listen(3000);"
       const args = JSON.parse(calls[0].function.arguments);
       expect(args.command).toBe('node --check index.js');
     });
+
+    it('extracts tool calls even when content has stray closing braces before the JSON block', () => {
+      const modelOutput = `Here is the solution to } problem:
+{"action": "create_file", "path": "app.js", "content": "console.log('fixed');"}`;
+      const calls = extractToolCallsFromContent(modelOutput);
+      expect(calls.length).toBe(1);
+      expect(calls[0].function.name).toBe('create_file');
+      const args = JSON.parse(calls[0].function.arguments);
+      expect(args.path).toBe('app.js');
+    });
+
+    it('sanitizes Windows path backslashes in JSON strings without throwing syntax error', () => {
+      const rawText =
+        '```json\n{"action": "create_file", "path": "src\\components\\Button.js", "content": "export function Button() {}"}\n```';
+      const calls = extractToolCallsFromContent(rawText);
+      expect(calls.length).toBe(1);
+      expect(calls[0].function.name).toBe('create_file');
+      const args = JSON.parse(calls[0].function.arguments);
+      expect(args.path).toContain('Button.js');
+    });
   });
 
   describe('resolveWorktreeTestCommand Goal-Awareness', () => {
@@ -383,6 +448,34 @@ server.listen(3000);"
 
       const cmd = resolveWorktreeTestCommand(tmpDir, 'build a scientific calculator');
       expect(cmd).toBe('node --test tests/calculator.test.js');
+    });
+
+    it('dynamically discovers arbitrary JS source files without hardcoded heuristics', () => {
+      fs.writeFileSync(path.join(tmpDir, 'simulation_engine.js'), 'export class Engine {}', 'utf-8');
+      const cmd = resolveWorktreeTestCommand(tmpDir, 'build a physics simulation');
+      expect(cmd).toBe('node --check simulation_engine.js');
+    });
+
+    it('dynamically discovers Python scripts for python-based goals', () => {
+      fs.writeFileSync(path.join(tmpDir, 'scraper.py'), 'print("scrape")', 'utf-8');
+      const cmd = resolveWorktreeTestCommand(tmpDir, 'write a web scraper');
+      expect(cmd).toBe('python -m py_compile scraper.py');
+    });
+
+    it('respects project-specific package.json test scripts', () => {
+      fs.writeFileSync(
+        path.join(tmpDir, 'package.json'),
+        JSON.stringify({ name: 'my-custom-tool', scripts: { test: 'node custom_test.js' } }),
+        'utf-8',
+      );
+      const cmd = resolveWorktreeTestCommand(tmpDir, 'build custom tool');
+      expect(cmd).toBe('npm test --silent');
+    });
+
+    it('resolves MAOS package directory reliably from cwd or subdirectories', () => {
+      const pkgDir = resolveMaosPackageDir(tmpDir);
+      expect(typeof pkgDir).toBe('string');
+      expect(pkgDir.length).toBeGreaterThan(0);
     });
   });
 

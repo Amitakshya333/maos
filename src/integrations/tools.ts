@@ -862,18 +862,26 @@ function jsonResult(value: unknown): string {
     ? serialized
     : JSON.stringify({ ok: false, error: `Structured tool result exceeded ${TOOL_OUTPUT_LIMIT} characters` });
 }
-function projectFile(projectRoot: string, input: string): string {
+function projectFile(projectRoot: string, input: string, allowRoot: boolean = false): string {
   const root = path.resolve(projectRoot);
   const resolved = path.resolve(root, input || '');
   const relative = path.relative(root, resolved);
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative))
+  if (!allowRoot && !relative) {
     throw new Error('Path must remain inside the project root');
+  }
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Path must remain inside the project root');
+  }
   if (fs.existsSync(resolved)) {
     const realRoot = fs.realpathSync(root);
     const realFile = fs.realpathSync(resolved);
     const realRelative = path.relative(realRoot, realFile);
-    if (realRelative.startsWith('..') || path.isAbsolute(realRelative))
+    if (!allowRoot && !realRelative) {
       throw new Error('Resolved path must remain inside the project root');
+    }
+    if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) {
+      throw new Error('Resolved path must remain inside the project root');
+    }
   }
   return resolved;
 }
@@ -2641,6 +2649,21 @@ export function executeTool(
             isComplete: false,
           };
         }
+        if (
+          typeof args.path === 'string' &&
+          args.path.endsWith('.json') &&
+          typeof args.content === 'string' &&
+          args.content.trim().length > 0
+        ) {
+          try {
+            JSON.parse(args.content);
+          } catch (jsonErr: any) {
+            return {
+              result: `Error: File creation rejected because JSON content is invalid: ${jsonErr.message}. Aborted to prevent file corruption.`,
+              isComplete: false,
+            };
+          }
+        }
         let filePath: string;
         try {
           filePath = assertRealWritePathContained(args.path, projectRoot);
@@ -2863,15 +2886,15 @@ export function executeTool(
 
       case 'list_dir': {
         try {
-          const dirPath = projectFile(projectRoot, args.path || '.');
+          const dirPath = projectFile(projectRoot, args.path || '.', true);
           if (!isPathInScope(args.path || '.', scope, projectRoot)) {
             return {
-              result: `🚫 SCOPE_VIOLATION: Directory '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`,
+              result: `🚫 SCOPE_VIOLATION: Directory '${args.path || '.'}' is outside agent's allowed scope [${scope.join(', ')}]`,
               isComplete: false,
             };
           }
           if (!fs.existsSync(dirPath)) {
-            return { result: `Error: Directory not found: ${args.path}`, isComplete: false };
+            return { result: `Error: Directory not found: ${args.path || '.'}`, isComplete: false };
           }
           const entries = fs.readdirSync(dirPath, { withFileTypes: true });
           const listing = entries.map((e) => {
