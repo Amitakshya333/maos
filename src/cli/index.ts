@@ -212,6 +212,25 @@ program
     }
   });
 
+// ─── maos worker ──────────────────────────────────────────────
+program
+  .command('worker')
+  .description('Run an autonomous coding worker agent inside a worktree')
+  .option('--agent <id>', 'Agent ID')
+  .option('--name <name>', 'Agent name')
+  .option('--role <role>', 'Agent role')
+  .option('--model <model>', 'Model ID')
+  .option('--goal <goal>', 'Goal description')
+  .option('--task <task>', 'Task title')
+  .option('--task-desc <desc>', 'Task detailed description')
+  .option('--worktree <path>', 'Worktree directory path')
+  .option('--color <hex>', 'Theme color hex')
+  .option('--provider <provider>', 'Provider name')
+  .action(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./worker-agent');
+  });
+
 // ─── maos pool ────────────────────────────────────────────────
 program
   .command('pool')

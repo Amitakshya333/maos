@@ -553,3 +553,65 @@ export function guardWriteFile(
 
   return null;
 }
+
+/**
+ * Full scope + safety check for a delete_file call.
+ * Returns null if allowed, ScopeViolation if blocked.
+ */
+export function guardDeleteFile(
+  filePath: string,
+  agentId: string,
+  taskId: string,
+  scope: string[],
+  projectRoot: string,
+): ScopeViolation | null {
+  const cleanPath = (filePath || '').trim().replace(/\\/g, '/');
+  if (!cleanPath || cleanPath === '.' || cleanPath === '/' || cleanPath === './') {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: 'Refusing to delete project root directory',
+    };
+  }
+
+  if (cleanPath.startsWith('.git') || cleanPath.includes('/.git/') || cleanPath.endsWith('/.git')) {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: 'Cannot delete Git internal metadata or repository files',
+    };
+  }
+
+  // 1. Scope check
+  if (!isPathInScope(filePath, scope, projectRoot)) {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: 'Cannot delete "' + filePath + '". Scope: [' + scope.join(', ') + ']',
+    };
+  }
+
+  // 2. Validate realpath containment
+  try {
+    assertRealWritePathContained(filePath, projectRoot);
+  } catch (err: any) {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: err.message,
+    };
+  }
+
+  // 3. File ownership check: must be able to claim write or already own
+  const engine = getFileLockRegistry();
+  const conflict = engine.claimWrite(filePath, agentId, taskId);
+  if (conflict) {
+    return conflict;
+  }
+
+  return null;
+}

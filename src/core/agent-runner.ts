@@ -1,4 +1,4 @@
-import { IProvider, ChatMessage, ToolDef } from '../backends/provider';
+import { IProvider, ChatMessage, ToolDef, ToolCall } from '../backends/provider';
 import { AGENT_TOOLS, executeTool, getToolsForAgent } from '../integrations/tools';
 import { Logger, createLogger } from '../utils/logger';
 import { getFileLockRegistry } from './scope-guard';
@@ -75,6 +75,196 @@ function filterTools(allTools: ToolDef[], allowedTools?: string[], agentId?: str
   return getToolsForAgent(allowedTools, agentId);
 }
 
+/**
+ * Extract structured tool calls from raw model text output.
+ * Supports markdown code blocks (```json ... ```), <tool_call> tags,
+ * and raw JSON action objects ({ "action": "create_file", ... }).
+ */
+export function extractToolCallsFromContent(content: string, availableTools?: string[]): ToolCall[] {
+  if (!content || typeof content !== 'string') return [];
+  const calls: ToolCall[] = [];
+  const knownTools = new Set(
+    availableTools && availableTools.length > 0
+      ? availableTools
+      : [
+          'create_file',
+          'write_file',
+          'read_file',
+          'edit_file',
+          'delete_file',
+          'list_dir',
+          'run_command',
+          'git_commit',
+          'search_code',
+          'task_complete',
+          'share_knowledge',
+        ],
+  );
+
+  const tryParseObject = (obj: any): void => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+
+    // Pattern 1: { action: "create_file", path: "...", content: "..." }
+    const actionName = obj.action || obj.tool || obj.function || obj.command_name;
+    if (typeof actionName === 'string') {
+      const matchName = knownTools.has(actionName)
+        ? actionName
+        : knownTools.has(actionName.toLowerCase())
+          ? actionName.toLowerCase()
+          : null;
+      if (matchName) {
+        const args = { ...obj };
+        delete args.action;
+        delete args.tool;
+        delete args.function;
+        delete args.command_name;
+        calls.push({
+          id: `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          type: 'function',
+          function: {
+            name: matchName,
+            arguments: JSON.stringify(args),
+          },
+        });
+        return;
+      }
+    }
+
+    // Pattern 2: { name: "create_file", arguments: { ... } }
+    if (typeof obj.name === 'string') {
+      const matchName = knownTools.has(obj.name)
+        ? obj.name
+        : knownTools.has(obj.name.toLowerCase())
+          ? obj.name.toLowerCase()
+          : null;
+      if (matchName) {
+        let argsStr = '{}';
+        if (typeof obj.arguments === 'string') {
+          argsStr = obj.arguments;
+        } else if (typeof obj.arguments === 'object' && obj.arguments !== null) {
+          argsStr = JSON.stringify(obj.arguments);
+        } else if (typeof obj.parameters === 'object' && obj.parameters !== null) {
+          argsStr = JSON.stringify(obj.parameters);
+        }
+        calls.push({
+          id: obj.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          type: 'function',
+          function: {
+            name: matchName,
+            arguments: argsStr,
+          },
+        });
+        return;
+      }
+    }
+
+    // Pattern 3: { tool: "create_file", parameters: { ... } }
+    if (typeof obj.tool === 'string') {
+      const matchName = knownTools.has(obj.tool)
+        ? obj.tool
+        : knownTools.has(obj.tool.toLowerCase())
+          ? obj.tool.toLowerCase()
+          : null;
+      if (matchName) {
+        const argsStr =
+          typeof obj.parameters === 'object' && obj.parameters !== null ? JSON.stringify(obj.parameters) : '{}';
+        calls.push({
+          id: `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          type: 'function',
+          function: {
+            name: matchName,
+            arguments: argsStr,
+          },
+        });
+        return;
+      }
+    }
+  };
+
+  // 1. Markdown code blocks: ```json ... ``` or ```tool_call ... ```
+  const blockRegex = /```(?:json|tool_call|action)?\s*\n?([\s\S]*?)\n?```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = blockRegex.exec(content)) !== null) {
+    const block = match[1].trim();
+    try {
+      const parsed = JSON.parse(block);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(tryParseObject);
+      } else {
+        tryParseObject(parsed);
+      }
+    } catch {
+      /* ignore non-json blocks */
+    }
+  }
+
+  // 2. XML-like <tool_call>...</tool_call>
+  const tagRegex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  while ((match = tagRegex.exec(content)) !== null) {
+    const raw = match[1].trim();
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(tryParseObject);
+      } else {
+        tryParseObject(parsed);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 3. Scan for JSON objects in raw text
+  if (calls.length === 0) {
+    let braceStart = content.indexOf('{');
+    while (braceStart !== -1) {
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      let braceEnd = -1;
+      for (let i = braceStart; i < content.length; i++) {
+        const char = content[i];
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        if (char === '\\') {
+          escape = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+        if (!inString) {
+          if (char === '{') depth++;
+          else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              braceEnd = i;
+              break;
+            }
+          }
+        }
+      }
+      if (braceEnd !== -1) {
+        const potentialJson = content.slice(braceStart, braceEnd + 1);
+        try {
+          const parsed = JSON.parse(potentialJson);
+          tryParseObject(parsed);
+        } catch {
+          /* ignore */
+        }
+        braceStart = content.indexOf('{', braceEnd + 1);
+      } else {
+        break;
+      }
+    }
+  }
+
+  return calls;
+}
+
 function buildSystemPrompt(agent: AgentConfig, task: AgentTask, projectRoot: string): string {
   if (agent.promptOverride) return agent.promptOverride;
 
@@ -136,6 +326,17 @@ ${task.description}
 5. Finally, call task_complete with a summary of what you accomplished.
 6. Do NOT merge to main. Leave your work on branch: ${task.branch}
 7. Use share_knowledge to share important discoveries with other agents (tech stack, patterns, constraints).
+
+## Tool Invocation Format
+You have full tool calling capabilities. You may use OpenAI function calling or output a JSON action block:
+\`\`\`json
+{
+  "action": "create_file",
+  "path": "relative/path/to/file",
+  "content": "full content"
+}
+\`\`\`
+Available actions: create_file, write_file, read_file, edit_file, delete_file, list_dir, run_command, git_commit, task_complete.
 
 ## Important
 - You have a maximum of ${agent.maxIterations} tool calls. Be efficient.
@@ -314,6 +515,14 @@ export async function runAgent(
         `Iteration ${iterations}/${getEffectiveMax()}: ${response.usage.totalTokens} tokens, ${response.latencyMs}ms (total: ${totalTokens})`,
       );
 
+      // Extract structured tool calls from model content if native toolCalls is empty
+      if (response.toolCalls.length === 0 && response.content) {
+        const extracted = extractToolCallsFromContent(response.content, effectiveToolNames);
+        if (extracted.length > 0) {
+          response.toolCalls = extracted;
+        }
+      }
+
       // Add assistant message
       messages.push({
         role: 'assistant',
@@ -338,6 +547,14 @@ export async function runAgent(
           returnedModel = retryResponse.model || returnedModel;
           if (retryResponse.reportedModel) reportedModel = retryResponse.reportedModel;
           totalTokens += retryResponse.usage.totalTokens;
+
+          // Extract structured tool calls from retry content if needed
+          if (retryResponse.toolCalls.length === 0 && retryResponse.content) {
+            const extracted = extractToolCallsFromContent(retryResponse.content, effectiveToolNames);
+            if (extracted.length > 0) {
+              retryResponse.toolCalls = extracted;
+            }
+          }
 
           messages.push({
             role: 'assistant',
@@ -411,11 +628,17 @@ export async function runAgent(
         const mutationSucceeded =
           toolName === 'write_file'
             ? result.startsWith('Written: ')
-            : toolName === 'git_commit'
-              ? result.startsWith('Committed: ')
-              : toolName === 'run_command'
-                ? /^Command: [\s\S]*\nExit: 0\n/.test(result)
-                : false;
+            : toolName === 'create_file'
+              ? result.startsWith('Created: ')
+              : toolName === 'edit_file'
+                ? result.startsWith('Successfully edited ')
+                : toolName === 'delete_file'
+                  ? result.startsWith('Successfully deleted: ')
+                  : toolName === 'git_commit'
+                    ? result.startsWith('Committed: ')
+                    : toolName === 'run_command'
+                      ? /^Command: [\s\S]*\nExit: 0\n/.test(result)
+                      : false;
         if (authorized && mutationSucceeded) {
           hadMutatingToolCall = true;
           try {

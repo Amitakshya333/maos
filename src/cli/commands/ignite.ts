@@ -147,16 +147,60 @@ export function heuristicDecompose(goal: string, maxTasks: number): SubTask[] {
 }
 
 /** Pick the verification/bootstrap command for a worktree. */
-export function resolveWorktreeTestCommand(worktreePath: string): string {
+export function resolveWorktreeTestCommand(worktreePath: string, goal?: string, subtask?: SubTask): string {
   try {
+    const isCanvaGoal = Boolean(goal && /canva|spatial\s*studio/i.test(goal));
+    const isCustomProjectGoal = Boolean(
+      goal &&
+      !/oasis|maos-core/i.test(goal) &&
+      /(minecraft|game|craft|voxel|block|rest|api|calculator|todo|web|app)/i.test(goal),
+    );
+
+    // Only run Canva 3D tests if Canva is explicitly requested in the goal
+    if (isCanvaGoal && fs.existsSync(path.join(worktreePath, 'apps', 'canva-3d', 'tests', 'canva-3d.test.js'))) {
+      return 'node --test apps/canva-3d/tests/canva-3d.test.js';
+    }
+
+    // Check for goal/task-specific tests in the worktree
+    const testDirs = ['tests', 'test', '__tests__'];
+    for (const td of testDirs) {
+      const fullTd = path.join(worktreePath, td);
+      if (fs.existsSync(fullTd)) {
+        try {
+          const files = fs.readdirSync(fullTd);
+          const testFile = files.find((f) => /\.(test|spec)\.(js|ts|mjs)$/i.test(f) && !f.includes('canva'));
+          if (testFile) {
+            return `node --test ${path.posix.join(td, testFile)}`;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    // If subtask suggestedFiles contains a JS/TS file, check syntax
+    if (subtask?.suggestedFiles?.length) {
+      const jsFile = subtask.suggestedFiles.find(
+        (f) => /\.(js|mjs)$/i.test(f) && fs.existsSync(path.join(worktreePath, f)),
+      );
+      if (jsFile) {
+        return `node --check ${jsFile}`;
+      }
+    }
+
+    // Look for root/app JS files created by the agent
+    const commonAppFiles = ['game.js', 'minecraft.js', 'index.js', 'app.js', 'server.js', 'main.js'];
+    for (const f of commonAppFiles) {
+      if (fs.existsSync(path.join(worktreePath, f))) {
+        return `node --check ${f}`;
+      }
+    }
+
     const pkgPath = path.join(worktreePath, 'package.json');
     if (fs.existsSync(pkgPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as { scripts?: Record<string, string> };
-      if (pkg.scripts?.['test:oasis']) return 'npm run test:oasis --silent';
-      if (pkg.scripts?.['test:unit']) return 'npm run test:unit --silent';
-      if (fs.existsSync(path.join(worktreePath, 'apps', 'canva-3d', 'tests', 'canva-3d.test.js'))) {
-        return 'node --test apps/canva-3d/tests/canva-3d.test.js';
-      }
+      if (!isCustomProjectGoal && pkg.scripts?.['test:oasis']) return 'npm run test:oasis --silent';
+      if (!isCustomProjectGoal && pkg.scripts?.['test:unit']) return 'npm run test:unit --silent';
       if (fs.existsSync(path.join(worktreePath, 'tsconfig.json'))) return 'npx tsc --noEmit';
       if (
         pkg.scripts?.test &&
@@ -396,12 +440,54 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
         );
         continue;
       }
-      const testCmd = resolveWorktreeTestCommand(wt.worktreePath);
+      const testCmd = resolveWorktreeTestCommand(wt.worktreePath, goal, task);
       const safeTitle = task.title.replace(/["'`$\\]/g, '');
-      const runCmd =
-        process.platform === 'win32'
-          ? `Write-Host "[MAOS ignite] ${safeTitle}"; ${testCmd}`
-          : `echo "[MAOS ignite] ${safeTitle}" && ${testCmd}`;
+      const safeGoal = goal.replace(/["'`$\\]/g, '');
+      const safeDesc = task.description.replace(/["'`$\\]/g, '');
+      const workerAgentEntry = path.join(cwd, 'src', 'cli', 'worker-agent.ts');
+      const distWorker = path.join(cwd, 'dist', 'cli', 'worker-agent.js');
+      const tsxCli = path.join(cwd, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+      const colors = ['#8B5CF6', '#10B981', '#3B82F6', '#EC4899', '#F59E0B', '#06B6D4'];
+      const color = colors[i % colors.length];
+
+      let runCmd: string;
+      const workerArgs = [
+        '--agent',
+        agentId,
+        '--name',
+        `Worker-${i + 1}`,
+        '--role',
+        safeTitle,
+        '--model',
+        options.model || DEFAULT_GEMMA_MODEL,
+        '--goal',
+        safeGoal,
+        '--task',
+        safeTitle,
+        '--task-desc',
+        safeDesc,
+        '--worktree',
+        wt.worktreePath,
+        '--task-file',
+        taskFile,
+        '--color',
+        color,
+      ];
+      if (options.provider) {
+        workerArgs.push('--provider', options.provider);
+      }
+      const quotedArgs = workerArgs.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(' ');
+
+      if (fs.existsSync(workerAgentEntry) && fs.existsSync(tsxCli)) {
+        runCmd = `node "${tsxCli}" "${workerAgentEntry}" ${quotedArgs}`;
+      } else if (fs.existsSync(distWorker)) {
+        runCmd = `node "${distWorker}" ${quotedArgs}`;
+      } else {
+        runCmd =
+          process.platform === 'win32'
+            ? `Write-Host "[MAOS ignite] ${safeTitle}"; ${testCmd}`
+            : `echo "[MAOS ignite] ${safeTitle}" && ${testCmd}`;
+      }
       try {
         herdrPaneRun(paneId, runCmd);
       } catch {

@@ -4,7 +4,15 @@ import * as crypto from 'crypto';
 import { execSync, execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { ToolDef } from '../backends/provider';
-import { guardWriteFile, validateCommand, getFileLockRegistry, ScopeViolation, assertRealWritePathContained, isPathInScope as checkPathInScope } from '../core/scope-guard';
+import {
+  guardWriteFile,
+  guardDeleteFile,
+  validateCommand,
+  getFileLockRegistry,
+  ScopeViolation,
+  assertRealWritePathContained,
+  isPathInScope as checkPathInScope,
+} from '../core/scope-guard';
 import { getMemoryStore, MemoryType } from '../core/context-memory';
 import {
   OcrDocumentInput,
@@ -53,10 +61,7 @@ import {
   GeneratePptxToolResult,
 } from '../domain/office-artifact';
 import type { ToolExecutionPlan, PreExecutionEvaluationOutcome } from '../domain/tool-plan';
-import {
-  ToolApprovalPlanner,
-  ToolPreExecutionContext,
-} from '../industrial/tool-approval-planner';
+import { ToolApprovalPlanner, ToolPreExecutionContext } from '../industrial/tool-approval-planner';
 import {
   createServiceContainer,
   ServiceContainer,
@@ -77,10 +82,7 @@ import {
   SandboxExecutionRequest,
   SandboxExecutionResult,
 } from '../domain/sandbox-run';
-import {
-  storeTelemetryAnalysis,
-  verifyTelemetryAnalysis,
-} from '../industrial/telemetry-analysis';
+import { storeTelemetryAnalysis, verifyTelemetryAnalysis } from '../industrial/telemetry-analysis';
 
 /**
  * MAOS Agent Tool Definitions
@@ -96,7 +98,8 @@ export const AGENT_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'analyze_telemetry_csv',
-      description: 'Run deterministic vibration and temperature checks on the user-selected project-local CSV and return a persisted, verifiable evidence receipt.',
+      description:
+        'Run deterministic vibration and temperature checks on the user-selected project-local CSV and return a persisted, verifiable evidence receipt.',
       parameters: {
         type: 'object',
         properties: {
@@ -189,8 +192,7 @@ export const AGENT_TOOLS: ToolDef[] = [
           },
           sourceArtifactId: {
             type: 'string',
-            description:
-              'Artifact ID of the image in the Safe Artifact Store. Mutually exclusive with sourcePath.',
+            description: 'Artifact ID of the image in the Safe Artifact Store. Mutually exclusive with sourcePath.',
           },
           imageHash: {
             type: 'string',
@@ -198,8 +200,7 @@ export const AGENT_TOOLS: ToolDef[] = [
           },
           prompt: {
             type: 'string',
-            description:
-              'Observation prompt or question for the Vision-Language Model (max 4096 chars)',
+            description: 'Observation prompt or question for the Vision-Language Model (max 4096 chars)',
           },
           taskType: {
             type: 'string',
@@ -227,14 +228,7 @@ export const AGENT_TOOLS: ToolDef[] = [
             description: 'Allow fallback to CPU if GPU memory budget is unavailable',
           },
         },
-        required: [
-          'schemaVersion',
-          'projectId',
-          'prompt',
-          'taskType',
-          'maxOutputTokens',
-          'requestId',
-        ],
+        required: ['schemaVersion', 'projectId', 'prompt', 'taskType', 'maxOutputTokens', 'requestId'],
       },
     },
   },
@@ -311,8 +305,7 @@ export const AGENT_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'generate_docx',
-      description:
-        'Generate an air-gapped, verifiable DOCX approval note from validated OfficeDocxInput.',
+      description: 'Generate an air-gapped, verifiable DOCX approval note from validated OfficeDocxInput.',
       parameters: {
         type: 'object',
         properties: {
@@ -357,8 +350,7 @@ export const AGENT_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'generate_xlsx',
-      description:
-        'Generate an air-gapped, verifiable XLSX workbook deliverable from validated OfficeXlsxInput.',
+      description: 'Generate an air-gapped, verifiable XLSX workbook deliverable from validated OfficeXlsxInput.',
       parameters: {
         type: 'object',
         properties: {
@@ -376,7 +368,8 @@ export const AGENT_TOOLS: ToolDef[] = [
           },
           outputPath: {
             type: 'string',
-            description: 'Relative project path for the generated .xlsx file (e.g., "artifacts/verification_workbook.xlsx")',
+            description:
+              'Relative project path for the generated .xlsx file (e.g., "artifacts/verification_workbook.xlsx")',
           },
           templatePath: {
             type: 'string',
@@ -403,8 +396,7 @@ export const AGENT_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'generate_pptx',
-      description:
-        'Generate an air-gapped, verifiable PPTX presentation deliverable from validated OfficePptxInput.',
+      description: 'Generate an air-gapped, verifiable PPTX presentation deliverable from validated OfficePptxInput.',
       parameters: {
         type: 'object',
         properties: {
@@ -542,15 +534,44 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'create_file',
+      description: 'Create a new file with content. Parent directories are created automatically if they do not exist.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path to the file from the project root',
+          },
+          content: {
+            type: 'string',
+            description: 'The full content to write to the file',
+          },
+        },
+        required: ['path', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'read_file',
       description:
-        'Read the contents of a file in the project. Use this before modifying any file to understand existing code.',
+        'Read the contents of a file in the project. Supports optional line range (startLine/endLine) or full file read.',
       parameters: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
             description: 'Relative path to the file from the project root (e.g., "src/api/auth.ts")',
+          },
+          startLine: {
+            type: 'number',
+            description: 'Optional 1-based start line number to read from',
+          },
+          endLine: {
+            type: 'number',
+            description: 'Optional 1-based end line number to read until (inclusive)',
           },
         },
         required: ['path'],
@@ -576,6 +597,54 @@ export const AGENT_TOOLS: ToolDef[] = [
           },
         },
         required: ['path', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'edit_file',
+      description:
+        'Edit an existing file by replacing an exact target string with replacement text, or replacing a specific line. For JSON files, valid JSON syntax is verified before saving to prevent corrupting files.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path to the file from the project root',
+          },
+          target: {
+            type: 'string',
+            description: 'The exact string to find and replace in the file (optional if line is specified)',
+          },
+          replacement: {
+            type: 'string',
+            description: 'The replacement content',
+          },
+          line: {
+            type: 'number',
+            description: 'Optional 1-based line number to replace',
+          },
+        },
+        required: ['path', 'replacement'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_file',
+      description:
+        'Safely delete a file in the project within allowed scope. Prevents path traversal and protecting repository metadata.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path to the file to remove',
+          },
+        },
+        required: ['path'],
       },
     },
   },
@@ -914,7 +983,12 @@ function executePython(projectRoot: string, args: Record<string, any>): unknown 
     !args?.profileMode ||
     String(args?.profileMode).includes('tampered')
   ) {
-    if (isIndustrial || !args?.profileMode || String(args?.profileMode).includes('tampered') || args?.executorType === 'host') {
+    if (
+      isIndustrial ||
+      !args?.profileMode ||
+      String(args?.profileMode).includes('tampered') ||
+      args?.executorType === 'host'
+    ) {
       return {
         ok: false,
         error: 'HOST_EXECUTOR_FORBIDDEN_IN_INDUSTRIAL',
@@ -1007,9 +1081,11 @@ function checkCompliance(projectRoot: string, args: Record<string, any>): unknow
     const deviation = typeof limit === 'number' ? numeric - limit : null;
     // Use per-status recommendations from threshold config (recommendations.WARNING / recommendations.FAIL)
     const recommendations = rule.recommendations || {};
-    const fallbackRec = rule.recommendation || (status === 'WARNING'
-      ? 'Inspect trend and schedule maintenance.'
-      : 'Stop or isolate equipment and investigate immediately.');
+    const fallbackRec =
+      rule.recommendation ||
+      (status === 'WARNING'
+        ? 'Inspect trend and schedule maintenance.'
+        : 'Stop or isolate equipment and investigate immediately.');
     return {
       ruleId: rulesetId ? `${rulesetId}/${metric}` : metric,
       metric,
@@ -1019,7 +1095,7 @@ function checkCompliance(projectRoot: string, args: Record<string, any>): unknow
       status,
       threshold: { warning: rule.warning ?? null, critical: rule.critical ?? null },
       deviation,
-      recommendation: status === 'PASS' ? 'No action required.' : (recommendations[status] || fallbackRec),
+      recommendation: status === 'PASS' ? 'No action required.' : recommendations[status] || fallbackRec,
     };
   });
   const status = findings.some((f) => f.status === 'FAIL')
@@ -1145,7 +1221,13 @@ export function getToolsForAgent(
     if (isIndustrial) {
       effectiveAllowed = effectiveAllowed.filter((toolName) => toolName !== 'execute_python');
     }
-    return baseTools.filter((t) => effectiveAllowed!.includes(t.function.name));
+    const expandedAllowed = new Set(effectiveAllowed);
+    if (expandedAllowed.has('write_file')) {
+      expandedAllowed.add('create_file');
+      expandedAllowed.add('edit_file');
+      expandedAllowed.add('delete_file');
+    }
+    return baseTools.filter((t) => expandedAllowed.has(t.function.name));
   }
   const agentLower = (effectiveAgentId || '').toLowerCase();
   const isOcrAuthorized = AUTHORIZED_OCR_AGENTS.includes(agentLower);
@@ -1217,7 +1299,8 @@ function executeAnalyzeTelemetryCsvTool(
 
   const stored = storeTelemetryAnalysis(projectRoot, realSource, fs.readFileSync(realSource), 'project-local-file');
   const verification = verifyTelemetryAnalysis(projectRoot, stored.receipt.analysisId);
-  if (!verification.valid) throw new Error(`Stored telemetry evidence failed verification: ${verification.errors.join('; ')}`);
+  if (!verification.valid)
+    throw new Error(`Stored telemetry evidence failed verification: ${verification.errors.join('; ')}`);
   const { result } = stored.receipt;
   return {
     ok: true,
@@ -1286,7 +1369,11 @@ export function executeOcrDocumentTool(
   const validatedInput = validateOcrDocumentInput(input);
 
   // 3. Project-root and scope confinement
-  if (context.scope && context.scope.length > 0 && !isPathInScope(validatedInput.sourcePath, context.scope, context.projectRoot)) {
+  if (
+    context.scope &&
+    context.scope.length > 0 &&
+    !isPathInScope(validatedInput.sourcePath, context.scope, context.projectRoot)
+  ) {
     throw new OcrError(
       'TRAVERSAL_REJECTED',
       `File '${validatedInput.sourcePath}' is outside agent's allowed scope [${context.scope.join(', ')}]`,
@@ -1331,10 +1418,7 @@ export function executeOcrDocumentTool(
 
   // 4. Durable Idempotency Claim
   const idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
-  const requestHash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(validatedInput))
-    .digest('hex');
+  const requestHash = crypto.createHash('sha256').update(JSON.stringify(validatedInput)).digest('hex');
 
   const claimOutcome = idempotencyStore.claim({
     key: validatedInput.requestId,
@@ -1363,9 +1447,7 @@ export function executeOcrDocumentTool(
     expectedSourceHash: validatedInput.expectedSourceHash,
     language: validatedInput.language,
     confidenceThresholds:
-      validatedInput.confidenceMode === 'strict'
-        ? { high: 0.9, medium: 0.7, low: 0.5 }
-        : DEFAULT_CONFIDENCE_THRESHOLDS,
+      validatedInput.confidenceMode === 'strict' ? { high: 0.9, medium: 0.7, low: 0.5 } : DEFAULT_CONFIDENCE_THRESHOLDS,
   };
 
   if (validatedInput.pageRange) {
@@ -1505,10 +1587,7 @@ export function executeAnalyzeImageTool(
 
   // 4. Durable Idempotency Claim
   const idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
-  const requestHash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(validatedInput))
-    .digest('hex');
+  const requestHash = crypto.createHash('sha256').update(JSON.stringify(validatedInput)).digest('hex');
 
   const claimOutcome = idempotencyStore.claim({
     key: validatedInput.requestId,
@@ -1599,10 +1678,7 @@ export async function executeAnalyzeImageToolAsync(
 
   // 4. Durable Idempotency Claim
   const idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
-  const requestHash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(validatedInput))
-    .digest('hex');
+  const requestHash = crypto.createHash('sha256').update(JSON.stringify(validatedInput)).digest('hex');
 
   const claimOutcome = idempotencyStore.claim({
     key: validatedInput.requestId,
@@ -1673,7 +1749,11 @@ export function executeSearchKnowledgeBaseTool(
     (context.allowedTools && context.allowedTools.includes('search_knowledge_base')) ||
     AUTHORIZED_SEARCH_KB_AGENTS.includes(agentLower);
 
-  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('search_knowledge_base')) {
+  if (
+    context.allowedTools &&
+    context.allowedTools.length > 0 &&
+    !context.allowedTools.includes('search_knowledge_base')
+  ) {
     throw new KbSearchError(
       'UNAUTHORIZED_TOOL_CALL',
       `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'search_knowledge_base'. Allowed tools: ${context.allowedTools.join(', ')}`,
@@ -1690,10 +1770,7 @@ export function executeSearchKnowledgeBaseTool(
   // 2. Validate typed input
   const validation = validateKbSearchInput(input);
   if (!validation.valid) {
-    throw new KbSearchError(
-      'INVALID_INPUT',
-      `Invalid search_knowledge_base input: ${validation.errors.join('; ')}`,
-    );
+    throw new KbSearchError('INVALID_INPUT', `Invalid search_knowledge_base input: ${validation.errors.join('; ')}`);
   }
   const validatedInput = input as KbSearchInput;
 
@@ -1714,10 +1791,7 @@ export function executeSearchKnowledgeBaseTool(
   let idempotencyStore: DurableIdempotencyStore | undefined;
   if (requestId) {
     idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
-    const requestHash = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(validatedInput))
-      .digest('hex');
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify(validatedInput)).digest('hex');
 
     const claimOutcome = idempotencyStore.claim({
       key: requestId,
@@ -1755,11 +1829,7 @@ export function executeSearchKnowledgeBaseTool(
 
   // 6. Complete idempotency
   if (idempotencyStore && requestId) {
-    idempotencyStore.complete(
-      requestId,
-      200,
-      toolResult,
-    );
+    idempotencyStore.complete(requestId, 200, toolResult);
   }
 
   return toolResult;
@@ -1780,7 +1850,11 @@ export async function executeSearchKnowledgeBaseToolAsync(
     (context.allowedTools && context.allowedTools.includes('search_knowledge_base')) ||
     AUTHORIZED_SEARCH_KB_AGENTS.includes(agentLower);
 
-  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('search_knowledge_base')) {
+  if (
+    context.allowedTools &&
+    context.allowedTools.length > 0 &&
+    !context.allowedTools.includes('search_knowledge_base')
+  ) {
     throw new KbSearchError(
       'UNAUTHORIZED_TOOL_CALL',
       `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'search_knowledge_base'. Allowed tools: ${context.allowedTools.join(', ')}`,
@@ -1797,10 +1871,7 @@ export async function executeSearchKnowledgeBaseToolAsync(
   // 2. Validate typed input
   const validation = validateKbSearchInput(input);
   if (!validation.valid) {
-    throw new KbSearchError(
-      'INVALID_INPUT',
-      `Invalid search_knowledge_base input: ${validation.errors.join('; ')}`,
-    );
+    throw new KbSearchError('INVALID_INPUT', `Invalid search_knowledge_base input: ${validation.errors.join('; ')}`);
   }
   const validatedInput = input as KbSearchInput;
 
@@ -1821,10 +1892,7 @@ export async function executeSearchKnowledgeBaseToolAsync(
   let idempotencyStore: DurableIdempotencyStore | undefined;
   if (requestId) {
     idempotencyStore = services?.idempotency || new DurableIdempotencyStore(context.projectRoot);
-    const requestHash = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(validatedInput))
-      .digest('hex');
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify(validatedInput)).digest('hex');
 
     const claimOutcome = idempotencyStore.claim({
       key: requestId,
@@ -1862,11 +1930,7 @@ export async function executeSearchKnowledgeBaseToolAsync(
 
   // 6. Complete idempotency
   if (idempotencyStore && requestId) {
-    idempotencyStore.complete(
-      requestId,
-      200,
-      toolResult,
-    );
+    idempotencyStore.complete(requestId, 200, toolResult);
   }
 
   return toolResult;
@@ -2147,7 +2211,11 @@ export function executeCodeSandboxTool(
     (context.allowedTools && context.allowedTools.includes('execute_code_sandbox')) ||
     AUTHORIZED_CODE_SANDBOX_AGENTS.some((a) => a.toLowerCase() === agentLower);
 
-  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('execute_code_sandbox')) {
+  if (
+    context.allowedTools &&
+    context.allowedTools.length > 0 &&
+    !context.allowedTools.includes('execute_code_sandbox')
+  ) {
     throw new ContainerRunnerError(
       CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
       `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'execute_code_sandbox'. Allowed tools: ${context.allowedTools.join(', ')}`,
@@ -2195,9 +2263,7 @@ export function executeCodeSandboxTool(
   }
 
   // 4. Delegate to SandboxRunnerService synchronously
-  const runner =
-    services?.sandboxRunner ||
-    createServiceContainer(context.projectRoot).sandboxRunner;
+  const runner = services?.sandboxRunner || createServiceContainer(context.projectRoot).sandboxRunner;
 
   return runner.executeSync(
     {
@@ -2228,7 +2294,11 @@ export async function executeCodeSandboxToolAsync(
     (context.allowedTools && context.allowedTools.includes('execute_code_sandbox')) ||
     AUTHORIZED_CODE_SANDBOX_AGENTS.some((a) => a.toLowerCase() === agentLower);
 
-  if (context.allowedTools && context.allowedTools.length > 0 && !context.allowedTools.includes('execute_code_sandbox')) {
+  if (
+    context.allowedTools &&
+    context.allowedTools.length > 0 &&
+    !context.allowedTools.includes('execute_code_sandbox')
+  ) {
     throw new ContainerRunnerError(
       CONTAINER_RUNNER_ERROR_CODES.UNAUTHORIZED_AGENT,
       `Agent '${context.agentId || 'unknown'}' is not allowed to use tool 'execute_code_sandbox'. Allowed tools: ${context.allowedTools.join(', ')}`,
@@ -2267,9 +2337,7 @@ export async function executeCodeSandboxToolAsync(
   }
 
   // 4. Delegate to SandboxRunnerService asynchronously
-  const runner =
-    services?.sandboxRunner ||
-    createServiceContainer(context.projectRoot).sandboxRunner;
+  const runner = services?.sandboxRunner || createServiceContainer(context.projectRoot).sandboxRunner;
 
   return runner.execute(
     {
@@ -2308,9 +2376,15 @@ export function executeTool(
   },
 ): { result: string; isComplete: boolean } {
   // Authorization check FIRST
-  if (allowedTools && allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+  const isAuth =
+    !allowedTools ||
+    allowedTools.length === 0 ||
+    allowedTools.includes(toolName) ||
+    ((toolName === 'create_file' || toolName === 'edit_file' || toolName === 'delete_file') &&
+      allowedTools.includes('write_file'));
+  if (!isAuth) {
     return {
-      result: `🚫 TOOL_UNAUTHORIZED: Agent ${agentId} is not allowed to use tool '${toolName}'. Allowed tools: ${allowedTools.join(', ')}`,
+      result: `🚫 TOOL_UNAUTHORIZED: Agent ${agentId} is not allowed to use tool '${toolName}'. Allowed tools: ${allowedTools!.join(', ')}`,
       isComplete: false,
     };
   }
@@ -2330,13 +2404,17 @@ export function executeTool(
 
       case 'generate_docx': {
         try {
-          const toolResult = executeGenerateDocxTool(args, {
-            projectRoot,
-            scope,
-            agentId,
-            taskId,
-            allowedTools,
-          }, services);
+          const toolResult = executeGenerateDocxTool(
+            args,
+            {
+              projectRoot,
+              scope,
+              agentId,
+              taskId,
+              allowedTools,
+            },
+            services,
+          );
           return { result: jsonResult(toolResult), isComplete: false };
         } catch (err: any) {
           const code = err instanceof DocxGenerationError ? err.code : 'GENERATION_FAILED';
@@ -2353,13 +2431,17 @@ export function executeTool(
 
       case 'generate_xlsx': {
         try {
-          const toolResult = executeGenerateXlsxTool(args, {
-            projectRoot,
-            scope,
-            agentId,
-            taskId,
-            allowedTools,
-          }, services);
+          const toolResult = executeGenerateXlsxTool(
+            args,
+            {
+              projectRoot,
+              scope,
+              agentId,
+              taskId,
+              allowedTools,
+            },
+            services,
+          );
           return { result: jsonResult(toolResult), isComplete: false };
         } catch (err: any) {
           const code = err instanceof XlsxGenerationError ? err.code : 'GENERATION_FAILED';
@@ -2376,13 +2458,17 @@ export function executeTool(
 
       case 'generate_pptx': {
         try {
-          const toolResult = executeGeneratePptxTool(args, {
-            projectRoot,
-            scope,
-            agentId,
-            taskId,
-            allowedTools,
-          }, services);
+          const toolResult = executeGeneratePptxTool(
+            args,
+            {
+              projectRoot,
+              scope,
+              agentId,
+              taskId,
+              allowedTools,
+            },
+            services,
+          );
           return { result: jsonResult(toolResult), isComplete: false };
         } catch (err: any) {
           const code = err instanceof PptxGenerationError ? err.code : 'GENERATION_FAILED';
@@ -2399,13 +2485,17 @@ export function executeTool(
 
       case 'search_knowledge_base': {
         try {
-          const toolResult = executeSearchKnowledgeBaseTool(args, {
-            projectRoot,
-            scope,
-            agentId,
-            taskId,
-            allowedTools,
-          }, services);
+          const toolResult = executeSearchKnowledgeBaseTool(
+            args,
+            {
+              projectRoot,
+              scope,
+              agentId,
+              taskId,
+              allowedTools,
+            },
+            services,
+          );
           return { result: jsonResult({ ok: true, ...toolResult }), isComplete: false };
         } catch (err: any) {
           const code = err instanceof KbSearchError ? err.code : 'SEARCH_FAILED';
@@ -2421,13 +2511,17 @@ export function executeTool(
       }
       case 'analyze_image': {
         try {
-          const toolResult = executeAnalyzeImageTool(args, {
-            projectRoot,
-            scope,
-            agentId,
-            taskId,
-            allowedTools,
-          }, services);
+          const toolResult = executeAnalyzeImageTool(
+            args,
+            {
+              projectRoot,
+              scope,
+              agentId,
+              taskId,
+              allowedTools,
+            },
+            services,
+          );
           return { result: jsonResult({ ok: true, ...toolResult }), isComplete: false };
         } catch (err: any) {
           const code = err instanceof VlmError ? err.code : 'INFERENCE_FAILED';
@@ -2466,7 +2560,13 @@ export function executeTool(
       case 'ingest_document': {
         try {
           if (args.path && !isPathInScope(args.path, scope, projectRoot)) {
-            return { result: jsonResult({ ok: false, error: `SCOPE_VIOLATION: File '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]` }), isComplete: false };
+            return {
+              result: jsonResult({
+                ok: false,
+                error: `SCOPE_VIOLATION: File '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`,
+              }),
+              isComplete: false,
+            };
           }
           return { result: jsonResult(ingestDocument(projectRoot, args)), isComplete: false };
         } catch (err: any) {
@@ -2525,19 +2625,70 @@ export function executeTool(
         }
       }
 
+      case 'create_file': {
+        const violation = guardWriteFile(args.path, agentId || 'unknown', taskId || 'unknown', scope, projectRoot);
+        if (violation) {
+          return {
+            result: `🚫 ${violation.type}: ${violation.detail}`,
+            isComplete: false,
+          };
+        }
+        let filePath: string;
+        try {
+          filePath = assertRealWritePathContained(args.path, projectRoot);
+          const dir = path.dirname(filePath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          filePath = assertRealWritePathContained(args.path, projectRoot);
+          fs.writeFileSync(filePath, args.content ?? '', { encoding: 'utf-8', flag: 'w' });
+        } catch (err: any) {
+          return { result: `🚫 PATH_VIOLATION: ${err.message}`, isComplete: false };
+        }
+        const lines = (args.content ?? '').split('\n').length;
+        return {
+          result: `Created: ${args.path} (${lines} lines)`,
+          isComplete: false,
+        };
+      }
+
       case 'read_file': {
         try {
           const filePath = projectFile(projectRoot, args.path);
           if (!isPathInScope(args.path, scope, projectRoot)) {
-            return { result: `🚫 SCOPE_VIOLATION: File '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`, isComplete: false };
+            return {
+              result: `🚫 SCOPE_VIOLATION: File '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`,
+              isComplete: false,
+            };
           }
           if (!fs.existsSync(filePath)) {
             return { result: `Error: File not found: ${args.path}`, isComplete: false };
           }
           const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n').length;
+          const allLines = content.split('\n');
+          const totalLines = allLines.length;
+
+          const startLine = args.startLine ?? args.start_line;
+          const endLine = args.endLine ?? args.end_line;
+
+          if (typeof startLine === 'number' || typeof endLine === 'number') {
+            const start = Math.max(1, startLine ?? 1);
+            const end = Math.min(totalLines, endLine ?? totalLines);
+            if (start > end || start > totalLines) {
+              return {
+                result: `File: ${args.path} (0 lines returned: range ${start}-${end} out of ${totalLines} lines)\n\n`,
+                isComplete: false,
+              };
+            }
+            const slice = allLines.slice(start - 1, end).join('\n');
+            return {
+              result: `File: ${args.path} (lines ${start}-${end} of ${totalLines})\n\n${slice}`,
+              isComplete: false,
+            };
+          }
+
           return {
-            result: `File: ${args.path} (${lines} lines)\n\n${content}`,
+            result: `File: ${args.path} (${totalLines} lines)\n\n${content}`,
             isComplete: false,
           };
         } catch (err: any) {
@@ -2564,22 +2715,121 @@ export function executeTool(
             fs.mkdirSync(dir, { recursive: true });
           }
           filePath = assertRealWritePathContained(args.path, projectRoot);
-          fs.writeFileSync(filePath, args.content, { encoding: 'utf-8', flag: 'w' });
+          fs.writeFileSync(filePath, args.content ?? '', { encoding: 'utf-8', flag: 'w' });
         } catch (err: any) {
           return { result: `🚫 PATH_VIOLATION: ${err.message}`, isComplete: false };
         }
-        const lines = args.content.split('\n').length;
+        const lines = (args.content ?? '').split('\n').length;
         return {
           result: `Written: ${args.path} (${lines} lines)`,
           isComplete: false,
         };
       }
 
+      case 'edit_file': {
+        const violation = guardWriteFile(args.path, agentId || 'unknown', taskId || 'unknown', scope, projectRoot);
+        if (violation) {
+          return {
+            result: `🚫 ${violation.type}: ${violation.detail}`,
+            isComplete: false,
+          };
+        }
+        let filePath: string;
+        try {
+          filePath = projectFile(projectRoot, args.path);
+          if (!fs.existsSync(filePath)) {
+            return { result: `Error: File not found: ${args.path}`, isComplete: false };
+          }
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const target = args.target ?? args.find ?? args.old_string;
+          const replacement = args.replacement ?? args.content ?? args.new_string ?? '';
+          const lineNum = args.line;
+
+          let newContent: string;
+          if (typeof target === 'string' && target.length > 0) {
+            if (!content.includes(target)) {
+              return {
+                result: `Error: Target string not found in ${args.path}. Please read the file first to locate the exact text.`,
+                isComplete: false,
+              };
+            }
+            newContent = content.replace(target, replacement);
+          } else if (typeof lineNum === 'number') {
+            const lines = content.split('\n');
+            const idx = lineNum - 1;
+            if (idx < 0 || idx >= lines.length) {
+              return {
+                result: `Error: Line ${lineNum} is out of range (file has ${lines.length} lines)`,
+                isComplete: false,
+              };
+            }
+            lines[idx] = replacement;
+            newContent = lines.join('\n');
+          } else {
+            // Drop-in replacement
+            newContent = replacement;
+          }
+
+          // If editing a JSON file, validate syntax
+          if (filePath.endsWith('.json')) {
+            try {
+              JSON.parse(newContent);
+            } catch (jsonErr: any) {
+              return {
+                result: `Error: Edit rejected because resulting JSON is invalid: ${jsonErr.message}. Aborted to prevent file corruption.`,
+                isComplete: false,
+              };
+            }
+          }
+
+          filePath = assertRealWritePathContained(args.path, projectRoot);
+          fs.writeFileSync(filePath, newContent, { encoding: 'utf-8', flag: 'w' });
+          const newLines = newContent.split('\n').length;
+          return {
+            result: `Successfully edited ${args.path} (${newLines} lines)`,
+            isComplete: false,
+          };
+        } catch (err: any) {
+          return { result: `🚫 EDIT_FAILED: ${err.message}`, isComplete: false };
+        }
+      }
+
+      case 'delete_file': {
+        const violation = guardDeleteFile(args.path, agentId || 'unknown', taskId || 'unknown', scope, projectRoot);
+        if (violation) {
+          return {
+            result: `🚫 ${violation.type}: ${violation.detail}`,
+            isComplete: false,
+          };
+        }
+        try {
+          const filePath = projectFile(projectRoot, args.path);
+          if (!fs.existsSync(filePath)) {
+            return { result: `Error: File not found: ${args.path}`, isComplete: false };
+          }
+          const stat = fs.statSync(filePath);
+          if (stat.isDirectory()) {
+            return { result: `Error: Cannot delete directory '${args.path}' with delete_file`, isComplete: false };
+          }
+          fs.unlinkSync(filePath);
+          getFileLockRegistry().release(args.path, agentId || 'unknown');
+          return {
+            result: `Successfully deleted: ${args.path}`,
+            isComplete: false,
+          };
+        } catch (err: any) {
+          return { result: `🚫 DELETE_FAILED: ${err.message}`, isComplete: false };
+        }
+      }
+
       case 'list_dir': {
         try {
           const dirPath = projectFile(projectRoot, args.path || '.');
           if (!isPathInScope(args.path || '.', scope, projectRoot)) {
-            return { result: `🚫 SCOPE_VIOLATION: Directory '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`, isComplete: false };
+            return {
+              result: `🚫 SCOPE_VIOLATION: Directory '${args.path}' is outside agent's allowed scope [${scope.join(', ')}]`,
+              isComplete: false,
+            };
           }
           if (!fs.existsSync(dirPath)) {
             return { result: `Error: Directory not found: ${args.path}`, isComplete: false };
@@ -2608,7 +2858,7 @@ export function executeTool(
       case 'run_command': {
         // Defense in depth: block shell execution for industrial-scoped agents
         // even if allowedTools check was somehow bypassed
-        if (scope.every(s => s.startsWith('demo/industrial') || s.startsWith('profiles/industrial'))) {
+        if (scope.every((s) => s.startsWith('demo/industrial') || s.startsWith('profiles/industrial'))) {
           return {
             result: `🚫 SHELL_BLOCKED: Shell execution is disabled for industrial-scoped agents. Use specific tools (ingest_document, check_compliance, execute_code_sandbox) instead.`,
             isComplete: false,
@@ -2644,7 +2894,7 @@ export function executeTool(
 
       case 'git_commit': {
         // Defense in depth: block git operations for industrial-scoped agents
-        if (scope.every(s => s.startsWith('demo/industrial') || s.startsWith('profiles/industrial'))) {
+        if (scope.every((s) => s.startsWith('demo/industrial') || s.startsWith('profiles/industrial'))) {
           return {
             result: `🚫 GIT_BLOCKED: Git operations are disabled for industrial-scoped agents.`,
             isComplete: false,
@@ -2818,4 +3068,3 @@ export function verifyToolExecutionContract(
     requestedTool: toolName,
   });
 }
-

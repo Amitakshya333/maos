@@ -118,6 +118,20 @@ export function ensureWorktree(agentId: string, branchName: string, cwd: string)
           /* best effort */
         }
       }
+      // Ensure package.json integrity even when reusing worktree
+      const rootPkg = path.join(cwd, 'package.json');
+      const wtPkg = path.join(wtPath, 'package.json');
+      if (fs.existsSync(rootPkg) && fs.existsSync(wtPkg)) {
+        try {
+          JSON.parse(fs.readFileSync(wtPkg, 'utf-8'));
+        } catch {
+          try {
+            fs.copyFileSync(rootPkg, wtPkg);
+          } catch {
+            /* best effort fallback */
+          }
+        }
+      }
       return { worktreePath: wtPath, branch: branchName, agentId, active: true };
     }
     // Wrong branch — remove and recreate
@@ -167,6 +181,21 @@ export function ensureWorktree(agentId: string, branchName: string, cwd: string)
       }
     } catch {
       /* best effort fallback */
+    }
+  }
+
+  // Verify and ensure package.json integrity in worktree
+  const rootPkg = path.join(cwd, 'package.json');
+  const wtPkg = path.join(wtPath, 'package.json');
+  if (fs.existsSync(rootPkg) && fs.existsSync(wtPkg)) {
+    try {
+      JSON.parse(fs.readFileSync(wtPkg, 'utf-8'));
+    } catch {
+      try {
+        fs.copyFileSync(rootPkg, wtPkg);
+      } catch {
+        /* best effort fallback */
+      }
     }
   }
 

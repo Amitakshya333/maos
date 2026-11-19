@@ -345,7 +345,7 @@ export function formulateHotpatch(trace: ErrorTrace, fileContents?: string): Hot
 
   // Rule 1: TypeScript "Cannot find name 'X'" — likely a missing import.
   const missingName = trace.message.match(TS_MISSING_NAME_RE) || trace.excerpt.match(TS_MISSING_NAME_RE);
-  if (missingName && trace.file) {
+  if (missingName && trace.file && !trace.file.endsWith('.json')) {
     const name = missingName[1];
     const op: HotpatchOp =
       fileContents !== undefined
@@ -570,23 +570,37 @@ export function applyHotpatch(patch: Hotpatch, projectRoot: string): { backupDir
     const content = fs.readFileSync(abs, 'utf-8');
     const lines = content.split('\n');
 
+    let newContent = content;
     if (op.type === 'replace-text') {
       if (!op.find || !content.includes(op.find)) {
         throw new HealerError('PATCH_FAILED', `replace-text anchor not found in ${op.file}`);
       }
-      fs.writeFileSync(abs, content.replace(op.find, op.content), 'utf-8');
+      newContent = content.replace(op.find, op.content);
     } else if (op.type === 'replace-line') {
       const idx = (op.line || 1) - 1;
       if (idx < 0 || idx >= lines.length) {
         throw new HealerError('PATCH_FAILED', `replace-line ${op.line} out of range in ${op.file}`);
       }
       lines[idx] = op.content;
-      fs.writeFileSync(abs, lines.join('\n'), 'utf-8');
+      newContent = lines.join('\n');
     } else if (op.type === 'insert-line') {
       const idx = Math.min(Math.max((op.line || 1) - 1, 0), lines.length);
       lines.splice(idx, 0, op.content);
-      fs.writeFileSync(abs, lines.join('\n'), 'utf-8');
+      newContent = lines.join('\n');
     }
+
+    if (abs.endsWith('.json')) {
+      try {
+        JSON.parse(newContent);
+      } catch (jsonErr: any) {
+        throw new HealerError(
+          'PATCH_FAILED',
+          `Refusing to apply patch: resulting JSON in ${op.file} is malformed: ${jsonErr.message}`,
+        );
+      }
+    }
+
+    fs.writeFileSync(abs, newContent, 'utf-8');
     filesTouched.push(op.file);
   }
 
