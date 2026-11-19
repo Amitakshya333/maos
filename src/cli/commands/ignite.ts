@@ -34,6 +34,7 @@ import {
   isHerdrAvailable,
   CliHerdrPaneReader,
 } from '../../core/autonomous-healer';
+import { computeSymmetricGridPlan } from '../../integrations/herdr';
 import { getMessageBus } from '../../core/message-bus';
 import { renderPanel, getBrandBadge, renderDivider } from '../../utils/ui';
 
@@ -430,6 +431,140 @@ export function resolveMaosPackageDir(cwd: string): string {
   return cwd;
 }
 
+export interface BuiltFileSummary {
+  path: string;
+  lines: number;
+  sizeBytes: number;
+  workerId: string;
+}
+
+export interface BuiltArtifactManifest {
+  timestamp: string;
+  outputDir: string;
+  distDir: string;
+  files: BuiltFileSummary[];
+  entrypoint?: string;
+  entrypointType?: 'html' | 'node' | 'python' | 'unknown';
+  previewCommand?: string;
+}
+
+/**
+ * Scans all worker worktrees and copies generated files directly to ./output and ./dist-preview.
+ * Creates an index manifest with line counts and detects runnable entrypoints.
+ */
+export function exportBuiltArtifacts(cwd: string, workers: IgniteWorker[]): BuiltArtifactManifest {
+  const outputDir = path.join(cwd, 'output');
+  const distDir = path.join(cwd, 'dist-preview');
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.mkdirSync(distDir, { recursive: true });
+
+  const filesMap = new Map<string, BuiltFileSummary>();
+
+  const scanDir = (dir: string, baseDir: string, workerId: string) => {
+    if (!fs.existsSync(dir)) return;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relPath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+
+        // Ignore internal directories, logs, and build artifacts
+        if (
+          entry.name === '.git' ||
+          entry.name === 'node_modules' ||
+          entry.name === '.maos' ||
+          entry.name === '.maos-oasis' ||
+          entry.name === 'dist' ||
+          entry.name.endsWith('.log')
+        ) {
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          scanDir(fullPath, baseDir, workerId);
+        } else if (entry.isFile()) {
+          try {
+            const stat = fs.statSync(fullPath);
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const lines = content.split('\n').length;
+
+            const targetOut = path.join(outputDir, relPath);
+            const targetDist = path.join(distDir, relPath);
+            fs.mkdirSync(path.dirname(targetOut), { recursive: true });
+            fs.mkdirSync(path.dirname(targetDist), { recursive: true });
+            fs.copyFileSync(fullPath, targetOut);
+            fs.copyFileSync(fullPath, targetDist);
+
+            filesMap.set(relPath, {
+              path: relPath,
+              lines,
+              sizeBytes: stat.size,
+              workerId,
+            });
+          } catch {
+            /* ignore unreadable file */
+          }
+        }
+      }
+    } catch {
+      /* ignore unreadable directory */
+    }
+  };
+
+  for (const w of workers) {
+    if (w.worktreePath && fs.existsSync(w.worktreePath)) {
+      scanDir(w.worktreePath, w.worktreePath, w.agentId);
+    }
+  }
+
+  const files = Array.from(filesMap.values());
+  let entrypoint: string | undefined;
+  let entrypointType: 'html' | 'node' | 'python' | 'unknown' = 'unknown';
+  let previewCommand: string | undefined;
+
+  const htmlFile = files.find(
+    (f) => f.path === 'index.html' || f.path.endsWith('/index.html') || f.path.endsWith('.html'),
+  );
+  if (htmlFile) {
+    entrypoint = path.join('output', htmlFile.path);
+    entrypointType = 'html';
+    previewCommand = process.platform === 'win32' ? `start ${entrypoint}` : `open ${entrypoint}`;
+  } else if (files.some((f) => f.path === 'package.json')) {
+    entrypoint = path.join('output', 'package.json');
+    entrypointType = 'node';
+    previewCommand = 'npm start';
+  } else if (files.some((f) => f.path === 'index.js' || f.path === 'main.js' || f.path === 'app.js')) {
+    const mainScript = files.find((f) => f.path === 'index.js' || f.path === 'main.js' || f.path === 'app.js')!;
+    entrypoint = path.join('output', mainScript.path);
+    entrypointType = 'node';
+    previewCommand = `node ${entrypoint}`;
+  } else if (files.some((f) => f.path === 'main.py' || f.path === 'app.py')) {
+    const pyScript = files.find((f) => f.path === 'main.py' || f.path === 'app.py')!;
+    entrypoint = path.join('output', pyScript.path);
+    entrypointType = 'python';
+    previewCommand = `python ${entrypoint}`;
+  }
+
+  const manifest: BuiltArtifactManifest = {
+    timestamp: new Date().toISOString(),
+    outputDir: 'output',
+    distDir: 'dist-preview',
+    files,
+    entrypoint,
+    entrypointType,
+    previewCommand,
+  };
+
+  try {
+    const maosDir = path.join(cwd, '.maos');
+    fs.mkdirSync(maosDir, { recursive: true });
+    fs.writeFileSync(path.join(maosDir, 'last-build.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+    fs.writeFileSync(path.join(outputDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+  } catch {}
+
+  return manifest;
+}
+
 // ─── Main ignite flow ────────────────────────────────────────────
 
 export async function runIgnite(options: IgniteOptions): Promise<void> {
@@ -531,6 +666,8 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
   const igniteDir = path.join(cwd, '.maos', 'ignite');
   fs.mkdirSync(igniteDir, { recursive: true });
 
+  const gridPlan = computeSymmetricGridPlan(subtasks.length);
+
   for (let i = 0; i < subtasks.length; i++) {
     const task = subtasks[i];
     const agentId = buildWorkerAgentId(i);
@@ -546,10 +683,18 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
         `# ${task.title}\n\n${task.description}\n\n## Worker\n- agent: ${agentId}\n- branch: ${branch}\n- worktree: ${wt.worktreePath}\n\n## Instructions\n1. Implement ONLY this subtask inside the worktree.\n2. Run the build/tests until green.\n3. Do not touch files outside your scope. The healer watches this pane.\n`,
         'utf-8',
       );
-      const direction = i % 2 === 0 ? 'right' : 'down';
-      // Worker 0 splits from current pane, then moves to dedicated "Swarm Workers" tab.
-      // Workers 1..N split relative to Worker 0's pane inside that tab, keeping Tab 5 pristine!
-      const targetPane = i === 0 ? undefined : workers[0]?.paneId;
+      let direction: 'right' | 'down' = 'right';
+      let targetPane: string | undefined = undefined;
+      if (i === 0) {
+        direction = 'right';
+        targetPane = undefined;
+      } else {
+        const stepPlan = gridPlan[i - 1];
+        direction = stepPlan ? stepPlan.direction : i % 2 === 0 ? 'right' : 'down';
+        const targetWorker = stepPlan ? workers[stepPlan.targetWorkerIndex] : workers[0];
+        targetPane = targetWorker?.paneId || workers[0]?.paneId;
+      }
+
       let paneId: string;
       try {
         paneId = await herdrSplitPane({ direction, cwd: wt.worktreePath, noFocus: true, targetPane });
@@ -779,7 +924,7 @@ export async function runIgnite(options: IgniteOptions): Promise<void> {
   cleanupSignals();
 }
 
-function printMergeReport(cwd: string, workers: IgniteWorker[], autoMerge: boolean): void {
+export function printMergeReport(cwd: string, workers: IgniteWorker[], autoMerge: boolean): BuiltArtifactManifest {
   console.log('');
   console.log(
     renderPanel(
@@ -803,8 +948,40 @@ function printMergeReport(cwd: string, workers: IgniteWorker[], autoMerge: boole
       console.log(chalk.gray(`    → review: git diff main...${w.branch} │ merge: git merge --no-ff ${w.branch}`));
     }
   }
+
+  // Export built artifacts to ./output/ and ./dist-preview/
+  const manifest = exportBuiltArtifacts(cwd, workers);
+
+  if (manifest.files.length > 0) {
+    console.log('');
+    console.log(
+      renderPanel(
+        [
+          `${getBrandBadge('OUTPUT')} ${chalk.bold.hex('#F1F5F9')('Built Artifacts & Live Preview')}`,
+          `${chalk.gray('Destination:')} ${chalk.cyan('./output/')} ${chalk.gray('(and ./dist-preview/)')}`,
+          '',
+          ...manifest.files
+            .slice(0, 8)
+            .map(
+              (f) =>
+                `  ${chalk.green('•')} ${chalk.bold.white(f.path)} ${chalk.gray(`(${f.lines} lines, ${(f.sizeBytes / 1024).toFixed(1)} KB)`)}`,
+            ),
+          ...(manifest.files.length > 8 ? [chalk.gray(`  ... and ${manifest.files.length - 8} more file(s)`)] : []),
+          '',
+          `${chalk.bold.hex('#F59E0B')('🚀 Instant Proof & Live Preview:')}`,
+          manifest.entrypointType === 'html'
+            ? `  ${chalk.cyan('Press [P]')} in MAOS Oasis or run ${chalk.bold.white('/preview')} to launch in browser!`
+            : `  ${chalk.cyan('Run:')} ${chalk.bold.white(manifest.previewCommand || 'npm start')}`,
+          `${chalk.gray('Direct path:')} ${chalk.white(path.resolve(cwd, manifest.entrypoint || 'output'))}`,
+        ],
+        chalk.hex('#3B82F6'),
+      ),
+    );
+  }
+
   if (!autoMerge) {
     console.log(chalk.gray('\nRe-run with --yes to auto-merge clean branches.'));
   }
   console.log('');
+  return manifest;
 }

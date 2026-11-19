@@ -1173,4 +1173,93 @@ export async function isHerdrAvailable(): Promise<boolean> {
   return getDefaultHerdrHarness().isAvailable();
 }
 
+export interface SymmetricSplitPlan {
+  targetWorkerIndex: number;
+  direction: 'right' | 'down';
+}
+
+/**
+ * Computes a symmetric, balanced grid split plan for N worker panes.
+ *
+ * For N=2: 1x2 (left/right split 50/50).
+ * For N=3: 1 top / 2 bottom (balanced 50% height, bottom split 50/50).
+ * For N=4: 2x2 grid (top split 50/50, bottom split 50/50).
+ * For N=5: 2 top / 3 bottom balanced.
+ * For N=6: 2x3 grid (2 equal rows of 3 columns).
+ * For N=8: 2x4 grid (2 equal rows of 4 columns).
+ */
+export function computeSymmetricGridPlan(totalWorkers: number): SymmetricSplitPlan[] {
+  if (totalWorkers <= 1) return [];
+
+  if (totalWorkers === 2) {
+    return [{ targetWorkerIndex: 0, direction: 'right' }];
+  }
+
+  if (totalWorkers === 3) {
+    return [
+      { targetWorkerIndex: 0, direction: 'down' },
+      { targetWorkerIndex: 1, direction: 'right' },
+    ];
+  }
+
+  if (totalWorkers === 4) {
+    return [
+      { targetWorkerIndex: 0, direction: 'down' },
+      { targetWorkerIndex: 0, direction: 'right' },
+      { targetWorkerIndex: 1, direction: 'right' },
+    ];
+  }
+
+  if (totalWorkers === 5) {
+    return [
+      { targetWorkerIndex: 0, direction: 'down' },
+      { targetWorkerIndex: 0, direction: 'right' },
+      { targetWorkerIndex: 1, direction: 'right' },
+      { targetWorkerIndex: 3, direction: 'right' },
+    ];
+  }
+
+  if (totalWorkers === 6) {
+    return [
+      { targetWorkerIndex: 0, direction: 'down' },
+      { targetWorkerIndex: 0, direction: 'right' },
+      { targetWorkerIndex: 2, direction: 'right' },
+      { targetWorkerIndex: 1, direction: 'right' },
+      { targetWorkerIndex: 4, direction: 'right' },
+    ];
+  }
+
+  if (totalWorkers === 7) {
+    return [
+      { targetWorkerIndex: 0, direction: 'down' },
+      { targetWorkerIndex: 0, direction: 'right' },
+      { targetWorkerIndex: 2, direction: 'right' },
+      { targetWorkerIndex: 1, direction: 'right' },
+      { targetWorkerIndex: 4, direction: 'right' },
+      { targetWorkerIndex: 5, direction: 'right' },
+    ];
+  }
+
+  if (totalWorkers === 8) {
+    return [
+      { targetWorkerIndex: 0, direction: 'down' },
+      { targetWorkerIndex: 0, direction: 'right' },
+      { targetWorkerIndex: 2, direction: 'right' },
+      { targetWorkerIndex: 3, direction: 'right' },
+      { targetWorkerIndex: 1, direction: 'right' },
+      { targetWorkerIndex: 5, direction: 'right' },
+      { targetWorkerIndex: 6, direction: 'right' },
+    ];
+  }
+
+  // General fallback for N > 8
+  const plans: SymmetricSplitPlan[] = [];
+  for (let i = 1; i < totalWorkers; i++) {
+    const isDown = i % 2 === 1;
+    const target = isDown ? Math.floor(i / 2) : i - 1;
+    plans.push({ targetWorkerIndex: Math.min(target, i - 1), direction: isDown ? 'down' : 'right' });
+  }
+  return plans;
+}
+
 export default HerdrHarness;

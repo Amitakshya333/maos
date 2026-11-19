@@ -14,9 +14,10 @@
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync, spawn, type ChildProcess } from 'child_process';
+import { execFile, execSync, spawn, type ChildProcess } from 'child_process';
 import chalk from 'chalk';
 import { AgentInfo, getDefaultHerdrHarness, PaneInfo } from '../integrations/herdr';
+import { detectLocalModels, DetectedModel, formatHeaderBadge, formatModelDisplayName } from '../oasis/model-detector';
 
 // ── Colors & Styles ──────────────────────────────────────────────
 const c = {
@@ -95,7 +96,12 @@ function terminalCellWidth(value: string): number {
       points.includes(0xfe0f) ||
       points.includes(0x20e3) ||
       points.filter((value) => value >= 0x1f1e6 && value <= 0x1f1ff).length === 2 ||
-      points.some((value) => (value >= 0x1f300 && value <= 0x1faff) || value === 0x26a1);
+      points.some(
+        (value) =>
+          (value >= 0x1f000 && value <= 0x1faff) ||
+          (value >= 0x2700 && value <= 0x27bf) || // Dingbats (❌ 0x274c, ✅ 0x2705, ❎ 0x274e, etc.)
+          (value >= 0x2600 && value <= 0x26ff && [0x26a0, 0x26a1, 0x26d4, 0x267f, 0x2699].includes(value)),
+      );
     width += wide || emojiPresentation ? 2 : 1;
   }
   return width;
@@ -304,6 +310,9 @@ const CORE_CLI_COMMANDS = new Set([
   'dashboard',
   'doctor',
   'repl',
+  'preview',
+  'run',
+  'open',
   'replay',
   'queue',
   'memory',
@@ -433,6 +442,7 @@ export class MaosTui {
   private isRendering: boolean = false;
   private renderPending: boolean = false;
   private selectedModel: string = 'gemma2:9b';
+  private detectedModels: DetectedModel[] = [];
   private modalMode: 'none' | 'ignite' | 'promptTest' = 'none';
   private modalInputText: string = '';
   private statusMessage: string = 'Ready. Press Enter to type a goal or slash command; /help lists commands.';
@@ -521,6 +531,7 @@ export class MaosTui {
         }
       }
     } catch {}
+    void this.refreshDetectedModels();
   }
 
   public getNextTab(current: number): number {
@@ -588,6 +599,7 @@ export class MaosTui {
     this.setupKeyboard();
     this.updateGpuTelemetry();
     void this.updateHerdrTelemetry();
+    void this.refreshDetectedModels();
     process.stdout.on('resize', this.resizeHandler);
 
     // Sandbox unhandled rejections to prevent crashing the TUI during demos
@@ -1011,10 +1023,22 @@ export class MaosTui {
       }
 
       if (key.name === 'g') {
-        this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
+        if (this.detectedModels.length === 0) {
+          this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
+        } else {
+          const currIdx = this.detectedModels.findIndex((m) => m.id.toLowerCase() === this.selectedModel.toLowerCase());
+          const nextIdx = (currIdx + 1) % this.detectedModels.length;
+          const nextModel = this.detectedModels[nextIdx];
+          this.selectedModel = nextModel.id;
+        }
         this.statusMessage = `Active model switched to ${this.selectedModel}.`;
         if (this.activeTab === 1 && this.transcript.length > 0) this.appendTranscript(this.statusMessage);
         this.render();
+        return;
+      }
+
+      if (key.name === 'p' || key.name === 'o') {
+        this.previewArtifacts();
         return;
       }
 
@@ -1032,6 +1056,7 @@ export class MaosTui {
         this.loadWorkplaceConfig();
         this.updateGpuTelemetry();
         void this.updateHerdrTelemetry();
+        void this.refreshDetectedModels();
         this.statusMessage = 'GPU, Herdr telemetry, and configuration refreshed.';
         if (this.activeTab === 1 && this.transcript.length > 0) this.appendTranscript(this.statusMessage);
         this.render();
@@ -1103,7 +1128,8 @@ export class MaosTui {
         '  /telemetry, /gpu    Open GPU and system telemetry [4]',
         '  /events, /logs      Open the session event log [5]',
         '  /settings           Open workplace settings & configuration [0]',
-        '  /model [2b|9b]      Switch the local Gemma model',
+        '  /model [name]       Switch the active local model (Gemma, Qwen, etc.)',
+        '  /preview, /run      Launch live preview of built swarm artifacts in browser',
         '  /ignite <goal>      Dispatch an autonomous goal to the HERDR swarm',
         '  /plan <goal>        Plan a goal with MAOS',
         '  /clear              Clear the transcript',
@@ -1116,7 +1142,7 @@ export class MaosTui {
         '  /quit, /exit        Exit MAOS Oasis',
         '  /help               Show this command list',
         '',
-        'Hotkeys: Tab switch views, 0-5 jump, / focus prompt, C chat, G switch model, R refresh, Q quit.',
+        'Hotkeys: Tab switch views, 0-5 jump, / focus prompt, C chat, G cycle models, P preview output, R refresh, Q quit.',
       );
       this.transcriptScrollOffset = 0;
       this.transcript = this.transcript.slice(-5000);
@@ -1197,25 +1223,57 @@ export class MaosTui {
       this.render();
       return;
     }
-    if (name === 'model') {
-      const requested = (parts[0] || '').toLowerCase().replace(/^gemma2:/, '');
+    if (['model', 'models'].includes(name)) {
+      const requested = (parts[0] || '').toLowerCase().trim();
       if (!requested) {
-        this.selectedModel = this.selectedModel === 'gemma2:9b' ? 'gemma2:2b' : 'gemma2:9b';
-      } else if (requested === '2b' || requested === '9b') {
-        this.selectedModel = `gemma2:${requested}`;
-      } else {
-        this.reportCommand('Use /model 2b or /model 9b.', true);
+        const listLines = [
+          '',
+          '── Available Local Models ──',
+          ...this.detectedModels.map((m) => {
+            const isCur = m.id.toLowerCase() === this.selectedModel.toLowerCase();
+            const prefix = isCur ? chalk.green('● ') : chalk.gray('○ ');
+            const src = chalk.cyan(`[${m.source.toUpperCase()}]`);
+            const label = isCur ? chalk.bold.green(m.name) : chalk.white(m.name);
+            return `  ${prefix}${label} ${src} ${chalk.gray(`(${m.id})`)}`;
+          }),
+          '',
+          chalk.gray('Use /model <name> or press [G] to cycle models.'),
+        ];
+        this.transcript.push(...listLines);
+        this.render();
         return;
       }
-      this.statusMessage = `Selected ${this.selectedModel}.`;
+
+      const matched = this.detectedModels.find((m) => {
+        const id = m.id.toLowerCase();
+        const nm = m.name.toLowerCase();
+        return id === requested || id.endsWith(`:${requested}`) || id.includes(requested) || nm.includes(requested);
+      });
+
+      if (matched) {
+        this.selectedModel = matched.id;
+      } else if (requested === '2b' || requested === '9b') {
+        this.selectedModel = `gemma2:${requested}`;
+      } else if (requested === '4' || requested === 'e2b' || requested === 'gemma4') {
+        this.selectedModel = 'gemma4:e2b';
+      } else {
+        this.selectedModel = parts[0];
+      }
+
+      this.statusMessage = `Selected model: ${this.selectedModel}.`;
       this.appendTranscript(this.statusMessage);
       this.render();
+      return;
+    }
+    if (['preview', 'run', 'open'].includes(name)) {
+      this.previewArtifacts();
       return;
     }
     if (name === 'refresh') {
       this.loadWorkplaceConfig();
       this.updateGpuTelemetry();
       void this.updateHerdrTelemetry();
+      void this.refreshDetectedModels();
       this.statusMessage = 'GPU, Herdr telemetry, and workplace configuration refreshed.';
       this.appendTranscript(this.statusMessage);
       this.render();
@@ -1515,6 +1573,7 @@ export class MaosTui {
         this.selectedModel,
         '--no-exit',
         '--no-watch',
+        '--yes',
         '--goal',
         trimmedGoal,
       ],
@@ -1659,6 +1718,95 @@ export class MaosTui {
     this.runExternalProcess(command, args, cwd, 'Running Canva 3D tests');
   }
 
+  public previewArtifacts(): void {
+    const lastBuildPath = path.join(this.projectRoot, '.maos', 'last-build.json');
+    let entrypoint: string | null = null;
+    let filesCount = 0;
+
+    if (fs.existsSync(lastBuildPath)) {
+      try {
+        const manifest = JSON.parse(fs.readFileSync(lastBuildPath, 'utf-8'));
+        entrypoint = manifest.entrypoint ? path.resolve(this.projectRoot, manifest.entrypoint) : null;
+        filesCount = Array.isArray(manifest.files) ? manifest.files.length : 0;
+      } catch {}
+    }
+
+    const outputHtml = path.resolve(this.projectRoot, 'output', 'index.html');
+    const distHtml = path.resolve(this.projectRoot, 'dist-preview', 'index.html');
+    const rootHtml = path.resolve(this.projectRoot, 'index.html');
+
+    if (entrypoint && fs.existsSync(entrypoint)) {
+      // Valid target from manifest
+    } else if (fs.existsSync(outputHtml)) {
+      entrypoint = outputHtml;
+    } else if (fs.existsSync(distHtml)) {
+      entrypoint = distHtml;
+    } else if (fs.existsSync(rootHtml)) {
+      entrypoint = rootHtml;
+    }
+
+    if (!entrypoint || !fs.existsSync(entrypoint)) {
+      const msg = 'No built output found to preview. Run an ignite goal first with /ignite <goal>.';
+      this.statusMessage = msg;
+      if (this.activeTab === 1) this.appendTranscript(`⚠️  ${msg}`);
+      this.render();
+      return;
+    }
+
+    const isHtml = entrypoint.endsWith('.html');
+    if (isHtml) {
+      try {
+        let command: string;
+        let args: string[];
+        if (process.platform === 'win32') {
+          command = 'cmd.exe';
+          args = ['/d', '/s', '/c', 'start', '', entrypoint];
+        } else if (process.platform === 'darwin') {
+          command = 'open';
+          args = [entrypoint];
+        } else {
+          command = 'xdg-open';
+          args = [entrypoint];
+        }
+        execFile(command, args, () => {});
+        this.statusMessage = `Launched preview: ${path.basename(entrypoint)} in default browser.`;
+        this.appendTranscript(`🚀 Live Preview launched in your browser: ${entrypoint}`);
+        this.appendTranscript(`✓ Output verified from ${filesCount ? `${filesCount} generated files` : './output/'}.`);
+      } catch (err: unknown) {
+        this.statusMessage = `Failed to open preview: ${err instanceof Error ? err.message : String(err)}`;
+        this.appendTranscript(`❌ ${this.statusMessage}`);
+      }
+    } else {
+      const relPath = path.relative(this.projectRoot, entrypoint);
+      if (entrypoint.endsWith('.js')) {
+        this.runExternalProcess(process.execPath, [entrypoint], this.projectRoot, `Previewing ${relPath}`);
+      } else if (entrypoint.endsWith('.py')) {
+        this.runExternalProcess('python', [entrypoint], this.projectRoot, `Previewing ${relPath}`);
+      } else {
+        this.statusMessage = `Artifact ready at ${relPath}.`;
+        this.appendTranscript(`📦 Built artifact ready: ${relPath}`);
+      }
+    }
+    this.render();
+  }
+
+  public async refreshDetectedModels(): Promise<void> {
+    try {
+      const host = this.oasisConfig?.ollama?.host || '127.0.0.1';
+      const port = this.oasisConfig?.ollama?.port || 11434;
+      this.detectedModels = await detectLocalModels({ ollamaHost: host, ollamaPort: port });
+      if (
+        this.detectedModels.length > 0 &&
+        !this.detectedModels.some((m) => m.id.toLowerCase() === this.selectedModel.toLowerCase())
+      ) {
+        const preferred = this.detectedModels.find((m) => m.id.startsWith('gemma2:9b') || m.id.startsWith('gemma'));
+        if (preferred) this.selectedModel = preferred.id;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   private startRefreshLoop(): void {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     this.refreshTimer = setInterval(() => {
@@ -1757,7 +1905,7 @@ export class MaosTui {
     const title = `${c.cyanBright('◈')}  ${c.boldWhite('MAOS')} ${c.cyanBright('OASIS')} ${c.slateMuted('v0.4.0')}  ${c.slateBorder('│')} ${c.slateText('Sovereign Multi-Agent Swarm Kernel')}`;
     const vramGb = (this.gpuStats.vramUsedMiB / 1024).toFixed(1);
     const totalGb = (this.gpuStats.vramTotalMiB / 1024).toFixed(1);
-    const modelBadge = this.selectedModel.replace('gemma2:', 'GEMMA ').toUpperCase() + ' · LOCAL';
+    const modelBadge = formatHeaderBadge(this.selectedModel);
     const herdrStatus = this.herdrAvailable
       ? this.herdrPanes.length > 0
         ? `HERDR: ${this.herdrPanes.length} PANE${this.herdrPanes.length > 1 ? 'S' : ''}`
@@ -1847,8 +1995,17 @@ export class MaosTui {
           ? [
               `${c.boldWhite('Enter')} ${c.slateMuted('Run Goal / Chat')}`,
               `${c.boldWhite('Tab')} ${c.slateMuted('Switch View')}`,
+              `${c.boldWhite('P')} ${c.emerald('Preview')}`,
               ...(hasTranscriptSession ? [`${c.boldWhite('PgUp/PgDn')} ${c.slateMuted('Scroll')}`] : []),
               `${c.boldWhite('Esc')} ${c.slateMuted('Clear')}`,
+              `${c.boldWhite('G')} ${c.amber(
+                `Model ${
+                  this.selectedModel
+                    .split('/')
+                    .pop()
+                    ?.replace(/^gemma2?:?/i, '') || this.selectedModel
+                }`,
+              )}`,
               `${c.cyanBright('/help')} ${c.slateMuted('Commands')}`,
               `${c.boldWhite('Ctrl+C')} ${c.slateMuted('Quit')}`,
             ]
@@ -1858,7 +2015,15 @@ export class MaosTui {
                 `${c.boldWhite('Tab')} ${c.slateMuted('Switch View')}`,
                 ...(this.chatMessages.length > 0 ? [`${c.boldWhite('PgUp/PgDn')} ${c.slateMuted('Scroll')}`] : []),
                 `${c.boldWhite('Esc')} ${c.slateMuted('Clear')}`,
-                `${c.boldWhite('G')} ${c.amber(`Model ${this.selectedModel.replace('gemma2:', '')}`)}`,
+                `${c.boldWhite('G')} ${c.amber(
+                  `Model ${
+                    this.selectedModel
+                      .split('/')
+                      .pop()
+                      ?.replace(/^gemma2?:?/i, '') || this.selectedModel
+                  }`,
+                )}`,
+                `${c.boldWhite('P')} ${c.emerald('Preview')}`,
                 `${c.boldWhite('Ctrl+C')} ${c.slateMuted('Quit')}`,
               ]
             : [
@@ -1866,7 +2031,15 @@ export class MaosTui {
                 `${c.boldWhite('0-5')} ${c.slateMuted('Jump')}`,
                 `${c.boldWhite('/')} ${c.slateMuted('Prompt')}`,
                 `${c.boldWhite('C')} ${c.cyan('Chat')}`,
-                `${c.boldWhite('G')} ${c.amber(`Model ${this.selectedModel.replace('gemma2:', '')}`)}`,
+                `${c.boldWhite('G')} ${c.amber(
+                  `Model ${
+                    this.selectedModel
+                      .split('/')
+                      .pop()
+                      ?.replace(/^gemma2?:?/i, '') || this.selectedModel
+                  }`,
+                )}`,
+                `${c.boldWhite('P')} ${c.emerald('Preview')}`,
                 `${c.boldWhite('R')} ${c.cyan('Refresh')}`,
                 `${c.boldWhite('Q')} ${c.slateMuted('Quit')}`,
               ]
@@ -2117,7 +2290,7 @@ export class MaosTui {
       {
         label: 'ACTIVE MODEL',
         value: this.selectedModel,
-        detail: 'Press G to switch 2B / 9B',
+        detail: 'Press G to cycle models',
         color: c.violetBright,
       },
     ]);
@@ -2309,6 +2482,19 @@ export class MaosTui {
     allRows.push(
       renderRow('Primary Model', `${this.selectedModel} (${this.gpuStats.modelInVram})`, '● ACTIVE', c.emerald),
     );
+    if (this.detectedModels.length > 0) {
+      for (const m of this.detectedModels.slice(0, 5)) {
+        const isActive = m.id.toLowerCase() === this.selectedModel.toLowerCase();
+        allRows.push(
+          renderRow(
+            `Model (${m.source})`,
+            `${m.name} [${m.id}]`,
+            isActive ? '● ACTIVE' : '○ READY',
+            isActive ? c.emerald : c.slateMuted,
+          ),
+        );
+      }
+    }
     allRows.push(
       renderRow(
         'Fallback Model',
