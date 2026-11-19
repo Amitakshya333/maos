@@ -73,7 +73,7 @@ const MAOS_OASIS_LOGO_WIDTH = Math.max(...MAOS_OASIS_LOGO_ROWS.map(terminalCellW
 
 function terminalCellWidth(value: string): number {
   let width = 0;
-  const plainText = value.replace(ANSI_SEQUENCE, '');
+  const plainText = value.replace(ANSI_SEQUENCE, '').replace(/[\r\n]+/g, '');
   for (const { segment } of GRAPHEME_SEGMENTER.segment(plainText)) {
     const points = Array.from(segment, (character) => character.codePointAt(0) || 0);
     const point = points.find((value) => value !== 0x200d && !(value >= 0xfe00 && value <= 0xfe0f)) || 0;
@@ -103,12 +103,13 @@ function terminalCellWidth(value: string): number {
 
 function fitTerminalLine(value: string, width: number): string {
   if (width <= 0) return '';
-  const fullWidth = terminalCellWidth(value);
+  const cleanValue = value.replace(/[\r\n]+/g, ' ');
+  const fullWidth = terminalCellWidth(cleanValue);
   const clipped = fullWidth > width;
   const limit = clipped ? Math.max(0, width - 1) : width;
   let used = 0;
   let output = '';
-  const tokens = value.match(/\u001b\[[0-?]*[ -/]*[@-~]|[^\u001b]+|\u001b/gu) || [];
+  const tokens = cleanValue.match(/\u001b\[[0-?]*[ -/]*[@-~]|[^\u001b]+|\u001b/gu) || [];
 
   segments: for (const token of tokens) {
     if (token.startsWith('\u001b')) {
@@ -131,23 +132,25 @@ function fitTerminalLine(value: string, width: number): string {
       used += 1;
     }
   }
-  if (value.includes('\u001b')) output += '\u001b[0m';
+  if (cleanValue.includes('\u001b')) output += '\u001b[0m';
   return output + ' '.repeat(Math.max(0, width - used));
 }
 
 function centerTerminalLine(value: string, width: number): string {
-  const valueWidth = terminalCellWidth(value);
-  if (valueWidth >= width) return fitTerminalLine(value, width);
+  const cleanValue = value.replace(/[\r\n]+/g, ' ');
+  const valueWidth = terminalCellWidth(cleanValue);
+  if (valueWidth >= width) return fitTerminalLine(cleanValue, width);
   const left = Math.floor((width - valueWidth) / 2);
-  const reset = value.includes('\u001b') ? '\u001b[0m' : '';
-  return ' '.repeat(left) + value + reset + ' '.repeat(Math.max(0, width - valueWidth - left));
+  const reset = cleanValue.includes('\u001b') ? '\u001b[0m' : '';
+  return ' '.repeat(left) + cleanValue + reset + ' '.repeat(Math.max(0, width - valueWidth - left));
 }
 
 function fitTerminalTail(value: string, width: number): string {
   if (width <= 0) return '';
-  if (terminalCellWidth(value) <= width) return value;
+  const cleanValue = value.replace(/[\r\n]+/g, ' ');
+  if (terminalCellWidth(cleanValue) <= width) return cleanValue;
 
-  const segments = Array.from(GRAPHEME_SEGMENTER.segment(value), ({ segment }) => segment);
+  const segments = Array.from(GRAPHEME_SEGMENTER.segment(cleanValue), ({ segment }) => segment);
   const limit = Math.max(0, width - 1);
   const tail: string[] = [];
   let used = 0;
@@ -164,21 +167,56 @@ function wrapTerminalLine(value: string, width: number): string[] {
   if (width <= 0) return [''];
   if (value === '') return [''];
 
+  const normalized = value.replace(/\r\n?/g, '\n');
+  const paragraphs = normalized.split('\n');
   const rows: string[] = [];
-  let row = '';
-  let rowWidth = 0;
-  for (const { segment } of GRAPHEME_SEGMENTER.segment(value)) {
-    const cells = terminalCellWidth(segment);
-    if (row && rowWidth + cells > width) {
-      rows.push(row);
-      row = '';
-      rowWidth = 0;
+
+  for (const para of paragraphs) {
+    if (para === '') {
+      rows.push('');
+      continue;
     }
-    row += segment;
-    rowWidth += cells;
+
+    const words = para.match(/\S+|\s+/g) || [para];
+    let row = '';
+    let rowWidth = 0;
+
+    for (const word of words) {
+      const wordCells = terminalCellWidth(word);
+      if (row && rowWidth + wordCells > width) {
+        if (/^\s+$/.test(word)) {
+          continue;
+        }
+        rows.push(row);
+        row = '';
+        rowWidth = 0;
+      }
+
+      if (wordCells > width) {
+        for (const { segment } of GRAPHEME_SEGMENTER.segment(word)) {
+          const cells = terminalCellWidth(segment);
+          if (row && rowWidth + cells > width) {
+            rows.push(row);
+            row = '';
+            rowWidth = 0;
+          }
+          row += segment;
+          rowWidth += cells;
+        }
+      } else {
+        if (!row && /^\s+$/.test(word)) {
+          continue;
+        }
+        row += word;
+        rowWidth += wordCells;
+      }
+    }
+    if (row || rows.length === 0) {
+      rows.push(row);
+    }
   }
-  rows.push(row);
-  return rows;
+
+  return rows.length > 0 ? rows : [''];
 }
 
 function appendMetricCards(lines: string[], width: number, cards: MetricCard[]): void {
@@ -1953,36 +1991,56 @@ export class MaosTui {
     const port = this.oasisConfig?.ollama?.port || 11434;
     const modelBadge = this.selectedModel.replace('gemma2:', 'GEMMA ').toUpperCase();
 
-    // Sleek NeoVim-style info bar
+    // Responsive sleek NeoVim-style info bar
     const infoBar =
       W >= 87
         ? `${c.cyanBright('💬')} ${c.boldWhite('CHAT')}  ${c.slateBorder('│')}  ${c.slateMuted('ACTIVE MODEL:')} ${c.violetBright(modelBadge)}  ${c.slateBorder('│')}  ${c.slateMuted('LOCAL INFERENCE:')} ${c.emerald(`${host}:${port}`)}  ${c.slateBorder('│')}  ${c.cyanBright('0 KB EGRESS')}`
-        : `${c.cyanBright('💬 CHAT')} · ${c.violetBright(modelBadge)} · ${c.emerald(`${host}:${port}`)} · ${c.cyanBright('0 KB EGRESS')}`;
+        : W >= 54
+          ? `${c.cyanBright('💬 CHAT')} · ${c.violetBright(modelBadge)} · ${c.emerald(`${host}:${port}`)} · ${c.cyanBright('0 KB EGRESS')}`
+          : W >= 32
+            ? `${c.cyanBright('💬 CHAT')} · ${c.violetBright(modelBadge)} · ${c.cyanBright('0 KB EGRESS')}`
+            : `${c.cyanBright('💬 CHAT')} · ${c.violetBright(modelBadge)}`;
     lines.push(center(infoBar));
     lines.push(c.slateBorder('─'.repeat(W)));
 
     // Chat history viewport
     const promptRows = 3;
     const headerRows = lines.length;
-    const availableChatRows = Math.max(2, bodyRows - headerRows - promptRows);
+    const availableChatRows = Math.max(1, bodyRows - headerRows - promptRows);
 
     const chatContentWidth = Math.max(1, W - 2);
     const chatDisplayRows: string[] = [];
 
     if (this.chatMessages.length === 0) {
-      const boxW = Math.max(28, Math.min(62, chatContentWidth - 4));
-      const innerW = boxW - 2;
+      const maxBoxW = Math.max(10, Math.min(62, chatContentWidth - 4));
+      const boxW = Math.max(10, Math.min(maxBoxW, W - 2));
+      const innerW = Math.max(8, boxW - 2);
       const topBorder = c.cyanBright('╭' + '─'.repeat(innerW) + '╮');
       const bottomBorder = c.cyanBright('╰' + '─'.repeat(innerW) + '╯');
       const makeBoxRow = (styledText: string) => {
         return c.cyanBright('│') + centerTerminalLine(styledText, innerW) + c.cyanBright('│');
       };
 
+      const title =
+        innerW >= 37 ? 'Welcome to MAOS Sovereign Local Chat!' : innerW >= 24 ? 'MAOS Sovereign Chat' : 'MAOS Chat';
+      const desc =
+        innerW >= 55
+          ? 'Chat directly with local Gemma without spawning swarms.'
+          : innerW >= 36
+            ? 'Direct chat with sovereign local Gemma.'
+            : 'Direct local Gemma chat.';
+      const hint =
+        innerW >= 50
+          ? 'Try: "Hi", "What is MAOS?", "Explain architecture"'
+          : innerW >= 30
+            ? 'Try: "Hi" or "What is MAOS?"'
+            : 'Try: "Hi"';
+
       chatDisplayRows.push('');
       chatDisplayRows.push(center(topBorder));
-      chatDisplayRows.push(center(makeBoxRow(c.white('Welcome to MAOS Sovereign Local Chat!'))));
-      chatDisplayRows.push(center(makeBoxRow(c.slateText('Chat directly with local Gemma without spawning swarms.'))));
-      chatDisplayRows.push(center(makeBoxRow(c.slateMuted('Try: "Hi", "What is MAOS?", "Explain architecture"'))));
+      chatDisplayRows.push(center(makeBoxRow(c.white(title))));
+      chatDisplayRows.push(center(makeBoxRow(c.slateText(desc))));
+      chatDisplayRows.push(center(makeBoxRow(c.slateMuted(hint))));
       chatDisplayRows.push(center(bottomBorder));
     } else {
       for (const msg of this.chatMessages) {
@@ -2033,7 +2091,7 @@ export class MaosTui {
     const innerContent = prefix + inputText;
     const promptRow = `${c.violetBright('│ ')}${fitTerminalLine(innerContent, innerW)}${c.violetBright(' │')}`;
     lines.push(centerTerminalLine(c.violetBright('╭' + '─'.repeat(Math.max(0, W - 2)) + '╮'), W));
-    lines.push(promptRow);
+    lines.push(centerTerminalLine(promptRow, W));
     lines.push(centerTerminalLine(c.violetBright('╰' + '─'.repeat(Math.max(0, W - 2)) + '╯'), W));
   }
 

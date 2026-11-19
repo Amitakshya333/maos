@@ -337,18 +337,52 @@ describe('TUI and Ignite Resilience Suite', () => {
 
     it('dynamically adapts welcome box on narrow terminal width without distortion', () => {
       const tui = new MaosTui(process.cwd());
-      const lines: string[] = [];
-      (tui as any).renderTabChat(lines, 50, 20);
-      const output = lines.join('\n');
+      for (const testW of [50, 30, 24]) {
+        const lines: string[] = [];
+        (tui as any).renderTabChat(lines, testW, 20);
+        const output = lines.join('\n');
 
-      expect(output).toContain('CHAT');
-      expect(output).toContain('Welcome to MAOS Sovereign Local Chat!');
-      // Verify all lines fit within width 50 without wrapping
-      for (const line of lines) {
-        // Strip ANSI escape codes to check visual cell width
-        const raw = line.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
-        expect(raw.length).toBeLessThanOrEqual(50);
+        expect(output).toContain('CHAT');
+        // Verify all lines fit strictly within test width without wrapping
+        for (const line of lines) {
+          const raw = line.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
+          expect(raw.length).toBeLessThanOrEqual(testW);
+          expect(line).not.toContain('\n');
+          expect(line).not.toContain('\r');
+        }
+        // At W=24, verify welcome box borders are intact and not cut off
+        const rawOutput = output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
+        expect(rawOutput).toMatch(/╭─+╮/);
+        expect(rawOutput).toMatch(/╰─+╯/);
       }
+    });
+
+    it('sanitizes embedded newlines and cleanly wraps multi-paragraph assistant messages', () => {
+      const tui = new MaosTui(process.cwd());
+      (tui as any).chatMessages.push(
+        { sender: 'user', text: 'tell me what is Gemma', time: '12:00' },
+        {
+          sender: 'gemma',
+          text: 'Gemma is an open-weights large language model created by Google DeepMind.\nThink of it like me, but accessible to everyone!\nYou can use Gemma to understand and generate text.',
+          time: '12:00',
+        },
+      );
+
+      const lines: string[] = [];
+      (tui as any).renderTabChat(lines, 80, 24);
+
+      // Verify no line contains embedded newlines or carriage returns
+      for (const line of lines) {
+        expect(line).not.toContain('\n');
+        expect(line).not.toContain('\r');
+        const raw = line.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
+        expect(raw.length).toBeLessThanOrEqual(80);
+      }
+
+      const fullOutput = lines.join('\n');
+      expect(fullOutput).toContain('tell me what is Gemma');
+      expect(fullOutput).toContain('Google DeepMind');
+      expect(fullOutput).toContain('accessible to everyone!');
     });
 
     it('appends exactly one assistant response without duplication on sendGemmaChatMessage', async () => {
@@ -363,6 +397,53 @@ describe('TUI and Ignite Resilience Suite', () => {
       expect(messages[0].text).toBe('Hello Gemma');
       expect(messages[1].sender).toBe('gemma');
       expect(messages[1].text.length).toBeGreaterThan(0);
+    });
+
+    it('accumulates streamed tokens into exactly one assistant message without duplication', async () => {
+      const tui = new MaosTui(process.cwd());
+
+      // Mock global fetch to return a streaming Response with multiple token chunks
+      const chunks = [
+        '{"response":"Gemma "}\n',
+        '{"response":"is a "}\n',
+        '{"response":"sovereign "}\n',
+        '{"response":"local "}\n',
+        '{"response":"model."}\n',
+      ];
+      let chunkIdx = 0;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader() {
+              return {
+                async read() {
+                  if (chunkIdx >= chunks.length) {
+                    return { done: true, value: undefined };
+                  }
+                  const encoder = new TextEncoder();
+                  const val = encoder.encode(chunks[chunkIdx++]);
+                  return { done: false, value: val };
+                },
+              };
+            },
+          },
+        } as any;
+      };
+
+      try {
+        await (tui as any).sendGemmaChatMessage('What are you?');
+        const messages = tui.getChatMessages();
+        expect(messages).toHaveLength(2);
+        expect(messages[0].sender).toBe('user');
+        expect(messages[0].text).toBe('What are you?');
+        expect(messages[1].sender).toBe('gemma');
+        expect(messages[1].text).toBe('Gemma is a sovereign local model.');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });
