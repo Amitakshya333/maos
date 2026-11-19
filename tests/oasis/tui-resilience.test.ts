@@ -203,6 +203,10 @@ describe('TUI and Ignite Resilience Suite', () => {
       expect(classifyUserInput('what is maos?')).toBe('chat');
       expect(classifyUserInput('how does oasis work?')).toBe('chat');
       expect(classifyUserInput('can you explain how herdr works?')).toBe('chat');
+      expect(classifyUserInput('could you explain how herdr works')).toBe('chat');
+      expect(classifyUserInput('Can you tell me about the architecture')).toBe('chat');
+      expect(classifyUserInput('can you help me understand how this works')).toBe('chat');
+      expect(classifyUserInput('tell me how to use the tui')).toBe('chat');
       expect(classifyUserInput('tell me about gemma')).toBe('chat');
       expect(classifyUserInput('why loopback only?')).toBe('chat');
       expect(classifyUserInput('how are you today?')).toBe('chat');
@@ -223,6 +227,15 @@ describe('TUI and Ignite Resilience Suite', () => {
       expect(classifyUserInput('deploy worker service to production')).toBe('swarm_task');
       expect(classifyUserInput('scaffold react frontend with vite')).toBe('swarm_task');
       expect(classifyUserInput('optimize buffer geometry allocations')).toBe('swarm_task');
+      expect(classifyUserInput('write a script to clean up temp files')).toBe('swarm_task');
+    });
+
+    it('classifies tasks with greetings or polite phrases as swarm_task', () => {
+      expect(classifyUserInput('hi, build me a website')).toBe('swarm_task');
+      expect(classifyUserInput('hey can you write a python script to parse logs')).toBe('swarm_task');
+      expect(classifyUserInput('hello please implement auth')).toBe('swarm_task');
+      expect(classifyUserInput('can you build a website')).toBe('swarm_task');
+      expect(classifyUserInput('please create a new component')).toBe('swarm_task');
     });
 
     it('classifies explicit task prefixes as swarm_task', () => {
@@ -281,6 +294,45 @@ describe('TUI and Ignite Resilience Suite', () => {
       expect(tui.getActiveTab()).toBe(0);
       tui.setActiveTab(5);
       expect(tui.getActiveTab()).toBe(5);
+    });
+
+    it('renders clean categorized Settings panel without clumsy bracket noise', () => {
+      const tui = new MaosTui(process.cwd());
+      const lines: string[] = [];
+      (tui as any).renderTabSettings(lines, 90, 30);
+      const output = lines.join('\n');
+
+      expect(output).toContain('SETTINGS & WORKSPACE CONFIGURATION');
+      expect(output).toContain('MODEL & LOCAL INFERENCE');
+      expect(output).toContain('MULTI-AGENT ORCHESTRATION');
+      expect(output).toContain('SOVEREIGNTY & OPSEC POLICY');
+      expect(output).toContain('Primary Model');
+      expect(output).toContain('Herdr Multi-Pane');
+      expect(output).toContain('Network Boundary');
+
+      // Verify no clumsy debug bracket dumps like [ACTIVE], [OPTIMAL], [BLOCKED]
+      expect(output).not.toContain('[ACTIVE]');
+      expect(output).not.toContain('[OPTIMAL]');
+      expect(output).not.toContain('[BLOCKED]');
+      expect(output).not.toContain('[CONFIG]');
+
+      // Verify sleek dot status indicators
+      expect(output).toContain('● ACTIVE');
+      expect(output).toContain('✓ STRICT');
+      expect(output).toContain('✓ BLOCKED');
+    });
+
+    it('renders Chat view with active model cards and message history', () => {
+      const tui = new MaosTui(process.cwd());
+      const lines: string[] = [];
+      (tui as any).renderTabChat(lines, 90, 24);
+      const output = lines.join('\n');
+
+      expect(output).toContain('CHAT');
+      expect(output).toContain('ACTIVE MODEL');
+      expect(output).toContain('LOCAL INFERENCE');
+      expect(output).toContain('CONVERSATION');
+      expect(output).toContain('Ask Gemma anything');
     });
   });
 });

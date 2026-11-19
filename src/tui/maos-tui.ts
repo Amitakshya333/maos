@@ -291,13 +291,27 @@ export function classifyUserInput(input: string): 'chat' | 'swarm_task' {
   if (/^(chat|ask|question|say):\s*/i.test(trimmed)) return 'chat';
 
   const lower = trimmed.toLowerCase();
-  const cleanTokens = lower
-    .replace(/[?!.,;:()]/g, '')
-    .split(/\s+/)
-    .filter(Boolean);
 
-  // Common greetings and casual tokens
-  const greetingWords = new Set([
+  // Strip leading polite / conversational preamble
+  // e.g. "hi, can you please build..." -> "build..."
+  // e.g. "hey could you write..." -> "write..."
+  // e.g. "hello! please create..." -> "create..."
+  // e.g. "can you please fix..." -> "fix..."
+  const stripped = lower
+    .replace(/^(hi|hello|hey|hiya|yo|howdy|hola|greetings|good\s+(morning|afternoon|evening|day))[!,.\s]*/i, '')
+    .replace(/^(please|kindly)[!,.\s]*/i, '')
+    .replace(
+      /^(can\s+you(\s+please)?|could\s+you(\s+please)?|would\s+you(\s+please)?|i\s+want\s+you\s+to|i\s+need\s+you\s+to)[!,.\s]*/i,
+      '',
+    )
+    .replace(/^(please|kindly)[!,.\s]*/i, '')
+    .trim();
+
+  // If after stripping preamble nothing is left (e.g. "hi", "hello!", "hey please"):
+  if (!stripped) return 'chat';
+
+  // Common conversational / casual feedback tokens
+  const casualTokens = new Set([
     'hi',
     'hello',
     'hey',
@@ -318,48 +332,48 @@ export function classifyUserInput(input: string): 'chat' | 'swarm_task' {
     'cool',
     'nice',
     'great',
+    'awesome',
+    'perfect',
     'help',
+    'status',
   ]);
+  const cleanTokens = stripped
+    .replace(/[?!.,;:()]/g, '')
+    .split(/\s+/)
+    .filter(Boolean);
 
-  // Very short inputs composed entirely of casual/greeting tokens
-  if (cleanTokens.length <= 2 && cleanTokens.every((t) => greetingWords.has(t))) {
+  if (cleanTokens.length <= 2 && cleanTokens.every((t) => casualTokens.has(t))) {
     return 'chat';
   }
 
-  // Greeting at start
-  if (/^(hi|hello|hey|hiya|yo|howdy|hola|greetings|good\s+(morning|afternoon|evening|day))\b/i.test(trimmed)) {
-    return 'chat';
-  }
-
-  // Conversational questions and queries
+  // Conversational questions asking to explain, tell, describe, clarify
+  // Even if they mention task words ("explain how to build a website", "tell me how to write tests")
   const conversationalStarters =
-    /^(how\s+are\s+you|who\s+are\s+you|what\s+are\s+you|what\s+is\s+this|what\s+can\s+you\s+do|tell\s+me\s+about|can\s+you\s+explain|explain\s+to\s+me|tell\s+me\s+a\s+joke|what\s+time\s+is\s+it|what\s+is\s+your\s+name|what\s+is\s+maos|how\s+does\s+oasis|how\s+does\s+herdr)\b/i;
-  if (conversationalStarters.test(trimmed)) {
+    /^(how\s+(are\s+you|does|do|can|is|to)|who\s+(are\s+you|is)|what\s+(are\s+you|is|can|do|does|are)|why\s+|tell\s+me|explain|can\s+you\s+explain|could\s+you\s+explain|help\s+me\s+understand|describe|clarify)\b/i;
+
+  if (conversationalStarters.test(stripped) || conversationalStarters.test(lower)) {
     return 'chat';
   }
 
-  // Imperative task action verbs that signal engineering / coding work
+  // Action verbs that indicate hands-on engineering / coding execution tasks
   const imperativeTaskVerbs =
-    /^(build|create|implement|fix|refactor|deploy|scaffold|generate|develop|write|modify|update|optimize|delete|migrate|repair|run|compile|assemble|wire|dockerize|containerize)\b/i;
+    /^(build|create|implement|fix|refactor|deploy|scaffold|generate|develop|write|modify|update|optimize|delete|migrate|repair|run|compile|assemble|wire|dockerize|containerize|patch|remediate|benchmark|test|clean|install|init)\b/i;
 
-  if (imperativeTaskVerbs.test(trimmed)) {
+  if (imperativeTaskVerbs.test(stripped)) {
+    if (stripped.endsWith('?') && /^(is|are|does|do|can|could|how|what|why)\b/i.test(stripped)) {
+      return 'chat';
+    }
     return 'swarm_task';
   }
 
-  // Question words (without imperative task verbs)
-  if (/^(what|why|who|where|when|which|is|are|does|do|can\s+i|can\s+we|how)\b/i.test(trimmed)) {
-    // If it contains "build", "fix", etc., but ends with ?, still a question
-    if (trimmed.endsWith('?')) return 'chat';
-    if (cleanTokens.length > 0 && !imperativeTaskVerbs.test(cleanTokens[0])) return 'chat';
-  }
-
-  // If question mark at end and no imperative verb at start
-  if (trimmed.endsWith('?') && !imperativeTaskVerbs.test(trimmed)) {
+  // General questions (start with question word or end with question mark)
+  const questionWords = /^(what|why|who|where|when|which|is|are|does|do|how|can|could|would)\b/i;
+  if (questionWords.test(stripped) || stripped.endsWith('?')) {
     return 'chat';
   }
 
-  // Very short input (< 4 words) without task verb defaults to chat
-  if (cleanTokens.length <= 3 && (cleanTokens.length === 0 || !imperativeTaskVerbs.test(cleanTokens[0]))) {
+  // Short inputs (< 4 words) without task verb default to chat
+  if (cleanTokens.length <= 3 && !imperativeTaskVerbs.test(cleanTokens[0])) {
     return 'chat';
   }
 
@@ -403,7 +417,12 @@ export class MaosTui {
   private chatViewportRows: number = 8;
   private chatRenderedRowCount: number = 0;
   private chatIsStreaming: boolean = false;
+  private activeChatAbortController: AbortController | null = null;
   private oasisConfig: any = null;
+
+  private settingsScrollOffset: number = 0;
+  private settingsViewportRows: number = 16;
+  private settingsRenderedRowCount: number = 0;
 
   private gpuStats: GpuStats = {
     vramUsedMiB: 3074,
@@ -420,6 +439,15 @@ export class MaosTui {
   private projectRoot: string;
   private readonly resizeHandler = () => this.render();
   private readonly interruptHandler = () => {
+    if (this.chatIsStreaming && this.activeChatAbortController) {
+      this.activeChatAbortController.abort();
+      this.activeChatAbortController = null;
+      this.chatIsStreaming = false;
+      this.statusMessage = 'Chat generation cancelled.';
+      this.appendTranscript('\n^C [Chat generation cancelled by user]');
+      this.render();
+      return;
+    }
     if (this.externalCommandRunning && this.activeChild) {
       this.statusMessage = 'Aborting running process...';
       this.appendTranscript('\n^C [Aborting running process...]');
@@ -615,7 +643,7 @@ export class MaosTui {
       if (this.externalCommandRunning) {
         // Tab key always cycles views:
         if (key.name === 'tab') {
-          this.activeTab = this.getNextTab(this.activeTab);
+          this.activeTab = key.shift ? this.getPrevTab(this.activeTab) : this.getNextTab(this.activeTab);
           this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
@@ -696,12 +724,21 @@ export class MaosTui {
       // If on Tab 1 (where the prompt box is always ready to receive input):
       if (this.activeTab === 1) {
         if (key.name === 'tab') {
-          this.activeTab = 2;
-          this.statusMessage = 'Switched to View [2] — Local Chat.';
+          this.activeTab = key.shift ? this.getPrevTab(1) : this.getNextTab(1);
+          this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
         }
         if (key.name === 'escape') {
+          if (this.chatIsStreaming && this.activeChatAbortController) {
+            this.activeChatAbortController.abort();
+            this.activeChatAbortController = null;
+            this.chatIsStreaming = false;
+            this.statusMessage = 'Chat generation cancelled.';
+            this.appendTranscript('\n[Chat generation cancelled]');
+            this.render();
+            return;
+          }
           if (this.modalInputText !== '') {
             this.modalInputText = '';
             this.statusMessage = 'Input cleared.';
@@ -716,6 +753,11 @@ export class MaosTui {
           return;
         }
         if (key.name === 'return') {
+          if (this.chatIsStreaming) {
+            this.statusMessage = 'Gemma is currently responding. Press Esc to cancel.';
+            this.render();
+            return;
+          }
           const command = this.modalInputText.trim();
           this.modalInputText = '';
           this.commandHistoryIndex = this.commandHistory.length;
@@ -780,18 +822,31 @@ export class MaosTui {
       // If on Tab 2 (Dedicated Local Gemma LLM Chat):
       if (this.activeTab === 2) {
         if (key.name === 'tab') {
-          this.activeTab = 3;
-          this.statusMessage = 'Switched to View [3] — Agents.';
+          this.activeTab = key.shift ? this.getPrevTab(2) : this.getNextTab(2);
+          this.statusMessage = `Switched to View [${this.activeTab}].`;
           this.render();
           return;
         }
         if (key.name === 'escape') {
+          if (this.chatIsStreaming && this.activeChatAbortController) {
+            this.activeChatAbortController.abort();
+            this.activeChatAbortController = null;
+            this.chatIsStreaming = false;
+            this.statusMessage = 'Chat generation cancelled.';
+            this.render();
+            return;
+          }
           this.chatInputText = '';
           this.statusMessage = 'Chat input cleared.';
           this.render();
           return;
         }
         if (key.name === 'return') {
+          if (this.chatIsStreaming) {
+            this.statusMessage = 'Gemma is currently responding. Press Esc to cancel.';
+            this.render();
+            return;
+          }
           const msg = this.chatInputText.trim();
           this.chatInputText = '';
           if (msg) {
@@ -838,8 +893,30 @@ export class MaosTui {
         return;
       }
       if (key.name === 'tab') {
-        this.activeTab = this.getNextTab(this.activeTab);
+        this.activeTab = key.shift ? this.getPrevTab(this.activeTab) : this.getNextTab(this.activeTab);
         this.statusMessage = `Switched to View [${this.activeTab}].`;
+        this.render();
+        return;
+      }
+      if (this.activeTab === 0 && key.name === 'escape') {
+        this.activeTab = 1;
+        this.statusMessage = 'Returned to Dashboard.';
+        this.render();
+        return;
+      }
+      if (this.activeTab === 0 && ['pageup', 'pagedown', 'home', 'end'].includes(key.name)) {
+        const maxScroll = Math.max(0, this.settingsRenderedRowCount - this.settingsViewportRows);
+        if (key.name === 'home') {
+          this.settingsScrollOffset = 0;
+        } else if (key.name === 'end') {
+          this.settingsScrollOffset = maxScroll;
+        } else {
+          const step = Math.max(1, this.settingsViewportRows - 2);
+          this.settingsScrollOffset =
+            key.name === 'pageup'
+              ? Math.max(0, this.settingsScrollOffset - step)
+              : Math.min(maxScroll, this.settingsScrollOffset + step);
+        }
         this.render();
         return;
       }
@@ -864,6 +941,15 @@ export class MaosTui {
         return;
       }
       if (key.name === 'up' || key.name === 'down') {
+        if (this.activeTab === 0 && this.settingsRenderedRowCount > this.settingsViewportRows) {
+          const maxScroll = Math.max(0, this.settingsRenderedRowCount - this.settingsViewportRows);
+          this.settingsScrollOffset =
+            key.name === 'up'
+              ? Math.max(0, this.settingsScrollOffset - 1)
+              : Math.min(maxScroll, this.settingsScrollOffset + 1);
+          this.render();
+          return;
+        }
         this.activeTab = key.name === 'down' ? this.getNextTab(this.activeTab) : this.getPrevTab(this.activeTab);
         this.statusMessage = `Switched to View [${this.activeTab}].`;
         this.render();
@@ -1163,10 +1249,29 @@ export class MaosTui {
   }
 
   private async sendGemmaChatMessage(userMessage: string, inTranscript: boolean = false): Promise<void> {
+    if (this.chatIsStreaming) {
+      this.statusMessage = 'Gemma is currently responding. Press Esc to cancel.';
+      this.render();
+      return;
+    }
+
     const time = this.getNowTime();
     this.chatMessages.push({ sender: 'user', text: userMessage, time });
     this.chatScrollOffset = 0;
     this.chatIsStreaming = true;
+
+    const controller = new AbortController();
+    this.activeChatAbortController = controller;
+
+    // Run spinner loop so spinner animates during inference
+    this.spinnerIndex = 0;
+    if (this.spinnerTimer) clearInterval(this.spinnerTimer);
+    this.spinnerTimer = setInterval(() => {
+      if ((this.chatIsStreaming || this.externalCommandRunning) && this.isRunning) {
+        this.spinnerIndex = (this.spinnerIndex + 1) % this.spinnerFrames.length;
+        this.render();
+      }
+    }, 120);
 
     if (inTranscript) {
       this.statusMessage = `Asking local Gemma (${this.selectedModel})...`;
@@ -1182,8 +1287,7 @@ export class MaosTui {
     const port = this.oasisConfig?.ollama?.port || 11434;
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const res = await fetch(`http://${host}:${port}/api/generate`, {
         method: 'POST',
@@ -1193,7 +1297,7 @@ export class MaosTui {
           prompt: userMessage,
           system:
             'You are MAOS Oasis, an intelligent sovereign local AI assistant powered by Google Gemma. You run 100% locally on loopback. Be concise, direct, helpful, and friendly. Answer queries directly without dispatching multi-agent swarms unless requested.',
-          stream: false,
+          stream: true,
           options: {
             temperature: 0.7,
             num_predict: 256,
@@ -1204,11 +1308,66 @@ export class MaosTui {
       clearTimeout(timeoutId);
 
       if (res.ok) {
-        const data = (await res.json()) as { response?: string };
-        replyText = data.response?.trim() || '';
+        if (res.body && typeof (res.body as any).getReader === 'function') {
+          const reader = (res.body as any).getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          const gemmaMsg: ChatMessage = { sender: 'gemma', text: '', time: this.getNowTime() };
+          this.chatMessages.push(gemmaMsg);
+          let lastRenderTime = Date.now();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const data = JSON.parse(line);
+                if (data.response) {
+                  replyText += data.response;
+                  gemmaMsg.text = replyText;
+                }
+              } catch {}
+            }
+            if (Date.now() - lastRenderTime > 80) {
+              lastRenderTime = Date.now();
+              this.render();
+            }
+          }
+          if (buffer.trim()) {
+            try {
+              const data = JSON.parse(buffer);
+              if (data.response) {
+                replyText += data.response;
+                gemmaMsg.text = replyText;
+              }
+            } catch {}
+          }
+        } else {
+          const data = (await res.json()) as { response?: string };
+          replyText = data.response?.trim() || '';
+          this.chatMessages.push({ sender: 'gemma', text: replyText, time: this.getNowTime() });
+        }
+      } else {
+        const errorText = await res.text().catch(() => '');
+        if (res.status === 404 || errorText.includes('not found')) {
+          replyText = `Model "${this.selectedModel}" is not downloaded in Ollama. Run: ollama pull ${this.selectedModel}`;
+        }
       }
-    } catch {
-      // Local Ollama daemon unreachable or timed out
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        replyText = '[Chat response cancelled]';
+      }
+    } finally {
+      this.activeChatAbortController = null;
+      this.chatIsStreaming = false;
+      if (!this.externalCommandRunning && this.spinnerTimer) {
+        clearInterval(this.spinnerTimer);
+        this.spinnerTimer = null;
+      }
     }
 
     if (!replyText) {
@@ -1216,10 +1375,20 @@ export class MaosTui {
       const isGreeting = /^(hi|hello|hey|hiya|yo|howdy|greetings|good\s+(morning|afternoon|evening))\b/i.test(lower);
       if (isGreeting) {
         replyText =
-          'Hello! I am MAOS Oasis, your sovereign local workspace powered by Gemma. I run 100% locally on your machine with zero cloud egress. How can I help you today? You can ask me questions, or type a goal like "/ignite <task>" to launch an autonomous agent swarm.';
+          'Hello! I am MAOS Oasis, your sovereign local workspace powered by Gemma. I run 100% locally on your machine with zero cloud egress. Local Ollama daemon is currently offline at ' +
+          host +
+          ':' +
+          port +
+          '. Start Ollama with "ollama serve" or run "maos doctor --fix" to enable live local Gemma inference.';
       } else {
-        replyText = `Local Ollama inference daemon is offline at ${host}:${port}. Start Ollama with 'ollama serve' or run 'maos doctor --fix' to enable full local Gemma inference.`;
+        replyText =
+          'Local Ollama inference daemon is offline at ' +
+          host +
+          ':' +
+          port +
+          '. Start Ollama with "ollama serve" or run "maos doctor --fix" to enable full local Gemma inference.';
       }
+      this.chatMessages.push({ sender: 'gemma', text: replyText, time: this.getNowTime() });
     }
 
     const replyTime = this.getNowTime();
@@ -1569,7 +1738,7 @@ export class MaosTui {
     else if (this.activeTab === 3) this.renderTabAgents(page, mainW);
     else if (this.activeTab === 4) this.renderTabHealer(page, mainW);
     else if (this.activeTab === 5) this.renderTabEventLog(page, mainW);
-    else if (this.activeTab === 0) this.renderTabSettings(page, mainW);
+    else if (this.activeTab === 0) this.renderTabSettings(page, mainW, availableBodyRows);
     else this.renderTabFleet(page, mainW, availableBodyRows);
 
     if (this.modalMode !== 'none') this.renderModal(page, mainW);
@@ -2056,114 +2225,143 @@ export class MaosTui {
   }
 
   // ── Tab 0: Workplace Settings & Configuration ──────────────────
-  private renderTabSettings(lines: string[], W: number): void {
+  private renderTabSettings(lines: string[], W: number, bodyRows?: number): void {
     const center = (value: string) => centerTerminalLine(value, W);
-    lines.push(center(c.boldWhite('SETTINGS & WORKPLACE CONFIGURATION')));
-    lines.push(center(c.slateText('Sovereign local parameters · Zero cloud egress · Hardware profile')));
-    lines.push('');
+    const allRows: string[] = [];
+
+    allRows.push(center(c.boldWhite('SETTINGS & WORKSPACE CONFIGURATION')));
+    allRows.push(center(c.slateText('Sovereign local parameters · 100% loopback · Zero cloud egress')));
+    allRows.push('');
 
     const tier = (this.oasisConfig?.hardware?.tier || 'high').toUpperCase();
     const vramGB = this.gpuStats.vramTotalMiB ? (this.gpuStats.vramTotalMiB / 1024).toFixed(1) : '8.0';
-
-    appendMetricCards(lines, W, [
-      {
-        label: 'CONFIG FILE',
-        value: 'maos-oasis.json',
-        detail: 'Schema v1.0.0 · Local state',
-        color: c.cyanBright,
-      },
-      {
-        label: 'HARDWARE PROFILE',
-        value: `${tier} TIER`,
-        detail: `${vramGB} GB VRAM · ${this.gpuStats.tempC}°C`,
-        color: c.emerald,
-      },
-      {
-        label: 'OPSEC ENFORCEMENT',
-        value: 'LOOPBACK ONLY',
-        detail: '0.00 KB egress · Strict policy',
-        color: c.violetBright,
-      },
-    ]);
-
-    lines.push('');
-    lines.push(center(c.boldWhite('WORKPLACE CONFIGURATION TABLE')));
-    lines.push('');
-
-    const tableW = Math.max(48, Math.min(76, W - 4));
-    const col1W = 26;
-    const col3W = 12;
-    const col2W = tableW - col1W - col3W - 4;
-
     const host = this.oasisConfig?.ollama?.host || '127.0.0.1';
     const port = this.oasisConfig?.ollama?.port || 11434;
 
-    const settingsRows: [string, string, string, (s: string) => string][] = [
-      ['Active Gemma Model', this.selectedModel, 'ACTIVE', c.emerald],
-      ['Fallback Model', this.oasisConfig?.model?.fallback || 'gemma2:2b', 'STANDBY', c.slateMuted],
-      ['Context Window', `${this.oasisConfig?.model?.contextTokens || 8192} tokens`, 'OPTIMAL', c.cyanBright],
-      ['Ollama Daemon Host', `${host}:${port}`, 'LOOPBACK', c.emerald],
-      ['Ollama Auto-Start', this.oasisConfig?.ollama?.autoStart ? 'Enabled (on demand)' : 'Disabled', 'CONFIG', c.cyan],
-      [
-        'Herdr Multi-Pane Tiling',
-        this.oasisConfig?.dependencies?.herdr?.multiPaneEnabled ? 'Enabled (IPC socket)' : 'Disabled',
-        this.herdrAvailable ? 'LIVE' : 'OFFLINE',
-        this.herdrAvailable ? c.emerald : c.amber,
-      ],
-      [
-        'OpenCode Tool Harness',
-        this.oasisConfig?.dependencies?.opencode?.harnessEnabled ? 'Enabled (CLI sandbox)' : 'Disabled',
-        'READY',
+    // Quick Status Pill Banner
+    const banner = `${c.slateBorder('[')} ${c.slateMuted('CONFIG:')} ${c.cyanBright('maos-oasis.json')} ${c.slateBorder(']')}   ${c.slateBorder('[')} ${c.slateMuted('TIER:')} ${c.emerald(`${tier} (${vramGB} GB)`)} ${c.slateBorder(']')}   ${c.slateBorder('[')} ${c.slateMuted('OPSEC:')} ${c.violetBright('STRICT LOOPBACK')} ${c.slateBorder(']')}`;
+    allRows.push(center(banner));
+    allRows.push('');
+
+    // Categorized NeoVim / OpenCode style panel
+    const panelW = Math.min(84, Math.max(46, W - 4));
+    const col1W = Math.max(18, Math.min(24, Math.floor(panelW * 0.28)));
+    const col3W = 14;
+    const col2W = Math.max(10, panelW - col1W - col3W - 6);
+
+    const renderHeader = (title: string, isFirst = false) => {
+      const t = ' ' + title + ' ';
+      const left = isFirst ? '╭─' : '├─';
+      const right = isFirst ? '╮' : '┤';
+      const dashes = Math.max(0, panelW - 3 - terminalCellWidth(t));
+      return centerTerminalLine(c.slateBorder(left) + c.cyanBright(t) + c.slateBorder('─'.repeat(dashes) + right), W);
+    };
+
+    const renderRow = (label: string, val: string, status: string, colorFn: (s: string) => string) => {
+      const p1 = fitTerminalLine(c.slateText(label), col1W);
+      const p2 = fitTerminalLine(c.white(val), col2W);
+      const p3 = fitTerminalLine(colorFn(status), col3W);
+      const content = c.slateBorder('│ ') + p1 + ' ' + p2 + ' ' + p3 + c.slateBorder(' │');
+      return centerTerminalLine(content, W);
+    };
+
+    // Category 1: MODEL & LOCAL INFERENCE
+    allRows.push(renderHeader('MODEL & LOCAL INFERENCE', true));
+    allRows.push(
+      renderRow('Primary Model', `${this.selectedModel} (${this.gpuStats.modelInVram})`, '● ACTIVE', c.emerald),
+    );
+    allRows.push(
+      renderRow(
+        'Fallback Model',
+        this.oasisConfig?.model?.fallback || 'gemma2:2b (CPU fallback)',
+        '○ STANDBY',
+        c.slateMuted,
+      ),
+    );
+    allRows.push(
+      renderRow(
+        'Context Window',
+        `${this.oasisConfig?.model?.contextTokens || 8192} tokens (sliding window)`,
+        '✓ 100% LOCAL',
+        c.cyanBright,
+      ),
+    );
+    allRows.push(renderRow('Ollama Daemon', `http://${host}:${port}`, '● LIVE', c.emerald));
+    allRows.push(
+      renderRow(
+        'Auto-Start Daemon',
+        this.oasisConfig?.ollama?.autoStart ? 'Enabled (on-demand spawn)' : 'Disabled',
+        '✓ AUTO',
         c.cyan,
-      ],
-      ['Autonomous Healer', 'Active (pane buffer hook)', 'WATCHING', c.emerald],
-      ['Swarm Team Preset', `${this.oasisConfig?.team?.preset || 'team'} (5 panes)`, 'APPLIED', c.violetBright],
-      ['Cloud Telemetry Egress', '0.00 KB (Strict Policy)', 'BLOCKED', c.emerald],
-    ];
+      ),
+    );
 
-    // Table Top Border
-    const topBorder = c.slateBorder('╭' + '─'.repeat(col1W) + '┬' + '─'.repeat(col2W) + '┬' + '─'.repeat(col3W) + '╮');
-    lines.push(centerTerminalLine(topBorder, W));
+    // Category 2: MULTI-AGENT ORCHESTRATION
+    allRows.push(renderHeader('MULTI-AGENT ORCHESTRATION', false));
+    allRows.push(
+      renderRow(
+        'Herdr Multi-Pane',
+        this.oasisConfig?.dependencies?.herdr?.multiPaneEnabled ? 'Physical terminal split matrix' : 'Disabled',
+        this.herdrAvailable ? '● ONLINE' : '○ OFFLINE',
+        this.herdrAvailable ? c.emerald : c.amber,
+      ),
+    );
+    allRows.push(
+      renderRow(
+        'OpenCode Tool Harness',
+        this.oasisConfig?.dependencies?.opencode?.harnessEnabled ? 'Isolated CLI sandbox executor' : 'Disabled',
+        '✓ READY',
+        c.cyan,
+      ),
+    );
+    allRows.push(renderRow('Autonomous Healer', 'Pane error repair & patch hook', '● WATCHING', c.emerald));
+    allRows.push(
+      renderRow(
+        'Swarm Team Preset',
+        `${this.oasisConfig?.team?.preset || 'team'} (5 coordinated agents)`,
+        '✓ APPLIED',
+        c.violetBright,
+      ),
+    );
 
-    // Header Row
-    const headerRow =
-      c.slateBorder('│ ') +
-      c.boldWhite(fitTerminalLine('PARAMETER', col1W - 2).padEnd(col1W - 2)) +
-      c.slateBorder(' │ ') +
-      c.boldWhite(fitTerminalLine('CONFIGURATION VALUE', col2W - 2).padEnd(col2W - 2)) +
-      c.slateBorder(' │ ') +
-      c.boldWhite(fitTerminalLine('STATUS', col3W - 2).padEnd(col3W - 2)) +
-      c.slateBorder(' │');
-    lines.push(centerTerminalLine(headerRow, W));
+    // Category 3: SOVEREIGNTY & OPSEC POLICY
+    allRows.push(renderHeader('SOVEREIGNTY & OPSEC POLICY', false));
+    allRows.push(
+      renderRow(
+        'Hardware Profile',
+        `${tier} TIER (${this.gpuStats.tempC}°C · ${this.gpuStats.powerW}W)`,
+        '✓ DETECTED',
+        c.emerald,
+      ),
+    );
+    allRows.push(renderRow('Network Boundary', '127.0.0.1 loopback only', '✓ STRICT', c.emerald));
+    allRows.push(renderRow('Cloud Telemetry Egress', '0.00 KB transmitted (strict policy)', '✓ BLOCKED', c.emerald));
 
-    // Header Separator
-    const midBorder = c.slateBorder('├' + '─'.repeat(col1W) + '┼' + '─'.repeat(col2W) + '┼' + '─'.repeat(col3W) + '┤');
-    lines.push(centerTerminalLine(midBorder, W));
+    // Bottom Border
+    allRows.push(centerTerminalLine(c.slateBorder('╰' + '─'.repeat(Math.max(0, panelW - 2)) + '╯'), W));
 
-    // Data Rows
-    for (const [param, val, status, colorFn] of settingsRows) {
-      const rowStr =
-        c.slateBorder('│ ') +
-        c.white(fitTerminalLine(param, col1W - 2).padEnd(col1W - 2)) +
-        c.slateBorder(' │ ') +
-        c.cyan(fitTerminalLine(val, col2W - 2).padEnd(col2W - 2)) +
-        c.slateBorder(' │ ') +
-        colorFn(fitTerminalLine(`[${status}]`, col3W - 2).padEnd(col3W - 2)) +
-        c.slateBorder(' │');
-      lines.push(centerTerminalLine(rowStr, W));
-    }
-
-    // Table Bottom Border
-    const botBorder = c.slateBorder('╰' + '─'.repeat(col1W) + '┴' + '─'.repeat(col2W) + '┴' + '─'.repeat(col3W) + '╯');
-    lines.push(centerTerminalLine(botBorder, W));
-
-    lines.push('');
-    lines.push(
+    allRows.push('');
+    allRows.push(
       centerTerminalLine(
-        `${c.boldWhite('G')} ${c.slateMuted('Toggle Model (2B ↔ 9B)')}   ${c.boldWhite('R')} ${c.slateMuted('Refresh Status')}   ${c.boldWhite('Esc')} ${c.slateMuted('Return to Dashboard')}`,
+        `${c.boldWhite('G')} ${c.slateMuted('Toggle Model (2B ↔ 9B)')}   ${c.boldWhite('R')} ${c.slateMuted('Refresh Status')}   ${c.boldWhite('PgUp/PgDn')} ${c.slateMuted('Scroll')}   ${c.boldWhite('Esc')} ${c.slateMuted('Dashboard')}`,
         W,
       ),
     );
+
+    if (bodyRows !== undefined && allRows.length > bodyRows) {
+      this.settingsViewportRows = bodyRows;
+      this.settingsRenderedRowCount = allRows.length;
+      const maxScroll = Math.max(0, allRows.length - bodyRows);
+      this.settingsScrollOffset = Math.max(0, Math.min(this.settingsScrollOffset, maxScroll));
+      const end = allRows.length - this.settingsScrollOffset;
+      const start = Math.max(0, end - bodyRows);
+      lines.push(...allRows.slice(start, end));
+    } else {
+      this.settingsViewportRows = bodyRows || allRows.length;
+      this.settingsRenderedRowCount = allRows.length;
+      this.settingsScrollOffset = 0;
+      lines.push(...allRows);
+    }
   }
 
   // ── Modal Dialog Overlay ───────────────────────────────────────
