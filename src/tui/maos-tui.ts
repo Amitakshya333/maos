@@ -18,6 +18,15 @@ import { execFile, execSync, spawn, type ChildProcess } from 'child_process';
 import chalk from 'chalk';
 import { AgentInfo, getDefaultHerdrHarness, PaneInfo } from '../integrations/herdr';
 import { detectLocalModels, DetectedModel, formatHeaderBadge, formatModelDisplayName } from '../oasis/model-detector';
+import {
+  SwarmAgent,
+  SwarmPost,
+  SwarmBoardState,
+  createDefaultSwarmAgents,
+  createDefaultSwarmPosts,
+  renderSwarmBoard,
+} from '../oasis/swarm-board';
+import { renderJellyfishMascot, generateJellyfishRawFrame, renderColoredJellyfish } from '../oasis/jellyfish-ascii';
 
 // ── Colors & Styles ──────────────────────────────────────────────
 const c = {
@@ -459,6 +468,14 @@ export class MaosTui {
   private herdrAvailable: boolean = false;
   private herdrRefreshInFlight: boolean = false;
 
+  // ── Swarm Board (Tab 3) State ─────────────────────────────────────
+  private swarmGoal: string = 'Build and deploy Canva 3D Spatial Studio';
+  private swarmState: 'active' | 'waiting' | 'done' = 'active';
+  private swarmAgents: SwarmAgent[] = [];
+  private swarmPosts: SwarmPost[] = [];
+  private selectedSwarmAgentIndex: number = 0;
+  private swarmInspectorExpanded: boolean = false;
+
   private chatMessages: ChatMessage[] = [];
   private chatInputText: string = '';
   private chatScrollOffset: number = 0;
@@ -519,6 +536,75 @@ export class MaosTui {
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = projectRoot;
     this.loadWorkplaceConfig();
+    this.swarmAgents = createDefaultSwarmAgents(this.swarmGoal, this.selectedModel);
+    this.swarmPosts = createDefaultSwarmPosts(this.swarmGoal);
+  }
+
+  public getSwarmGoal(): string {
+    return this.swarmGoal;
+  }
+
+  public setSwarmGoal(goal: string): void {
+    this.swarmGoal = goal;
+    this.swarmAgents = createDefaultSwarmAgents(goal, this.selectedModel);
+    this.swarmPosts = createDefaultSwarmPosts(goal);
+    this.swarmState = 'active';
+  }
+
+  public getSwarmAgents(): SwarmAgent[] {
+    return this.swarmAgents;
+  }
+
+  public getSwarmPosts(): SwarmPost[] {
+    return this.swarmPosts;
+  }
+
+  public getSelectedSwarmAgent(): SwarmAgent {
+    return this.swarmAgents[this.selectedSwarmAgentIndex] || this.swarmAgents[0];
+  }
+
+  public setSelectedSwarmAgentIndex(index: number): void {
+    this.selectedSwarmAgentIndex = Math.max(0, Math.min(this.swarmAgents.length - 1, index));
+  }
+
+  public toggleSwarmInspectorExpanded(): boolean {
+    this.swarmInspectorExpanded = !this.swarmInspectorExpanded;
+    return this.swarmInspectorExpanded;
+  }
+
+  public isSwarmInspectorExpanded(): boolean {
+    return this.swarmInspectorExpanded;
+  }
+
+  public recordSwarmPost(sender: string, recipient: string, action: string, text: string): void {
+    const nextId = this.swarmPosts.length > 0 ? Math.max(...this.swarmPosts.map((p) => p.id)) + 1 : 1;
+    const now = new Date();
+    const timeStr = `${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    this.swarmPosts.push({
+      id: nextId,
+      sender,
+      recipient,
+      action,
+      text,
+      time: timeStr,
+      type: 'tool',
+    });
+    if (this.swarmPosts.length > 100) this.swarmPosts.shift();
+
+    const ag = this.swarmAgents.find((a) => a.id === sender);
+    if (ag) {
+      ag.latestTool = {
+        name: action,
+        args: text,
+        result: 'executed',
+        time: 'just now',
+      };
+      if (action.includes('complete') || text.includes('green') || text.includes('exit 0')) {
+        ag.state = 'done';
+      } else {
+        ag.state = 'working';
+      }
+    }
   }
 
   public loadWorkplaceConfig(): void {
@@ -939,7 +1025,64 @@ export class MaosTui {
         }
       }
 
-      // Action hotkeys on other tabs (Tabs 3, 4, 5, 0):
+      // If on Tab 3 (Antigravity Swarm Board):
+      if (this.activeTab === 3) {
+        if (key.name === 'tab') {
+          this.activeTab = key.shift ? this.getPrevTab(3) : this.getNextTab(3);
+          this.statusMessage = `Switched to View [${this.activeTab}].`;
+          this.render();
+          return;
+        }
+        if (key.name === 'escape') {
+          if (this.swarmInspectorExpanded) {
+            this.swarmInspectorExpanded = false;
+            this.statusMessage = 'Collapsed swarm inspector.';
+          } else {
+            this.activeTab = 1;
+            this.statusMessage = 'Returned to Dashboard.';
+          }
+          this.render();
+          return;
+        }
+        if (key.name === 'return' || key.name === 'e') {
+          this.swarmInspectorExpanded = !this.swarmInspectorExpanded;
+          this.statusMessage = this.swarmInspectorExpanded ? 'Expanded swarm inspector.' : 'Collapsed swarm inspector.';
+          this.render();
+          return;
+        }
+        if (key.name === 'up' || key.name === 'k') {
+          this.selectedSwarmAgentIndex = Math.max(0, this.selectedSwarmAgentIndex - 1);
+          this.render();
+          return;
+        }
+        if (key.name === 'down' || key.name === 'j') {
+          this.selectedSwarmAgentIndex = Math.min(this.swarmAgents.length - 1, this.selectedSwarmAgentIndex + 1);
+          this.render();
+          return;
+        }
+        if (key.name === 'p') {
+          this.previewArtifacts();
+          return;
+        }
+        if (key.name === 'r') {
+          void this.updateHerdrTelemetry();
+          void this.refreshDetectedModels();
+          this.statusMessage = 'Swarm roster and telemetry refreshed.';
+          this.render();
+          return;
+        }
+        if (['1', '2', '3', '4', '5'].includes(key.name)) {
+          const targetAgentIdx = parseInt(key.name, 10) - 1;
+          if (targetAgentIdx >= 0 && targetAgentIdx < this.swarmAgents.length) {
+            this.selectedSwarmAgentIndex = targetAgentIdx;
+            this.statusMessage = `Selected swarm agent: ${this.swarmAgents[targetAgentIdx].id}`;
+            this.render();
+            return;
+          }
+        }
+      }
+
+      // Action hotkeys on other tabs (Tabs 4, 5, 0):
       if (key.name === 'q') {
         this.exit();
         return;
@@ -1548,11 +1691,35 @@ export class MaosTui {
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
     const rows = normalized.split('\n');
     this.commandOutputRemainder = rows.pop() || '';
-    if (rows.length > 0) this.appendTranscript(rows.join('\n'));
+    if (rows.length > 0) {
+      this.appendTranscript(rows.join('\n'));
+
+      // Ingest live tool calls and worker activities into Swarm Board
+      for (const row of rows) {
+        if (row.includes('[Tool Call]') || row.includes('create_file:') || row.includes('run_command:')) {
+          const toolMatch = row.match(/(?:\[Tool Call\]\s*|⚡\s*)(\w+):\s*(.*)/i);
+          if (toolMatch) {
+            const tool = toolMatch[1];
+            const args = toolMatch[2];
+            const wMatch = row.match(/(ignite-worker-\d+|Worker-\d+)/i);
+            const sender = wMatch ? wMatch[1].toLowerCase().replace('worker-', 'ignite-worker-') : 'ignite-worker-1';
+            this.recordSwarmPost(sender, '@coordinator', tool, `${tool}: ${args}`);
+          }
+        } else if (row.includes('Task marked complete') || row.includes('WORKTREE GREEN') || row.includes('green')) {
+          const wMatch = row.match(/(ignite-worker-\d+|Worker-\d+)/i);
+          const sender = wMatch ? wMatch[1].toLowerCase().replace('worker-', 'ignite-worker-') : 'ignite-worker-1';
+          this.recordSwarmPost(sender, '@coordinator', 'complete', `${sender} worktree green and tests passed`);
+        } else if (row.includes('Spawning worker')) {
+          const wMatch = row.match(/(ignite-worker-\d+|Worker-\d+)/i);
+          const worker = wMatch ? wMatch[1].toLowerCase().replace('worker-', 'ignite-worker-') : 'worker';
+          this.recordSwarmPost('coordinator', `@${worker}`, 'spawn', `Spawning ${worker} in isolated worktree`);
+        }
+      }
+    }
     if (!this.transcriptRenderTimer) {
       this.transcriptRenderTimer = setTimeout(() => {
         this.transcriptRenderTimer = null;
-        if (this.isRunning && this.activeTab === 1) this.render();
+        if (this.isRunning && (this.activeTab === 1 || this.activeTab === 3)) this.render();
       }, 50);
     }
   }
@@ -1563,6 +1730,10 @@ export class MaosTui {
       this.reportCommand('Enter a goal before dispatching.', true);
       return;
     }
+    this.swarmGoal = trimmedGoal;
+    this.swarmState = 'active';
+    this.swarmAgents = createDefaultSwarmAgents(this.swarmGoal, this.selectedModel);
+    this.swarmPosts = createDefaultSwarmPosts(this.swarmGoal);
     this.runCliCommand(
       [
         'ignite',
@@ -1926,7 +2097,7 @@ export class MaosTui {
     const page: string[] = [];
     if (this.activeTab === 1) this.renderTabFleet(page, mainW, availableBodyRows);
     else if (this.activeTab === 2) this.renderTabChat(page, mainW, availableBodyRows);
-    else if (this.activeTab === 3) this.renderTabAgents(page, mainW);
+    else if (this.activeTab === 3) this.renderTabAgents(page, mainW, availableBodyRows);
     else if (this.activeTab === 4) this.renderTabHealer(page, mainW);
     else if (this.activeTab === 5) this.renderTabEventLog(page, mainW);
     else if (this.activeTab === 0) this.renderTabSettings(page, mainW, availableBodyRows);
@@ -1963,7 +2134,7 @@ export class MaosTui {
       const navTop = Math.max(1, Math.floor(bodyRows * 0.08));
       railItem(navTop, '⌂  Dashboard', 1);
       railItem(navTop + 2, '💬  Chat', 2);
-      railItem(navTop + 4, '◇  Agents', 3, false, String(this.herdrAgents.length));
+      railItem(navTop + 4, '◇  Swarm', 3, false, String(this.swarmAgents.length || this.herdrAgents.length || 5));
       railItem(navTop + 6, '▥  Telemetry', 4);
       railItem(navTop + 8, '▤  Event Log', 5);
       const settingsRow = Math.max(navTop + 11, bodyRows - 3);
@@ -2026,23 +2197,33 @@ export class MaosTui {
                 `${c.boldWhite('P')} ${c.emerald('Preview')}`,
                 `${c.boldWhite('Ctrl+C')} ${c.slateMuted('Quit')}`,
               ]
-            : [
-                `${c.boldWhite('Tab')} ${c.slateMuted('Switch View')}`,
-                `${c.boldWhite('0-5')} ${c.slateMuted('Jump')}`,
-                `${c.boldWhite('/')} ${c.slateMuted('Prompt')}`,
-                `${c.boldWhite('C')} ${c.cyan('Chat')}`,
-                `${c.boldWhite('G')} ${c.amber(
-                  `Model ${
-                    this.selectedModel
-                      .split('/')
-                      .pop()
-                      ?.replace(/^gemma2?:?/i, '') || this.selectedModel
-                  }`,
-                )}`,
-                `${c.boldWhite('P')} ${c.emerald('Preview')}`,
-                `${c.boldWhite('R')} ${c.cyan('Refresh')}`,
-                `${c.boldWhite('Q')} ${c.slateMuted('Quit')}`,
-              ]
+            : this.activeTab === 3
+              ? [
+                  `${c.boldWhite('Tab')} ${c.slateMuted('Switch View')}`,
+                  `${c.boldWhite('P')} ${c.emerald('Preview')}`,
+                  `${c.boldWhite('Enter')} ${c.cyan(this.swarmInspectorExpanded ? 'Collapse' : 'Expand')}`,
+                  `${c.boldWhite('R')} ${c.cyanBright('Refresh')}`,
+                  `${c.boldWhite('Esc')} ${c.slateMuted('Back')}`,
+                  `${c.boldWhite('↑/↓')} ${c.slateMuted('Select Agent')}`,
+                  `${c.boldWhite('Ctrl+C')} ${c.slateMuted('Quit')}`,
+                ]
+              : [
+                  `${c.boldWhite('Tab')} ${c.slateMuted('Switch View')}`,
+                  `${c.boldWhite('0-5')} ${c.slateMuted('Jump')}`,
+                  `${c.boldWhite('/')} ${c.slateMuted('Prompt')}`,
+                  `${c.boldWhite('C')} ${c.cyan('Chat')}`,
+                  `${c.boldWhite('G')} ${c.amber(
+                    `Model ${
+                      this.selectedModel
+                        .split('/')
+                        .pop()
+                        ?.replace(/^gemma2?:?/i, '') || this.selectedModel
+                    }`,
+                  )}`,
+                  `${c.boldWhite('P')} ${c.emerald('Preview')}`,
+                  `${c.boldWhite('R')} ${c.cyan('Refresh')}`,
+                  `${c.boldWhite('Q')} ${c.slateMuted('Quit')}`,
+                ]
     ).join('   ');
     lines.push(fullLine(hotkeys));
 
@@ -2268,72 +2449,47 @@ export class MaosTui {
     lines.push(centerTerminalLine(c.violetBright('╰' + '─'.repeat(Math.max(0, W - 2)) + '╯'), W));
   }
 
-  // ── Tab 3: HERDR Workspace & Gemma Local Inference ─────────────
-  private renderTabAgents(lines: string[], W: number): void {
-    const center = (value: string) => centerTerminalLine(value, W);
-    lines.push(center(c.boldWhite('AGENTS')));
-    lines.push(center(c.slateText('Live Herdr workspace and local Gemma inference')));
-    lines.push('');
-    appendMetricCards(lines, W, [
-      {
-        label: 'HERDR AGENTS',
-        value: String(this.herdrAgents.length),
-        detail: `${this.herdrPanes.length} active panes`,
-        color: c.cyanBright,
-      },
-      {
-        label: 'HERDR CONNECTION',
-        value: this.herdrAvailable ? 'LIVE' : 'OFFLINE',
-        detail: 'Local IPC workspace',
-        color: this.herdrAvailable ? c.emerald : c.amber,
-      },
-      {
-        label: 'ACTIVE MODEL',
-        value: this.selectedModel,
-        detail: 'Press G to cycle models',
-        color: c.violetBright,
-      },
-    ]);
-
-    lines.push('');
-    lines.push(`${c.cyanBright('◆')} ${c.boldWhite('HERDR WORKSPACE')}`);
-    const panes = this.herdrPanes.slice(0, 6);
-    if (panes.length === 0) {
-      lines.push(
-        `  ${this.herdrAvailable ? c.slateMuted('No active panes yet.') : c.slateMuted('Herdr is offline. Refresh to check the local connection.')}`,
-      );
-    } else {
-      for (const pane of panes) {
-        const agent = this.herdrAgents.find((item) => item.pane_id === pane.pane_id);
-        const state = pane.agent_status || (pane.focused ? 'focused' : 'idle');
-        const stateColor =
-          state === 'working'
-            ? c.cyanBright
-            : state === 'blocked'
-              ? c.amber
-              : state === 'done'
-                ? c.emerald
-                : c.slateMuted;
-        const name = agent?.agent || pane.terminal_title_stripped || pane.terminal_id || 'Pane';
-        lines.push(`  ${c.cyanBright('●')} ${c.cyan(pane.pane_id)}  ${c.white(name)}  ${stateColor(state)}`);
-      }
+  // ── Tab 3: Antigravity Swarm Board (Mascot + Roster + Posts + Inspector) ────
+  private renderTabAgents(lines: string[], W: number, bodyRows?: number): void {
+    // Dynamically synchronize model badge
+    const modelBadge = formatHeaderBadge(this.selectedModel);
+    for (const ag of this.swarmAgents) {
+      ag.model = modelBadge;
+    }
+    // Synchronize Herdr panes if active
+    if (this.herdrPanes.length > 0) {
+      this.herdrPanes.forEach((pane, idx) => {
+        const agIdx = idx + 1; // 0 is coordinator
+        if (this.swarmAgents[agIdx]) {
+          this.swarmAgents[agIdx].paneId = pane.pane_id;
+          if (pane.agent_status === 'working') this.swarmAgents[agIdx].state = 'working';
+          else if (pane.agent_status === 'done') this.swarmAgents[agIdx].state = 'done';
+        }
+      });
     }
 
-    lines.push('');
-    lines.push(`${c.cyanBright('◆')} ${c.boldWhite('LOCAL INFERENCE')}`);
-    lines.push(
-      `  ${c.white('Host')}  ${c.cyan('127.0.0.1:11434')}  ${c.slateMuted('·')}  ${c.white('Context')}  ${c.cyan('8,192 tokens')}  ${c.slateMuted('·')}  ${c.white('Quantization')}  ${c.cyan('Q4_K_M')}`,
-    );
-    lines.push(
-      `  ${c.white('Engine')}  ${c.violetBright(`Google ${this.selectedModel}`)}  ${c.slateMuted('·')}  ${c.white('Inference')}  ${c.cyan('Local Ollama loopback')}`,
-    );
-    lines.push(
-      `  ${c.white('Herdr IPC')}  ${this.herdrAvailable ? c.emerald('Connected (socket live)') : c.slateMuted('Offline')}  ${c.slateMuted('·')}  ${c.white('Network')}  ${c.emerald('Loopback only · 0.00 KB cloud egress · STRICT')}`,
-    );
+    const boardState: SwarmBoardState = {
+      goal: this.swarmGoal,
+      status: this.swarmState,
+      agents: this.swarmAgents,
+      posts: this.swarmPosts,
+      selectedAgentIndex: this.selectedSwarmAgentIndex,
+      expanded: this.swarmInspectorExpanded,
+      model: this.selectedModel,
+      herdrConnected: this.herdrAvailable,
+    };
+
+    const boardLines = renderSwarmBoard(boardState, {
+      width: W,
+      height: bodyRows,
+      time: Date.now() / 1000,
+    });
+
+    lines.push(...boardLines);
   }
 
-  private renderTabGemma(lines: string[], W: number): void {
-    this.renderTabAgents(lines, W);
+  private renderTabGemma(lines: string[], W: number, bodyRows?: number): void {
+    this.renderTabAgents(lines, W, bodyRows);
   }
 
   // ── Tab 4: Autonomous Healer & Telemetry ───────────────────────
