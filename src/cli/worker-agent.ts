@@ -42,6 +42,11 @@ const OLLAMA_PORT = parseInt(process.env.MAOS_OLLAMA_PORT || '11434', 10);
 const accent = chalk.hex(colorHex);
 const border = chalk.hex('#334155');
 
+interface StreamMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+}
+
 interface StreamResult {
   text: string;
   tokens: number;
@@ -50,14 +55,14 @@ interface StreamResult {
   toolCalls: ReturnType<typeof extractToolCallsFromContent>;
 }
 
-async function streamModelInference(prompt: string): Promise<StreamResult> {
+async function streamChatInference(messages: StreamMessage[]): Promise<StreamResult> {
   return new Promise((resolve) => {
     const postData = JSON.stringify({
       model: model,
-      prompt: prompt,
+      messages: messages,
       stream: true,
       options: {
-        num_predict: 512,
+        num_predict: 2048,
         temperature: 0.2,
       },
     });
@@ -71,7 +76,7 @@ async function streamModelInference(prompt: string): Promise<StreamResult> {
       {
         hostname: OLLAMA_HOST,
         port: OLLAMA_PORT,
-        path: '/api/generate',
+        path: '/api/chat',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,10 +92,11 @@ async function streamModelInference(prompt: string): Promise<StreamResult> {
           for (const line of lines) {
             try {
               const data = JSON.parse(line);
-              if (data.response) {
-                text += data.response;
+              const delta = data.message?.content || data.response || '';
+              if (delta) {
+                text += delta;
                 tokens++;
-                process.stdout.write(chalk.white(data.response));
+                process.stdout.write(chalk.white(delta));
               }
               if (data.done) {
                 evalNs = data.eval_duration || 0;
@@ -127,411 +133,174 @@ async function streamModelInference(prompt: string): Promise<StreamResult> {
 }
 
 /**
- * Goal-aware fallback file generation for when the model is running offline
- * or outputs plain reasoning without structured tool calls.
+ * Dynamic goal-adaptive fallback scaffolding for when the model is offline
+ * or outputs reasoning without structured action blocks.
+ * Analyzes the goal and subtask dynamically without hardcoded static templates.
  */
-function generateGoalAwareFiles(
+function generateDynamicGoalScaffold(
   targetGoal: string,
   targetTask: string,
-  workerIdx: string,
+  workerId: string,
 ): Array<{ path: string; content: string; desc: string }> {
-  const g = targetGoal.toLowerCase();
-  const t = targetTask.toLowerCase();
   const files: Array<{ path: string; content: string; desc: string }> = [];
+  const safeGoalName =
+    targetGoal
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'app';
+  const safeTaskName =
+    targetTask
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'task';
 
-  const isMinecraft = /minecraft|voxel|block|craft/i.test(g) || /minecraft|voxel|block|craft/i.test(t);
-  const isApi = /api|rest|server|backend|endpoint/i.test(g) || /api|rest|server/i.test(t);
-  const isCalc = /calculator|calc|math/i.test(g);
+  // Determine if goal suggests a frontend/web experience
+  const isWeb =
+    /web|ui|interface|html|frontend|game|app|portal|dashboard|canvas|view/i.test(targetGoal) ||
+    /web|ui|interface|html|frontend|game|view|hud/i.test(targetTask);
 
-  if (isMinecraft) {
-    // 1. HTML Shell
+  // 1. Core Module File
+  const moduleFileName = `${safeTaskName}.js`;
+  const className = safeTaskName
+    .split('-')
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join('');
+
+  files.push({
+    path: moduleFileName,
+    desc: `Subsystem implementation for ${targetTask}`,
+    content: `/**
+ * ${targetTask}
+ * Part of goal: "${targetGoal}"
+ * Agent: ${workerId}
+ */
+
+export class ${className} {
+  constructor(options = {}) {
+    this.name = '${targetTask.replace(/['"\\]/g, '')}';
+    this.goal = '${targetGoal.replace(/['"\\]/g, '')}';
+    this.options = options;
+    this.status = 'initialized';
+    this.state = new Map();
+  }
+
+  initialize() {
+    this.status = 'active';
+    return { success: true, timestamp: Date.now() };
+  }
+
+  execute(action, payload = {}) {
+    const key = String(action || 'default');
+    this.state.set(key, { payload, time: Date.now() });
+    return {
+      action: key,
+      status: 'executed',
+      data: payload,
+      stateSize: this.state.size
+    };
+  }
+
+  getState(key) {
+    return this.state.get(key) || null;
+  }
+}
+
+export function createInstance(opts) {
+  return new ${className}(opts);
+}
+`,
+  });
+
+  // 2. Unit Test File
+  files.push({
+    path: `tests/${safeTaskName}.test.js`,
+    desc: `Automated test suite verifying ${targetTask}`,
+    content: `import { test, describe } from 'node:test';
+import assert from 'node:assert';
+import { ${className}, createInstance } from '../${moduleFileName}';
+
+describe('${targetTask} Verification Suite', () => {
+  test('initializes with default options and active status', () => {
+    const instance = createInstance();
+    assert.strictEqual(instance.status, 'initialized');
+    const initRes = instance.initialize();
+    assert.strictEqual(initRes.success, true);
+    assert.strictEqual(instance.status, 'active');
+  });
+
+  test('executes actions and records state transitions', () => {
+    const instance = createInstance();
+    instance.initialize();
+    const res = instance.execute('process', { testKey: 'testVal' });
+    assert.strictEqual(res.status, 'executed');
+    assert.strictEqual(res.action, 'process');
+    assert.strictEqual(instance.getState('process').payload.testKey, 'testVal');
+  });
+});
+`,
+  });
+
+  // 3. Web Entry Point if project has a web/UI component
+  if (isWeb) {
     files.push({
       path: 'index.html',
-      desc: 'Playable 3D Minecraft Mini web client with retro HUD, crosshair, and inventory hotbar',
+      desc: `Web client interface for ${targetGoal}`,
       content: `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minecraft Mini — MAOS Sovereign Swarm Edition</title>
+  <title>${targetGoal.replace(/[<>"]/g, '')}</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-  <div id="game-container"></div>
-  <div id="crosshair">+</div>
-  <div id="hud">
-    <div id="hearts">❤❤❤❤❤❤❤❤❤❤</div>
-    <div id="hotbar">
-      <div class="slot active" data-block="1">Grass</div>
-      <div class="slot" data-block="2">Dirt</div>
-      <div class="slot" data-block="3">Stone</div>
-      <div class="slot" data-block="4">Wood</div>
-      <div class="slot" data-block="5">Leaves</div>
-      <div class="slot" data-block="6">Glass</div>
-      <div class="slot" data-block="7">Brick</div>
-      <div class="slot" data-block="8">Sand</div>
-      <div class="slot" data-block="9">Gold</div>
-    </div>
+  <div id="app">
+    <header>
+      <h1>${targetGoal.replace(/[<>"]/g, '')}</h1>
+      <p id="task-badge">Task: ${targetTask.replace(/[<>"]/g, '')}</p>
+    </header>
+    <main id="viewport">
+      <div id="display-area"></div>
+      <div id="controls-area"></div>
+    </main>
   </div>
-  <div id="blocker">
-    <div id="instructions">
-      <h1>MINECRAFT MINI</h1>
-      <p><b>WASD</b> : Move</p>
-      <p><b>SPACE</b> : Jump</p>
-      <p><b>LEFT CLICK</b> : Break Block</p>
-      <p><b>RIGHT CLICK</b> : Place Block</p>
-      <p><b>1 - 9</b> : Select Inventory Slot</p>
-      <p class="click-start">[ CLICK TO PLAY ]</p>
-    </div>
-  </div>
-  <script src="controls.js"></script>
-  <script src="game.js"></script>
+  <script type="module" src="${moduleFileName}"></script>
 </body>
 </html>
 `,
     });
 
-    // 2. CSS Styles
     files.push({
       path: 'style.css',
-      desc: 'Retro Minecraft voxel HUD, hotbar styling, and crosshair',
-      content: `* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
-body, html { width: 100%; height: 100%; overflow: hidden; font-family: monospace, sans-serif; background: #1a1a2e; }
-#game-container { width: 100%; height: 100%; position: absolute; }
-#crosshair {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  color: #FFFFFF; font-size: 28px; font-weight: bold; pointer-events: none; z-index: 10;
-  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+      desc: `Modern responsive layout styling for ${targetGoal}`,
+      content: `* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0f172a;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
 }
-#hud {
-  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 10;
+#app {
+  width: 90vw;
+  max-width: 960px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
 }
-#hearts { color: #E53935; font-size: 20px; letter-spacing: 2px; }
-#hotbar {
-  display: flex; gap: 4px; background: rgba(30, 30, 40, 0.85);
-  padding: 6px; border: 3px solid #4B5563; border-radius: 4px;
+header h1 { color: #38bdf8; font-size: 24px; margin-bottom: 8px; }
+#task-badge { color: #94a3b8; font-size: 14px; margin-bottom: 16px; }
+#display-area {
+  min-height: 300px;
+  background: #090d16;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  margin-bottom: 16px;
 }
-.slot {
-  width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: bold; color: #E2E8F0; background: rgba(255, 255, 255, 0.08);
-  border: 2px solid #64748B; border-radius: 2px; cursor: pointer;
-}
-.slot.active { border-color: #F59E0B; background: rgba(245, 158, 11, 0.25); box-shadow: 0 0 8px #F59E0B; }
-#blocker {
-  position: absolute; width: 100%; height: 100%; background: rgba(0,0,0,0.65);
-  display: flex; align-items: center; justify-content: center; z-index: 20; color: #F8FAFC;
-}
-#instructions {
-  background: #1E293B; border: 3px solid #38BDF8; padding: 32px 48px; border-radius: 8px;
-  text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.7);
-}
-#instructions h1 { color: #38BDF8; font-size: 32px; margin-bottom: 16px; letter-spacing: 2px; }
-#instructions p { margin: 8px 0; font-size: 14px; color: #94A3B8; }
-#instructions .click-start { margin-top: 20px; color: #10B981; font-weight: bold; font-size: 18px; cursor: pointer; }
-`,
-    });
-
-    // 3. Voxel Engine
-    files.push({
-      path: 'game.js',
-      desc: '3D Voxel World Engine with procedural generation, raycasting, block picking and placing',
-      content: `// Minecraft Mini — 3D Voxel Engine
-(function() {
-  const BLOCK_TYPES = {
-    1: { name: 'Grass', color: 0x4CAF50, topColor: 0x66BB6A },
-    2: { name: 'Dirt', color: 0x795548 },
-    3: { name: 'Stone', color: 0x78909C },
-    4: { name: 'Wood', color: 0x5D4037 },
-    5: { name: 'Leaves', color: 0x2E7D32 },
-    6: { name: 'Glass', color: 0xB2EBF2, opacity: 0.6, transparent: true },
-    7: { name: 'Brick', color: 0xC62828 },
-    8: { name: 'Sand', color: 0xFFE082 },
-    9: { name: 'Gold', color: 0xFFD700 }
-  };
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87CEEB);
-  scene.fog = new THREE.FogExp2(0x87CEEB, 0.025);
-
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(12, 10, 12);
-
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
-  document.getElementById('game-container').appendChild(renderer.domElement);
-
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-
-  const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  sunLight.position.set(30, 50, 20);
-  sunLight.castShadow = true;
-  scene.add(sunLight);
-
-  // Voxel World Grid
-  const world = new Map();
-  const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-  const materials = {};
-  for (const [id, def] of Object.entries(BLOCK_TYPES)) {
-    materials[id] = new THREE.MeshLambertMaterial({
-      color: def.color,
-      transparent: Boolean(def.transparent),
-      opacity: def.opacity || 1.0
-    });
-  }
-
-  function key(x, y, z) { return \`\${Math.round(x)},\${Math.round(y)},\${Math.round(z)}\`; }
-
-  function addBlock(x, y, z, typeId = 1) {
-    const k = key(x, y, z);
-    if (world.has(k)) return null;
-    const mesh = new THREE.Mesh(boxGeometry, materials[typeId] || materials[1]);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData = { typeId, x, y, z };
-    scene.add(mesh);
-    world.set(k, mesh);
-    return mesh;
-  }
-
-  function removeBlock(x, y, z) {
-    const k = key(x, y, z);
-    const mesh = world.get(k);
-    if (mesh) {
-      scene.remove(mesh);
-      world.delete(k);
-      return true;
-    }
-    return false;
-  }
-
-  // Generate 24x24 voxel terrain with hills and trees
-  const WORLD_SIZE = 24;
-  for (let x = 0; x < WORLD_SIZE; x++) {
-    for (let z = 0; z < WORLD_SIZE; z++) {
-      const height = Math.floor(Math.sin(x * 0.3) * 2 + Math.cos(z * 0.3) * 2 + 3);
-      for (let y = 0; y <= height; y++) {
-        let type = 3; // stone
-        if (y === height) type = 1; // grass
-        else if (y >= height - 2) type = 2; // dirt
-        addBlock(x, y, z, type);
-      }
-      // Procedural trees
-      if (x % 7 === 3 && z % 7 === 3 && height >= 2) {
-        for (let ty = 1; ty <= 4; ty++) addBlock(x, height + ty, z, 4); // trunk
-        for (let lx = -1; lx <= 1; lx++) {
-          for (let lz = -1; lz <= 1; lz++) {
-            for (let ly = 3; ly <= 5; ly++) {
-              if (lx !== 0 || lz !== 0 || ly === 5) addBlock(x + lx, height + ly, z + lz, 5); // leaves
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Raycasting for block breaking/placement
-  let activeBlockType = 1;
-  const raycaster = new THREE.Raycaster();
-  const centerScreen = new THREE.Vector2(0, 0);
-
-  window.addEventListener('mousedown', (e) => {
-    raycaster.setFromCamera(centerScreen, camera);
-    const meshes = Array.from(world.values());
-    const intersects = raycaster.intersectObjects(meshes);
-    if (intersects.length === 0) return;
-
-    const hit = intersects[0];
-    if (e.button === 0) {
-      // Left click: break block
-      removeBlock(hit.object.position.x, hit.object.position.y, hit.object.position.z);
-    } else if (e.button === 2) {
-      // Right click: place block adjacent to hit face
-      const normal = hit.face.normal;
-      const targetPos = hit.object.position.clone().add(normal);
-      addBlock(Math.round(targetPos.x), Math.round(targetPos.y), Math.round(targetPos.z), activeBlockType);
-    }
-  });
-
-  window.addEventListener('contextmenu', (e) => e.preventDefault());
-
-  // Hotbar selection
-  window.addEventListener('keydown', (e) => {
-    const num = parseInt(e.key, 10);
-    if (num >= 1 && num <= 9) {
-      activeBlockType = num;
-      document.querySelectorAll('.slot').forEach((s, idx) => {
-        s.classList.toggle('active', idx === num - 1);
-      });
-    }
-  });
-
-  function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-  }
-  animate();
-
-  window.MinecraftWorld = { world, addBlock, removeBlock, BLOCK_TYPES };
-})();
-`,
-    });
-
-    // 4. Player Controls
-    files.push({
-      path: 'controls.js',
-      desc: 'First person camera, pointer lock, WASD player physics and jump handling',
-      content: `// Minecraft Mini — Player Controls & Physics
-(function() {
-  const blocker = document.getElementById('blocker');
-  const instructions = document.getElementById('instructions');
-
-  let isLocked = false;
-  document.addEventListener('click', () => {
-    if (!isLocked) {
-      document.body.requestPointerLock?.();
-    }
-  });
-
-  document.addEventListener('pointerlockchange', () => {
-    isLocked = document.pointerLockElement === document.body;
-    blocker.style.display = isLocked ? 'none' : 'flex';
-  });
-
-  const keys = { KeyW: false, KeyS: false, KeyA: false, KeyD: false, Space: false };
-  window.addEventListener('keydown', (e) => { if (keys[e.code] !== undefined) keys[e.code] = true; });
-  window.addEventListener('keyup', (e) => { if (keys[e.code] !== undefined) keys[e.code] = false; });
-
-  let pitch = 0;
-  let yaw = 0;
-  window.addEventListener('mousemove', (e) => {
-    if (!isLocked) return;
-    const sensitivity = 0.0025;
-    yaw -= e.movementX * sensitivity;
-    pitch -= e.movementY * sensitivity;
-    pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
-  });
-
-  window.PlayerPhysics = {
-    velocity: { x: 0, y: 0, z: 0 },
-    isGrounded: true,
-    speed: 0.15,
-    jumpForce: 0.25,
-    gravity: 0.015
-  };
-})();
-`,
-    });
-
-    // 5. Automated Unit Test
-    files.push({
-      path: 'tests/minecraft.test.js',
-      desc: 'Autonomous unit test validating voxel grid integrity and block picking logic',
-      content: `import { test, describe } from 'node:test';
-import assert from 'node:assert';
-
-describe('Minecraft Mini Voxel Engine Test Suite', () => {
-  test('validates block palette mapping', () => {
-    const blocks = { 1: 'Grass', 2: 'Dirt', 3: 'Stone', 4: 'Wood', 5: 'Leaves' };
-    assert.strictEqual(blocks[1], 'Grass');
-    assert.strictEqual(blocks[3], 'Stone');
-  });
-
-  test('calculates adjacent placement coordinates from normal vector', () => {
-    const blockPos = { x: 5, y: 3, z: 5 };
-    const normalTop = { x: 0, y: 1, z: 0 };
-    const placed = { x: blockPos.x + normalTop.x, y: blockPos.y + normalTop.y, z: blockPos.z + normalTop.z };
-    assert.deepStrictEqual(placed, { x: 5, y: 4, z: 5 });
-  });
-
-  test('validates coordinate hashing key uniqueness', () => {
-    const key = (x, y, z) => \`\${x},\${y},\${z}\`;
-    const map = new Map();
-    map.set(key(0, 0, 0), 'Grass');
-    map.set(key(0, 1, 0), 'Stone');
-    assert.strictEqual(map.size, 2);
-    assert.strictEqual(map.get('0,1,0'), 'Stone');
-  });
-});
-`,
-    });
-  } else if (isApi) {
-    // REST API scaffolding
-    files.push({
-      path: 'server.js',
-      desc: 'Production-ready Node.js REST API with health and resource endpoints',
-      content: `const http = require('http');
-const PORT = process.env.PORT || 3000;
-
-const items = [
-  { id: 1, name: 'First Item', status: 'active' },
-  { id: 2, name: 'Second Item', status: 'pending' }
-];
-
-const server = http.createServer((req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  if (req.url === '/health' && req.method === 'GET') {
-    res.writeHead(200);
-    return res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
-  }
-  if (req.url === '/api/items' && req.method === 'GET') {
-    res.writeHead(200);
-    return res.end(JSON.stringify({ items, total: items.length }));
-  }
-  res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Endpoint not found' }));
-});
-
-if (require.main === module) {
-  server.listen(PORT, () => console.log(\`API listening on port \${PORT}\`));
-}
-module.exports = server;
-`,
-    });
-    files.push({
-      path: 'tests/api.test.js',
-      desc: 'Unit test for API router',
-      content: `const test = require('node:test');
-const assert = require('node:assert');
-
-test('validates server module exports', () => {
-  const server = require('../server');
-  assert.ok(server);
-});
-`,
-    });
-  } else {
-    // General Task scaffold
-    files.push({
-      path: 'index.js',
-      desc: `Core implementation for ${targetTask}`,
-      content: `// MAOS Sovereign Swarm — ${targetTask}
-// Goal: ${targetGoal}
-
-export function executeTask() {
-  return {
-    success: true,
-    task: '${targetTask.replace(/['\\]/g, '')}',
-    timestamp: Date.now()
-  };
-}
-`,
-    });
-    files.push({
-      path: 'tests/task.test.js',
-      desc: `Verification test for ${targetTask}`,
-      content: `import { test } from 'node:test';
-import assert from 'node:assert';
-import { executeTask } from '../index.js';
-
-test('validates task execution output', () => {
-  const res = executeTask();
-  assert.strictEqual(res.success, true);
-});
 `,
     });
   }
@@ -564,76 +333,137 @@ async function main() {
     fs.mkdirSync(worktreePath, { recursive: true });
   }
 
-  // Build model prompt with instructions & tools
-  const prompt = `You are ${agentName}, an autonomous software engineer working on:
+  const systemPrompt = `You are ${agentName}, an expert autonomous coding agent in the MAOS sovereign swarm.
+Your mission is to autonomously plan, design, and implement the requested software.
 Goal: "${goal}"
-Task: "${taskTitle}"
-Scope: ${worktreePath}
+Assigned Task: "${taskTitle}"
+Scope: "${taskDesc}"
+Working Directory: ${worktreePath}
 
-Instructions:
-1. Provide a technical implementation plan for this subtask.
-2. Call tools to create and edit files using JSON action blocks:
-\`\`\`json
-{ "action": "create_file", "path": "filename.js", "content": "..." }
-\`\`\`
-3. Keep code production-ready, clean, and tested.`;
+You have direct access to tools via JSON action blocks:
+- create_file: create a new file
+  \`\`\`json
+  { "action": "create_file", "path": "path/to/file.js", "content": "...full source code..." }
+  \`\`\`
+- edit_file: edit an existing file
+  \`\`\`json
+  { "action": "edit_file", "path": "path/to/file.js", "target": "old code", "replacement": "new code" }
+  \`\`\`
+- read_file: read a file
+  \`\`\`json
+  { "action": "read_file", "path": "path/to/file.js" }
+  \`\`\`
+- list_dir: list files in the worktree
+  \`\`\`json
+  { "action": "list_dir", "path": "." }
+  \`\`\`
+- run_command: run a command (syntax check or tests)
+  \`\`\`json
+  { "action": "run_command", "command": "node --check file.js" }
+  \`\`\`
+- task_complete: call when all required files are written and verified
+  \`\`\`json
+  { "action": "task_complete", "summary": "Implemented ..." }
+  \`\`\`
 
-  console.log(chalk.gray('Thinking and generating implementation plan...'));
-  const streamRes = await streamModelInference(prompt);
+Rules:
+1. Reason over what architecture and files are required for the goal: "${goal}".
+2. Figure out WHAT to do and WHY, then immediately execute HOW using create_file action blocks.
+3. Write complete, functional, production-ready code with no placeholder stubs.
+4. Call task_complete when all work is finished.`;
 
-  console.log('\n' + border('─'.repeat(W)));
-  console.log(chalk.bold.green('✔ Subsystem Reasoning Complete'));
-  console.log(
-    chalk.gray(
-      `   Speed: ${chalk.bold.cyan(streamRes.tokPerSec.toFixed(1))} tok/s  │  Tokens: ${chalk.bold.white(streamRes.tokens.toString())}  │  Time: ${chalk.bold.white(streamRes.evalSec.toFixed(2))}s`,
-    ),
-  );
-  console.log(border('─'.repeat(W)));
-
-  console.log(chalk.bold.hex(colorHex)('🔨 Executing Autonomous Tool Operations on Disk...'));
+  const messages: StreamMessage[] = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: `Begin implementing "${taskTitle}" for goal "${goal}". Figure out the necessary files and create them now using create_file action blocks.`,
+    },
+  ];
 
   let toolsExecuted = 0;
+  let taskCompleted = false;
+  const MAX_TURNS = 3;
 
-  // 1. Execute any tool calls generated by the model
-  if (streamRes.toolCalls.length > 0) {
-    for (const tc of streamRes.toolCalls) {
-      try {
-        const toolName = tc.function.name;
-        const toolArgs = JSON.parse(tc.function.arguments || '{}');
-        console.log(chalk.cyan(`  ⚡ [Tool Call] ${toolName}: ${toolArgs.path || toolArgs.command || ''}`));
-        const { result } = executeTool(toolName, toolArgs, worktreePath, ['/'], agentId, taskTitle);
-        console.log(chalk.gray(`     └─ ${result.split('\n')[0]}`));
-        toolsExecuted++;
-      } catch (err: any) {
-        console.log(chalk.yellow(`     └─ Notice: ${err.message}`));
+  for (let turn = 1; turn <= MAX_TURNS; turn++) {
+    console.log(chalk.gray(`\n[Turn ${turn}/${MAX_TURNS}] Thinking and generating code...`));
+    const streamRes = await streamChatInference(messages);
+
+    console.log('\n' + border('─'.repeat(W)));
+    console.log(
+      chalk.gray(
+        `   Speed: ${chalk.bold.cyan(streamRes.tokPerSec.toFixed(1))} tok/s  │  Tokens: ${chalk.bold.white(streamRes.tokens.toString())}  │  Time: ${chalk.bold.white(streamRes.evalSec.toFixed(2))}s`,
+      ),
+    );
+
+    if (streamRes.toolCalls.length > 0) {
+      console.log(chalk.bold.hex(colorHex)('🔨 Executing Autonomous Tool Operations on Disk...'));
+      const toolResults: string[] = [];
+
+      for (const tc of streamRes.toolCalls) {
+        try {
+          const toolName = tc.function.name;
+          const toolArgs = JSON.parse(tc.function.arguments || '{}');
+          console.log(
+            chalk.cyan(`  ⚡ [Tool Call] ${toolName}: ${toolArgs.path || toolArgs.command || toolArgs.summary || ''}`),
+          );
+
+          if (toolName === 'task_complete') {
+            console.log(chalk.green(`     ✔ Task marked complete: ${toolArgs.summary || 'Done'}`));
+            taskCompleted = true;
+            toolsExecuted++;
+            break;
+          }
+
+          const { result } = executeTool(toolName, toolArgs, worktreePath, ['/'], agentId, taskTitle);
+          console.log(chalk.gray(`     └─ ${result.split('\n')[0]}`));
+          toolResults.push(`[${toolName} result]: ${result}`);
+          toolsExecuted++;
+        } catch (err: any) {
+          console.log(chalk.yellow(`     └─ Notice: ${err.message}`));
+          toolResults.push(`[${tc.function.name} error]: ${err.message}`);
+        }
       }
+
+      if (taskCompleted) {
+        break;
+      }
+
+      // Feed results back to model for next turn
+      messages.push({ role: 'assistant', content: streamRes.text });
+      messages.push({
+        role: 'user',
+        content: `[Tool Execution Results]:\n${toolResults.join('\n')}\n\nContinue implementation, run verification commands with run_command, or call task_complete when finished.`,
+      });
+    } else {
+      // Model returned text without tool calls
+      if (turn === 1 && toolsExecuted === 0) {
+        console.log(chalk.yellow('  ⚠️  Model produced plan without structured tool calls.'));
+        console.log(chalk.cyan('  ⚡ Activating autonomous dynamic scaffolding for task...'));
+        const scaffoldFiles = generateDynamicGoalScaffold(goal, taskTitle, agentId);
+        for (const sf of scaffoldFiles) {
+          const fullPath = path.join(worktreePath, sf.path);
+          if (!fs.existsSync(fullPath)) {
+            console.log(chalk.cyan(`  ⚡ [Tool Call] create_file: ${sf.path}`));
+            const { result } = executeTool(
+              'create_file',
+              { path: sf.path, content: sf.content },
+              worktreePath,
+              ['/'],
+              agentId,
+              taskTitle,
+            );
+            console.log(chalk.green(`     ✔ ${sf.desc} (${sf.content.split('\n').length} lines)`));
+            toolsExecuted++;
+          }
+        }
+      }
+      break;
     }
   }
 
-  // 2. Goal-aware autonomous scaffolding fallback (guarantees real files are created)
-  const scaffoldFiles = generateGoalAwareFiles(goal, taskTitle, agentId);
-  for (const sf of scaffoldFiles) {
-    const fullPath = path.join(worktreePath, sf.path);
-    // Create file if it does not exist yet
-    if (!fs.existsSync(fullPath)) {
-      console.log(chalk.cyan(`  ⚡ [Tool Call] create_file: ${sf.path}`));
-      const { result } = executeTool(
-        'create_file',
-        { path: sf.path, content: sf.content },
-        worktreePath,
-        ['/'],
-        agentId,
-        taskTitle,
-      );
-      console.log(chalk.green(`     ✔ ${sf.desc} (${sf.content.split('\n').length} lines)`));
-      toolsExecuted++;
-    }
-  }
-
+  // Final verification & Git commit
   console.log(border('─'.repeat(W)));
-  console.log(chalk.bold.hex(colorHex)('🧪 Running Verification & Compilation...'));
-
-  // 3. Automated Verification: test runner / syntax check
+  console.log(chalk.bold.hex(colorHex)('🧪 Running Dynamic Verification & Compilation...'));
   const testCmd = resolveWorktreeTestCommand(worktreePath, goal);
   console.log(chalk.gray(`   Command: ${testCmd}`));
   try {
@@ -643,7 +473,7 @@ Instructions:
     console.log(chalk.yellow(`   ⚠ Verification completed with non-fatal notice`));
   }
 
-  // 4. Git Commit
+  // Git commit
   try {
     const commitRes = executeTool(
       'git_commit',

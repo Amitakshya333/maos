@@ -54,6 +54,11 @@ describe('Coding Agent Tools & Backend Swarm Resilience', () => {
       );
       expect(res.result).toContain('WRITE_BLOCKED');
     });
+
+    it('refuses to write to project root directory', () => {
+      const res = executeTool('create_file', { path: '.', content: 'root' }, tmpDir, ['/'], 'worker-1');
+      expect(res.result).toContain('Refusing to write to project root directory');
+    });
   });
 
   describe('read_file tool with line ranges', () => {
@@ -81,6 +86,18 @@ describe('Coding Agent Tools & Backend Swarm Resilience', () => {
       expect(res.result).toContain('line 4:   return new THREE.Scene();');
       expect(res.result).not.toContain('line 1:');
       expect(res.result).not.toContain('line 5:');
+    });
+
+    it('reads byte slices when byteOffset and maxBytes are provided', () => {
+      const res = executeTool(
+        'read_file',
+        { path: 'sample.ts', byteOffset: 0, maxBytes: 15 },
+        tmpDir,
+        ['/'],
+        'worker-1',
+      );
+      expect(res.result).toContain('File: sample.ts (bytes 0-15 of');
+      expect(res.result).toContain('line 1: import');
     });
 
     it('returns error when file is not found', () => {
@@ -121,6 +138,42 @@ describe('Coding Agent Tools & Backend Swarm Resilience', () => {
       expect(res.result).toContain('Error: Target string not found');
       const after = fs.readFileSync(path.join(tmpDir, 'math.js'), 'utf-8');
       expect(after).toBe(before);
+    });
+
+    it('preserves $ character sequences without regex group substitution corruption', () => {
+      const code = 'const regex = /(\\w+)/;\nconst template = "val";\n';
+      fs.writeFileSync(path.join(tmpDir, 'regex.js'), code, 'utf-8');
+
+      const res = executeTool(
+        'edit_file',
+        { path: 'regex.js', target: '"val"', replacement: '"$1-$2-$$"' },
+        tmpDir,
+        ['/'],
+        'worker-1',
+      );
+      expect(res.result).toContain('Successfully edited regex.js');
+      const edited = fs.readFileSync(path.join(tmpDir, 'regex.js'), 'utf-8');
+      expect(edited).toContain('"$1-$2-$$"');
+    });
+
+    it('matches and edits files with Windows CRLF newlines when target has LF', () => {
+      const crlfContent = 'function hello() {\r\n  console.log("world");\r\n}\r\n';
+      fs.writeFileSync(path.join(tmpDir, 'crlf.js'), crlfContent, 'utf-8');
+
+      const res = executeTool(
+        'edit_file',
+        {
+          path: 'crlf.js',
+          target: 'function hello() {\n  console.log("world");',
+          replacement: 'function hello() {\n  console.log("universe");',
+        },
+        tmpDir,
+        ['/'],
+        'worker-1',
+      );
+      expect(res.result).toContain('Successfully edited crlf.js');
+      const edited = fs.readFileSync(path.join(tmpDir, 'crlf.js'), 'utf-8');
+      expect(edited).toContain('universe');
     });
 
     it('prevents JSON corruption by validating syntax before saving', () => {
@@ -231,6 +284,61 @@ Then I will run the test:
       expect(calls.length).toBe(1);
       expect(calls[0].function.name).toBe('create_file');
     });
+
+    it('extracts tool calls even when content contains raw unescaped newlines in JSON strings', () => {
+      const modelOutput = `
+\`\`\`json
+{
+  "action": "create_file",
+  "path": "server.js",
+  "content": "const http = require('http');
+const server = http.createServer();
+server.listen(3000);"
+}
+\`\`\`
+`;
+      const calls = extractToolCallsFromContent(modelOutput);
+      expect(calls.length).toBe(1);
+      expect(calls[0].function.name).toBe('create_file');
+      const args = JSON.parse(calls[0].function.arguments);
+      expect(args.content).toContain('server.listen(3000)');
+    });
+
+    it('extracts tool calls when content includes nested markdown blocks inside a file', () => {
+      const modelOutput = `
+\`\`\`json
+{
+  "action": "create_file",
+  "path": "README.md",
+  "content": "# Docs\\n\`\`\`bash\\nnpm start\\n\`\`\`"
+}
+\`\`\`
+`;
+      const calls = extractToolCallsFromContent(modelOutput);
+      expect(calls.length).toBe(1);
+      expect(calls[0].function.name).toBe('create_file');
+      const args = JSON.parse(calls[0].function.arguments);
+      expect(args.path).toBe('README.md');
+      expect(args.content).toContain('npm start');
+    });
+
+    it('extracts tool calls using alternative schema aliases like call and args', () => {
+      const modelOutput = `
+\`\`\`json
+{
+  "call": "run_command",
+  "args": {
+    "command": "node --check index.js"
+  }
+}
+\`\`\`
+`;
+      const calls = extractToolCallsFromContent(modelOutput);
+      expect(calls.length).toBe(1);
+      expect(calls[0].function.name).toBe('run_command');
+      const args = JSON.parse(calls[0].function.arguments);
+      expect(args.command).toBe('node --check index.js');
+    });
   });
 
   describe('resolveWorktreeTestCommand Goal-Awareness', () => {
@@ -256,12 +364,25 @@ Then I will run the test:
       expect(cmd).toBe('node --test apps/canva-3d/tests/canva-3d.test.js');
     });
 
-    it('checks syntax of created game files when present', () => {
+    it('does NOT execute internal repository test suites for arbitrary user goals', () => {
+      // Simulate repo structure with internal repo tests present (e.g. brain.test.ts)
+      const testsDir = path.join(tmpDir, 'tests');
+      fs.mkdirSync(testsDir, { recursive: true });
+      fs.writeFileSync(path.join(testsDir, 'brain.test.ts'), '// internal vitest test', 'utf-8');
       fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({ name: 'repo' }), 'utf-8');
-      fs.writeFileSync(path.join(tmpDir, 'game.js'), 'console.log("game");', 'utf-8');
 
-      const cmd = resolveWorktreeTestCommand(tmpDir, 'create a mini Minecraft game');
-      expect(cmd).toBe('node --check game.js');
+      const cmd = resolveWorktreeTestCommand(tmpDir, 'build an arbitrary weather tracker');
+      expect(cmd).not.toContain('brain.test.ts');
+    });
+
+    it('dynamically adapts to created test files for any goal', () => {
+      const testsDir = path.join(tmpDir, 'tests');
+      fs.mkdirSync(testsDir, { recursive: true });
+      fs.writeFileSync(path.join(testsDir, 'calculator.test.js'), '// calc test', 'utf-8');
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({ name: 'repo' }), 'utf-8');
+
+      const cmd = resolveWorktreeTestCommand(tmpDir, 'build a scientific calculator');
+      expect(cmd).toBe('node --test tests/calculator.test.js');
     });
   });
 

@@ -557,7 +557,7 @@ export const AGENT_TOOLS: ToolDef[] = [
     function: {
       name: 'read_file',
       description:
-        'Read the contents of a file in the project. Supports optional line range (startLine/endLine) or full file read.',
+        'Read the contents of a file in the project. Supports optional line range (startLine/endLine), byte range (byteOffset/maxBytes), or full file read.',
       parameters: {
         type: 'object',
         properties: {
@@ -572,6 +572,14 @@ export const AGENT_TOOLS: ToolDef[] = [
           endLine: {
             type: 'number',
             description: 'Optional 1-based end line number to read until (inclusive)',
+          },
+          byteOffset: {
+            type: 'number',
+            description: 'Optional 0-based byte offset to start reading from',
+          },
+          maxBytes: {
+            type: 'number',
+            description: 'Optional maximum number of bytes to read',
           },
         },
         required: ['path'],
@@ -2664,8 +2672,23 @@ export function executeTool(
           if (!fs.existsSync(filePath)) {
             return { result: `Error: File not found: ${args.path}`, isComplete: false };
           }
+
+          const byteOffset = args.byteOffset ?? args.byte_offset;
+          const maxBytes = args.maxBytes ?? args.max_bytes ?? args.byteLength ?? args.byte_length;
+          if (typeof byteOffset === 'number' || typeof maxBytes === 'number') {
+            const startByte = Math.max(0, byteOffset || 0);
+            const buf = fs.readFileSync(filePath);
+            const totalBytes = buf.byteLength;
+            const sliceEnd = typeof maxBytes === 'number' ? Math.min(totalBytes, startByte + maxBytes) : totalBytes;
+            const sliced = buf.subarray(startByte, sliceEnd).toString('utf-8');
+            return {
+              result: `File: ${args.path} (bytes ${startByte}-${sliceEnd} of ${totalBytes})\n\n${sliced}`,
+              isComplete: false,
+            };
+          }
+
           const content = fs.readFileSync(filePath, 'utf-8');
-          const allLines = content.split('\n');
+          const allLines = content.split(/\r?\n/);
           const totalLines = allLines.length;
 
           const startLine = args.startLine ?? args.start_line;
@@ -2740,22 +2763,34 @@ export function executeTool(
           if (!fs.existsSync(filePath)) {
             return { result: `Error: File not found: ${args.path}`, isComplete: false };
           }
-          const content = fs.readFileSync(filePath, 'utf-8');
+          const rawContent = fs.readFileSync(filePath, 'utf-8');
           const target = args.target ?? args.find ?? args.old_string;
           const replacement = args.replacement ?? args.content ?? args.new_string ?? '';
           const lineNum = args.line;
 
           let newContent: string;
           if (typeof target === 'string' && target.length > 0) {
-            if (!content.includes(target)) {
-              return {
-                result: `Error: Target string not found in ${args.path}. Please read the file first to locate the exact text.`,
-                isComplete: false,
-              };
+            // Check literal match first (using function callback to prevent $ replacement pattern corruption)
+            if (rawContent.includes(target)) {
+              newContent = rawContent.replace(target, () => replacement);
+            } else {
+              // Normalize line endings to LF to tolerate CRLF vs LF mismatches (e.g. Windows)
+              const normContent = rawContent.replace(/\r\n/g, '\n');
+              const normTarget = target.replace(/\r\n/g, '\n');
+              if (normContent.includes(normTarget)) {
+                const normReplacement = replacement.replace(/\r\n/g, '\n');
+                const replacedNorm = normContent.replace(normTarget, () => normReplacement);
+                // Preserve CRLF if original content used CRLF
+                newContent = rawContent.includes('\r\n') ? replacedNorm.replace(/\n/g, '\r\n') : replacedNorm;
+              } else {
+                return {
+                  result: `Error: Target string not found in ${args.path}. Please read the file first to locate the exact text.`,
+                  isComplete: false,
+                };
+              }
             }
-            newContent = content.replace(target, replacement);
           } else if (typeof lineNum === 'number') {
-            const lines = content.split('\n');
+            const lines = rawContent.split(/\r?\n/);
             const idx = lineNum - 1;
             if (idx < 0 || idx >= lines.length) {
               return {
@@ -2764,7 +2799,8 @@ export function executeTool(
               };
             }
             lines[idx] = replacement;
-            newContent = lines.join('\n');
+            const sep = rawContent.includes('\r\n') ? '\r\n' : '\n';
+            newContent = lines.join(sep);
           } else {
             // Drop-in replacement
             newContent = replacement;
@@ -2784,7 +2820,7 @@ export function executeTool(
 
           filePath = assertRealWritePathContained(args.path, projectRoot);
           fs.writeFileSync(filePath, newContent, { encoding: 'utf-8', flag: 'w' });
-          const newLines = newContent.split('\n').length;
+          const newLines = newContent.split(/\r?\n/).length;
           return {
             result: `Successfully edited ${args.path} (${newLines} lines)`,
             isComplete: false,
@@ -2805,10 +2841,12 @@ export function executeTool(
         try {
           const filePath = projectFile(projectRoot, args.path);
           if (!fs.existsSync(filePath)) {
+            getFileLockRegistry().release(args.path, agentId || 'unknown');
             return { result: `Error: File not found: ${args.path}`, isComplete: false };
           }
           const stat = fs.statSync(filePath);
           if (stat.isDirectory()) {
+            getFileLockRegistry().release(args.path, agentId || 'unknown');
             return { result: `Error: Cannot delete directory '${args.path}' with delete_file`, isComplete: false };
           }
           fs.unlinkSync(filePath);
@@ -2818,6 +2856,7 @@ export function executeTool(
             isComplete: false,
           };
         } catch (err: any) {
+          getFileLockRegistry().release(args.path, agentId || 'unknown');
           return { result: `🚫 DELETE_FAILED: ${err.message}`, isComplete: false };
         }
       }
@@ -2841,9 +2880,13 @@ export function executeTool(
             if (isDir) {
               return `📁 ${e.name}/`;
             } else {
-              const stats = fs.statSync(fullPath);
-              const sizeKB = (stats.size / 1024).toFixed(1);
-              return `📄 ${e.name} (${sizeKB} KB)`;
+              try {
+                const stats = fs.statSync(fullPath);
+                const sizeKB = (stats.size / 1024).toFixed(1);
+                return `📄 ${e.name} (${sizeKB} KB)`;
+              } catch {
+                return `📄 ${e.name} (link)`;
+              }
             }
           });
           return {

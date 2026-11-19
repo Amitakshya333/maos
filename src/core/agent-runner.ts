@@ -76,6 +76,62 @@ function filterTools(allTools: ToolDef[], allowedTools?: string[], agentId?: str
 }
 
 /**
+ * Sanitize unescaped control characters (newlines, carriage returns, tabs)
+ * within JSON string literals to rescue malformed LLM JSON blocks.
+ */
+function sanitizeJsonString(str: string): string {
+  let out = '';
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) {
+      out += c;
+      escape = false;
+      continue;
+    }
+    if (c === '\\') {
+      out += c;
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      out += c;
+      continue;
+    }
+    if (inString) {
+      if (c === '\n') {
+        out += '\\n';
+        continue;
+      }
+      if (c === '\r') {
+        out += '\\r';
+        continue;
+      }
+      if (c === '\t') {
+        out += '\\t';
+        continue;
+      }
+    }
+    out += c;
+  }
+  return out;
+}
+
+function safeJsonParse(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    try {
+      return JSON.parse(sanitizeJsonString(text));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * Extract structured tool calls from raw model text output.
  * Supports markdown code blocks (```json ... ```), <tool_call> tags,
  * and raw JSON action objects ({ "action": "create_file", ... }).
@@ -83,6 +139,8 @@ function filterTools(allTools: ToolDef[], allowedTools?: string[], agentId?: str
 export function extractToolCallsFromContent(content: string, availableTools?: string[]): ToolCall[] {
   if (!content || typeof content !== 'string') return [];
   const calls: ToolCall[] = [];
+  const seenCalls = new Set<string>();
+
   const knownTools = new Set(
     availableTools && availableTools.length > 0
       ? availableTools
@@ -104,78 +162,58 @@ export function extractToolCallsFromContent(content: string, availableTools?: st
   const tryParseObject = (obj: any): void => {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
 
-    // Pattern 1: { action: "create_file", path: "...", content: "..." }
-    const actionName = obj.action || obj.tool || obj.function || obj.command_name;
+    // Pattern 1: Action / Tool / Function / Call / Name / Command / Tool_Name
+    const actionName =
+      obj.action ||
+      obj.tool ||
+      obj.function ||
+      obj.call ||
+      obj.name ||
+      obj.command_name ||
+      obj.tool_name ||
+      obj.toolName;
+
     if (typeof actionName === 'string') {
       const matchName = knownTools.has(actionName)
         ? actionName
         : knownTools.has(actionName.toLowerCase())
           ? actionName.toLowerCase()
           : null;
-      if (matchName) {
-        const args = { ...obj };
-        delete args.action;
-        delete args.tool;
-        delete args.function;
-        delete args.command_name;
-        calls.push({
-          id: `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          type: 'function',
-          function: {
-            name: matchName,
-            arguments: JSON.stringify(args),
-          },
-        });
-        return;
-      }
-    }
 
-    // Pattern 2: { name: "create_file", arguments: { ... } }
-    if (typeof obj.name === 'string') {
-      const matchName = knownTools.has(obj.name)
-        ? obj.name
-        : knownTools.has(obj.name.toLowerCase())
-          ? obj.name.toLowerCase()
-          : null;
       if (matchName) {
         let argsStr = '{}';
-        if (typeof obj.arguments === 'string') {
-          argsStr = obj.arguments;
-        } else if (typeof obj.arguments === 'object' && obj.arguments !== null) {
-          argsStr = JSON.stringify(obj.arguments);
-        } else if (typeof obj.parameters === 'object' && obj.parameters !== null) {
-          argsStr = JSON.stringify(obj.parameters);
-        }
-        calls.push({
-          id: obj.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          type: 'function',
-          function: {
-            name: matchName,
-            arguments: argsStr,
-          },
-        });
-        return;
-      }
-    }
+        const nestedArgs = obj.arguments ?? obj.parameters ?? obj.args ?? obj.params;
 
-    // Pattern 3: { tool: "create_file", parameters: { ... } }
-    if (typeof obj.tool === 'string') {
-      const matchName = knownTools.has(obj.tool)
-        ? obj.tool
-        : knownTools.has(obj.tool.toLowerCase())
-          ? obj.tool.toLowerCase()
-          : null;
-      if (matchName) {
-        const argsStr =
-          typeof obj.parameters === 'object' && obj.parameters !== null ? JSON.stringify(obj.parameters) : '{}';
-        calls.push({
-          id: `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          type: 'function',
-          function: {
-            name: matchName,
-            arguments: argsStr,
-          },
-        });
+        if (typeof nestedArgs === 'string') {
+          argsStr = nestedArgs;
+        } else if (typeof nestedArgs === 'object' && nestedArgs !== null) {
+          argsStr = JSON.stringify(nestedArgs);
+        } else {
+          // Top-level properties
+          const args = { ...obj };
+          delete args.action;
+          delete args.tool;
+          delete args.function;
+          delete args.call;
+          delete args.name;
+          delete args.command_name;
+          delete args.tool_name;
+          delete args.toolName;
+          argsStr = JSON.stringify(args);
+        }
+
+        const dedupKey = `${matchName}:${argsStr}`;
+        if (!seenCalls.has(dedupKey)) {
+          seenCalls.add(dedupKey);
+          calls.push({
+            id: obj.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            type: 'function',
+            function: {
+              name: matchName,
+              arguments: argsStr,
+            },
+          });
+        }
         return;
       }
     }
@@ -186,15 +224,13 @@ export function extractToolCallsFromContent(content: string, availableTools?: st
   let match: RegExpExecArray | null;
   while ((match = blockRegex.exec(content)) !== null) {
     const block = match[1].trim();
-    try {
-      const parsed = JSON.parse(block);
+    const parsed = safeJsonParse(block);
+    if (parsed) {
       if (Array.isArray(parsed)) {
         parsed.forEach(tryParseObject);
       } else {
         tryParseObject(parsed);
       }
-    } catch {
-      /* ignore non-json blocks */
     }
   }
 
@@ -202,62 +238,53 @@ export function extractToolCallsFromContent(content: string, availableTools?: st
   const tagRegex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
   while ((match = tagRegex.exec(content)) !== null) {
     const raw = match[1].trim();
-    try {
-      const parsed = JSON.parse(raw);
+    const parsed = safeJsonParse(raw);
+    if (parsed) {
       if (Array.isArray(parsed)) {
         parsed.forEach(tryParseObject);
       } else {
         tryParseObject(parsed);
       }
-    } catch {
-      /* ignore */
     }
   }
 
-  // 3. Scan for JSON objects in raw text
-  if (calls.length === 0) {
-    let braceStart = content.indexOf('{');
-    while (braceStart !== -1) {
-      let depth = 0;
-      let inString = false;
-      let escape = false;
-      let braceEnd = -1;
-      for (let i = braceStart; i < content.length; i++) {
-        const char = content[i];
-        if (escape) {
-          escape = false;
-          continue;
-        }
-        if (char === '\\') {
-          escape = true;
-          continue;
-        }
-        if (char === '"') {
-          inString = !inString;
-          continue;
-        }
-        if (!inString) {
-          if (char === '{') depth++;
-          else if (char === '}') {
-            depth--;
-            if (depth === 0) {
-              braceEnd = i;
-              break;
+  // 3. Scan for balanced JSON objects in raw text (resilient against nested backticks or inline JSON)
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let braceStart = -1;
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') {
+        if (depth === 0) braceStart = i;
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0 && braceStart !== -1) {
+          const slice = content.slice(braceStart, i + 1);
+          const parsed = safeJsonParse(slice);
+          if (parsed) {
+            if (Array.isArray(parsed)) {
+              parsed.forEach(tryParseObject);
+            } else {
+              tryParseObject(parsed);
             }
           }
+          braceStart = -1;
         }
-      }
-      if (braceEnd !== -1) {
-        const potentialJson = content.slice(braceStart, braceEnd + 1);
-        try {
-          const parsed = JSON.parse(potentialJson);
-          tryParseObject(parsed);
-        } catch {
-          /* ignore */
-        }
-        braceStart = content.indexOf('{', braceEnd + 1);
-      } else {
-        break;
       }
     }
   }

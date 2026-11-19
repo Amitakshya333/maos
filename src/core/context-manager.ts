@@ -45,7 +45,12 @@ export function compressContext(messages: ChatMessage[], logger: Logger, agentId
               filesRead.add(args.path);
               break;
             case 'write_file':
+            case 'create_file':
+            case 'edit_file':
               filesWritten.add(args.path);
+              break;
+            case 'delete_file':
+              filesWritten.add(`DELETED:${args.path}`);
               break;
             case 'run_command':
               commandsRun.push(args.command?.substring(0, 80));

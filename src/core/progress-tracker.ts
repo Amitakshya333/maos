@@ -82,13 +82,21 @@ export class ProgressTracker {
           // If repeated > MAX_COMMAND_REPEATS, this is spinning on the same command
           break;
         }
-        case 'write_file': {
-          const writeSig = `${args.path}:${(args.content || '').substring(0, 100)}`;
+        case 'write_file':
+        case 'create_file':
+        case 'edit_file': {
+          const contentSample = args.content || args.replacement || '';
+          const writeSig = `${args.path}:${contentSample.substring(0, 100)}`;
           if (!this.seenWrites.has(writeSig)) {
             this.seenWrites.add(writeSig);
             hasMutatingCall = true;
             newContextDiscovered = true;
           }
+          break;
+        }
+        case 'delete_file': {
+          hasMutatingCall = true;
+          newContextDiscovered = true;
           break;
         }
         case 'git_commit':

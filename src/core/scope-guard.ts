@@ -521,6 +521,25 @@ export function guardWriteFile(
   scope: string[],
   projectRoot: string,
 ): ScopeViolation | null {
+  const cleanPath = (filePath || '').trim().replace(/\\/g, '/');
+  if (!cleanPath || cleanPath === '.' || cleanPath === '/' || cleanPath === './') {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: 'Refusing to write to project root directory',
+    };
+  }
+
+  if (cleanPath.startsWith('.git') || cleanPath.includes('/.git/') || cleanPath.endsWith('/.git')) {
+    return {
+      type: 'WRITE_BLOCKED',
+      agentId,
+      filePath,
+      detail: 'Cannot write to Git internal metadata or repository files',
+    };
+  }
+
   // 1. Scope check
   if (!isPathInScope(filePath, scope, projectRoot)) {
     return {
